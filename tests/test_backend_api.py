@@ -192,7 +192,7 @@ def _write_queue(root: Path) -> Path:
 def client(tmp_path, monkeypatch):
     root = tmp_path / "library_root"
     root.mkdir(parents=True)
-    monkeypatch.setenv("CRATEMINDAI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     _create_tracks_db(root)
     _write_audit(root)
@@ -476,7 +476,7 @@ def test_enrichment_apply_approved_endpoints_require_confirm_and_apply(client):
 def test_enrichment_review_is_safe_without_db(tmp_path, monkeypatch):
     root = tmp_path / "library_root"
     root.mkdir(parents=True)
-    monkeypatch.setenv("CRATEMINDAI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
 
     with TestClient(backend_main.app) as test_client:
@@ -898,7 +898,7 @@ def test_library_quality_endpoint_reports_progress_and_actions(client):
 def test_library_quality_endpoint_handles_missing_queue_files(tmp_path, monkeypatch):
     root = tmp_path / "quality_root"
     root.mkdir(parents=True)
-    monkeypatch.setenv("CRATEMINDAI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     _create_tracks_db(root)
 
@@ -916,7 +916,7 @@ def test_library_quality_endpoint_handles_missing_queue_files(tmp_path, monkeypa
 def test_missing_db_is_handled_safely(tmp_path, monkeypatch):
     root = tmp_path / "empty_root"
     root.mkdir(parents=True)
-    monkeypatch.setenv("CRATEMINDAI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
 
     with TestClient(backend_main.app) as test_client:

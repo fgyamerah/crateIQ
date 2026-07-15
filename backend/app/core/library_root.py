@@ -2,8 +2,9 @@
 Selected library-root helpers for the read-only backend API.
 
 The backend should operate against one explicitly selected library root.
-That selection comes from CRATEMINDAI_LIBRARY_ROOT when present, with a
-safe fallback to the toolkit's configured MUSIC_ROOT when not.
+CrateIQ uses CRATEIQ_LIBRARY_ROOT as the preferred environment variable.
+CRATEMINDAI_LIBRARY_ROOT remains a deprecated compatibility fallback so
+existing local setups do not silently change their selected library.
 """
 from __future__ import annotations
 
@@ -16,7 +17,8 @@ def _load_toolkit_music_root() -> Path | None:
     """
     Load MUSIC_ROOT from the toolkit config without importing pipeline.py.
 
-    This is used only as a fallback when CRATEMINDAI_LIBRARY_ROOT is absent.
+    This is used only as a fallback when neither explicit environment variable
+    is present.
     """
     try:
         toolkit_root = Path(__file__).resolve().parents[3]
@@ -38,15 +40,20 @@ def selected_library_root() -> Path:
     Return the active library root for the backend API.
 
     Preference order:
-    1. CRATEMINDAI_LIBRARY_ROOT
-    2. Toolkit MUSIC_ROOT from config.py
+    1. CRATEIQ_LIBRARY_ROOT
+    2. CRATEMINDAI_LIBRARY_ROOT (deprecated compatibility alias)
+    3. Toolkit MUSIC_ROOT from config.py
     """
-    raw = os.environ.get("CRATEMINDAI_LIBRARY_ROOT")
+    env_name = "CRATEIQ_LIBRARY_ROOT"
+    raw = os.environ.get(env_name)
+    if raw is None:
+        env_name = "CRATEMINDAI_LIBRARY_ROOT"
+        raw = os.environ.get(env_name)
     if raw:
         root = Path(raw).expanduser()
         if not root.is_absolute():
             raise RuntimeError(
-                f"CRATEMINDAI_LIBRARY_ROOT must be absolute: {root}"
+                f"{env_name} must be absolute: {root}"
             )
     else:
         root = _load_toolkit_music_root()

@@ -8,12 +8,12 @@ import tempfile
 from pathlib import Path
 
 
-_TEST_MUSIC_ROOT = Path(tempfile.mkdtemp(prefix="cratemindai-pytest-"))
+_TEST_MUSIC_ROOT = Path(tempfile.mkdtemp(prefix="crateiq-pytest-"))
 
 # Pipeline and backend config resolve these roots during test collection. Always
 # isolate both so tests cannot create state under /music or a real library.
 os.environ["DJ_MUSIC_ROOT"] = str(_TEST_MUSIC_ROOT)
-os.environ["CRATEMINDAI_LIBRARY_ROOT"] = str(_TEST_MUSIC_ROOT)
+os.environ["CRATEIQ_LIBRARY_ROOT"] = str(_TEST_MUSIC_ROOT)
 
 
 def pytest_sessionfinish() -> None:

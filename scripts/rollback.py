@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-DJ Toolkit — Track Rollback CLI
+CrateIQ — Track Rollback CLI
 
 Allows you to undo what the pipeline did to a specific file:
   - Restore original metadata tags
@@ -205,7 +205,7 @@ def cmd_rollback(history_id: int, dry_run: bool, restore_path: bool) -> None:
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="DJ Toolkit rollback — restore files to pre-pipeline state",
+        description="CrateIQ rollback — restore files to pre-pipeline state",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )

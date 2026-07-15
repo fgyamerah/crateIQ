@@ -1,4 +1,4 @@
-# CrateMindAI Audit Report
+# CrateIQ Audit Report
 
 > Post-audit update (2026-07-02): frontend route/navigation consolidation is
 > complete. Supported operational pages are mounted, legacy/placeholder pages
@@ -10,17 +10,25 @@
 > passes 857 tests in a Python 3.12 virtual environment with one TestClient
 > deprecation warning. Findings below otherwise describe the point-in-time audit.
 
+> CrateIQ fork update (2026-07-14): this fork uses `CRATEIQ_LIBRARY_ROOT` as
+> the preferred backend environment variable and retains
+> `CRATEMINDAI_LIBRARY_ROOT` as a deprecated fallback. A fresh baseline in the
+> fork collected 857 tests but stalled at the first FastAPI health test; do not
+> rely on the older “passes 857 tests” statement above until that blocker is
+> diagnosed. See `docs/CRATEIQ_PRODUCT_AUDIT.md` for the current evidence and
+> `docs/CRATEIQ_ROADMAP.md` for planned work.
+
 ## 1. Executive Summary
 
-CrateMindAI is a local-first DJ library operations app with a substantial CLI pipeline, a FastAPI backend, and a React/Vite dashboard. The core product is built around inspecting, cleaning, reconciling, enriching, and exporting a DJ library while avoiding unsafe automatic writes.
+CrateIQ is a local-first DJ library operations app with a substantial CLI pipeline, a FastAPI backend, and a React/Vite dashboard. The core product is built around inspecting, cleaning, reconciling, enriching, and exporting a DJ library while avoiding unsafe automatic writes.
 
 The codebase is past prototype stage in the backend and pipeline, but the product surface is uneven. The core read-only library, enrichment review, metadata repair/sanitation, BPM anomaly review, export validation, sync preview, and reconciliation ledger are real. The biggest gaps are:
 
 - no authentication or authorization at all;
 - inconsistent frontend routing, with several pages and links pointing to routes that are not mounted;
 - strong environment/path assumptions baked into config;
-- build/test reproducibility is currently broken in this workspace because dependencies are not installed;
-- some docs and naming are inconsistent across `CrateMindAI`, `DJ Toolkit`, and `TrackIQ`.
+- the backend baseline currently hangs at the first FastAPI health test;
+- some docs and naming are inconsistent across `CrateIQ`, `DJ Toolkit`, and `TrackIQ`.
 
 ## 2. Stack and Architecture
 
@@ -70,7 +78,7 @@ This is a monorepo-like single repository with a Python backend/pipeline and a s
 
 ## 4. Product Workflows
 
-What CrateMindAI appears to be built for:
+What CrateIQ appears to be built for:
 
 - ingest a DJ library under a single selected root;
 - inspect tracks, folders, issues, and quality coverage;
@@ -115,10 +123,8 @@ What works reasonably well:
 
 Incomplete or broken:
 
-- `frontend/src/App.tsx` only mounts a subset of pages;
-- `Dashboard.tsx` links to `/jobs`, but `/jobs` is not routed;
-- `Jobs.tsx`, `Export.tsx`, `SetBuilder.tsx`, `SsdSync.tsx`, `Collection.tsx`, `BpmReview.tsx`, and `Settings.tsx` exist but are not reachable from the router as shipped;
-- the sidebar points at routed sections, but the wider workflow pages are effectively legacy/orphaned;
+- `Dashboard.tsx`, `Collection.tsx`, `Tracks.tsx`, and `Settings.tsx` remain legacy/orphaned source pages while the supported operational pages are mounted;
+- the current sidebar is still organized by implementation modules rather than the target six user-goal sections;
 - `Settings.tsx` is explicitly a placeholder;
 - the product feels functional in the main review workflows but not yet fully integrated as a polished app.
 
@@ -254,11 +260,11 @@ Risk areas:
 | Command | Result | Notes |
 |---|---|---|
 | `python -m pip install -r requirements-dev.txt` | Passed | Verified after activating a repository-local Python 3.12 virtual environment |
-| `python -m pytest -q` | Passed | 857 passed; one FastAPI/Starlette TestClient deprecation warning |
+| `python -m pytest -q` | Blocked | 857 collected; stalls at `test_health_endpoint_reports_selected_root_and_db`; bounded run exits 124 |
 | `npm --prefix frontend run build` | Passed | Production Vite build completed |
 | `npm --prefix frontend run typecheck` | Passed | TypeScript check completed |
 | `rg --files ...` / file inspection | Passed | Repo inventory and route audit completed |
-| `git status --short` | Unavailable | This workspace path is not a Git repo (`.git` absent here) |
+| `git status --short` | Passed | Git branch/remotes and final clean-tree state are recorded in the fork handoff |
 
 ## 11. Security and Privacy Findings
 
@@ -271,7 +277,7 @@ Risk areas:
 | Medium | CORS only covers local dev origins, not a real auth boundary | `backend/app/main.py` |
 | Medium | Path-based state can drift after moves/renames | queue/review/log artifacts are file-path keyed |
 | Medium | Some endpoints return empty fallbacks on error | Hides operational problems and can mask missing DB state |
-| Low | Naming/docs inconsistency (`DJ Toolkit`, `TrackIQ`, `CrateMindAI`) | Increases operator confusion, not direct runtime risk |
+| Low | Naming/docs inconsistency (`DJ Toolkit`, `TrackIQ`, `CrateIQ`) | Increases operator confusion, not direct runtime risk |
 
 Immediate fixes recommended:
 
@@ -312,7 +318,7 @@ Docs that should be updated before more development:
 5. Prompt logging can leak sensitive library metadata to disk.
 6. Build/test reproducibility is currently broken in this workspace.
 7. Path-based state can drift after file moves or renames.
-8. Multiple naming systems (`CrateMindAI`, `DJ Toolkit`, `TrackIQ`) increase operational ambiguity.
+8. Multiple naming systems (`CrateIQ`, `DJ Toolkit`, `TrackIQ`) increase operational ambiguity.
 9. Some API error paths fall back to empty data, hiding real failures.
 10. AI enrichment/normalization can still hallucinate or misclassify metadata.
 

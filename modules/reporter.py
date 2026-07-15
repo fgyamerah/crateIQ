@@ -54,7 +54,7 @@ def generate(run_id: int, duration_sec: float, dry_run: bool = False) -> Path:
     w = lines.append
 
     w(_sep("="))
-    w(f"DJ TOOLKIT PIPELINE REPORT")
+    w(f"CRATEIQ PIPELINE REPORT")
     w(f"Run ID:    {run_id}")
     w(f"Timestamp: {datetime.now(timezone.utc).isoformat()}")
     w(f"Dry-run:   {'YES' if dry_run else 'no'}")
@@ -178,7 +178,7 @@ def generate_readme(run_id: int, duration_sec: float, dry_run: bool = False) -> 
     lines: List[str] = []
     w = lines.append
 
-    w("# DJ Toolkit — Library README")
+    w("# CrateIQ — Library README")
     w("")
     w(f"_Generated: {now_str}_  ")
     w(f"_Run ID: {run_id}_  ")
@@ -277,7 +277,7 @@ def generate_readme(run_id: int, duration_sec: float, dry_run: bool = False) -> 
         w("")
 
     w("---")
-    w(f"_DJ Toolkit v{config.PIPELINE_VERSION} — generated {now_str}_")
+    w(f"_CrateIQ v{config.PIPELINE_VERSION} — generated {now_str}_")
 
     outpath.write_text("\n".join(lines), encoding="utf-8")
     log.info("README written: %s", outpath)
@@ -292,7 +292,7 @@ def print_summary(run_id: int, duration_sec: float) -> None:
     ok       = db.get_all_ok_tracks()
 
     print(_sep("="))
-    print("DJ TOOLKIT — RUN COMPLETE")
+    print("CRATEIQ — RUN COMPLETE")
     print(_sep())
     print(f"  OK tracks in library : {len(ok)}")
     print(f"  Rejected             : {len(rejected)}")

@@ -1,6 +1,6 @@
 # Safety Gap Audit
 
-**Project:** CrateMindAI  
+**Project:** CrateIQ
 **Date:** 2026-05-03  
 **Sources used first:** `PROJECT_CONTEXT.txt`, generated indexes under `docs/generated/`, `docs/audits/CLI_RISK_AUDIT.md`, `docs/audits/DB_SCHEMA_AUDIT.md`.
 

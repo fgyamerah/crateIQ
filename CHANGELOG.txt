@@ -1,6 +1,29 @@
 ======================================================================
-DJTOOLKIT — CHANGELOG
+CRATEIQ — CHANGELOG
 ======================================================================
+
+[2026-07-14] — chore: establish CrateIQ foundation and product roadmap
+----------------------------------------------------------------------
+TYPE: Foundation and documentation
+SUMMARY: Created the CrateIQ local fork, retained the upstream remote safely,
+         established the foundation branch, applied the product identity rename,
+         recorded the baseline, and added the product audit and phased roadmap.
+DETAILS:
+  - Renamed the upstream `origin` remote to `upstream`; no origin was created.
+  - Added preferred CRATEIQ_LIBRARY_ROOT with deprecated
+    CRATEMINDAI_LIBRARY_ROOT compatibility fallback.
+  - Updated active frontend/backend branding and package metadata.
+  - Added CRATEIQ_PRODUCT_AUDIT, CRATEIQ_ROADMAP,
+    CRATEIQ_INFORMATION_ARCHITECTURE, and CRATEIQ_DESIGN_DIRECTION.
+  - Preserved historical changelog entries, command names, API paths, database
+    paths, queue formats, and other compatibility-sensitive identifiers.
+FILES: frontend/, backend/, pipeline.py, config.py, .env.example, tests/,
+       README.md, AGENTS.md, AUDIT_REPORT.md, PROJECT_CONTEXT.md,
+       NEXT_TASKS.txt, COMMANDS.md, COMMANDS.txt, COMMANDS.html, docs/
+IMPACT: Product identity and documentation only; Phases 1–10 are not implemented.
+NOTES: The backend baseline currently stalls at the first FastAPI health test;
+       frontend typecheck/build pass. No real library or SSD was accessed.
+
 
 [2026-07-02] — docs: resolve command-reference case conflict
 ----------------------------------------------------------------------

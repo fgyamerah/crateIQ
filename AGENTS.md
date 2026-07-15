@@ -2,7 +2,7 @@
 
 This file provides operating instructions for AI coding agents working in this repository.
 
-Project: **CrateMindAI**
+Project: **CrateIQ**
 Repository type: local-first DJ library operations app
 Primary stack: Python pipeline + FastAPI backend + React/Vite frontend + SQLite
 Primary safety principle: preserve user-controlled DJ library data and avoid unsafe automatic writes.
@@ -93,7 +93,7 @@ Rules:
 
 # 3. Project Overview
 
-CrateMindAI is a local-first DJ library operations app.
+CrateIQ is a local-first DJ library operations app.
 
 It helps inspect, clean, reconcile, enrich, validate, export, and manage a DJ music library while avoiding unsafe automatic writes.
 
@@ -192,7 +192,7 @@ Frontend expectations:
 * Navigation must not point to dead routes.
 * Placeholder pages should not be presented as finished features.
 * UI should clearly distinguish supported, deferred, and experimental workflows.
-* Product naming should consistently use **CrateMindAI**.
+* Product naming should consistently use **CrateIQ**.
 
 ## 4.4 Pipeline
 
@@ -246,7 +246,7 @@ Mixed In Key, also called **MIK**, is authoritative for:
 
 # 6. Data Safety Rules
 
-CrateMindAI manages real music library data. Treat all file operations as high-risk.
+CrateIQ manages real music library data. Treat all file operations as high-risk.
 
 ## Path Safety
 
@@ -299,7 +299,7 @@ Rules:
 
 # 7. AI / LLM Rules
 
-CrateMindAI is local-first. AI must assist the workflow, not control it blindly.
+CrateIQ is local-first. AI must assist the workflow, not control it blindly.
 
 Known AI areas:
 
@@ -454,7 +454,7 @@ Do not update docs for purely read-only inspection unless the user asked for a r
 
 # 11. Naming Rules
 
-Use **CrateMindAI** as the product name.
+Use **CrateIQ** as the product name.
 
 Legacy names may exist in the repo:
 
@@ -465,7 +465,7 @@ Legacy names may exist in the repo:
 Rules:
 
 * Do not rename everything in one broad sweep unless explicitly requested.
-* When touching nearby docs/UI, prefer CrateMindAI naming.
+* When touching nearby docs/UI, prefer CrateIQ naming.
 * Preserve historical references only where they are clearly archival or migration context.
 * Avoid introducing new naming variants.
 
@@ -629,7 +629,7 @@ From the latest audit, the main known gaps are:
 6. Prompt logging can capture private library metadata.
 7. Some API error paths may return empty fallbacks that hide real failures.
 8. Path-based state can drift after file moves or renames.
-9. Naming is inconsistent across CrateMindAI, DJ Toolkit, and TrackIQ.
+9. Naming is inconsistent across CrateIQ, DJ Toolkit, and TrackIQ.
 10. AI enrichment and normalization still require review because hallucinated proposals are possible.
 
 ---

@@ -1,5 +1,5 @@
 """
-DJ Toolkit — Documentation generator.
+CrateIQ — Documentation generator.
 
 Reads the command registry (modules/doc_registry.py) and generates:
   - COMMANDS.txt   — plain-text command reference
@@ -80,7 +80,7 @@ def generate_commands_txt(registry: list[dict], version: str = "1.5.0") -> str:
 
     lines += [
         _divider("="),
-        "DJTOOLKIT (TrackIQ) — COMMAND REFERENCE",
+        "DJTOOLKIT (CrateIQ) — COMMAND REFERENCE",
         _divider("="),
         "",
         f"Version : {version}",
@@ -272,7 +272,7 @@ def generate_commands_md(registry: list[dict], version: str = "1.5.0") -> str:
     from modules.doc_registry import commands_by_category
 
     lines: list[str] = [
-        "# CrateMindAI Commands",
+        "# CrateIQ Commands",
         "",
         f"Version {version} &nbsp;·&nbsp; Updated {today}",
         "",
@@ -429,7 +429,7 @@ def generate_commands_html(registry: list[dict], version: str = "1.5.0") -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>TrackIQ — Command Reference</title>
+<title>CrateIQ — Command Reference</title>
 <style>
   *, *::before, *::after {{ box-sizing: border-box; margin: 0; padding: 0; }}
 
@@ -540,7 +540,7 @@ def generate_commands_html(registry: list[dict], version: str = "1.5.0") -> str:
 
 <nav id="nav">
   <div class="nav-header">
-    <h1>TrackIQ</h1>
+    <h1>CrateIQ</h1>
     <p>Command Reference</p>
   </div>
   {nav}
@@ -548,7 +548,7 @@ def generate_commands_html(registry: list[dict], version: str = "1.5.0") -> str:
 
 <main id="content">
   <div class="page-header">
-    <h1>TrackIQ — Command Reference</h1>
+    <h1>CrateIQ — Command Reference</h1>
     <p>Local-first DJ library automation toolkit. Ubuntu Studio 24 → Rekordbox on Windows.</p>
     <div class="meta-line">Version {_esc(version)} &nbsp;·&nbsp; Generated {_esc(today)}</div>
   </div>

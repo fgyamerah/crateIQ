@@ -6,7 +6,7 @@
 
 ## 1. Purpose
 
-Full reconciliation apply is the future controlled mechanism for applying reviewed path corrections across CrateMindAI's canonical database and related path-based references.
+Full reconciliation apply is the future controlled mechanism for applying reviewed path corrections across CrateIQ's canonical database and related path-based references.
 
 It is distinct from the existing audit and planning tools:
 

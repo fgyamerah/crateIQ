@@ -363,7 +363,7 @@
 - Line 4: `#                           and review queue (artist-intelligence subcommand).`
 
 ## `intelligence/artist/__init__.py`
-- Line 2: `# and review queue for the DJ Toolkit pipeline.`
+- Line 2: `# and review queue for the CrateIQ pipeline.`
 
 ## `intelligence/artist/artist_alias_store.py`
 - Line 3: `uncertain-candidate review queue.`
@@ -2380,4 +2380,3 @@
 - Line 303: `for k in ("high_confidence", "medium_confidence", "low_confidence"):`
 - Line 330: `data["review_count"]     = _pop("review_count",     0)`
 - Line 331: `data["moved_to_ignored"] = _pop("moved_to_ignored", 0)`
-

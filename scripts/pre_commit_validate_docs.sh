@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ======================================================================
-# DJ Toolkit — pre-commit hook: validate-docs
+# CrateIQ — pre-commit hook: validate-docs
 # ======================================================================
 #
 # INSTALLATION (one-time setup):

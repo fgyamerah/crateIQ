@@ -2,7 +2,7 @@
 
 ## Active Rule
 
-CrateMindAI must operate against one selected library root per run.
+CrateIQ must operate against one selected library root per run.
 
 - The selected root must be absolute and must exist.
 - Run logs for root-scoped commands must live under `<root>/logs/`.

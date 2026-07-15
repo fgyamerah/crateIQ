@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# DJ Toolkit — pipeline entry point
+# CrateIQ — pipeline entry point
 #
 # Usage:
 #   ./pipeline.sh [--dry-run] [--skip-beets] [--skip-analysis] [--verbose]
@@ -147,7 +147,7 @@ inbox_has_files() {
 # ---------------------------------------------------------------------------
 main() {
     log_info "========================================================"
-    log_info "DJ Toolkit pipeline starting at $(ts)"
+    log_info "CrateIQ pipeline starting at $(ts)"
     log_info "MUSIC_ROOT: ${MUSIC_ROOT}"
     log_info "Script dir: ${SCRIPT_DIR}"
     [[ ${#PYTHON_ARGS[@]} -gt 0 ]] && log_info "Args: ${PYTHON_ARGS[*]}"

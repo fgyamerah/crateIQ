@@ -75,7 +75,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
         {!collapsed && (
           <>
             <span className="sidebar-brand-icon">▶</span>
-            <span className="sidebar-brand-name">CrateMindAI</span>
+            <span className="sidebar-brand-name">CrateIQ</span>
           </>
         )}
         <button

@@ -1,4 +1,4 @@
-# CrateMindAI — Development and test dependencies
+# CrateIQ — Development and test dependencies
 #
 # Install after activating a Python 3.10+ venv:
 #   python -m pip install -r requirements-dev.txt

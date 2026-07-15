@@ -15,7 +15,7 @@
 
 ## 1. Problem
 
-CrateMindAI uses absolute file paths as operational identity across the primary DB, processed-state cache, history tables, cue suggestions, duplicate records, set playlists, review queues, and logs. Current path mutation behavior is not centralized.
+CrateIQ uses absolute file paths as operational identity across the primary DB, processed-state cache, history tables, cue suggestions, duplicate records, set playlists, review queues, and logs. Current path mutation behavior is not centralized.
 
 Verified current behavior:
 

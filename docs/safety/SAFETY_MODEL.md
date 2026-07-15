@@ -1,4 +1,4 @@
-# CrateMindAI Safety Model
+# CrateIQ Safety Model
 
 ## Core Doctrine
 

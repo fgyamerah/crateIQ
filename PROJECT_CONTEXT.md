@@ -1,14 +1,15 @@
-# CrateMindAI Project Context
+# CrateIQ Project Context
 
-**Updated:** 2026-07-02
+**Updated:** 2026-07-14
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
 ## Latest Milestone
 
-- README updated for the Phase 1-8 CrateMindAI platform milestone.
-- Current stable commit hash: `b4c6ffb4048c4c98d225f6c65e40a7cce7f1a8e3`.
-- Next recommended phase: Phase 7 Full Reconciliation.
+- README updated for the Phase 1-8 CrateIQ platform milestone.
+- Fork foundation commit: local CrateIQ branch `feat/crateiq-foundation-audit`.
+- Next recommended phase: Phase 1 Foundation and design system, after review of
+  `docs/CRATEIQ_PRODUCT_AUDIT.md` and `docs/CRATEIQ_ROADMAP.md`.
 - Warning: back up `<root>/logs/processed.db` before any reconciliation apply work.
 - Repository audit completed on 2026-07-02; see `AUDIT_REPORT.md` for the current technical/product state and follow-up priorities.
 - First post-audit stabilization completed on 2026-07-02: the frontend router
@@ -26,17 +27,19 @@
 - Backend development setup now uses `requirements-dev.txt` from a Python 3.10+
   virtual environment. It includes pipeline/backend dependencies, pytest,
   TestClient support, and a wheel-backed numba constraint.
-- `python -m pytest -q` passes 857 tests under an activated Python 3.12 venv.
-  Shared pytest setup
-  isolates `DJ_MUSIC_ROOT` and `CRATEMINDAI_LIBRARY_ROOT` in a temporary
-  directory; no real library path is needed. One FastAPI/Starlette TestClient
-  deprecation warning remains.
+- The baseline suite collected 857 tests under Python 3.12, then stalled at
+  the first FastAPI health test; an isolated 30-second run exits 124 without
+  reaching an assertion. This is an open baseline blocker.
+  Shared pytest setup isolates `DJ_MUSIC_ROOT` and the preferred
+  `CRATEIQ_LIBRARY_ROOT` in temporary directories; the deprecated
+  `CRATEMINDAI_LIBRARY_ROOT` fallback remains supported.
 - `COMMANDS.md` is the canonical command reference. The former lowercase
   `commands.md` was moved to `docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md`
   to remove the macOS case-insensitive checkout conflict while preserving its
   distinct historical content.
-- Next recommended task: add a non-secret environment template, runtime
-  path/tool preflight, and smoke tests for the supported frontend/API contract.
+- `.env.example`, CrateIQ naming updates and compatibility tests are now
+  present. Next recommended task: diagnose the FastAPI health-test hang and
+  then implement Phase 1 only after review approval.
 
 ## Phase 7 Planning
 
@@ -47,7 +50,7 @@
 
 ## Overview
 
-CrateMindAI is a local-first DJ library automation toolkit. It processes audio files into a cleaner, Rekordbox-ready library through deterministic cleanup, local AI-assisted normalization, artist intelligence, online enrichment, label tooling, organization, dedupe, exports, and backend/UI workflows.
+CrateIQ is a local-first DJ library automation toolkit. It processes audio files into a cleaner, Rekordbox-ready library through deterministic cleanup, local AI-assisted normalization, artist intelligence, online enrichment, label tooling, organization, dedupe, exports, and backend/UI workflows.
 
 Detailed safety docs:
 
@@ -114,7 +117,7 @@ Phase 3 is stable enough to proceed to Phase 4 planning and implementation. Phas
 
 ### Architecture summary
 
-CrateMindAI is now organized around a safer current-state model:
+CrateIQ is now organized around a safer current-state model:
 
 - `pipeline.py` remains the main CLI and command router.
 - `processed_state` records stage/file processing history.

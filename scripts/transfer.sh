@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# DJ Toolkit — transfer prepared library to external drive
+# CrateIQ — transfer prepared library to external drive
 #
 # Copies:
 #   /music/library/sorted/   → <DRIVE>/music/library/sorted/
@@ -76,7 +76,7 @@ sep()  { echo "$(printf '%.0s-' {1..70})" | tee -a "${LOG_FILE}"; }
 # Transfer
 # ---------------------------------------------------------------------------
 log "========================================================"
-log "DJ Toolkit Transfer"
+log "CrateIQ Transfer"
 log "Source : ${MUSIC_ROOT}"
 log "Dest   : ${DRIVE_ROOT}"
 log "Dry-run: $([ ${DRY_RUN} -eq 1 ] && echo YES || echo no)"

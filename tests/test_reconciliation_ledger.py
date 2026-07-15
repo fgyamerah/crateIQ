@@ -240,7 +240,7 @@ def test_path_reconcile_verify_ledger_reports_consistency(tmp_path, monkeypatch,
 def backend_client(tmp_path, monkeypatch):
     root = tmp_path / "library_root"
     root.mkdir(parents=True)
-    monkeypatch.setenv("CRATEMINDAI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     db_path = _ledger_db(root, monkeypatch)
     _insert_ledger(
@@ -486,7 +486,7 @@ def test_validate_plan_requires_approval_for_review_required(tmp_path, monkeypat
 def test_backend_validate_plan_latest_endpoint(tmp_path, monkeypatch):
     root = tmp_path / "library"
     root.mkdir(parents=True)
-    monkeypatch.setenv("CRATEMINDAI_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     db_path = _ledger_db(root, monkeypatch)
     old_path = root / "sorted" / "old.mp3"

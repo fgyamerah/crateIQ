@@ -1,4 +1,4 @@
-# DJ Toolkit — Backend (FastAPI) dependencies
+# CrateIQ — Backend (FastAPI) dependencies
 #
 # Install into the same venv as the toolkit:
 #   pip install -r backend/requirements.txt

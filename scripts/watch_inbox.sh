@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# DJ Toolkit — inbox folder watcher
+# CrateIQ — inbox folder watcher
 #
 # Watches /music/inbox/ using inotifywait.
 # When new audio files are dropped, waits briefly (for multi-file drops)

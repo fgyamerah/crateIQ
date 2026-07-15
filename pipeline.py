@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # PYTHON_ARGCOMPLETE_OK
 """
-DJ Toolkit — main pipeline entry point.
+CrateIQ — main pipeline entry point.
 
 Usage:
     python3 pipeline.py [--dry-run] [--skip-beets] [--skip-analysis]
@@ -5420,7 +5420,7 @@ def run_validate_docs(args) -> int:
 # ---------------------------------------------------------------------------
 def main() -> None:
     parser = argparse.ArgumentParser(
-        description="DJ Toolkit — automated library preparation pipeline",
+        description="CrateIQ — automated DJ library preparation pipeline",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=(
             "Artist Folder Clean (retroactive bad-name fix):\n"

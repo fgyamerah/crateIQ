@@ -1,5 +1,5 @@
 """
-Central configuration for the DJ Toolkit pipeline.
+Central configuration for the CrateIQ pipeline.
 Override any value by creating config_local.py in this directory.
 """
 import os

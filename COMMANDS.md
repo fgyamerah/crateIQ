@@ -1,6 +1,6 @@
-# CrateMindAI Commands
+# CrateIQ Commands
 
-A reference for the CrateMindAI intelligence pipeline CLI.
+A reference for the CrateIQ intelligence pipeline CLI.
 
 Version 2.0.0 &nbsp;·&nbsp; Updated 2026-04-20
 

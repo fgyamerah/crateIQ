@@ -1,5 +1,5 @@
 {
-  "_comment": "Centralized junk/promo-source detection patterns for DJ Toolkit. Edit here to add/remove watermark terms without touching Python code.",
+  "_comment": "Centralized junk/promo-source detection patterns for CrateIQ. Edit here to add/remove watermark terms without touching Python code.",
 
   "phrase_patterns": [
     {

@@ -1,4 +1,4 @@
-# known_labels.txt — DJ Toolkit label blocklist
+# known_labels.txt — CrateIQ label blocklist
 #
 # One label name per line (case-insensitive).
 # Lines starting with # are comments and are ignored.

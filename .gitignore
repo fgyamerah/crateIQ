@@ -3,6 +3,7 @@
 # =========================
 .env
 .env.*
+!.env.example
 .envrc
 .envrc.local
 config_local.py

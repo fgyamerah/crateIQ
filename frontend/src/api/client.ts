@@ -1,5 +1,5 @@
 /**
- * Shared HTTP client for the DJ Toolkit backend API.
+ * Shared HTTP client for the CrateIQ backend API.
  *
  * All requests go to /api/* which Vite proxies to http://localhost:8000/api/*
  * during development. In production, point BASE_URL at the real backend.

@@ -1,7 +1,7 @@
 """
 modules/junk_patterns.py
 
-Centralized junk/promo-source pattern loader for DJ Toolkit.
+Centralized junk/promo-source pattern loader for CrateIQ.
 
 Loads config/junk_patterns.json once (cached at module level) and exposes
 structured data for use by sanitizer, metadata-clean, artist-folder-clean,

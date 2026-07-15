@@ -1,5 +1,5 @@
 /* =========================================================================
-   DJ Toolkit — base styles
+   CrateIQ — base styles
    Clean functional dark UI. No decorative chrome.
    ========================================================================= */
 
@@ -4493,7 +4493,7 @@ tr.row--selected td {
 }
 
 /* =========================================================================
-   CrateMindAI Phase 6 read-only workspace
+   CrateIQ read-only workspace
    ========================================================================= */
 
 .crate-workspace {

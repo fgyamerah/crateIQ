@@ -1,5 +1,5 @@
 """
-DJ Toolkit — Command Registry (single source of truth).
+CrateIQ — Command Registry (single source of truth).
 
 Every subcommand and main-pipeline flag is listed here.  The generate-docs
 and validate-docs subcommands read this registry to regenerate COMMANDS.txt,

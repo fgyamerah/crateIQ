@@ -1,5 +1,5 @@
 """
-Filename and metadata parser for the DJ Toolkit pipeline.
+Filename and metadata parser for the CrateIQ pipeline.
 
 Responsibilities:
   - Strip leading track-number prefixes (e.g. "55. Artist - Track")

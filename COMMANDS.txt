@@ -1,5 +1,5 @@
 ======================================================================
-CrateMindAI — COMMAND REFERENCE (Intelligence Pipeline)
+CrateIQ — COMMAND REFERENCE (Intelligence Pipeline)
 ======================================================================
 
 Version : 2.0.0

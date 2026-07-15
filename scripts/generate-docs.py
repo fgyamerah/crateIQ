@@ -1,5 +1,5 @@
 """
-generate-docs.py — Standalone doc generator for CrateMindAI.
+generate-docs.py — Standalone doc generator for CrateIQ.
 
 Generates COMMANDS.txt, COMMANDS.md, COMMANDS.html, and optionally
 splices the README.md Core Commands section from the registry defined
@@ -245,7 +245,7 @@ def generate_txt(commands: list[dict], version: str) -> str:
     today = datetime.date.today().isoformat()
     lines: list[str] = [
         _divider("="),
-        "CrateMindAI — COMMAND REFERENCE (Intelligence Pipeline)",
+        "CrateIQ — COMMAND REFERENCE (Intelligence Pipeline)",
         _divider("="),
         "",
         f"Version : {version}",
@@ -323,9 +323,9 @@ def generate_md(commands: list[dict], version: str) -> str:
     pipeline_str = " → ".join(f"`{s}`" for s in _PIPELINE_STAGES)
 
     lines: list[str] = [
-        "# CrateMindAI Commands",
+        "# CrateIQ Commands",
         "",
-        "A reference for the CrateMindAI intelligence pipeline CLI.",
+        "A reference for the CrateIQ intelligence pipeline CLI.",
         "",
         f"Version {version} &nbsp;·&nbsp; Updated {today}",
         "",
@@ -550,7 +550,7 @@ def generate_html(commands: list[dict], version: str) -> str:
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>CrateMindAI — Command Reference</title>
+<title>CrateIQ — Command Reference</title>
 <link
   rel="stylesheet"
   href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
@@ -582,7 +582,7 @@ def generate_html(commands: list[dict], version: str) -> str:
     <!-- Sidebar -->
     <nav id="sidebar-nav" class="col-md-3 col-lg-2 d-none d-md-flex flex-column sidebar py-3 ps-3 pe-0">
       <div class="mb-3">
-        <strong class="d-block">CrateMindAI</strong>
+        <strong class="d-block">CrateIQ</strong>
         <span class="text-muted" style="font-size:11px">Command Reference &nbsp;·&nbsp; v{_esc(version)}</span>
       </div>
       <div class="mb-1" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#6c757d;font-weight:700;">
@@ -605,7 +605,7 @@ def generate_html(commands: list[dict], version: str) -> str:
     <main class="col-md-9 ms-sm-auto col-lg-10 px-md-5 py-4">
 
       <div class="mb-4 pb-3 border-bottom">
-        <h1 class="h3 mb-1">CrateMindAI Command Reference</h1>
+        <h1 class="h3 mb-1">CrateIQ Command Reference</h1>
         <span class="text-muted small">Version {_esc(version)} &nbsp;·&nbsp; Updated {_esc(today)}</span>
       </div>
 
@@ -755,7 +755,7 @@ GENERATORS = {
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Generate CrateMindAI command docs from the in-file registry.",
+        description="Generate CrateIQ command docs from the in-file registry.",
     )
     parser.add_argument(
         "--dry-run", action="store_true",

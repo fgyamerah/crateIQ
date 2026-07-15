@@ -30,6 +30,15 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 ----------------------------------------------------------------------
+[x] (P0) CrateIQ fork foundation, identity rename, baseline audit, and roadmap (2026-07-14)
+         Upstream retained as `upstream`; no `origin`; work isolated on
+         feat/crateiq-foundation-audit. Future phases are documented only.
+[ ] (P0) Diagnose the baseline FastAPI health-test hang
+         `python -m pytest -q` collects 857 tests but stalls at
+         test_health_endpoint_reports_selected_root_and_db; isolated timeout
+         exits 124 without reaching an assertion.
+[ ] (P1) Review and approve docs/CRATEIQ_ROADMAP.md before Phase 1 implementation
+[ ] (P1) Implement Phase 1 Foundation and design system only after review
 [x] (P1) Resolve COMMANDS.md / commands.md macOS case conflict (2026-07-02)
          COMMANDS.md remains canonical; the distinct legacy DJ Toolkit guide is
          archived at docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md.

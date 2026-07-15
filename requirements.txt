@@ -1,4 +1,4 @@
-# TrackIQ — Python runtime dependencies
+# CrateIQ — Python runtime dependencies
 #
 # Install:  pip install -r requirements.txt
 # Dev/test: pip install -r requirements-dev.txt

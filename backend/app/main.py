@@ -1,10 +1,10 @@
 """
-DJ Toolkit — FastAPI backend entry point.
+CrateIQ — FastAPI backend entry point.
 
 Start the server:
   uvicorn backend.app.main:app --reload --port 8000
 
-From the project root (djtoolkit/):
+From the project root (crateIQ/):
   uvicorn backend.app.main:app --reload --port 8000 --app-dir .
 """
 from __future__ import annotations
@@ -53,8 +53,8 @@ log = logging.getLogger(__name__)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # --- startup ---
-    log.info("DJ Toolkit backend v%s starting up", BACKEND_VERSION)
-    log.info("Toolkit root : %s", TOOLKIT_ROOT)
+    log.info("CrateIQ backend v%s starting up", BACKEND_VERSION)
+    log.info("CrateIQ root : %s", TOOLKIT_ROOT)
     log.info("pipeline.py  : %s  (exists=%s)", PIPELINE_PY, PIPELINE_PY.is_file())
     log.info("Library root : %s", read_only_service.get_library_root())
     log.info("Pipeline DB  : %s  (exists=%s)", read_only_service.get_db_path(), read_only_service.db_exists())
@@ -64,7 +64,7 @@ async def lifespan(app: FastAPI):
     yield
 
     # --- shutdown ---
-    log.info("DJ Toolkit backend shutting down")
+    log.info("CrateIQ backend shutting down")
 
 
 # ---------------------------------------------------------------------------
@@ -72,9 +72,9 @@ async def lifespan(app: FastAPI):
 # ---------------------------------------------------------------------------
 
 app = FastAPI(
-    title="DJ Toolkit API",
+    title="CrateIQ API",
     description=(
-        "Local-first REST API wrapper around the DJ Toolkit pipeline. "
+        "Local-first REST API for the CrateIQ library intelligence pipeline. "
         "Submit pipeline jobs, track their progress, and stream their logs."
     ),
     version=BACKEND_VERSION,

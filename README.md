@@ -1,4 +1,4 @@
-# CrateMindAI
+# CrateIQ
 
 [![Status](https://img.shields.io/badge/status-active-green)](#current-platform-status)
 [![Backend](https://img.shields.io/badge/backend-FastAPI-009688)](#backend-api)
@@ -6,15 +6,15 @@
 [![Safety](https://img.shields.io/badge/safety-dry--run%20first-blue)](#safety-model)
 [![Mode](https://img.shields.io/badge/mode-review--first-informational)](#core-philosophy)
 
-CrateMindAI is a local-first DJ library operations platform for building and maintaining a clean, auditable, Rekordbox-ready music library.
+CrateIQ is a local-first DJ library operations platform for building and maintaining a clean, auditable, Rekordbox-ready music library.
 
 It is built around deterministic automation, explicit review queues, and conservative metadata ownership. It helps inspect, normalize, reconcile, and enrich a DJ library without handing control of musical analysis or performance-critical data to unstable automation.
 
-CrateMindAI is not a Rekordbox replacement. It is an operational layer around a DJ library: it prepares, audits, reviews, and organizes metadata so Rekordbox and Mixed In Key can remain the source of truth for DJ performance workflows.
+CrateIQ is not a Rekordbox replacement. It is an operational layer around a DJ library: it prepares, audits, reviews, and organizes metadata so Rekordbox and Mixed In Key can remain the source of truth for DJ performance workflows.
 
 ## Overview
 
-CrateMindAI started as a pipeline for cleaning messy downloaded audio files and evolved into a broader library control system:
+CrateIQ started as a pipeline for cleaning messy downloaded audio files and evolved into a broader library control system:
 
 - A canonical SQLite `tracks` table representing the current library state.
 - A historical `processed_state` table used for stage tracking, audit, and provenance.
@@ -29,7 +29,7 @@ The platform is designed for large libraries where accidental writes, metadata c
 
 ## Core Philosophy
 
-CrateMindAI follows a review-first operating model:
+CrateIQ follows a review-first operating model:
 
 - Deterministic operations before AI or online lookup.
 - Local data before external providers.
@@ -43,16 +43,16 @@ CrateMindAI follows a review-first operating model:
 
 Metadata ownership is explicit:
 
-- `tracks` owns CrateMindAI's canonical current-state library record.
+- `tracks` owns CrateIQ's canonical current-state library record.
 - `processed_state` owns historical processing and incremental stage audit.
 - Mixed In Key and Rekordbox own BPM, key, beatgrid, cue, and performance preparation data.
-- CrateMindAI must not overwrite BPM, key, cues, beatgrids, or other performance-critical DJ data.
+- CrateIQ must not overwrite BPM, key, cues, beatgrids, or other performance-critical DJ data.
 
 The project prefers a safe skip over a confident-looking wrong update.
 
 ## Architecture
 
-CrateMindAI is organized as a local pipeline plus an operational app.
+CrateIQ is organized as a local pipeline plus an operational app.
 
 ```text
 Audio files / DJ library root
@@ -159,13 +159,13 @@ Reconciliation answers: what would be safe to fix?
 
 Current reconciliation behavior is planning-first. It should not be treated as a blind repair tool. Any write-capable reconciliation path must be explicit and narrowly scoped.
 
-CrateMindAI does not currently perform broad automatic path reconciliation in the frontend.
+CrateIQ does not currently perform broad automatic path reconciliation in the frontend.
 
 ## Canonical Tracks Database
 
 The `tracks` table is the canonical current-state table.
 
-It represents what CrateMindAI currently believes is in the active library. Backend track browsing, issue counts, folder stats, overview stats, metadata extraction, and enrichment apply all operate against `tracks`.
+It represents what CrateIQ currently believes is in the active library. Backend track browsing, issue counts, folder stats, overview stats, metadata extraction, and enrichment apply all operate against `tracks`.
 
 `processed_state` is not the canonical current-state table. It is history and audit:
 
@@ -257,7 +257,7 @@ Malformed examples such as long descriptive strings without a reliable artist/ti
 
 ## Metadata Scoring And Review Workflow
 
-CrateMindAI can score enrichment candidates and place them into a review workflow.
+CrateIQ can score enrichment candidates and place them into a review workflow.
 
 The key principle: candidate scoring is not the same as metadata application.
 
@@ -310,11 +310,16 @@ Apply logs are written under:
 
 The backend is a FastAPI app exposing the selected library root through controlled endpoints.
 
-The selected root can be configured with:
+The selected root can be configured with the preferred CrateIQ variable:
 
 ```bash
-export CRATEMINDAI_LIBRARY_ROOT=/path/to/library
+export CRATEIQ_LIBRARY_ROOT=/path/to/library
 ```
+
+`CRATEMINDAI_LIBRARY_ROOT` remains a deprecated fallback for existing local
+setups when `CRATEIQ_LIBRARY_ROOT` is not set. Database paths, API paths,
+pipeline command names, and serialized queue formats are intentionally not
+renamed for compatibility. See [.env.example](.env.example).
 
 Representative endpoints:
 
@@ -349,7 +354,7 @@ Backend safety rules:
 
 ## Frontend Dashboard
 
-The frontend is a React/Vite operational dashboard for CrateMindAI.
+The frontend is a React/Vite operational dashboard for CrateIQ.
 
 It is intentionally dense and work-focused, not a marketing UI.
 
@@ -411,7 +416,7 @@ The goal is not to hide large-library complexity. The goal is to keep browsing a
 
 ## Safety Model
 
-CrateMindAI's safety model is built around explicit intent.
+CrateIQ's safety model is built around explicit intent.
 
 Default behavior:
 
@@ -436,7 +441,7 @@ Safety guarantees by design:
 - No automatic BPM/key/cue overwrite.
 - No broad reconciliation from the dashboard.
 
-BPM, key, beatgrid, and cues are performance data. They should be owned by Mixed In Key and Rekordbox, not overwritten by CrateMindAI automation.
+BPM, key, beatgrid, and cues are performance data. They should be owned by Mixed In Key and Rekordbox, not overwritten by CrateIQ automation.
 
 ## Repository Structure
 
@@ -472,7 +477,7 @@ Representative structure:
 Notes:
 
 - `pipeline.py` is the CLI entrypoint.
-- [COMMANDS.md](COMMANDS.md) is the canonical CrateMindAI CLI command reference.
+- [COMMANDS.md](COMMANDS.md) is the canonical CrateIQ CLI command reference.
 - [Legacy DJ Toolkit commands](docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md)
   are preserved for historical context only.
 - `db.py` owns the core SQLite schema helpers.
@@ -511,7 +516,7 @@ npm --prefix frontend run build
 Configure the active library root:
 
 ```bash
-export CRATEMINDAI_LIBRARY_ROOT=/path/to/library
+export CRATEIQ_LIBRARY_ROOT=/path/to/library
 ```
 
 ## Running Backend/Frontend
@@ -589,7 +594,7 @@ python3 pipeline.py enrichment-apply-approved --root /path/to/library --apply --
 Open operational dashboard:
 
 ```bash
-export CRATEMINDAI_LIBRARY_ROOT=/path/to/library
+export CRATEIQ_LIBRARY_ROOT=/path/to/library
 source .venv/bin/activate
 python -m uvicorn backend.app.main:app --reload --port 8000 --app-dir .
 npm --prefix frontend run dev
@@ -615,8 +620,9 @@ python -m pytest -q
 `requirements-dev.txt` includes pipeline dependencies, backend dependencies,
 pytest, FastAPI TestClient support, and a binary-wheel compatibility constraint
 for librosa's numba/llvmlite chain. The test suite automatically assigns both
-`DJ_MUSIC_ROOT` and `CRATEMINDAI_LIBRARY_ROOT` to a temporary directory; no
-local music-library path is required and tests do not write under `/music`.
+`DJ_MUSIC_ROOT` and `CRATEIQ_LIBRARY_ROOT` to a temporary directory; the
+deprecated `CRATEMINDAI_LIBRARY_ROOT` alias remains supported. No local
+music-library path is required and tests do not write under `/music`.
 
 Run frontend verification:
 
@@ -639,8 +645,8 @@ Vite build are the frontend checks.
 
 ## Known Limitations
 
-- CrateMindAI is not a Rekordbox replacement.
-- CrateMindAI does not own BPM, key, beatgrid, or cue authoring.
+- CrateIQ is not a Rekordbox replacement.
+- CrateIQ does not own BPM, key, beatgrid, or cue authoring.
 - Phase 7 apply implementation has not started; a planning specification exists.
 - Path reconciliation is not a broad automatic repair system.
 - Online enrichment is candidate scoring plus review workflow, not blind metadata overwrite.
@@ -651,17 +657,16 @@ Vite build are the frontend checks.
 - Runtime paths and external tool availability still depend heavily on environment configuration.
 - The generic Jobs page is constrained by backend allowlists but does not explain every command's individual safety semantics.
 - Production frontend dependencies audit clean; development tooling still has advisories whose npm-proposed fix requires a Vite major upgrade.
-- The backend suite passes but currently emits one FastAPI/Starlette TestClient deprecation warning about the future HTTP client transition.
+- The current backend baseline collects 857 tests but stalls at the first FastAPI health test; diagnose this before claiming the suite passes.
 - The frontend dashboard is operational but is not intended to replace CLI control for every pipeline operation.
 - External provider data may be incomplete or wrong, which is why review state exists.
 
-The recommended next stabilization task is a reproducible local-runtime preflight:
-add a non-secret environment template, validate required paths/tools at startup,
-and add smoke tests for the supported frontend/API route contract.
+The recommended next stabilization task is to diagnose the backend health-test
+hang, then implement the CrateIQ Phase 1 runtime/readiness contract.
 
 ## Long-Term Vision
 
-CrateMindAI's long-term direction is a full DJ library operations console:
+CrateIQ's long-term direction is a full DJ library operations console:
 
 - Canonical current-state tracking.
 - Auditable history and change plans.

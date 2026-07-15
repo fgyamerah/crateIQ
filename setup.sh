@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# DJ Toolkit — first-time setup script
+# CrateIQ — first-time setup script
 #
 # Run once after cloning the repo.
 # Creates the music directory structure, installs Python deps,
@@ -38,7 +38,7 @@ warn() { echo "[setup] WARN: $*"; }
 ok()   { echo "[setup] ✓  $*"; }
 
 log "=================================================="
-log "DJ Toolkit Setup"
+    log "CrateIQ Setup"
 log "Music root : ${MUSIC_ROOT}"
 log "Script dir : ${SCRIPT_DIR}"
 log "=================================================="
