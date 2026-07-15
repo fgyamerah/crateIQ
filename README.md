@@ -643,6 +643,14 @@ npm --prefix frontend run build
 There is currently no frontend unit-test script; TypeScript and the production
 Vite build are the frontend checks.
 
+In a restricted execution sandbox that blocks cross-thread asyncio wakeups,
+Starlette `TestClient` can stall before entering its context. This is an
+environment limitation, not a CrateIQ startup or health-route requirement. Run
+the suite in the activated virtual environment on the normal host or CI runner;
+the current suite passes 860 tests there. The installed stack may also emit a
+Starlette deprecation warning recommending the future `httpx2` client; this is
+tracked separately and does not block the suite.
+
 ## Known Limitations
 
 - CrateIQ is not a Rekordbox replacement.
@@ -657,12 +665,14 @@ Vite build are the frontend checks.
 - Runtime paths and external tool availability still depend heavily on environment configuration.
 - The generic Jobs page is constrained by backend allowlists but does not explain every command's individual safety semantics.
 - Production frontend dependencies audit clean; development tooling still has advisories whose npm-proposed fix requires a Vite major upgrade.
-- The current backend baseline collects 857 tests but stalls at the first FastAPI health test; diagnose this before claiming the suite passes.
+- The historical restricted-sandbox baseline collected 857 tests but stalled at
+  the first FastAPI health test; the current normal-host suite collects 860 and
+  passes twice.
 - The frontend dashboard is operational but is not intended to replace CLI control for every pipeline operation.
 - External provider data may be incomplete or wrong, which is why review state exists.
 
-The recommended next stabilization task is to diagnose the backend health-test
-hang, then implement the CrateIQ Phase 1 runtime/readiness contract.
+The recommended next task is to review the roadmap, then implement the CrateIQ
+Phase 1 runtime/readiness contract only after approval.
 
 ## Long-Term Vision
 

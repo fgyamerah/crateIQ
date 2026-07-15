@@ -206,7 +206,15 @@ Existing protections include DB indexes, SQL `LIMIT/OFFSET`, capped track listin
 
 ## Testing audit
 
-The Python suite collected 857 tests in this environment and contains strong coverage for metadata transforms, path containment, dry-run/apply gates, idempotency, reconciliation, enrichment, root isolation, and backend routes. The baseline run reached the first backend health test and stalled; an isolated 30-second run of that test exited with code 124 without reaching an assertion. This is documented as a pre-existing baseline blocker, not hidden.
+The original Python baseline collected 857 tests and reached the first backend
+health test, where a bounded run exited with code 124 before any assertion. The
+exact test was `tests/test_backend_api.py::test_health_endpoint_reports_selected_root_and_db`.
+Diagnosis on 2026-07-15 showed that a bare AnyIO/asyncio reproduction also hangs
+only in the restricted execution sandbox: its cross-thread event-loop wakeup is
+not delivered to the portal thread used by Starlette `TestClient`. The identical
+CrateIQ stack passes outside the sandbox, so this was pre-existing environment
+behavior rather than a CrateIQ rename regression. The current suite collects 860
+tests and passes twice in the normal host environment.
 
 Frontend baseline has no unit-test script. TypeScript typecheck and Vite production build pass. There are no committed frontend route, review-flow, accessibility, responsive, or deterministic end-to-end tests comparable to the backend suite.
 
@@ -230,7 +238,9 @@ Recommended test additions are specified in the roadmap; no major test framework
 3. High: export and SSD sync can affect external operational media; conflict, destination, and verification visibility are not yet unified.
 4. High: path-based identity drift can produce stale records or unsafe reconciliation proposals after moves.
 5. Medium: frontend architecture and navigation make core workflows hard to discover and maintain.
-6. Medium: backend baseline health test hangs in the current environment and must be diagnosed before release hardening.
+6. Medium: restricted test environments must preserve cross-thread asyncio
+   wakeups, or TestClient-based backend tests can stall before application
+   startup; the normal host suite is passing.
 7. Medium: development dependency advisories exist in Vite/esbuild; the available automated fix is a major Vite upgrade and was intentionally not applied.
 8. Medium: private library metadata may enter prompt logs; logging and retention need explicit controls.
 9. Low: naming and generated documentation drift reduce trust and increase operator confusion.
@@ -284,7 +294,13 @@ Review status and operation status must remain distinct. Approval is a human dec
 - Python: `Python 3.12.3` in `.venv`.
 - Node: `v20.20.2`.
 - npm: `10.8.2`.
-- Backend collection: 857 tests collected; full run stalled at `tests/test_backend_api.py::test_health_endpoint_reports_selected_root_and_db`; isolated timeout result `124` after 30 seconds.
+- Historical backend collection: 857 tests collected; restricted-sandbox run
+  stalled at `tests/test_backend_api.py::test_health_endpoint_reports_selected_root_and_db`;
+  isolated timeout result `124` after 30 seconds.
+- Current backend verification: 860 passed twice in the normal host environment
+  (`44.98s` and `29.66s`), with one Starlette TestClient deprecation warning.
+- Focused verification: health test passed; `tests/test_backend_api.py` passed
+  21 tests; the backend API/reconciliation group passed 32 tests.
 - Frontend typecheck: passed.
 - Frontend production build: passed; Vite transformed 1,777 modules and emitted `frontend/dist`.
 - npm audit: production dependencies 0 advisories; full tree 2 advisories (moderate `esbuild`, high `vite`).

@@ -1,6 +1,6 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-07-14
+**Updated:** 2026-07-15
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
@@ -8,8 +8,8 @@
 
 - README updated for the Phase 1-8 CrateIQ platform milestone.
 - Fork foundation commit: local CrateIQ branch `feat/crateiq-foundation-audit`.
-- Next recommended phase: Phase 1 Foundation and design system, after review of
-  `docs/CRATEIQ_PRODUCT_AUDIT.md` and `docs/CRATEIQ_ROADMAP.md`.
+- Backend test-suite hang diagnosis is complete; Phase 1 remains deferred until
+  review of `docs/CRATEIQ_PRODUCT_AUDIT.md` and `docs/CRATEIQ_ROADMAP.md`.
 - Warning: back up `<root>/logs/processed.db` before any reconciliation apply work.
 - Repository audit completed on 2026-07-02; see `AUDIT_REPORT.md` for the current technical/product state and follow-up priorities.
 - First post-audit stabilization completed on 2026-07-02: the frontend router
@@ -27,9 +27,14 @@
 - Backend development setup now uses `requirements-dev.txt` from a Python 3.10+
   virtual environment. It includes pipeline/backend dependencies, pytest,
   TestClient support, and a wheel-backed numba constraint.
-- The baseline suite collected 857 tests under Python 3.12, then stalled at
-  the first FastAPI health test; an isolated 30-second run exits 124 without
-  reaching an assertion. This is an open baseline blocker.
+- The original baseline collected 857 tests under Python 3.12, then stalled at
+  `tests/test_backend_api.py::test_health_endpoint_reports_selected_root_and_db`.
+  Diagnosis on 2026-07-15 proved that the restricted execution sandbox failed
+  to wake the cross-thread asyncio event loop used by AnyIO/Starlette
+  TestClient. A bare FastAPI reproduction and the identical CrateIQ stack pass
+  outside the sandbox; the issue was pre-existing environment behavior, not the
+  CrateIQ rename. The current suite collects 860 tests and passes twice in the
+  normal host environment.
   Shared pytest setup isolates `DJ_MUSIC_ROOT` and the preferred
   `CRATEIQ_LIBRARY_ROOT` in temporary directories; the deprecated
   `CRATEMINDAI_LIBRARY_ROOT` fallback remains supported.
@@ -38,8 +43,8 @@
   to remove the macOS case-insensitive checkout conflict while preserving its
   distinct historical content.
 - `.env.example`, CrateIQ naming updates and compatibility tests are now
-  present. Next recommended task: diagnose the FastAPI health-test hang and
-  then implement Phase 1 only after review approval.
+  present. Next recommended task: review and approve the roadmap, then begin
+  Phase 1 only after that approval.
 
 ## Phase 7 Planning
 

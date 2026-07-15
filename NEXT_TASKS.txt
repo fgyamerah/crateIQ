@@ -15,6 +15,15 @@ Post-audit stabilization note (2026-07-02):
 - Next recommended task: add a reproducible local-runtime preflight with a
   non-secret environment template and smoke tests for supported UI/API routes.
 
+Backend hang diagnosis note (2026-07-15):
+- The original bounded run stalled at the first FastAPI health test because the
+  restricted execution sandbox did not wake a cross-thread asyncio event loop,
+  which is required by AnyIO/Starlette TestClient.
+- A minimal bare FastAPI reproduction and the CrateIQ suite pass outside that
+  sandbox with the same installed packages. No application lifecycle fix was
+  warranted; this was pre-existing environment behavior, not the rename.
+- The complete suite now passes twice: 860 tests per run, exiting normally.
+
 Legend:
 [ ] = open
 [~] = in progress
@@ -33,10 +42,10 @@ CURRENT FOCUS
 [x] (P0) CrateIQ fork foundation, identity rename, baseline audit, and roadmap (2026-07-14)
          Upstream retained as `upstream`; no `origin`; work isolated on
          feat/crateiq-foundation-audit. Future phases are documented only.
-[ ] (P0) Diagnose the baseline FastAPI health-test hang
-         `python -m pytest -q` collects 857 tests but stalls at
-         test_health_endpoint_reports_selected_root_and_db; isolated timeout
-         exits 124 without reaching an assertion.
+[x] (P0) Diagnose the baseline FastAPI health-test hang (2026-07-15)
+         The exact test stalled before TestClient entered. A minimal AnyIO/
+         asyncio reproduction isolated the failure to the restricted execution
+         sandbox's cross-thread event-loop wakeup. Host verification passes.
 [ ] (P1) Review and approve docs/CRATEIQ_ROADMAP.md before Phase 1 implementation
 [ ] (P1) Implement Phase 1 Foundation and design system only after review
 [x] (P1) Resolve COMMANDS.md / commands.md macOS case conflict (2026-07-02)
@@ -48,7 +57,8 @@ CURRENT FOCUS
          Hidden via redirects: legacy Dashboard, Collection, Tracks, and placeholder Settings.
 [x] (P1) Backend test environment stabilization (2026-07-02)
          requirements-dev includes pipeline/backend/test dependencies; tests
-         isolate both library-root environment variables; 857 tests pass under Python 3.12.
+         isolate both library-root environment variables; 860 tests pass twice
+         under Python 3.12 in the normal host environment.
 [ ] (P1) Local-runtime preflight and smoke-test contract
          Add a non-secret env example, validate required paths/external tools,
          and smoke-test the supported frontend/API route surface.

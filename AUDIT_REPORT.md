@@ -18,6 +18,14 @@
 > diagnosed. See `docs/CRATEIQ_PRODUCT_AUDIT.md` for the current evidence and
 > `docs/CRATEIQ_ROADMAP.md` for planned work.
 
+> Backend hang diagnosis update (2026-07-15): the original stall is reproduced
+> only in the restricted execution sandbox. Collection completes normally, but
+> the sandbox does not wake the cross-thread asyncio event loop used by AnyIO /
+> Starlette `TestClient`; the exact health test therefore blocks before client
+> startup. A bare FastAPI reproduction and the identical dependency stack pass
+> outside the sandbox. The CrateIQ suite now passes 860 tests twice in the normal
+> host environment. No application lifecycle or dependency change was required.
+
 ## 1. Executive Summary
 
 CrateIQ is a local-first DJ library operations app with a substantial CLI pipeline, a FastAPI backend, and a React/Vite dashboard. The core product is built around inspecting, cleaning, reconciling, enriching, and exporting a DJ library while avoiding unsafe automatic writes.
@@ -27,7 +35,8 @@ The codebase is past prototype stage in the backend and pipeline, but the produc
 - no authentication or authorization at all;
 - inconsistent frontend routing, with several pages and links pointing to routes that are not mounted;
 - strong environment/path assumptions baked into config;
-- the backend baseline currently hangs at the first FastAPI health test;
+- restricted test sandboxes may hang at the first FastAPI health test because of
+  cross-thread asyncio wakeup behavior;
 - some docs and naming are inconsistent across `CrateIQ`, `DJ Toolkit`, and `TrackIQ`.
 
 ## 2. Stack and Architecture
@@ -260,11 +269,18 @@ Risk areas:
 | Command | Result | Notes |
 |---|---|---|
 | `python -m pip install -r requirements-dev.txt` | Passed | Verified after activating a repository-local Python 3.12 virtual environment |
-| `python -m pytest -q` | Blocked | 857 collected; stalls at `test_health_endpoint_reports_selected_root_and_db`; bounded run exits 124 |
+| `python -m pytest -q` (historical restricted-sandbox baseline) | Blocked | 857 collected; stalls at `test_health_endpoint_reports_selected_root_and_db`; bounded run exits 124 before TestClient startup |
+| `timeout -k 10s 300s .venv/bin/python -m pytest -q` (normal host) | Passed | 860 passed, 1 TestClient deprecation warning, 44.98s; repeated run passed 860 in 29.66s |
 | `npm --prefix frontend run build` | Passed | Production Vite build completed |
 | `npm --prefix frontend run typecheck` | Passed | TypeScript check completed |
 | `rg --files ...` / file inspection | Passed | Repo inventory and route audit completed |
 | `git status --short` | Passed | Git branch/remotes and final clean-tree state are recorded in the fork handoff |
+
+The health-test hang was pre-existing environment behavior, not a regression
+introduced by the CrateIQ rename. No backend runtime files were changed. The
+existing health test provides lifecycle regression coverage; focused execution,
+the complete backend API/reconciliation group, and two complete suite runs all
+exited normally outside the restricted sandbox.
 
 ## 11. Security and Privacy Findings
 

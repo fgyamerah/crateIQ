@@ -2,6 +2,29 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-15] — fix: diagnose backend test-suite hang
+----------------------------------------------------------------------
+TYPE: Test-environment diagnosis and verification
+SUMMARY: Isolated the backend health-test stall to the restricted execution
+         sandbox rather than CrateIQ application lifecycle code.
+DETAILS:
+  - Collection completed normally; the exact first hanging test was
+    `tests/test_backend_api.py::test_health_endpoint_reports_selected_root_and_db`.
+  - A bare AnyIO/asyncio reproduction showed that the sandbox prevented the
+    cross-thread event-loop wakeup used by TestClient.
+  - The identical application and dependency stack passed outside the sandbox;
+    no FastAPI lifespan, health route, database, provider, filesystem, or
+    teardown change was required.
+  - The complete backend suite passed twice with 860 tests each time.
+FILES: CHANGELOG.txt, NEXT_TASKS.txt, PROJECT_CONTEXT.md, AUDIT_REPORT.md,
+       docs/CRATEIQ_PRODUCT_AUDIT.md, README.md
+IMPACT: Documentation and verification records only; no runtime or library
+        data behavior changed. The remaining TestClient deprecation warning is
+        tracked separately.
+NOTES: This was pre-existing in the restricted execution environment and was
+       not introduced by the CrateIQ rename. No real library or SSD was accessed.
+
+
 [2026-07-14] — chore: establish CrateIQ foundation and product roadmap
 ----------------------------------------------------------------------
 TYPE: Foundation and documentation
