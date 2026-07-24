@@ -27,6 +27,7 @@ from .api.routes import metadata_repair as metadata_repair_router
 from .api.routes import metadata_sanitation as metadata_sanitation_router
 from .api.routes import playlists as playlists_router
 from .api.routes import reconciliation as reconciliation_router
+from .api.routes import runtime as runtime_router
 from .api.routes import sync as sync_router
 from .api.routes import tracks as tracks_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
@@ -113,6 +114,7 @@ async def log_request_timing(request, call_next):
 API_PREFIX = "/api"
 
 app.include_router(health_router.router,     prefix=API_PREFIX)
+app.include_router(runtime_router.router,    prefix=API_PREFIX)
 app.include_router(jobs_router.router,       prefix=API_PREFIX)
 app.include_router(library_router.router,    prefix=API_PREFIX)
 app.include_router(tracks_router.router,     prefix=API_PREFIX)

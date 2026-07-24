@@ -25,12 +25,14 @@
 - `backend/app/api/routes/jobs.py`
 - `backend/app/api/routes/library.py`
 - `backend/app/api/routes/playlists.py`
+- `backend/app/api/routes/runtime.py`
 - `backend/app/api/routes/sync.py`
 - `backend/app/api/routes/tracks.py`
 - `backend/app/core/__init__.py`
 - `backend/app/core/config.py`
 - `backend/app/core/db.py`
 - `backend/app/core/pipeline_db.py`
+- `backend/app/core/preflight.py`
 - `backend/app/main.py`
 - `backend/app/models/__init__.py`
 - `backend/app/models/job.py`

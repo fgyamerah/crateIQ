@@ -547,6 +547,51 @@ Health check:
 curl http://127.0.0.1:8000/api/health
 ```
 
+## Runtime Readiness
+
+CrateIQ ships a read-only local-runtime preflight that reports whether the
+environment is ready before you run library, metadata, export, or sync
+workflows. It never mutates library data, never runs pipeline commands or
+jobs, and never returns secret values.
+
+```bash
+curl http://127.0.0.1:8000/api/runtime/readiness
+```
+
+Response shape:
+
+```json
+{
+  "status": "ready",
+  "checks": [
+    {"name": "library_root", "status": "pass", "required": true,
+     "message": "...", "metadata": {"root": "~/music/library"}}
+  ]
+}
+```
+
+Status meanings:
+
+| Status | Meaning |
+|---|---|
+| `ready` | All checks pass. |
+| `degraded` | Required checks pass, but optional/workflow-specific checks warn (e.g. a missing external binary, or a pipeline DB that has not been created yet). Affected workflows will be limited. |
+| `not_ready` | A required check fails: the library root is missing, unreadable, or an unsafe broad root, or `pipeline.py` cannot be found. Fix configuration before operating on a library. |
+
+Checks performed (all read-only): library root resolution/existence/
+readability, rejection of unsafe broad roots (`/`, `/home`, `/Users`,
+`/System`, the home directory, and the repository itself — override
+deliberately with `CRATEIQ_ALLOW_UNSAFE_ROOT=1`), pipeline DB presence and
+containment under the root, `pipeline.py` entrypoint, backend data
+directory, and availability of `ffprobe`, `ffmpeg`, `keyfinder-cli`,
+`aubio`, `beet`, `rmlint`, and `rsync`. Missing binaries warn; they never
+fail startup.
+
+Environment configuration is documented in [.env.example](.env.example) —
+copy the values you need into your shell or a local env file. Never commit
+real secrets. Reminder: CrateIQ has no authentication; run it only on a
+trusted local machine.
+
 ## Example Workflows
 
 Audit current path state:

@@ -43,10 +43,16 @@ CURRENT FOCUS
          docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md — current state,
          gap analysis, metadata/genre/harmonic/player/playlist/export strategy,
          9-phase capability roadmap mapped to docs/CRATEIQ_ROADMAP.md.
-[ ] (P1) Implement local-runtime preflight and readiness contract
-         backend/app/core/preflight.py + GET /api/runtime/readiness +
-         tests/test_preflight.py + frontend readiness banner. Paste-ready
-         prompt in CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md section 16.
+[x] (P1) Implement local-runtime preflight and readiness contract (2026-07-24)
+         backend/app/core/preflight.py (read-only checks: root safety,
+         pipeline DB, entrypoint, backend data dir, 7 external binaries) +
+         GET /api/runtime/readiness + tests/test_preflight.py + expanded
+         .env.example. Frontend banner intentionally deferred (see below).
+[ ] (P2) Frontend readiness banner: surface /api/runtime/readiness as a small
+         dismissible banner in the Layout when status is not "ready". Use the
+         existing ErrorBanner pattern; no routing changes.
+[ ] (P3) Wire readiness awareness into the Jobs page (disable submission
+         hints when relevant binaries are missing) — optional polish.
 [ ] (P1) Metadata model extension (strategy Phase 2): additive tracks columns
          for identity + structured artist/title/version, field_provenance
          table, optional fpcalc fingerprinting — after preflight lands.
@@ -78,9 +84,10 @@ CURRENT FOCUS
          requirements-dev includes pipeline/backend/test dependencies; tests
          isolate both library-root environment variables; 860 tests pass twice
          under Python 3.12 in the normal host environment.
-[ ] (P1) Local-runtime preflight and smoke-test contract
-         Add a non-secret env example, validate required paths/external tools,
-         and smoke-test the supported frontend/API route surface.
+[~] (P1) Local-runtime preflight and smoke-test contract
+         Preflight + non-secret env example + readiness endpoint completed
+         2026-07-24. Remaining: smoke tests for the full supported frontend/API
+         route surface (beyond the readiness/health coverage now in place).
 [ ] (P2) Resolve FastAPI/Starlette TestClient HTTP client deprecation warning
          Evaluate the supported httpx2 migration separately; current tests pass.
 [ ] (P2) Frontend build-tool dependency upgrade

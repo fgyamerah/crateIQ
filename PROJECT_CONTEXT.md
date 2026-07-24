@@ -6,6 +6,15 @@
 
 ## Latest Milestone
 
+- 2026-07-24: Local-runtime preflight and readiness contract implemented.
+  `backend/app/core/preflight.py` runs read-only checks (library-root safety
+  including unsafe-broad-root rejection with `CRATEIQ_ALLOW_UNSAFE_ROOT=1`
+  override, pipeline DB presence/containment, `pipeline.py` entrypoint,
+  backend data dir, and 7 optional external binaries) and
+  `GET /api/runtime/readiness` reports `ready` / `degraded` / `not_ready`.
+  `/api/health` is unchanged. `.env.example` expanded (non-secret template
+  with no-auth warning). Tests: `tests/test_preflight.py`. Frontend
+  readiness banner deferred to a follow-up task.
 - 2026-07-24: crateIQ's target product vision is now documented in
   `docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md` — current-state vs
   target gap analysis, metadata/genre/harmonic/player/playlist/export

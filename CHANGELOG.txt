@@ -2,6 +2,41 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-24] — feat: local-runtime preflight and readiness contract
+----------------------------------------------------------------------
+TYPE: Feature (read-only runtime readiness)
+SUMMARY: Added a read-only preflight module and GET /api/runtime/readiness
+         so CrateIQ reports ready/degraded/not_ready before users operate
+         on a library.
+DETAILS:
+  - backend/app/core/preflight.py: checks library root resolution,
+    existence, directory-ness, readability, and rejection of unsafe broad
+    roots (/, /home, /Users, /System, home dir, repo root; deliberate
+    override via CRATEIQ_ALLOW_UNSAFE_ROOT=1); pipeline DB presence and
+    containment under the root (missing DB warns, never fails); pipeline.py
+    entrypoint; backend data directory; availability of ffprobe, ffmpeg,
+    keyfinder-cli, aubio, beet, rmlint, rsync (missing binaries warn only).
+    Paths in output are home-redacted; secrets are never read or returned.
+  - backend/app/api/routes/runtime.py: GET /api/runtime/readiness returning
+    {status, checks[]}; /api/health is unchanged and covered by a
+    backward-compatibility test.
+  - .env.example expanded: library-root variables, unsafe-root override,
+    binary overrides, Rekordbox mapping, Ollama, and provider placeholders;
+    explicit no-auth/local-only warning; no secrets.
+  - tests/test_preflight.py: 12 tests covering report shape, status
+    calculation, unsafe roots + override, missing DB, missing binaries,
+    read-only guarantee, no-subprocess guarantee, secret-leak guard, and
+    /api/health compatibility.
+FILES: backend/app/core/preflight.py (new),
+       backend/app/api/routes/runtime.py (new), backend/app/main.py,
+       .env.example, tests/test_preflight.py (new), README.md,
+       NEXT_TASKS.txt, PROJECT_CONTEXT.md, AUDIT_REPORT.md, CHANGELOG.txt
+IMPACT: Additive only. No pipeline, sync, export, reconciliation, AI,
+        playlist, or destructive-workflow behavior changed. No auth added.
+        Frontend untouched; a small readiness banner is tracked as a
+        follow-up in NEXT_TASKS.txt.
+
+
 [2026-07-24] — docs: add crateIQ product vision and capability roadmap
 ----------------------------------------------------------------------
 TYPE: Strategy documentation
