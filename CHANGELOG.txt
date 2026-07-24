@@ -2,6 +2,27 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-24] — docs: add crateIQ product vision and capability roadmap
+----------------------------------------------------------------------
+TYPE: Strategy documentation
+SUMMARY: Documented what crateIQ currently is, the target product vision
+         (cleaner, metadata/genre/harmonic intelligence, player, playlists,
+         Rekordbox/Serato export bridge), the gap analysis, and a 9-phase
+         capability roadmap.
+DETAILS:
+  - New docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md with gap table,
+    free metadata source strategy (MusicBrainz/AcoustID/Deezer backbone),
+    genre taxonomy design, Camelot/harmonic engine design, playlist/player/
+    export strategy, AI safety boundaries, and phased roadmap mapped to the
+    existing docs/CRATEIQ_ROADMAP.md.
+  - Recommended next implementation task: local-runtime preflight and
+    readiness contract (paste-ready prompt in section 16).
+FILES: docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md (new),
+       NEXT_TASKS.txt, PROJECT_CONTEXT.md, CHANGELOG.txt
+IMPACT: Documentation only; no application code, routes, APIs, pipeline
+        behavior, or tests changed. No real library was accessed.
+
+
 [2026-07-15] — fix: diagnose backend test-suite hang
 ----------------------------------------------------------------------
 TYPE: Test-environment diagnosis and verification

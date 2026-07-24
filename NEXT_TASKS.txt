@@ -39,6 +39,25 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 ----------------------------------------------------------------------
+[x] (P0) Document crateIQ target product vision and capability roadmap (2026-07-24)
+         docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md — current state,
+         gap analysis, metadata/genre/harmonic/player/playlist/export strategy,
+         9-phase capability roadmap mapped to docs/CRATEIQ_ROADMAP.md.
+[ ] (P1) Implement local-runtime preflight and readiness contract
+         backend/app/core/preflight.py + GET /api/runtime/readiness +
+         tests/test_preflight.py + frontend readiness banner. Paste-ready
+         prompt in CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md section 16.
+[ ] (P1) Metadata model extension (strategy Phase 2): additive tracks columns
+         for identity + structured artist/title/version, field_provenance
+         table, optional fpcalc fingerprinting — after preflight lands.
+[ ] (P1) Genre intelligence layer (strategy Phase 3): genre_taxonomy.json,
+         genre_mappings.json, deterministic resolver, genre-normalize
+         preview/apply command, review integration.
+[ ] (P2) Extract intelligence/harmonic pure engine from modules/harmonic.py
+         with golden-file tests pinning current set-builder scoring first
+         (strategy Phase 4).
+[ ] (P2) Promote enrichment response caching (provider, query-hash, TTL)
+         from P3 to pre-MusicBrainz requirement (strategy section 7).
 [x] (P0) CrateIQ fork foundation, identity rename, baseline audit, and roadmap (2026-07-14)
          Upstream retained as `upstream`; no `origin`; work isolated on
          feat/crateiq-foundation-audit. Future phases are documented only.

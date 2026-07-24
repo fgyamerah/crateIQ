@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-07-24: crateIQ's target product vision is now documented in
+  `docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md` — current-state vs
+  target gap analysis, metadata/genre/harmonic/player/playlist/export
+  strategy, and a 9-phase capability roadmap mapped to
+  `docs/CRATEIQ_ROADMAP.md`. Documentation only; no runtime behavior changed.
+  Recommended next implementation task: the local-runtime preflight and
+  readiness contract (paste-ready prompt in that document's section 16).
 - README updated for the Phase 1-8 CrateIQ platform milestone.
 - Fork foundation commit: local CrateIQ branch `feat/crateiq-foundation-audit`.
 - Backend test-suite hang diagnosis is complete; Phase 1 remains deferred until
