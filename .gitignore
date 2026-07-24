@@ -150,3 +150,6 @@ djtoolkit_label_intelligence_feature/
 
 # Local service files if not meant for repo
 systemd/
+
+.claude/
+.codex/
