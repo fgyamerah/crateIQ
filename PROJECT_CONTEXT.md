@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-07-25: Repo hygiene — generated TypeScript build metadata
+  (`frontend/tsconfig.*.tsbuildinfo`) untracked and ignored via
+  `*.tsbuildinfo` in `.gitignore`, so `npm run typecheck`/`build` no longer
+  dirty the working tree. No frontend/backend behavior change.
 - 2026-07-25: Frontend readiness banner added. `frontend/src/api/runtime.ts`
   calls `GET /api/runtime/readiness` once on `Layout` mount (no polling);
   `frontend/src/hooks/useReadiness.ts` wraps it with a manual `refresh`;

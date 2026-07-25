@@ -2,6 +2,24 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-25] — chore: untrack generated TypeScript build metadata
+----------------------------------------------------------------------
+TYPE: Repo hygiene (no behavior change)
+SUMMARY: frontend/tsconfig.app.tsbuildinfo and
+         frontend/tsconfig.node.tsbuildinfo are generated incremental-build
+         metadata (written by `tsc -b` during `npm run build` and touched by
+         typecheck) but were tracked in git, so every verification run left
+         a noisy diff. Removed both from tracking with `git rm --cached`
+         (local files kept) and added `*.tsbuildinfo` to the
+         NODE / FRONTEND section of .gitignore.
+FILES: .gitignore, frontend/tsconfig.app.tsbuildinfo (untracked),
+       frontend/tsconfig.node.tsbuildinfo (untracked), NEXT_TASKS.txt,
+       PROJECT_CONTEXT.md, CHANGELOG.txt
+IMPACT: None at runtime. Frontend source, build scripts, routes, backend,
+        and pipeline are unchanged; typecheck and production build still
+        pass and no longer dirty the working tree.
+
+
 [2026-07-25] — feat: frontend readiness banner
 ----------------------------------------------------------------------
 TYPE: Feature (frontend, diagnostic UI)

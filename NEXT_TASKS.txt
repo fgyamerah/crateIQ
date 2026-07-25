@@ -57,6 +57,11 @@ CURRENT FOCUS
          dismiss, top 3 failing/warning checks only, no raw JSON/paths).
          Wired into Layout.tsx above <Outlet/>. No routing changes, no backend
          changes.
+[x] (P3) Repo hygiene: stop tracking generated TypeScript build metadata (2026-07-25)
+         frontend/tsconfig.app.tsbuildinfo and frontend/tsconfig.node.tsbuildinfo
+         removed from tracking via `git rm --cached`; `*.tsbuildinfo` added to
+         .gitignore (NODE / FRONTEND section). Typecheck/build no longer dirty
+         the working tree. Flagged during the readiness-banner review.
 [ ] (P3) Wire readiness awareness into the Jobs page (disable submission
          hints when relevant binaries are missing) — optional polish.
 [ ] (P1) Metadata model extension (strategy Phase 2): additive tracks columns
