@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-07-24: Supported-route smoke-test contract added
+  (`tests/test_supported_route_contracts.py`): all 14 supported frontend
+  routes mapped to primary read-only backend endpoints, router-drift
+  detection against `App.tsx`, missing-DB degradation checks, and a
+  read-only/no-subprocess guard. Mutating endpoints are deliberately
+  deferred (see `DEFERRED_ENDPOINTS` in the test file and NEXT_TASKS.txt).
 - 2026-07-24: Local-runtime preflight and readiness contract implemented.
   `backend/app/core/preflight.py` runs read-only checks (library-root safety
   including unsafe-broad-root rejection with `CRATEIQ_ALLOW_UNSAFE_ROOT=1`

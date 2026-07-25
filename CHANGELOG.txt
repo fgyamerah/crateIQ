@@ -2,6 +2,35 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-24] — test: supported-route smoke-test contract
+----------------------------------------------------------------------
+TYPE: Test coverage (route/API drift protection)
+SUMMARY: Added tests/test_supported_route_contracts.py mapping all 14
+         supported frontend routes to their primary read-only backend
+         endpoints, with drift detection against frontend/src/App.tsx.
+DETAILS:
+  - Contract table: route → purpose → GET endpoints → minimal expected
+    response shape; infra endpoints (/api/health, /api/version,
+    /api/runtime/readiness) included.
+  - Router-drift test parses App.tsx and fails if mounted routes and the
+    contract table diverge (redirect routes excluded).
+  - Fixture-library and missing-pipeline-DB passes verify every endpoint
+    returns 200 with safe empty/degraded shapes; the backend jobs DB is
+    redirected to a temporary path so the real init_db runs safely.
+  - A guard test patches subprocess.run/Popen to raise and snapshots the
+    pipeline DB to prove the smoke surface is read-only and spawns nothing.
+  - Mutating/job endpoints (job submit/cancel, sync preview/run, export
+    validate/run, review actions, apply paths, bpm-check/reanalyze,
+    set-builder dispatch, reconciliation validate-plan) are intentionally
+    deferred and documented in DEFERRED_ENDPOINTS; follow-up tracked in
+    NEXT_TASKS.txt.
+FILES: tests/test_supported_route_contracts.py (new), README.md,
+       NEXT_TASKS.txt, PROJECT_CONTEXT.md, AUDIT_REPORT.md,
+       docs/generated/repo_file_index.md, CHANGELOG.txt
+IMPACT: Tests and documentation only. No backend, frontend, pipeline, or
+        destructive-workflow behavior changed.
+
+
 [2026-07-24] — feat: local-runtime preflight and readiness contract
 ----------------------------------------------------------------------
 TYPE: Feature (read-only runtime readiness)

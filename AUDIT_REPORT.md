@@ -4,7 +4,11 @@
 > recommended in §15 is now implemented: `backend/app/core/preflight.py`
 > plus `GET /api/runtime/readiness` (read-only; ready/degraded/not_ready),
 > an expanded non-secret `.env.example`, and `tests/test_preflight.py`.
-> Route-surface smoke tests beyond readiness/health remain open.
+> The supported-route smoke-test contract is also implemented
+> (`tests/test_supported_route_contracts.py`): all 14 supported frontend
+> routes are mapped to their primary read-only backend endpoints with
+> route-drift detection against `App.tsx`. Mutating/job endpoints remain
+> deliberately untested by smoke tests (see `DEFERRED_ENDPOINTS`).
 
 > Post-audit update (2026-07-02): frontend route/navigation consolidation is
 > complete. Supported operational pages are mounted, legacy/placeholder pages

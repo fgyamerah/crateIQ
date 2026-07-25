@@ -688,6 +688,20 @@ npm --prefix frontend run build
 There is currently no frontend unit-test script; TypeScript and the production
 Vite build are the frontend checks.
 
+Route-contract smoke tests guard against drift between the supported frontend
+routes and the backend APIs they depend on:
+
+```bash
+python -m pytest -q tests/test_supported_route_contracts.py
+```
+
+The contract maps each supported route (parsed from `frontend/src/App.tsx`)
+to its primary read-only backend endpoints and asserts status codes and
+minimal response shapes against temporary fixture roots. The smoke surface is
+GET-only: it never runs pipeline jobs, spawns subprocesses, or triggers
+sync/export/reconciliation/apply workflows. Mutating endpoints are listed as
+deferred in the test file's `DEFERRED_ENDPOINTS` table.
+
 In a restricted execution sandbox that blocks cross-thread asyncio wakeups,
 Starlette `TestClient` can stall before entering its context. This is an
 environment limitation, not a CrateIQ startup or health-route requirement. Run

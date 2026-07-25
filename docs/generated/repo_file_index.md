@@ -197,7 +197,9 @@
 - `tests/test_audit_quality.py`
 - `tests/test_metadata_sanitize.py`
 - `tests/test_parser.py`
+- `tests/test_preflight.py`
 - `tests/test_sanitizer.py`
+- `tests/test_supported_route_contracts.py`
 - `tools/static_analysis/generate_repo_inventory.py`
 - `utils/__init__.py`
 - `utils/llm_client.py`
