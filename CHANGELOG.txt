@@ -2,6 +2,62 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-25] — feat: Library view redesign (emerald/teal/cyan/violet theme)
+----------------------------------------------------------------------
+TYPE: Frontend UI/UX (visual + read-only functional wiring; no backend,
+      pipeline, routing, or auth changes)
+SUMMARY: Redesigned the Library route (`/`, `CrateMind.tsx` "library"
+         section) and global sidebar to a dark premium theme, based on a
+         provided mockup. All data shown is real (existing APIs); mockup
+         features without a backing API are shown as clearly labeled
+         read-only placeholders or deferred notes, never fake data.
+FILES:
+  - frontend/src/index.css — new design tokens (--brand-teal/cyan/violet/
+    coral; --accent repointed from blue to teal, a single-place palette
+    swap that also restyles unrelated pages using --accent/--accent-dim).
+    New classes: crate-status-strip, crate-library-toolbar, crate-filter-*,
+    crate-overview-*, crate-stat-tile*, crate-waveform, crate-deferred-note,
+    sidebar-badge*, sidebar-health*. Fixed a pre-existing responsiveness bug
+    where .sidebar-sections had no overflow set, so nav items visually
+    bled into the footer/health-card area on short viewports. Reconciled
+    the new Library layout with pre-existing 1200px/860px breakpoints
+    instead of adding a conflicting duplicate — the 860px breakpoint now
+    stacks the inspector below the table instead of hiding it outright.
+  - frontend/src/components/Sidebar.tsx — teal glow active state; real nav
+    badges for Issues/Enrichment Queue/Metadata Repair/BPM Review pending
+    counts (existing endpoints, single fetch on mount, no polling); Library
+    Health mini-card from GET /api/library/quality; neutral local-app footer
+    (no fabricated billing/plan state).
+  - frontend/src/pages/CrateMind.tsx — library-section-only additions:
+    LibraryStatusStrip (data-quality strip, distinct from the runtime
+    ReadinessBanner; "Re-scan" re-runs the existing refresh(), no pipeline
+    job dispatched), a sort/filter toolbar, FilterChipRow (genre/BPM/has-key
+    — each wired to a GET /api/tracks param the backend already accepts),
+    restyled OverviewCards (+ Missing Key, + Duplicates "Not available"
+    placeholder — dedupe has no read API), a WaveformPlaceholder (seeded
+    decorative bars, explicitly labeled as a visual-only placeholder), and
+    an inspector "Compatible tracks coming soon" deferred note. Table
+    gained a `#` column, a separate musical-Key column next to Camelot, and
+    a Quality-tier badge column. New SectionUiState fields (genreFilter,
+    bpmMinFilter, bpmMaxFilter, hasKeyFilter) are library-section-scoped,
+    same pattern as the existing issueFilter/queue* fields.
+FUNCTIONALITY CLASSIFICATION (mockup feature -> status):
+  - Search, sort, genre/BPM/has-key filters, overview cards, table columns,
+    sidebar badges, Library Health card -> implemented with existing APIs.
+  - Play button, waveform, artwork -> visual placeholder only (no audio
+    playback/preview/artwork API exists; not implemented per task scope).
+  - Compatible tracks -> deferred (harmonic engine exists for Set Builder
+    only, not exposed as a per-track API).
+  - Duplicates count, Camelot-range/energy/mood/source filters, "Analyze
+    Library" action, grid/list view toggle -> deferred/omitted (no backing
+    data or no safe existing action to wire to; avoided fabricating a
+    non-functional control).
+MIGRATION NOTES: None. No backend route, pipeline behavior, auth, or
+         destructive workflow changed. Verified: frontend typecheck/build
+         pass; full Python suite (877 tests) passes unchanged; manually
+         exercised in a browser against a temporary fixture DB (row
+         selection, filters, sort, responsive breakpoints down to 800px).
+
 [2026-07-25] — feat: local service helper script (crate_start/crate_stop)
 ----------------------------------------------------------------------
 TYPE: Developer tooling (local-only; no app behavior change)

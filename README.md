@@ -395,6 +395,43 @@ Core dashboard capabilities:
 - Review summary and export.
 - Apply-approved dry-run preview and controlled apply button.
 
+### Library view (`/`)
+
+The Library route (`frontend/src/pages/CrateMind.tsx`, `section === 'library'`)
+was redesigned around a dark emerald/teal/cyan/violet palette (design tokens
+in `frontend/src/index.css`, e.g. `--brand-teal`, `--brand-cyan`,
+`--brand-violet`, `--brand-coral`):
+
+- A data-quality **Library status strip** (distinct from the runtime
+  `ReadinessBanner`) that appears only when open track issues exist, with a
+  "Review issues" link and a "Re-scan" button that re-runs the existing
+  read-only refresh (no pipeline scan is dispatched).
+- A **filter chip row** for genre, BPM range, and has-key/missing-key — each
+  chip maps 1:1 to a query parameter `GET /api/tracks` already accepts.
+  Camelot-range, energy, mood, and source filters from early design mockups
+  have no backing field on `TrackSummary` yet and are intentionally omitted
+  rather than wired to a non-functional control.
+- Restyled **overview cards** (Total Tracks, BPM Coverage, Key Coverage,
+  Missing Key, Missing Artist/Title, Parse Confidence) plus a **Duplicates**
+  card that reads "Not available" — library-wide dedupe is a CLI-only
+  pipeline scan, not exposed via a read API.
+- The **tracks table** gained a row number column, a separate musical Key
+  column alongside Camelot, and a Quality-tier badge column.
+- The **track inspector** gained BPM/Key/Camelot stat tiles, a disabled
+  play-button placeholder, a deterministic decorative waveform placeholder,
+  and a "Compatible tracks coming soon" deferred note — harmonic scoring
+  exists for Set Builder but is not yet exposed as a per-track lookup API.
+- The sidebar (`frontend/src/components/Sidebar.tsx`) gained a teal
+  glow active state, real nav badges (Issues / Enrichment Queue / Metadata
+  Repair / BPM Review pending counts, from existing endpoints), and a
+  Library Health mini-card sourced from `GET /api/library/quality`.
+- Layout collapses to a single column below 860px, with the inspector
+  stacking below the table instead of disappearing.
+
+No backend endpoint, pipeline behavior, or route was changed for this
+redesign — see `CHANGELOG.txt` for the full functionality classification
+(implemented / read-only placeholder / deferred).
+
 The frontend is not allowed to write audio tags or modify files.
 
 ## Performance Features

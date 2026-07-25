@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
 import {
   AlertTriangle,
+  AlertOctagon,
   CheckCircle2,
   Check,
   Database,
@@ -13,6 +14,13 @@ import {
   RefreshCw,
   Search,
   X,
+  Music2,
+  Gauge,
+  KeyRound,
+  Wrench as WrenchIcon,
+  Copy,
+  Play,
+  ArrowUpDown,
 } from 'lucide-react'
 import { fetchHealth } from '../api/health'
 import {
@@ -79,6 +87,12 @@ interface SectionUiState {
   queueActionFilter: 'auto_candidate' | 'review' | 'ignore' | ''
   queueConfidenceFilter: 'HIGH' | 'MEDIUM' | 'LOW' | ''
   queueReviewFilter: ReviewStatus | 'all'
+  // Library-section-only filter chips (functional: mapped 1:1 to GET /api/tracks
+  // query params already supported by the backend — see backend/app/api/routes/tracks.py).
+  genreFilter: string
+  bpmMinFilter: string
+  bpmMaxFilter: string
+  hasKeyFilter: '' | 'yes' | 'no'
 }
 
 const DEFAULT_SECTION_STATE: SectionUiState = {
@@ -92,6 +106,10 @@ const DEFAULT_SECTION_STATE: SectionUiState = {
   queueActionFilter: '',
   queueConfidenceFilter: '',
   queueReviewFilter: 'all',
+  genreFilter: '',
+  bpmMinFilter: '',
+  bpmMaxFilter: '',
+  hasKeyFilter: '',
 }
 
 function uiSectionFor(section: Section): UiSection {
@@ -157,6 +175,12 @@ function sanitizeSectionState(raw: unknown, section: UiSection): SectionUiState 
     base.queueActionFilter = isQueueActionFilter(input.queueActionFilter) ? input.queueActionFilter : ''
     base.queueConfidenceFilter = isQueueConfidenceFilter(input.queueConfidenceFilter) ? input.queueConfidenceFilter : ''
     base.queueReviewFilter = isQueueReviewFilter(input.queueReviewFilter) ? input.queueReviewFilter : 'all'
+  }
+  if (section === 'library') {
+    base.genreFilter = safeString(input.genreFilter, '')
+    base.bpmMinFilter = safeString(input.bpmMinFilter, '')
+    base.bpmMaxFilter = safeString(input.bpmMaxFilter, '')
+    base.hasKeyFilter = input.hasKeyFilter === 'yes' || input.hasKeyFilter === 'no' ? input.hasKeyFilter : ''
   }
   return base
 }
@@ -303,60 +327,247 @@ function TrackSortHeader({
   )
 }
 
+/**
+ * Library-section-only data-quality strip (distinct from the global runtime
+ * ReadinessBanner in Layout.tsx, which reports environment/config health).
+ * Sourced entirely from track issue counts already fetched for the page —
+ * no new endpoint. "Re-scan" re-triggers the existing refresh(), it does not
+ * dispatch a pipeline scan job.
+ */
+function LibraryStatusStrip({
+  issueTotal,
+  totalTracks,
+  loading,
+  lastRefreshed,
+  onReviewIssues,
+  onRescan,
+}: {
+  issueTotal: number
+  totalTracks: number
+  loading: boolean
+  lastRefreshed: Date | null
+  onReviewIssues: () => void
+  onRescan: () => void
+}) {
+  if (issueTotal <= 0) return null
+  return (
+    <div className="crate-status-strip" role="status">
+      <div className="crate-status-strip-main">
+        <AlertOctagon size={15} />
+        <strong>Library status: Needs review</strong>
+        <span className="crate-status-strip-sep">·</span>
+        <span>{totalTracks.toLocaleString()} tracks scanned</span>
+        <span className="crate-status-strip-sep">·</span>
+        <span>Some metadata issues detected</span>
+        <button type="button" className="crate-status-strip-link" onClick={onReviewIssues}>
+          Review issues →
+        </button>
+      </div>
+      <div className="crate-status-strip-meta">
+        <span>{lastRefreshed ? `Last refreshed: ${lastRefreshed.toLocaleTimeString()}` : 'Not yet refreshed'}</span>
+        <button type="button" className="btn btn--ghost btn--sm" onClick={onRescan} disabled={loading}>
+          <RefreshCw size={12} className={loading ? 'spin' : undefined} />
+          Re-scan
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function OverviewCards({ overview }: { overview: LibraryOverview | null }) {
   const total = overview?.total_tracks ?? 0
   const bpm = overview?.tracks_with_bpm ?? 0
   const camelot = overview?.tracks_with_camelot_key ?? 0
   const missingArtist = overview?.tracks_missing_artist ?? 0
   const missingTitle = overview?.tracks_missing_title ?? 0
+  const missingKey = overview ? Math.max(0, total - camelot) : 0
   const parse = overview?.parse_confidence_breakdown ?? {}
   return (
-    <div className="crate-card-grid">
-      <div className="crate-metric">
-        <span className="crate-metric-label">Total tracks</span>
-        <strong>{total.toLocaleString()}</strong>
-        <span className="crate-metric-sub">Read-only DB snapshot</span>
-      </div>
-      <div className="crate-metric">
-        <span className="crate-metric-label">BPM coverage</span>
-        <strong>{pct(bpm, total)}</strong>
-        <div className="crate-meter"><span style={{ width: `${pctValue(bpm, total)}%` }} /></div>
-        <span className="crate-metric-sub">{bpm.toLocaleString()} tracks with BPM</span>
-      </div>
-      <div className="crate-metric">
-        <span className="crate-metric-label">Camelot coverage</span>
-        <strong>{pct(camelot, total)}</strong>
-        <div className="crate-meter"><span style={{ width: `${pctValue(camelot, total)}%` }} /></div>
-        <span className="crate-metric-sub">{camelot.toLocaleString()} tracks with key</span>
-      </div>
-      <div className="crate-metric">
-        <span className="crate-metric-label">Missing artist/title</span>
-        <strong>{missingArtist + missingTitle}</strong>
-        <div className="crate-meter crate-meter--warn">
-          <span style={{ width: `${pctValue(missingArtist + missingTitle, total)}%` }} />
-        </div>
-        <span className="crate-metric-sub">{missingArtist} artist, {missingTitle} title</span>
-      </div>
-      <div className="crate-metric crate-metric--wide">
-        <span className="crate-metric-label">Parse confidence</span>
-        <div className="crate-breakdown">
-          {(['HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'] as ParseConfidence[]).map((key) => (
-            <span key={key} className={`conf-chip ${confidenceClass(key)}`}>
-              {key} {parse?.[key] ?? 0}
-            </span>
-          ))}
-        </div>
-        <div className="crate-meter-stack">
-          {(['HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'] as ParseConfidence[]).map((key) => (
-            <span
-              key={key}
-              className={`crate-meter-segment crate-meter-segment--${key.toLowerCase()}`}
-              style={{ width: `${pctValue(parse[key] ?? 0, total)}%` }}
-              title={`${key}: ${parse[key] ?? 0}`}
-            />
-          ))}
+    <div className="crate-overview-grid">
+      <div className="crate-overview-card">
+        <span className="crate-overview-icon crate-overview-icon--teal"><Music2 size={15} /></span>
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">Total tracks</span>
+          <strong>{total.toLocaleString()}</strong>
+          <span className="crate-metric-sub">Read-only DB snapshot</span>
         </div>
       </div>
+      <div className="crate-overview-card">
+        <span className="crate-overview-icon crate-overview-icon--cyan"><Gauge size={15} /></span>
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">BPM coverage</span>
+          <strong>{pct(bpm, total)}</strong>
+          <div className="crate-meter"><span style={{ width: `${pctValue(bpm, total)}%` }} /></div>
+          <span className="crate-metric-sub">{bpm.toLocaleString()} tracks with BPM</span>
+        </div>
+      </div>
+      <div className="crate-overview-card">
+        <span className="crate-overview-icon crate-overview-icon--violet"><KeyRound size={15} /></span>
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">Key coverage</span>
+          <strong>{pct(camelot, total)}</strong>
+          <div className="crate-meter"><span style={{ width: `${pctValue(camelot, total)}%` }} /></div>
+          <span className="crate-metric-sub">{camelot.toLocaleString()} tracks with key</span>
+        </div>
+      </div>
+      <div className="crate-overview-card">
+        <span className="crate-overview-icon crate-overview-icon--coral"><WrenchIcon size={15} /></span>
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">Missing key</span>
+          <strong>{overview ? missingKey.toLocaleString() : '—'}</strong>
+          <span className="crate-metric-sub">{overview ? pct(missingKey, total) + ' needs review' : 'Not available'}</span>
+        </div>
+      </div>
+      <div className="crate-overview-card">
+        <span className="crate-overview-icon crate-overview-icon--coral"><AlertTriangle size={15} /></span>
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">Missing artist/title</span>
+          <strong>{missingArtist + missingTitle}</strong>
+          <div className="crate-meter crate-meter--warn">
+            <span style={{ width: `${pctValue(missingArtist + missingTitle, total)}%` }} />
+          </div>
+          <span className="crate-metric-sub">{missingArtist} artist, {missingTitle} title</span>
+        </div>
+      </div>
+      <div className="crate-overview-card">
+        <span className="crate-overview-icon crate-overview-icon--muted"><Copy size={15} /></span>
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">Duplicates</span>
+          <strong className="crate-metric-unavailable">Not available</strong>
+          <span className="crate-metric-sub">Dedupe scan runs from the CLI pipeline only</span>
+        </div>
+      </div>
+      <div className="crate-overview-card crate-overview-card--wide">
+        <div className="crate-overview-body">
+          <span className="crate-metric-label">Parse confidence</span>
+          <div className="crate-breakdown">
+            {(['HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'] as ParseConfidence[]).map((key) => (
+              <span key={key} className={`conf-chip ${confidenceClass(key)}`}>
+                {key} {parse?.[key] ?? 0}
+              </span>
+            ))}
+          </div>
+          <div className="crate-meter-stack">
+            {(['HIGH', 'MEDIUM', 'LOW', 'UNKNOWN'] as ParseConfidence[]).map((key) => (
+              <span
+                key={key}
+                className={`crate-meter-segment crate-meter-segment--${key.toLowerCase()}`}
+                style={{ width: `${pctValue(parse[key] ?? 0, total)}%` }}
+                title={`${key}: ${parse[key] ?? 0}`}
+              />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/**
+ * Functional filter chip row for the Library section. Every chip maps 1:1 to
+ * a query param GET /api/tracks already accepts (see tracks.py) — genre,
+ * bpm_min/bpm_max, has_key. Camelot-range, energy, and source filters from
+ * the mockup have no backing field on TrackSummary yet, so they are omitted
+ * rather than wired to a no-op control.
+ */
+function FilterChipRow({
+  overview,
+  ui,
+  onChange,
+}: {
+  overview: LibraryOverview | null
+  ui: SectionUiState
+  onChange: (updater: (current: SectionUiState) => SectionUiState) => void
+}) {
+  const topGenres = (overview?.genre_top_counts ?? []).slice(0, 6)
+  const hasAnyFilter = !!(ui.genreFilter || ui.bpmMinFilter || ui.bpmMaxFilter || ui.hasKeyFilter)
+
+  function clearAll() {
+    onChange((c) => ({ ...c, genreFilter: '', bpmMinFilter: '', bpmMaxFilter: '', hasKeyFilter: '', offset: 0 }))
+  }
+
+  return (
+    <div className="crate-filter-row">
+      <div className="crate-filter-group">
+        <span className="crate-filter-group-label">Genre</span>
+        {topGenres.length === 0 && <span className="muted">No genre data</span>}
+        {topGenres.map((g) => (
+          <button
+            key={g.genre}
+            type="button"
+            className={`crate-chip${ui.genreFilter === g.genre ? ' crate-chip--active' : ''}`}
+            onClick={() => onChange((c) => ({ ...c, genreFilter: c.genreFilter === g.genre ? '' : g.genre, offset: 0 }))}
+          >
+            {g.genre} <span className="crate-chip-count">{g.count}</span>
+          </button>
+        ))}
+      </div>
+      <div className="crate-filter-group">
+        <span className="crate-filter-group-label">BPM</span>
+        <input
+          className="crate-filter-input"
+          type="number"
+          inputMode="numeric"
+          placeholder="min"
+          value={ui.bpmMinFilter}
+          onChange={(e) => onChange((c) => ({ ...c, bpmMinFilter: e.target.value, offset: 0 }))}
+        />
+        <span className="crate-filter-group-sep">–</span>
+        <input
+          className="crate-filter-input"
+          type="number"
+          inputMode="numeric"
+          placeholder="max"
+          value={ui.bpmMaxFilter}
+          onChange={(e) => onChange((c) => ({ ...c, bpmMaxFilter: e.target.value, offset: 0 }))}
+        />
+      </div>
+      <div className="crate-filter-group">
+        <span className="crate-filter-group-label">Key</span>
+        <button
+          type="button"
+          className={`crate-chip${ui.hasKeyFilter === 'yes' ? ' crate-chip--active' : ''}`}
+          onClick={() => onChange((c) => ({ ...c, hasKeyFilter: c.hasKeyFilter === 'yes' ? '' : 'yes', offset: 0 }))}
+        >
+          Has key
+        </button>
+        <button
+          type="button"
+          className={`crate-chip${ui.hasKeyFilter === 'no' ? ' crate-chip--active' : ''}`}
+          onClick={() => onChange((c) => ({ ...c, hasKeyFilter: c.hasKeyFilter === 'no' ? '' : 'no', offset: 0 }))}
+        >
+          Missing key
+        </button>
+      </div>
+      {hasAnyFilter && (
+        <button type="button" className="crate-chip crate-chip--clear" onClick={clearAll}>
+          <X size={11} /> Clear all
+        </button>
+      )}
+    </div>
+  )
+}
+
+/**
+ * Deterministic decorative waveform bar (seeded from the track id so it does
+ * not reshuffle on every render). There is no audio-preview/waveform API —
+ * this is a visual placeholder only, labeled as such, never presented as
+ * real audio data.
+ */
+function WaveformPlaceholder({ seed }: { seed: number }) {
+  const bars = useMemo(() => {
+    let s = seed || 1
+    const rnd = () => {
+      s = (s * 1103515245 + 12345) & 0x7fffffff
+      return (s % 100) / 100
+    }
+    return Array.from({ length: 56 }, () => 0.15 + rnd() * 0.85)
+  }, [seed])
+  return (
+    <div className="crate-waveform" aria-hidden="true">
+      {bars.map((h, i) => (
+        <span key={i} style={{ height: `${Math.round(h * 100)}%` }} />
+      ))}
     </div>
   )
 }
@@ -396,9 +607,37 @@ function Inspector({
     <aside className="crate-inspector">
       {track && (
         <div className="crate-inspector-head">
-          <span className="crate-kicker">Inspector</span>
-          <strong>{track.artist || '(no artist)'}</strong>
-          <span>{track.title || track.filename}</span>
+          <div className="crate-inspector-head-row">
+            <button
+              type="button"
+              className="crate-inspector-play"
+              disabled
+              title="Playback is not implemented yet"
+            >
+              <Play size={16} fill="currentColor" />
+            </button>
+            <div className="crate-inspector-head-copy">
+              <span className="crate-kicker">Inspector</span>
+              <strong>{track.title || track.filename}</strong>
+              <span>{track.artist || '(no artist)'}</span>
+            </div>
+          </div>
+          {(track.bpm || track.key_camelot || track.key_musical) && (
+            <div className="crate-stat-tiles">
+              <div className="crate-stat-tile">
+                <strong>{displayValue(track.bpm)}</strong>
+                <span>BPM</span>
+              </div>
+              <div className="crate-stat-tile crate-stat-tile--violet">
+                <strong>{displayValue(track.key_musical)}</strong>
+                <span>Key</span>
+              </div>
+              <div className="crate-stat-tile crate-stat-tile--cyan">
+                <strong>{displayValue(track.key_camelot)}</strong>
+                <span>Camelot</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 
@@ -450,6 +689,22 @@ function Inspector({
               {track.issues.length ? track.issues.map((issue) => (
                 <span key={issue} className="crate-issue-badge">{ISSUE_LABELS[issue] ?? issue}</span>
               )) : <span className="muted">No current issue flags</span>}
+            </div>
+          </section>
+
+          <section className="crate-inspector-section">
+            <h3>Waveform preview</h3>
+            <WaveformPlaceholder seed={track.id} />
+            <span className="muted crate-inspector-note">
+              Visual placeholder only — no audio preview/waveform data source is wired up yet.
+            </span>
+          </section>
+
+          <section className="crate-inspector-section">
+            <h3>Compatible tracks</h3>
+            <div className="crate-deferred-note">
+              Compatible-tracks matching coming soon. Harmonic scoring exists for Set Builder, but is
+              not yet exposed as a per-track lookup API for the Library inspector.
             </div>
           </section>
         </>
@@ -518,6 +773,7 @@ export default function CrateMind() {
   const [selectedDetail, setSelectedDetail] = useState<TrackDetail | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
   const [trackWarning, setTrackWarning] = useState<string | null>(null)
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [loading, setLoading] = useState(true)
   const [queueLoading, setQueueLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -563,11 +819,19 @@ export default function CrateMind() {
   const params: TrackListParams = useMemo(() => ({
     search: activeUi.search || undefined,
     issue: activeUi.issueFilter || undefined,
+    genre: activeUiSection === 'library' ? (activeUi.genreFilter || undefined) : undefined,
+    bpm_min: activeUiSection === 'library' && activeUi.bpmMinFilter ? Number(activeUi.bpmMinFilter) : undefined,
+    bpm_max: activeUiSection === 'library' && activeUi.bpmMaxFilter ? Number(activeUi.bpmMaxFilter) : undefined,
+    has_key: activeUiSection === 'library' && activeUi.hasKeyFilter ? activeUi.hasKeyFilter === 'yes' : undefined,
     sort: activeUi.sort,
     order: activeUi.order,
     limit: LIMIT,
     offset: activeUi.offset,
-  }), [activeUi.search, activeUi.issueFilter, activeUi.sort, activeUi.order, activeUi.offset])
+  }), [
+    activeUi.search, activeUi.issueFilter, activeUi.sort, activeUi.order, activeUi.offset,
+    activeUi.genreFilter, activeUi.bpmMinFilter, activeUi.bpmMaxFilter, activeUi.hasKeyFilter,
+    activeUiSection,
+  ])
 
   const queueParams = useMemo(() => ({
     action: activeUi.queueActionFilter || undefined,
@@ -594,6 +858,7 @@ export default function CrateMind() {
       setAudit(auditData)
       setTrackPage(pageData)
       setError(null)
+      setLastRefreshed(new Date())
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load dashboard data')
     } finally {
@@ -607,7 +872,10 @@ export default function CrateMind() {
 
   useEffect(() => {
     setTrackScrollTop(0)
-  }, [activeUi.search, activeUi.issueFilter, activeUi.sort, activeUi.order, activeUi.offset, activeUiSection])
+  }, [
+    activeUi.search, activeUi.issueFilter, activeUi.sort, activeUi.order, activeUi.offset, activeUiSection,
+    activeUi.genreFilter, activeUi.bpmMinFilter, activeUi.bpmMaxFilter, activeUi.hasKeyFilter,
+  ])
 
   const loadQueue = useCallback(async () => {
     setQueueLoading(true)
@@ -730,6 +998,10 @@ export default function CrateMind() {
   const selectedQueueItem = selectedQueueItems.length === 1 ? selectedQueueItems[0] : null
   const allVisibleSelected = visibleQueueItems.length > 0 && visibleQueueItems.every((item) => item.track_id != null && selectedQueueIdSet.has(item.track_id))
 
+  const libraryActiveFilterCount = [
+    activeUi.genreFilter, activeUi.bpmMinFilter, activeUi.bpmMaxFilter, activeUi.hasKeyFilter,
+  ].filter(Boolean).length
+
   const items = trackPage?.items ?? []
   const total = trackPage?.total ?? 0
   const rootLabel = health?.library_root || 'Library root unavailable'
@@ -740,7 +1012,7 @@ export default function CrateMind() {
   const virtualTopPad = virtualStart * TRACK_ROW_HEIGHT
   const virtualBottomPad = Math.max(0, (items.length - virtualEnd) * TRACK_ROW_HEIGHT)
   const showIssueActions = section === 'issues'
-  const trackColSpan = showIssueActions ? 8 : 7
+  const trackColSpan = showIssueActions ? 10 : 9
 
   useEffect(() => {
     setSelectedQueueIds((current) => {
@@ -873,7 +1145,44 @@ export default function CrateMind() {
           {error && <div className="error-banner">{error}</div>}
           {trackWarning && <div className="crate-warning-banner">{trackWarning}</div>}
 
-          {section === 'library' && <OverviewCards overview={overview} />}
+          {section === 'library' && (
+            <>
+              <LibraryStatusStrip
+                issueTotal={issues ? ISSUE_KEYS.reduce((sum, key) => sum + (issues[key] || 0), 0) : 0}
+                totalTracks={overview?.total_tracks ?? 0}
+                loading={loading}
+                lastRefreshed={lastRefreshed}
+                onReviewIssues={() => navigate('/issues')}
+                onRescan={refresh}
+              />
+              <div className="crate-library-toolbar">
+                <span className="crate-library-toolbar-label">
+                  <ListFilter size={13} />
+                  Filters
+                  {libraryActiveFilterCount > 0 && <span className="crate-chip-count">{libraryActiveFilterCount}</span>}
+                </span>
+                <label className="crate-library-sort">
+                  <ArrowUpDown size={13} />
+                  <select
+                    value={`${activeUi.sort}:${activeUi.order}`}
+                    onChange={(event) => {
+                      const [nextSort, nextOrder] = event.target.value.split(':') as [SortKey, SortOrder]
+                      setActiveUi((current) => ({ ...current, sort: nextSort, order: nextOrder, offset: 0 }))
+                    }}
+                  >
+                    <option value="artist:asc">Artist A→Z</option>
+                    <option value="artist:desc">Artist Z→A</option>
+                    <option value="title:asc">Title A→Z</option>
+                    <option value="title:desc">Title Z→A</option>
+                    <option value="bpm:asc">BPM low→high</option>
+                    <option value="bpm:desc">BPM high→low</option>
+                  </select>
+                </label>
+              </div>
+              <FilterChipRow overview={overview} ui={activeUi} onChange={setActiveUi} />
+              <OverviewCards overview={overview} />
+            </>
+          )}
 
           {section === 'issues' && (
       <section className="crate-panel">
@@ -1244,12 +1553,14 @@ export default function CrateMind() {
               <table className="table crate-table">
                 <thead>
                   <tr>
+                    <th className="td-num">#</th>
                     <TrackSortHeader label="Artist" sortKey="artist" sort={activeUi.sort} order={activeUi.order} onSort={handleSort} />
                     <TrackSortHeader label="Title" sortKey="title" sort={activeUi.sort} order={activeUi.order} onSort={handleSort} />
                     <TrackSortHeader label="BPM" sortKey="bpm" sort={activeUi.sort} order={activeUi.order} onSort={handleSort} />
+                    <th>Key</th>
                     <th>Camelot</th>
                     <th>Genre</th>
-                    <th>Parse confidence</th>
+                    <th>Quality</th>
                     <th>Issues</th>
                     {showIssueActions && <th className="crate-issue-actions-col">Actions</th>}
                   </tr>
@@ -1271,31 +1582,36 @@ export default function CrateMind() {
                       <td colSpan={trackColSpan} style={{ height: virtualTopPad }} />
                     </tr>
                   )}
-                  {virtualRows.map((track: TrackSummary) => (
+                  {virtualRows.map((track: TrackSummary, rowIdx: number) => (
                     <tr
                       key={track.id}
                       className={activeUi.selectedId === track.id ? 'track-row--selected crate-row-selected' : 'crate-row-clickable'}
                       onClick={() => setActiveUi((current) => ({ ...current, selectedId: track.id }))}
                     >
+                      <td className="td-num">{activeUi.offset + virtualStart + rowIdx + 1}</td>
                       <td className="td-artist">{displayValue(track.artist, '—')}</td>
                       <td className="td-title" title={track.filename}>{displayValue(track.title, track.filename)}</td>
                       <td className="td-mono">{displayValue(track.bpm)}</td>
-                      <td className="td-mono">{displayValue(track.key_camelot || track.key_musical)}</td>
+                      <td className="td-mono">{displayValue(track.key_musical)}</td>
+                      <td className="td-mono">{displayValue(track.key_camelot)}</td>
                       <td>{displayValue(track.genre)}</td>
                       <td>
-                        <span className={`conf-chip ${confidenceClass(track.parse_confidence)}`}>
-                          {track.parse_confidence ?? 'UNKNOWN'}
-                        </span>
+                        {track.quality_tier
+                          ? <span className={`quality-badge quality-badge--${track.quality_tier.toLowerCase()}`}>{track.quality_tier}</span>
+                          : <span className="muted">—</span>}
                       </td>
                       <td>
                         <div className="crate-badge-row">
-                          {track.issues.slice(0, 4).map((issue) => (
+                          <span className={`conf-chip ${confidenceClass(track.parse_confidence)}`} title="Filename parse confidence">
+                            {track.parse_confidence ?? 'UNKNOWN'}
+                          </span>
+                          {track.issues.slice(0, 3).map((issue) => (
                             <span key={issue} className="crate-issue-badge" title={ISSUE_LABELS[issue] ?? issue}>
                               {shortIssue(issue)}
                             </span>
                           ))}
                           {track.issues.length === 0 && <span className="muted">clean</span>}
-                          {track.issues.length > 4 && <span className="muted">+{track.issues.length - 4}</span>}
+                          {track.issues.length > 3 && <span className="muted">+{track.issues.length - 3}</span>}
                         </div>
                       </td>
                       {showIssueActions && (

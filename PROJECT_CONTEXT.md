@@ -6,6 +6,25 @@
 
 ## Latest Milestone
 
+- 2026-07-25: Library view (`/`, `CrateMind.tsx` "library" section) and the
+  global sidebar were redesigned to a dark emerald/teal/cyan/violet theme
+  (`frontend/src/index.css` design tokens: `--brand-teal`, `--brand-cyan`,
+  `--brand-violet`, `--brand-coral`; `--accent` repointed from blue to teal).
+  Additions: a data-quality "Library status" strip (distinct from the
+  runtime `ReadinessBanner`), functional genre/BPM/has-key filter chips
+  (mapped to existing `GET /api/tracks` params), restyled overview cards
+  (+ Missing Key, + Duplicates "Not available" placeholder), a `#`/Key/
+  Quality-badge table columns, and an inspector with BPM/Key/Camelot stat
+  tiles, a disabled play-button placeholder, a decorative waveform
+  placeholder, and a "Compatible tracks coming soon" deferred note. Sidebar
+  gained real nav badges (Issues/Enrichment/Metadata Repair/BPM Review
+  pending counts) and a Library Health mini-card from
+  `GET /api/library/quality`. Fixed a pre-existing CSS bug where
+  `.sidebar-sections` had no overflow set (nav bled into the footer on
+  short viewports) and reconciled the responsive breakpoints so the
+  inspector now stacks below the table under 860px instead of being
+  hidden. No backend/pipeline/routing/auth change. See CHANGELOG.txt for
+  the mockup-feature classification (implemented / placeholder / deferred).
 - 2026-07-25: Local service helper added: `scripts/crateiq-local-services.sh`
   (subcommands start/stop/restart/status/logs/back-logs/front-logs; sourcing
   with `--aliases` installs `crate_*` shell functions). CrateIQ's assigned

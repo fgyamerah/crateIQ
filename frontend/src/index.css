@@ -20,15 +20,28 @@ textarea {
 }
 
 :root {
-  --bg:          #0f1117;
-  --bg-surface:  #1a1d27;
-  --bg-hover:    #22263a;
-  --border:      #2c3047;
-  --text:        #e2e6f0;
-  --text-muted:  #6b7496;
-  --text-code:   #a8c8ff;
-  --accent:      #4a7eff;
-  --accent-dim:  #1e3a7a;
+  --bg:          #0b0e14;
+  --bg-surface:  #161a24;
+  --bg-hover:    #202536;
+  --border:      #262c40;
+  --text:        #e7ebf5;
+  --text-muted:  #6d7796;
+  --text-code:   #67e8f9;
+
+  /* Primary interactive color — emerald/teal (was blue). Purely a palette
+     swap; every consumer of --accent / --accent-dim gets the new hue for
+     free, which is what makes this a one-place theme change. */
+  --accent:      #14b8a6;
+  --accent-dim:  #0f2e2b;
+  --accent-glow: rgba(20, 184, 166, 0.35);
+
+  /* CrateIQ mockup palette — secondary/accent hues used by newer
+     Library-view components (status strip, filter chips, stat tiles). */
+  --brand-emerald: #34d399;
+  --brand-teal:    #14b8a6;
+  --brand-cyan:    #22d3ee;
+  --brand-violet:  #a78bfa;
+  --brand-coral:   #fb7185;
 
   --status-pending:    #b08d2a;
   --status-running:    #3b82f6;
@@ -123,6 +136,7 @@ body {
   gap: 10px;
   flex: 1;
   min-height: 0;
+  overflow-y: auto;
 }
 
 .sidebar-section {
@@ -172,19 +186,134 @@ body {
 }
 
 .sidebar-link--active {
-  background: linear-gradient(90deg, rgba(74,126,255,0.22), rgba(74,126,255,0.08));
-  color: #d8e4ff;
+  background: linear-gradient(90deg, rgba(20,184,166,0.24), rgba(34,211,238,0.06));
+  color: #e5fffa;
   font-weight: 600;
   border-left: 2px solid var(--accent);
   padding-left: 8px;
-  box-shadow: inset 0 0 0 1px rgba(74,126,255,0.14);
+  box-shadow: inset 0 0 0 1px rgba(20,184,166,0.2), 0 0 14px rgba(20,184,166,0.12);
 }
 
 .sidebar-footer {
-  padding: 12px 16px;
+  padding: 10px 16px 12px;
   font-size: 11px;
   color: var(--text-muted);
   border-top: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-footer-app {
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  color: #06231f;
+  background: linear-gradient(135deg, var(--brand-teal), var(--brand-cyan));
+}
+
+.sidebar-footer-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sidebar-footer-copy strong {
+  color: var(--text);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+/* ── Nav badges (queue/issue counts) ── */
+
+.sidebar-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  min-width: 18px;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.06);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sidebar-link--active .sidebar-badge {
+  background: rgba(20,184,166,0.28);
+  color: #d1fff6;
+}
+
+.sidebar-badge--warn {
+  background: rgba(251,113,133,0.18);
+  color: #ffc3cd;
+}
+
+/* ── Library Health mini-card ── */
+
+.sidebar-health {
+  margin: 4px 12px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.02);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar-health-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.sidebar-health-status {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  padding: 1px 6px;
+  border-radius: 4px;
+}
+
+.sidebar-health-status--good {
+  color: #86efac;
+  background: rgba(52,211,153,0.14);
+}
+
+.sidebar-health-status--degraded {
+  color: #fda4af;
+  background: rgba(251,113,133,0.16);
+}
+
+.sidebar-health-value {
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  color: var(--text);
+}
+
+.sidebar-health-sub {
+  font-size: 10.5px;
+  color: var(--text-muted);
 }
 
 /* ── Sidebar collapse ── */
@@ -202,12 +331,20 @@ body {
 
 .sidebar-brand-name {
   flex: 1;
+  color: var(--text);
 }
 
 .sidebar-brand-icon {
-  color: var(--accent);
-  font-size: 13px;
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
   flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #06231f;
+  background: linear-gradient(135deg, var(--brand-teal), var(--brand-cyan) 55%, var(--brand-violet));
+  box-shadow: 0 0 0 1px rgba(255,255,255,0.06), 0 2px 8px rgba(20,184,166,0.25);
 }
 
 .sidebar-collapse-btn {
@@ -5476,6 +5613,415 @@ tr.row--selected td {
   background: transparent;
 }
 
+/* =========================================================================
+   Library view — status strip, toolbar, filter chips, overview cards,
+   inspector stat tiles / waveform placeholder.
+   ========================================================================= */
+
+.crate-status-strip {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  padding: 9px 14px;
+  border: 1px solid rgba(251, 113, 133, 0.28);
+  border-radius: 8px;
+  background: rgba(251, 113, 133, 0.08);
+  color: #ffd7dd;
+  font-size: 12.5px;
+}
+
+.crate-status-strip-main {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.crate-status-strip-main svg {
+  color: var(--brand-coral);
+  flex-shrink: 0;
+}
+
+.crate-status-strip-sep {
+  opacity: 0.45;
+}
+
+.crate-status-strip-link {
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--brand-cyan);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+  text-decoration: underline;
+}
+
+.crate-status-strip-meta {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #f3c6cc;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.crate-library-toolbar {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.crate-library-toolbar-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.crate-library-sort {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+}
+
+.crate-library-sort select {
+  background: rgba(22, 27, 39, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.crate-library-sort select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+/* ── Filter chip row ── */
+
+.crate-filter-row {
+  flex-shrink: 0;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: rgba(22, 27, 39, 0.96);
+}
+
+.crate-filter-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.crate-filter-group-label {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-right: 2px;
+}
+
+.crate-filter-group-sep {
+  color: var(--text-muted);
+}
+
+.crate-filter-input {
+  width: 56px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  padding: 4px 6px;
+}
+
+.crate-filter-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.crate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text-muted);
+  padding: 4px 10px;
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.crate-chip:hover {
+  border-color: rgba(20,184,166,0.4);
+  color: var(--text);
+}
+
+.crate-chip--active {
+  border-color: var(--brand-teal);
+  background: rgba(20,184,166,0.16);
+  color: #a7f3ea;
+}
+
+.crate-chip-count {
+  color: inherit;
+  opacity: 0.75;
+  font-variant-numeric: tabular-nums;
+}
+
+.crate-chip--clear {
+  margin-left: auto;
+  border-color: rgba(251,113,133,0.3);
+  color: #ffb4bf;
+}
+
+.crate-chip--clear:hover {
+  border-color: var(--brand-coral);
+  background: rgba(251,113,133,0.1);
+}
+
+/* ── Overview cards ── */
+
+.crate-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(160px, 1fr));
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+.crate-overview-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  background: rgba(22, 27, 39, 0.96);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: inset 0 1px 0 rgba(255,255,255,0.02);
+}
+
+.crate-overview-card--wide {
+  grid-column: span 3;
+}
+
+.crate-overview-icon {
+  width: 30px;
+  height: 30px;
+  border-radius: 7px;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.crate-overview-icon--teal   { background: rgba(20,184,166,0.16);  color: var(--brand-teal); }
+.crate-overview-icon--cyan   { background: rgba(34,211,238,0.14);  color: var(--brand-cyan); }
+.crate-overview-icon--violet { background: rgba(167,139,250,0.16); color: var(--brand-violet); }
+.crate-overview-icon--coral  { background: rgba(251,113,133,0.16); color: var(--brand-coral); }
+.crate-overview-icon--muted  { background: rgba(255,255,255,0.05); color: var(--text-muted); }
+
+.crate-overview-body {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.crate-overview-body strong {
+  font-size: 22px;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.crate-metric-unavailable {
+  font-size: 14px !important;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+@media (max-width: 1180px) {
+  .crate-overview-grid {
+    grid-template-columns: repeat(2, minmax(140px, 1fr));
+  }
+  .crate-overview-card--wide {
+    grid-column: span 2;
+  }
+}
+
+/* ── Inspector: play placeholder, stat tiles, waveform, deferred note ── */
+
+.crate-inspector-head-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.crate-inspector-play {
+  width: 40px;
+  height: 40px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  border: 1px solid rgba(20,184,166,0.35);
+  background: rgba(20,184,166,0.12);
+  color: var(--brand-teal);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: not-allowed;
+}
+
+.crate-inspector-head-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.crate-inspector-head-copy strong,
+.crate-inspector-head-copy span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.crate-stat-tiles {
+  margin-top: 12px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.crate-stat-tile {
+  padding: 8px 6px;
+  border-radius: 6px;
+  text-align: center;
+  background: rgba(20,184,166,0.08);
+  border: 1px solid rgba(20,184,166,0.22);
+}
+
+.crate-stat-tile strong {
+  display: block;
+  font-size: 17px;
+  line-height: 1.15;
+  color: var(--brand-teal);
+  font-variant-numeric: tabular-nums;
+}
+
+.crate-stat-tile span {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.crate-stat-tile--violet {
+  background: rgba(167,139,250,0.08);
+  border-color: rgba(167,139,250,0.24);
+}
+.crate-stat-tile--violet strong { color: var(--brand-violet); }
+
+.crate-stat-tile--cyan {
+  background: rgba(34,211,238,0.08);
+  border-color: rgba(34,211,238,0.24);
+}
+.crate-stat-tile--cyan strong { color: var(--brand-cyan); }
+
+.crate-waveform {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 44px;
+  padding: 4px 0;
+}
+
+.crate-waveform span {
+  flex: 1;
+  min-width: 1px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, var(--brand-cyan), var(--brand-violet));
+  opacity: 0.55;
+}
+
+.crate-inspector-note {
+  display: block;
+  margin-top: 6px;
+  font-size: 10.5px;
+  line-height: 1.4;
+}
+
+.crate-deferred-note {
+  padding: 10px;
+  border: 1px dashed rgba(107,116,150,0.35);
+  border-radius: 6px;
+  background: rgba(255,255,255,0.015);
+  color: var(--text-muted);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+/* ── Responsive: tablet/small-desktop degrades the inspector to a stacked
+   panel below the table instead of a fixed side column. ── */
+/* Note: .crate-body / .crate-inspector already have dedicated breakpoints
+   further down (1200px narrows the inspector column; 860px used to hide it —
+   see the fix there). This block only adds rules for the newer Library-view
+   classes that don't have existing responsive handling. */
+@media (max-width: 1080px) {
+  .crate-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .crate-overview-card--wide {
+    grid-column: span 2;
+  }
+
+  .crate-stat-tiles {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 620px) {
+  .crate-overview-grid {
+    grid-template-columns: 1fr;
+  }
+  .crate-overview-card--wide {
+    grid-column: span 1;
+  }
+  .crate-status-strip {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .crate-library-toolbar {
+    flex-wrap: wrap;
+  }
+}
+
 .quality-page {
   display: flex;
   flex-direction: column;
@@ -5702,11 +6248,17 @@ tr.row--selected td {
 }
 
 @media (max-width: 860px) {
+  .crate-workspace {
+    height: auto;
+    min-height: 100vh;
+    overflow: visible;
+  }
   .crate-topbar {
     grid-template-columns: 1fr auto;
     height: auto;
     min-height: 44px;
     padding: 8px;
+    position: static;
   }
   .crate-root,
   .crate-search {
@@ -5714,11 +6266,19 @@ tr.row--selected td {
   }
   .crate-body {
     grid-template-columns: 1fr;
+    overflow: visible;
   }
+  .crate-main {
+    overflow: visible;
+  }
+  /* Inspector stacks below the table instead of being hidden — it still
+     carries real selected-track data (and now the waveform/compatible-tracks
+     placeholders), so hiding it outright would remove functionality. */
   .crate-inspector {
-    display: none;
     position: static;
     height: auto;
+    max-height: none;
+    border-top: 1px solid var(--border);
   }
   .crate-review-summary {
     grid-template-columns: 1fr;

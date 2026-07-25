@@ -39,6 +39,25 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 ----------------------------------------------------------------------
+[x] (P2) Library view redesign — emerald/teal/cyan/violet theme (2026-07-25)
+         frontend/src/pages/CrateMind.tsx (library section), Sidebar.tsx,
+         index.css. Status strip, filter chips, overview cards, table
+         columns (#, Key, Camelot, Quality), inspector stat tiles/waveform
+         placeholder/compatible-tracks deferred note, sidebar badges +
+         Library Health card. Fixed a pre-existing sidebar overflow bug and
+         reconciled inspector-stacking responsive behavior at <=860px
+         (previously the inspector was hidden outright below that width).
+         See CHANGELOG.txt for the full functionality classification.
+[ ] (P3) Wire genre/BPM/has-key filter chips into the Issues/Enrichment
+         sections too if useful, or keep them Library-only by design —
+         currently scoped to the library UI section only.
+[ ] (P3) Expose a per-track "compatible tracks" (harmonic match) read API
+         so the Library inspector's deferred placeholder can go live —
+         the scoring engine already exists for Set Builder
+         (see docs/strategy roadmap, intelligence/harmonic).
+[ ] (P3) Expose a duplicates count via a read API (dedupe is CLI-only
+         today) so the Library overview "Duplicates" card can show a real
+         number instead of "Not available".
 [x] (P0) Document crateIQ target product vision and capability roadmap (2026-07-24)
          docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md — current state,
          gap analysis, metadata/genre/harmonic/player/playlist/export strategy,
