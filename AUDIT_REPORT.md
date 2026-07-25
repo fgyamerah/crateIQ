@@ -9,6 +9,12 @@
 > routes are mapped to their primary read-only backend endpoints with
 > route-drift detection against `App.tsx`. Mutating/job endpoints remain
 > deliberately untested by smoke tests (see `DEFERRED_ENDPOINTS`).
+>
+> Frontend banner update (2026-07-25): the frontend readiness banner
+> tracked as a follow-up above is now implemented
+> (`frontend/src/components/ReadinessBanner.tsx`, wired into
+> `Layout.tsx`), surfacing `GET /api/runtime/readiness` as a small,
+> dismissible, diagnostic-only banner. No routing or backend changes.
 
 > Post-audit update (2026-07-02): frontend route/navigation consolidation is
 > complete. Supported operational pages are mounted, legacy/placeholder pages

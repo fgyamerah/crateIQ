@@ -2,6 +2,50 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-25] — feat: frontend readiness banner
+----------------------------------------------------------------------
+TYPE: Feature (frontend, diagnostic UI)
+SUMMARY: Added a small, dismissible readiness banner in the app shell that
+         surfaces GET /api/runtime/readiness so users can see at a glance
+         when the local runtime environment is degraded or not ready.
+DETAILS:
+  - frontend/src/api/runtime.ts: typed client for GET /api/runtime/readiness
+    (status: ready|degraded|not_ready; checks[]: name/status/message/
+    required/metadata).
+  - frontend/src/hooks/useReadiness.ts: fetches once on mount (no polling —
+    readiness is an environment snapshot, not fast-changing state); exposes
+    a manual refresh() for the banner's "Recheck" action; fetch failures are
+    caught and surfaced as an error string, never thrown into the app.
+  - frontend/src/components/ReadinessBanner.tsx: renders nothing when
+    status is "ready"; a warning-styled banner (existing
+    .crate-warning-banner pattern) for "degraded"; an error-styled banner
+    (existing .error-banner pattern) for "not_ready"; a small neutral notice
+    if the readiness fetch itself fails. Shows at most the top 3 failing/
+    warning check messages (required fails first), never raw JSON or check
+    metadata (which may contain local paths). Dismissible for the current
+    session via component state, matching the existing ErrorBanner dismiss
+    pattern. The degraded/not_ready banner always includes a fixed "local
+    diagnostic only — no authentication added" note.
+  - frontend/src/components/Layout.tsx: mounts <ReadinessBanner /> once,
+    above <Outlet/>, so it appears above every route without any routing
+    changes.
+  - frontend/src/index.css: added .readiness-banner and related rules
+    (multi-line layout, check list, footnote, refresh button) composed on
+    top of the existing .error-banner / .crate-warning-banner classes; a
+    700px breakpoint tightens the outer margin for small screens.
+FILES: frontend/src/api/runtime.ts (new),
+       frontend/src/hooks/useReadiness.ts (new),
+       frontend/src/components/ReadinessBanner.tsx (new),
+       frontend/src/components/Layout.tsx, frontend/src/index.css,
+       README.md, NEXT_TASKS.txt, PROJECT_CONTEXT.md, AUDIT_REPORT.md,
+       docs/generated/repo_file_index.md, CHANGELOG.txt
+IMPACT: Frontend-only, additive UI. No backend, routing, pipeline,
+        auth, sync/export/reconciliation, AI/provider, harmonic,
+        metadata-cleaning, or playlist/set-builder behavior changed.
+        The endpoint it calls (GET /api/runtime/readiness) is unchanged
+        and pre-existing.
+
+
 [2026-07-24] — test: supported-route smoke-test contract
 ----------------------------------------------------------------------
 TYPE: Test coverage (route/API drift protection)

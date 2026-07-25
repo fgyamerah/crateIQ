@@ -48,9 +48,15 @@ CURRENT FOCUS
          pipeline DB, entrypoint, backend data dir, 7 external binaries) +
          GET /api/runtime/readiness + tests/test_preflight.py + expanded
          .env.example. Frontend banner intentionally deferred (see below).
-[ ] (P2) Frontend readiness banner: surface /api/runtime/readiness as a small
-         dismissible banner in the Layout when status is not "ready". Use the
-         existing ErrorBanner pattern; no routing changes.
+[x] (P2) Frontend readiness banner: surface /api/runtime/readiness as a small
+         dismissible banner in the Layout when status is not "ready" (2026-07-25)
+         frontend/src/api/runtime.ts (client), frontend/src/hooks/useReadiness.ts
+         (single fetch on Layout mount, no polling), frontend/src/components/
+         ReadinessBanner.tsx (warn styling for degraded, error styling for
+         not_ready, neutral notice if the fetch itself fails, session-scoped
+         dismiss, top 3 failing/warning checks only, no raw JSON/paths).
+         Wired into Layout.tsx above <Outlet/>. No routing changes, no backend
+         changes.
 [ ] (P3) Wire readiness awareness into the Jobs page (disable submission
          hints when relevant binaries are missing) — optional polish.
 [ ] (P1) Metadata model extension (strategy Phase 2): additive tracks columns

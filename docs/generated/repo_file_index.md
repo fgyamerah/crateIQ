@@ -86,6 +86,7 @@
 - `frontend/src/api/jobs.ts`
 - `frontend/src/api/library.ts`
 - `frontend/src/api/playlists.ts`
+- `frontend/src/api/runtime.ts`
 - `frontend/src/api/sync.ts`
 - `frontend/src/api/tracks.ts`
 - `frontend/src/components/ErrorBanner.tsx`
@@ -93,10 +94,12 @@
 - `frontend/src/components/Layout.tsx`
 - `frontend/src/components/LogModal.tsx`
 - `frontend/src/components/PageHeader.tsx`
+- `frontend/src/components/ReadinessBanner.tsx`
 - `frontend/src/components/Sidebar.tsx`
 - `frontend/src/components/StatusBadge.tsx`
 - `frontend/src/components/TrackPanel.tsx`
 - `frontend/src/hooks/useJobs.ts`
+- `frontend/src/hooks/useReadiness.ts`
 - `frontend/src/hooks/useTracks.ts`
 - `frontend/src/main.tsx`
 - `frontend/src/pages/BpmReview.tsx`

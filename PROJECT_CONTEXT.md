@@ -6,6 +6,17 @@
 
 ## Latest Milestone
 
+- 2026-07-25: Frontend readiness banner added. `frontend/src/api/runtime.ts`
+  calls `GET /api/runtime/readiness` once on `Layout` mount (no polling);
+  `frontend/src/hooks/useReadiness.ts` wraps it with a manual `refresh`;
+  `frontend/src/components/ReadinessBanner.tsx` renders nothing when
+  `status: "ready"`, a warning-styled banner for `degraded`, an error-styled
+  banner for `not_ready`, and a small neutral notice if the fetch itself
+  fails. The banner shows up to 3 failing/warning check messages (never raw
+  JSON or metadata paths), is dismissible for the current session, and the
+  degraded/not_ready banner carries a fixed "local diagnostic only — no
+  authentication added" note.
+  Purely additive to `Layout.tsx`; no routing, backend, or pipeline changes.
 - 2026-07-24: Supported-route smoke-test contract added
   (`tests/test_supported_route_contracts.py`): all 14 supported frontend
   routes mapped to primary read-only backend endpoints, router-drift
@@ -20,7 +31,7 @@
   `GET /api/runtime/readiness` reports `ready` / `degraded` / `not_ready`.
   `/api/health` is unchanged. `.env.example` expanded (non-secret template
   with no-auth warning). Tests: `tests/test_preflight.py`. Frontend
-  readiness banner deferred to a follow-up task.
+  readiness banner implemented 2026-07-25 (see above).
 - 2026-07-24: crateIQ's target product vision is now documented in
   `docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md` — current-state vs
   target gap analysis, metadata/genre/harmonic/player/playlist/export

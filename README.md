@@ -592,6 +592,25 @@ copy the values you need into your shell or a local env file. Never commit
 real secrets. Reminder: CrateIQ has no authentication; run it only on a
 trusted local machine.
 
+### Frontend readiness banner
+
+The frontend shell (`frontend/src/components/Layout.tsx`) fetches
+`GET /api/runtime/readiness` once on load
+(`frontend/src/hooks/useReadiness.ts` — no polling) and shows a small
+banner (`frontend/src/components/ReadinessBanner.tsx`) above the page
+content:
+
+- `ready` — no banner.
+- `degraded` — a warning-styled banner with up to 3 failing/warning checks.
+- `not_ready` — an error-styled banner with up to 3 failing checks.
+- readiness check itself failed to load — a small neutral notice.
+
+The banner is diagnostic only: it never blocks navigation, never dumps raw
+JSON or check `metadata` (which can include local paths), and is
+dismissible for the current browser session. The `degraded`/`not_ready`
+banner always carries a fixed "local diagnostic only — no authentication
+added" note, since readiness is not a security or auth signal.
+
 ## Example Workflows
 
 Audit current path state:

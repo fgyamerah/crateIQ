@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Outlet } from 'react-router-dom'
 import Sidebar from './Sidebar'
+import ReadinessBanner from './ReadinessBanner'
 
 export default function Layout() {
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false)
@@ -12,6 +13,7 @@ export default function Layout() {
         onToggle={() => setSidebarCollapsed((c) => !c)}
       />
       <main className="app-main">
+        <ReadinessBanner />
         <Outlet />
       </main>
     </div>

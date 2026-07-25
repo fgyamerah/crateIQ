@@ -668,6 +668,77 @@ body {
 }
 .error-banner-dismiss:hover { opacity: 1; }
 
+/* .crate-warning-banner never carried its own dismiss button before the
+   readiness banner reused it — override the hard-coded error-red so the
+   "×" matches the surrounding amber, not the .error-banner palette. */
+.crate-warning-banner .error-banner-dismiss { color: #f6d46a; }
+
+/* -------------------------------------------------------------------------
+   Readiness banner (runtime preflight status in the app shell)
+   ------------------------------------------------------------------------- */
+
+.readiness-banner {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 6px;
+  margin: 16px 32px;
+}
+
+@media (max-width: 700px) {
+  .readiness-banner {
+    margin: 12px 16px;
+  }
+}
+
+.readiness-banner-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.readiness-banner-checks {
+  list-style: none;
+  padding-left: 22px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12.5px;
+  opacity: 0.92;
+}
+
+.readiness-banner-checks li {
+  position: relative;
+}
+
+.readiness-banner-checks li::before {
+  content: '\2014';
+  position: absolute;
+  left: -14px;
+  opacity: 0.6;
+}
+
+.readiness-banner-footnote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.readiness-banner-refresh {
+  background: none;
+  border: none;
+  padding: 0;
+  color: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+  font-size: 11px;
+  opacity: 0.9;
+}
+
+.readiness-banner-refresh:hover { opacity: 1; }
+
 /* -------------------------------------------------------------------------
    Forms
    ------------------------------------------------------------------------- */
