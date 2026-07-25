@@ -90,6 +90,13 @@ build/
 *.tsbuildinfo
 
 # =========================
+# LOCAL SERVICE HELPER RUNTIME
+# =========================
+# PID files + logs written by scripts/crateiq-local-services.sh
+.run/
+*.pid
+
+# =========================
 # EDITOR / OS
 # =========================
 .vscode/

@@ -57,6 +57,16 @@ CURRENT FOCUS
          dismiss, top 3 failing/warning checks only, no raw JSON/paths).
          Wired into Layout.tsx above <Outlet/>. No routing changes, no backend
          changes.
+[x] (P2) Local service helper: scripts/crateiq-local-services.sh (2026-07-25)
+         start/stop/restart/status/logs subcommands + crate_* shell functions
+         via `source ... --aliases`. Ports: backend 8020, frontend 5175
+         (LedgerIQ keeps 5173/8000; OpsIQ uses 5174/8010). PID files/logs in
+         .run/ (gitignored). Dev proxy overridable via
+         CRATEIQ_API_PROXY_TARGET (default unchanged).
+[ ] (P3) Resolve duplicate Vite config: frontend/vite.config.js shadows
+         frontend/vite.config.ts (Vite resolves .js first). Both currently
+         carry identical config. Decide which to keep and delete the other
+         (needs explicit approval to delete a tracked file).
 [x] (P3) Repo hygiene: stop tracking generated TypeScript build metadata (2026-07-25)
          frontend/tsconfig.app.tsbuildinfo and frontend/tsconfig.node.tsbuildinfo
          removed from tracking via `git rm --cached`; `*.tsbuildinfo` added to

@@ -2,6 +2,44 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-25] — feat: local service helper script (crate_start/crate_stop)
+----------------------------------------------------------------------
+TYPE: Developer tooling (local-only; no app behavior change)
+SUMMARY: Added scripts/crateiq-local-services.sh, a start/stop/status/logs
+         helper that runs CrateIQ on dedicated local ports (backend 8020,
+         frontend 5175) so it can coexist with LedgerIQ (5173/8000) and
+         OpsIQ (5174/8010).
+DETAILS:
+  - Subcommands: start, stop, restart, status, logs, back-logs, front-logs.
+    Sourcing the script with --aliases installs crate_start, crate_stop,
+    crate_restart, crate_status, crate_logs, crate_back_logs,
+    crate_front_logs shell functions.
+  - start refuses to run if 8020/5175 are already occupied; writes PID
+    files and logs under .run/ (gitignored); prints frontend/backend/
+    health/readiness URLs; no sudo.
+  - stop is PID-file-first with process verification (command line must
+    match this repo's uvicorn/vite AND be anchored to the repo path or
+    /proc cwd) before TERM/KILL; port-based fallback is scoped to
+    8020/5175 only and never kills unverified processes. LedgerIQ ports
+    are never touched.
+  - frontend/vite.config.ts and frontend/vite.config.js: the dev-server
+    /api proxy target is now overridable via CRATEIQ_API_PROXY_TARGET
+    (read with Vite's loadEnv); default stays http://localhost:8000, so
+    behavior without the helper is unchanged. NOTE: vite.config.js is a
+    pre-existing tracked duplicate that Vite loads INSTEAD of
+    vite.config.ts; both files carry the same config until the duplicate
+    is removed (follow-up in NEXT_TASKS.txt).
+  - .gitignore: added .run/ and *.pid.
+FILES: scripts/crateiq-local-services.sh (new), frontend/vite.config.ts,
+       frontend/vite.config.js, .gitignore, README.md, NEXT_TASKS.txt,
+       PROJECT_CONTEXT.md, docs/generated/repo_file_index.md,
+       CHANGELOG.txt
+IMPACT: Local developer tooling only. No backend API, frontend routes,
+        pipeline, auth, or destructive-workflow behavior changed. Default
+        dev-server behavior (ports 5173/8000) is unchanged when the
+        helper is not used.
+
+
 [2026-07-25] — chore: untrack generated TypeScript build metadata
 ----------------------------------------------------------------------
 TYPE: Repo hygiene (no behavior change)

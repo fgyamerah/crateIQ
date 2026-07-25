@@ -189,6 +189,7 @@
 - `pipeline.py`
 - `requirements-dev.txt`
 - `requirements.txt`
+- `scripts/crateiq-local-services.sh`
 - `scripts/generate-docs.py`
 - `scripts/rollback.py`
 - `tests/__init__.py`

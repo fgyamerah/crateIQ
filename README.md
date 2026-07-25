@@ -547,6 +547,58 @@ Health check:
 curl http://127.0.0.1:8000/api/health
 ```
 
+## Local Service Helper (crate_start / crate_stop)
+
+`scripts/crateiq-local-services.sh` starts and stops the backend/frontend
+pair on dedicated local ports so CrateIQ can run alongside LedgerIQ
+(5173/8000, untouched) and OpsIQ (5174/8010):
+
+| Service  | Port | URL |
+|---|---|---|
+| Backend  | 8020 | http://127.0.0.1:8020 |
+| Frontend | 5175 | http://127.0.0.1:5175 |
+| Health   | —    | http://127.0.0.1:8020/api/health |
+| Readiness | —   | http://127.0.0.1:8020/api/runtime/readiness |
+
+Install the shell functions (add the `source` line to `~/.bashrc` or
+`~/.zshrc` yourself if you want them permanently):
+
+```bash
+source ~/code/gewcc/crateIQ/scripts/crateiq-local-services.sh --aliases
+```
+
+Commands:
+
+```text
+crate_start       start backend (:8020) + frontend (:5175)
+crate_stop        stop CrateIQ services only
+crate_restart     stop, start, then show status
+crate_status      process/port/URL/health/log overview
+crate_logs        tail backend + frontend logs
+crate_back_logs   tail backend log only
+crate_front_logs  tail frontend log only
+```
+
+The same subcommands work without aliases:
+`scripts/crateiq-local-services.sh start|stop|restart|status|logs|back-logs|front-logs`.
+
+PID files and logs live under `.run/` (gitignored). No sudo is required.
+The frontend dev proxy is pointed at the 8020 backend via the
+`CRATEIQ_API_PROXY_TARGET` environment variable, which the Vite config reads
+(default remains `http://localhost:8000` when unset).
+
+Troubleshooting:
+
+- "port ... is already in use" on start: run `crate_status`; if the port is
+  held by a process the helper does not recognize as CrateIQ, it will never
+  kill it — stop that process yourself or change
+  `CRATEIQ_BACKEND_PORT`/`CRATEIQ_FRONTEND_PORT` before sourcing.
+- Stop only affects processes verified as this repo's uvicorn/vite on ports
+  8020/5175; LedgerIQ (5173/8000) is never touched.
+- To remove the aliases from the current shell:
+  `unset -f crate_start crate_stop crate_restart crate_status crate_logs crate_back_logs crate_front_logs`
+  (and delete the `source` line from your shell rc if you added it).
+
 ## Runtime Readiness
 
 CrateIQ ships a read-only local-runtime preflight that reports whether the

@@ -6,6 +6,16 @@
 
 ## Latest Milestone
 
+- 2026-07-25: Local service helper added: `scripts/crateiq-local-services.sh`
+  (subcommands start/stop/restart/status/logs/back-logs/front-logs; sourcing
+  with `--aliases` installs `crate_*` shell functions). CrateIQ's assigned
+  local dev ports are backend 8020 / frontend 5175 (LedgerIQ owns 5173/8000,
+  OpsIQ owns 5174/8010). PID files and logs live in `.run/` (gitignored).
+  The Vite dev proxy target is overridable via `CRATEIQ_API_PROXY_TARGET`
+  (default `http://localhost:8000` unchanged). Known issue: tracked
+  `frontend/vite.config.js` shadows `vite.config.ts` (Vite loads `.js`
+  first); both are kept identical for now — removal of the duplicate is an
+  open NEXT_TASKS item.
 - 2026-07-25: Repo hygiene — generated TypeScript build metadata
   (`frontend/tsconfig.*.tsbuildinfo`) untracked and ignored via
   `*.tsbuildinfo` in `.gitignore`, so `npm run typecheck`/`build` no longer
