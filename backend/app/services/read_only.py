@@ -602,6 +602,7 @@ def build_overview_payload() -> dict[str, Any]:
             "total_tracks": 0,
             "tracks_with_bpm": 0,
             "tracks_with_camelot_key": 0,
+            "tracks_analyzed": 0,
             "tracks_missing_artist": 0,
             "tracks_missing_title": 0,
             "parse_confidence_breakdown": {},
@@ -616,6 +617,9 @@ def build_overview_payload() -> dict[str, Any]:
                        SUM(CASE WHEN bpm IS NOT NULL THEN 1 ELSE 0 END) AS tracks_with_bpm,
                        SUM(CASE WHEN TRIM(COALESCE(key_camelot,'')) != ''
                                  OR TRIM(COALESCE(key_musical,'')) != '' THEN 1 ELSE 0 END) AS tracks_with_camelot_key,
+                       SUM(CASE WHEN bpm IS NOT NULL
+                                 AND (TRIM(COALESCE(key_camelot,'')) != ''
+                                      OR TRIM(COALESCE(key_musical,'')) != '') THEN 1 ELSE 0 END) AS tracks_analyzed,
                        SUM(CASE WHEN TRIM(COALESCE(artist,'')) = '' THEN 1 ELSE 0 END) AS tracks_missing_artist,
                        SUM(CASE WHEN TRIM(COALESCE(title,'')) = '' THEN 1 ELSE 0 END) AS tracks_missing_title
                    FROM tracks"""
@@ -647,6 +651,7 @@ def build_overview_payload() -> dict[str, Any]:
             "total_tracks": int(agg["total_tracks"] or 0),
             "tracks_with_bpm": int(agg["tracks_with_bpm"] or 0),
             "tracks_with_camelot_key": int(agg["tracks_with_camelot_key"] or 0),
+            "tracks_analyzed": int(agg["tracks_analyzed"] or 0),
             "tracks_missing_artist": int(agg["tracks_missing_artist"] or 0),
             "tracks_missing_title": int(agg["tracks_missing_title"] or 0),
             "parse_confidence_breakdown": {
@@ -663,6 +668,7 @@ def build_overview_payload() -> dict[str, Any]:
             "total_tracks": 0,
             "tracks_with_bpm": 0,
             "tracks_with_camelot_key": 0,
+            "tracks_analyzed": 0,
             "tracks_missing_artist": 0,
             "tracks_missing_title": 0,
             "parse_confidence_breakdown": {},

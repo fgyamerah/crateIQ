@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import CrateMind from './pages/CrateMind'
+import LibraryView from './components/library/LibraryView'
 import ErrorBoundary from './components/ErrorBoundary'
 import BpmReview from './pages/BpmReview'
 import Export from './pages/Export'
@@ -17,7 +18,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route index element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
+          <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
           <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="audit" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />

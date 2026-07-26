@@ -27,6 +27,7 @@ export interface LibraryOverview {
   total_tracks: number
   tracks_with_bpm: number
   tracks_with_camelot_key: number
+  tracks_analyzed: number
   tracks_missing_artist: number
   tracks_missing_title: number
   parse_confidence_breakdown: Record<string, number>

@@ -2,6 +2,63 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-26] — feat: Library view split + mockup-faithful visual pass
+----------------------------------------------------------------------
+TYPE: Frontend UI/UX + minor backend read-only additive field. No pipeline,
+      auth, or destructive-workflow changes.
+SUMMARY: The 2026-07-25 Library redesign still read as a re-theme of the old
+         layout once viewed with populated data. This pass:
+  - Split the former monolithic frontend/src/pages/LibraryView.tsx into
+    frontend/src/components/library/{LibraryView,LibraryToolbar,
+    LibraryRuntimeStrip,LibraryOverview,LibraryFilters,TrackTable,
+    TrackInspector,libraryUtils}.tsx — CrateMind.tsx no longer has any
+    Library code path (it already only serves /issues, /enrichment, /audit,
+    /folders; App.tsx routes "/" straight to the new LibraryView).
+  - Suppressed the full-width global ReadinessBanner on the Library route
+    (Layout.tsx) in favor of LibraryRuntimeStrip.tsx: a compact single-line
+    amber/coral strip showing the top runtime issue + "+N more" + Recheck.
+  - Rebuilt the toolbar larger/bolder (42px search/buttons, blue-violet
+    gradient "Analyze Library" button wired to the real allowlisted
+    analyze-missing job).
+  - Overview cards now match the mockup's exact 6-card set: Total Tracks,
+    Analyzed, Missing Key, BPM Coverage, Key Compatibility, Duplicates —
+    one row on desktop, ring progress for the two coverage metrics.
+    Added GET /api/library/overview.tracks_analyzed (tracks with both BPM
+    and key present) to back the "Analyzed" card honestly.
+  - Track table: added a Quality column (compact 4-bar meter driven by the
+    real quality_tier field, since no "energy" field exists), split Status
+    into its own clean check/warning column, first track now auto-selects
+    on load, selected-row style is a left-to-right gradient (not a flat
+    tint or a left-border accent).
+  - Inspector always renders its full structure (hero, BPM/Key/Camelot
+    tiles, metadata, parse confidence, issues, waveform placeholder,
+    compatible-tracks deferred note) — dimmed/placeholder state instead of
+    a bare "select a track" box.
+  - Camelot-hue color coding (frontend/src/components/library/
+    libraryUtils.ts: camelotHue/camelotStyle/camelotHeroStyle) ties the
+    table's Key/Camelot cells to the inspector's stat tiles and hero glow.
+  - Added scripts/seed_demo_library.py: idempotent, 52 realistic demo
+    tracks across House/Tech House/Deep House/Melodic House/Afro House/
+    Amapiano/Afrobeats/Highlife/Hiplife/Gospel/Techno/Progressive House,
+    writing only to <repo>/.run/demo-library (gitignored, never a real
+    DJ_MUSIC_ROOT, never touches real audio).
+  - App-wide font switched from IBM Plex Sans to Inter (frontend/index.html
+    Google Fonts link + --font-ui in index.css), system-ui/-apple-system/
+    Segoe UI fallback stack.
+FILES:
+  - backend/app/services/read_only.py, backend/app/api/routes/library.py —
+    additive tracks_analyzed field on LibraryOverviewResponse.
+  - frontend/src/api/library.ts — matching TS field.
+  - frontend/src/components/library/*.tsx (new), libraryUtils.ts (new).
+  - frontend/src/pages/LibraryView.tsx — removed (superseded by the split).
+  - frontend/src/App.tsx, frontend/src/components/Layout.tsx — routing +
+    conditional ReadinessBanner suppression on "/".
+  - frontend/index.html, frontend/src/index.css — Inter font, toolbar/
+    overview/table/inspector/runtime-strip styles.
+  - scripts/seed_demo_library.py (new).
+MIGRATION NOTES: tracks_analyzed is additive/backward-compatible on an
+  existing read-only endpoint; no schema migration. No CLI flag changes.
+
 [2026-07-25] — feat: Library view redesign (emerald/teal/cyan/violet theme)
 ----------------------------------------------------------------------
 TYPE: Frontend UI/UX (visual + read-only functional wiring; no backend,

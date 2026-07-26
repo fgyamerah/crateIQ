@@ -1,11 +1,43 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-07-15
+**Updated:** 2026-07-26
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
 ## Latest Milestone
 
+- 2026-07-26: Library view split out of `CrateMind.tsx` entirely and given a
+  mockup-faithful visual pass (the 2026-07-25 pass below still read as a
+  re-theme once viewed with populated data). `CrateMind.tsx` now only serves
+  `/issues`, `/enrichment`, `/audit`, `/folders`; the `/` route renders
+  `frontend/src/components/library/LibraryView.tsx`, which composes
+  `LibraryToolbar`, `LibraryRuntimeStrip`, `LibraryOverview`, `LibraryFilters`,
+  `TrackTable`, `TrackInspector`, and `libraryUtils.ts` (camelot-hue color
+  coding, UI-state persistence, virtualization constants) — all under
+  `frontend/src/components/library/`. `frontend/src/pages/LibraryView.tsx`
+  (the prior monolith) was removed.
+  Key changes: the global `ReadinessBanner` (see below) is now suppressed on
+  `/` — `Layout.tsx` checks the route and skips it there — replaced by
+  `LibraryRuntimeStrip.tsx`, a single-line compact amber/coral strip (top
+  issue + "+N more" + Recheck) instead of the full-width banner. Overview
+  cards now match the mockup's 6-card set exactly (Total Tracks, Analyzed,
+  Missing Key, BPM Coverage, Key Compatibility, Duplicates) in one row on
+  desktop; `GET /api/library/overview` gained an additive `tracks_analyzed`
+  field (tracks with both BPM and key present) to back "Analyzed" honestly.
+  The track table gained a Quality column (compact 4-bar meter from the real
+  `quality_tier` field — there is no "energy" field, so this is the honest
+  substitute per user instruction) and auto-selects the first track on load.
+  The inspector always renders its full structure (hero/stat tiles/metadata/
+  waveform/compatible-tracks note) in a dimmed placeholder state rather than
+  collapsing to a bare "select a track" box when nothing is selected.
+  App-wide font switched from IBM Plex Sans to Inter via `--font-ui` in
+  `index.css` (Google Fonts link in `frontend/index.html`, system-ui/
+  -apple-system/Segoe UI fallback). Added `scripts/seed_demo_library.py`:
+  idempotent, seeds 52 realistic demo tracks across 12 genres (House, Tech
+  House, Deep House, Melodic House, Afro House, Amapiano, Afrobeats,
+  Highlife, Hiplife, Gospel, Techno, Progressive House) into
+  `<repo>/.run/demo-library/logs/processed.db` only — never a real
+  `DJ_MUSIC_ROOT`, never touches real audio. See CHANGELOG.txt 2026-07-26.
 - 2026-07-25: Library view (`/`, `CrateMind.tsx` "library" section) and the
   global sidebar were redesigned to a dark emerald/teal/cyan/violet theme
   (`frontend/src/index.css` design tokens: `--brand-teal`, `--brand-cyan`,
@@ -50,6 +82,10 @@
   degraded/not_ready banner carries a fixed "local diagnostic only — no
   authentication added" note.
   Purely additive to `Layout.tsx`; no routing, backend, or pipeline changes.
+  Superseded in part 2026-07-26: `Layout.tsx` now skips rendering this
+  banner on the `/` (Library) route only, since `LibraryRuntimeStrip.tsx`
+  shows the same `GET /api/runtime/readiness` data in a compact form there;
+  every other route is unaffected.
 - 2026-07-24: Supported-route smoke-test contract added
   (`tests/test_supported_route_contracts.py`): all 14 supported frontend
   routes mapped to primary read-only backend endpoints, router-drift

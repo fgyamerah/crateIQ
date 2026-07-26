@@ -636,6 +636,31 @@ Troubleshooting:
   `unset -f crate_start crate_stop crate_restart crate_status crate_logs crate_back_logs crate_front_logs`
   (and delete the `source` line from your shell rc if you added it).
 
+## Demo Data (for local UI work / screenshots)
+
+`scripts/seed_demo_library.py` seeds a small, clearly-fake SQLite library so
+the frontend (Library view, Quality, etc.) can be exercised and screenshotted
+with populated data. It never touches real music, never scans real audio
+files, and always writes to `<repo>/.run/demo-library/` (gitignored) — the
+path is hardcoded, not a CLI flag, specifically so it can't be pointed at a
+real `DJ_MUSIC_ROOT` by accident.
+
+```bash
+.venv/bin/python scripts/seed_demo_library.py            # seed/update (idempotent)
+.venv/bin/python scripts/seed_demo_library.py --reset     # wipe + reseed
+.venv/bin/python scripts/seed_demo_library.py --count 60  # more demo tracks (1-500)
+```
+
+Then point a local run at it:
+
+```bash
+export DJ_MUSIC_ROOT="$(pwd)/.run/demo-library"
+bash scripts/crateiq-local-services.sh restart
+```
+
+Unset `DJ_MUSIC_ROOT` (or start a fresh shell) to go back to your real
+library configuration.
+
 ## Runtime Readiness
 
 CrateIQ ships a read-only local-runtime preflight that reports whether the

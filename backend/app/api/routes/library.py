@@ -118,6 +118,7 @@ class LibraryOverviewResponse(BaseModel):
     total_tracks: int
     tracks_with_bpm: int
     tracks_with_camelot_key: int
+    tracks_analyzed: int
     tracks_missing_artist: int
     tracks_missing_title: int
     parse_confidence_breakdown: Dict[str, int]

@@ -39,6 +39,22 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 ----------------------------------------------------------------------
+[x] (P1) Library view: split out of CrateMind.tsx + mockup-faithful visual
+         pass (2026-07-26) — frontend/src/components/library/* (new),
+         compact LibraryRuntimeStrip replacing the global banner on "/",
+         6-card overview row (added tracks_analyzed to
+         GET /api/library/overview), Quality-meter table column,
+         auto-selected first row, always-populated inspector, camelot-hue
+         color coding, Inter font app-wide, scripts/seed_demo_library.py
+         (52 demo tracks). See CHANGELOG.txt 2026-07-26 entry.
+[ ] (P3) Inspector: add a mini Camelot-wheel graphic next to the BPM/Key/
+         Camelot tiles (mockup has one; deferred — no functional gap, purely
+         decorative polish).
+[ ] (P3) Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
+         current "Quality" column is a compact vertical 4-bar meter driven
+         by the real quality_tier field. Revisit only if an actual
+         per-track energy/loudness metric becomes available — do not
+         fabricate one to match the mockup's shape.
 [x] (P2) Library view redesign — emerald/teal/cyan/violet theme (2026-07-25)
          frontend/src/pages/CrateMind.tsx (library section), Sidebar.tsx,
          index.css. Status strip, filter chips, overview cards, table
