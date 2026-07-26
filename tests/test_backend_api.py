@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import json
 import sqlite3
 from pathlib import Path
@@ -967,6 +968,21 @@ def test_root_containment_rejects_traversal(tmp_path):
 
 
 # ---------------------------------------------------------------------------
+# modules.harmonic.camelot_distance — public helper used by track_service
+# ---------------------------------------------------------------------------
+
+def test_camelot_distance_public_helper_matches_private_alias():
+    from modules import harmonic
+
+    assert harmonic.camelot_distance("8A", "8A") == (0, False)
+    assert harmonic.camelot_distance("8A", "8B") == (0, True)
+    assert harmonic.camelot_distance("8A", "9A") == (1, False)
+    # The private name is kept only as a backward-compatible alias for
+    # existing internal callers (e.g. modules/set_builder.py).
+    assert harmonic._camelot_distance("8A", "9A") == harmonic.camelot_distance("8A", "9A")
+
+
+# ---------------------------------------------------------------------------
 # GET /api/tracks/{id}/compatible
 # ---------------------------------------------------------------------------
 
@@ -1160,3 +1176,44 @@ def test_compatible_tracks_genre_filter_restricts_candidates(compat_client):
 
     genres = {item["genre"] for item in payload["items"]}
     assert genres <= {"Amapiano"}
+
+
+def test_compatible_tracks_real_query_failure_returns_500_without_leaking_internals(
+    compat_client, monkeypatch
+):
+    """
+    A genuine query/DB failure (corrupt DB, schema mismatch, etc.) must
+    surface as an error, not as status: "ok" with an empty items list —
+    that would silently hide a real backend bug from the UI.
+    """
+    from backend.app.services import track_service
+
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    sensitive_detail = "/very/secret/internal/path/processed.db syntax error near TRACKS"
+    real_get_pipeline_conn = track_service.get_pipeline_conn
+    call_count = {"n": 0}
+
+    @contextlib.contextmanager
+    def _flaky_conn():
+        call_count["n"] += 1
+        if call_count["n"] == 1:
+            # First call: the internal get_track() lookup — let it succeed
+            # so we reach the compatible-tracks query itself.
+            with real_get_pipeline_conn() as conn:
+                yield conn
+            return
+        raise RuntimeError(sensitive_detail)
+        yield  # pragma: no cover - unreachable, keeps this a generator function
+
+    monkeypatch.setattr(track_service, "get_pipeline_conn", _flaky_conn)
+
+    response = compat_client.get(f"/api/tracks/{anchor_id}/compatible")
+
+    assert response.status_code == 500
+    body = response.json()
+    assert body["detail"] != "ok"
+    assert "status" not in body or body.get("status") != "ok"
+    assert sensitive_detail not in response.text
+    assert "processed.db" not in response.text
+    assert "RuntimeError" not in response.text

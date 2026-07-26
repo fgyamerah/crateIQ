@@ -14,7 +14,7 @@ from ..core.library_root import selected_library_root
 from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists
 from ..models.track import Track
 from ..schemas.track import CompatibleTrackItem, CompatibleTracksResponse, TrackStats, TrackIssueItem
-from modules.harmonic import _camelot_distance, bpm_score, camelot_score, genre_score
+from modules.harmonic import bpm_score, camelot_distance, camelot_score, genre_score
 
 log = logging.getLogger(__name__)
 
@@ -370,6 +370,15 @@ def get_track_by_id(track_id: int) -> Optional[Track]:
 # get_compatible_tracks
 # ---------------------------------------------------------------------------
 
+class CompatibleTracksQueryError(RuntimeError):
+    """
+    Raised when the compatible-tracks DB query fails for a reason other than
+    the pipeline database simply not existing yet (that case is a legitimate
+    empty result, not a bug). Callers must not mask this as status: "ok" —
+    it means the read genuinely failed and should surface as an error.
+    """
+
+
 def _classify_camelot_match(
     from_key: str,
     to_key: str,
@@ -387,7 +396,7 @@ def _classify_camelot_match(
     """
     if not to_key:
         return None
-    dist, switched = _camelot_distance(from_key, to_key)
+    dist, switched = camelot_distance(from_key, to_key)
     if dist == 0 and not switched:
         return "same_key" if include_same_key else None
     if dist == 0 and switched:
@@ -448,10 +457,15 @@ def get_compatible_tracks(
         with get_pipeline_conn() as conn:
             rows = conn.execute(f"SELECT * FROM tracks {where_sql}", params).fetchall()
     except FileNotFoundError:
+        # No pipeline run yet — a legitimate empty state, not a query failure.
         return CompatibleTracksResponse(track_id=track_id, status="ok", items=[])
     except Exception as exc:
+        # A real query/DB failure (e.g. corrupt DB, schema mismatch) must not
+        # be reported as "ok, no matches" — that would hide a genuine bug.
         log.exception("get_compatible_tracks(%s) query failed: %s", track_id, exc)
-        return CompatibleTracksResponse(track_id=track_id, status="ok", items=[])
+        raise CompatibleTracksQueryError(
+            f"Compatible-tracks lookup failed for track {track_id}."
+        ) from exc
 
     ranked: list[tuple[float, float, CompatibleTrackItem]] = []
     for row in rows:

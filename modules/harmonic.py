@@ -98,11 +98,14 @@ def _parse_camelot(key: str) -> Optional[Tuple[int, str]]:
     return int(m.group(1)), m.group(2).upper()
 
 
-def _camelot_distance(key_a: str, key_b: str) -> Tuple[int, bool]:
+def camelot_distance(key_a: str, key_b: str) -> Tuple[int, bool]:
     """
     Return (distance, mode_switched) between two Camelot keys.
     distance = min clockwise/counter-clockwise steps ignoring mode.
     mode_switched = True if A↔B at same or adjacent position.
+
+    Public helper — safe for other modules (e.g. backend services) to import
+    directly instead of reaching into module-private functions.
     """
     a = _parse_camelot(key_a)
     b = _parse_camelot(key_b)
@@ -118,6 +121,11 @@ def _camelot_distance(key_a: str, key_b: str) -> Tuple[int, bool]:
     mode_switched = letter_a != letter_b
 
     return circ_dist, mode_switched
+
+
+def _camelot_distance(key_a: str, key_b: str) -> Tuple[int, bool]:
+    """Backward-compatible internal alias for camelot_distance()."""
+    return camelot_distance(key_a, key_b)
 
 
 def camelot_score(key_a: str, key_b: str) -> float:

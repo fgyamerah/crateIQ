@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { CamelotMatchType, QualityTier } from '../../types/track'
+import type { QualityTier } from '../../types/track'
 
 export type SortKey = 'artist' | 'title' | 'bpm' | 'filename'
 export type SortOrder = 'asc' | 'desc'
@@ -214,16 +214,4 @@ export function getCompatibleCamelotKeys(camelot: string | null | undefined): Co
     adjacent: [`${prev}${letter}`, `${next}${letter}`],
     relative: `${number}${other}`,
   }
-}
-
-const MATCH_TYPE_LABELS: Record<CamelotMatchType, string> = {
-  same_key: 'Same key',
-  adjacent_key: 'Adjacent key',
-  relative_key: 'Relative major/minor',
-}
-
-/** Human-readable label for a compatible-tracks match_type; falls back for unknown values. */
-export function formatCompatibilityReason(matchType: CamelotMatchType | string | null | undefined): string {
-  if (matchType && matchType in MATCH_TYPE_LABELS) return MATCH_TYPE_LABELS[matchType as CamelotMatchType]
-  return 'Compatible'
 }

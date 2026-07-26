@@ -145,16 +145,24 @@ async def get_compatible_tracks(
     matches are always included; include_same_key/include_adjacent gate the
     other two. BPM and genre only affect ranking/inclusion tolerance, never
     trigger audio scanning or writes. Tracks without a Camelot key return a
-    "missing_key" status with an empty list rather than a guess.
+    "missing_key" status with an empty list rather than a guess. A genuine
+    query/database failure raises HTTP 500 with a generic message rather
+    than silently reporting "ok, no matches".
     """
-    result = track_service.get_compatible_tracks(
-        track_id,
-        limit=limit,
-        bpm_tolerance=bpm_tolerance,
-        include_same_key=include_same_key,
-        include_adjacent=include_adjacent,
-        genre=genre,
-    )
+    try:
+        result = track_service.get_compatible_tracks(
+            track_id,
+            limit=limit,
+            bpm_tolerance=bpm_tolerance,
+            include_same_key=include_same_key,
+            include_adjacent=include_adjacent,
+            genre=genre,
+        )
+    except track_service.CompatibleTracksQueryError:
+        raise HTTPException(
+            status_code=500,
+            detail="Compatible-tracks lookup failed. Check server logs for details.",
+        )
     if result is None:
         raise HTTPException(status_code=404, detail=f"Track {track_id} not found.")
     return result
