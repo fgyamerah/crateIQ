@@ -153,3 +153,66 @@ class TrackIssueItem(BaseModel):
     title:   Optional[str] = None
     status:  str
     issues:  List[str]
+
+
+class CompatibleTrackItem(BaseModel):
+    """One ranked candidate returned by GET /api/tracks/{id}/compatible."""
+
+    id:                   int
+    filepath:             str
+    filename:             str
+    artist:               Optional[str] = None
+    title:                Optional[str] = None
+    display_title:        str
+    genre:                Optional[str] = None
+    bpm:                  Optional[float] = None
+    key_camelot:          Optional[str] = None
+    key_musical:          Optional[str] = None
+    quality_tier:         Optional[str] = None
+    parse_confidence:     Optional[str] = None
+    status:               str
+    issues:               List[str] = []
+    match_type:           str
+    compatibility_score:  float
+    compatibility_reason: str
+    bpm_delta:            Optional[float] = None
+
+    @classmethod
+    def from_track(
+        cls,
+        t: Track,
+        *,
+        match_type: str,
+        compatibility_score: float,
+        compatibility_reason: str,
+        bpm_delta: Optional[float],
+    ) -> "CompatibleTrackItem":
+        return cls(
+            id=t.id,
+            filepath=t.filepath,
+            filename=t.filename,
+            artist=t.artist,
+            title=t.title,
+            display_title=(t.title or "").strip() or t.filename,
+            genre=t.genre,
+            bpm=t.bpm,
+            key_camelot=t.key_camelot,
+            key_musical=t.key_musical,
+            quality_tier=t.quality_tier,
+            parse_confidence=t.parse_confidence,
+            status=t.status,
+            issues=t.issues,
+            match_type=match_type,
+            compatibility_score=compatibility_score,
+            compatibility_reason=compatibility_reason,
+            bpm_delta=bpm_delta,
+        )
+
+
+class CompatibleTracksResponse(BaseModel):
+    """Response for GET /api/tracks/{id}/compatible."""
+
+    track_id:   int
+    status:     str
+    reason:     Optional[str] = None
+    items:      List[CompatibleTrackItem] = []

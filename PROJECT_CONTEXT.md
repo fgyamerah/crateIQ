@@ -6,6 +6,26 @@
 
 ## Latest Milestone
 
+- 2026-07-26: Real compatible-tracks API + Camelot wheel for the Library
+  inspector, replacing the two remaining honest placeholders from the prior
+  redesign pass. New `GET /api/tracks/{id}/compatible` (backend/app/api/
+  routes/tracks.py, backend/app/services/track_service.py, backend/app/
+  schemas/track.py) reuses `modules/harmonic.py`'s existing Camelot/BPM/
+  genre scoring — no duplicate harmonic algorithm — restricted to the three
+  standard mixable relations (same key, adjacent wheel position, relative
+  major/minor); BPM tolerance and genre only affect ranking/inclusion, not
+  separate match routes. 9 new tests in `tests/test_backend_api.py`.
+  `frontend/src/components/library/CamelotWheel.tsx` (new) is a real SVG
+  Camelot wheel with an accessible aria-label/aria-describedby text
+  alternative; `TrackInspector.tsx`'s "Compatible tracks coming soon" note
+  is now a live list (loading/empty/error/no-key states, request-sequence
+  guard against stale responses). `scripts/seed_demo_library.py` gained 14
+  fixed "Compatibility Demo" tracks (two anchors: 8A Afro House, 3A
+  Amapiano spanning the required Ghana/Africa genre set) so the new feature
+  always has real clusters to demonstrate; still `.run/demo-library`-only,
+  still idempotent under `--reset`. No pipeline, auth, sync/export/
+  reconciliation, or MIK-data behavior changed. See CHANGELOG.txt for full
+  detail.
 - 2026-07-26: Library view split out of `CrateMind.tsx` entirely and given a
   mockup-faithful visual pass (the 2026-07-25 pass below still read as a
   re-theme once viewed with populated data). `CrateMind.tsx` now only serves

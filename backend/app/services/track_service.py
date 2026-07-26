@@ -13,9 +13,19 @@ from typing import Dict, List, Optional, Tuple
 from ..core.library_root import selected_library_root
 from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists
 from ..models.track import Track
-from ..schemas.track import TrackStats, TrackIssueItem
+from ..schemas.track import CompatibleTrackItem, CompatibleTracksResponse, TrackStats, TrackIssueItem
+from modules.harmonic import _camelot_distance, bpm_score, camelot_score, genre_score
 
 log = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Compatible tracks — Camelot wheel relation labels
+# ---------------------------------------------------------------------------
+_MATCH_LABELS = {
+    "same_key": "Same key",
+    "adjacent_key": "Adjacent key",
+    "relative_key": "Relative major/minor",
+}
 
 # ---------------------------------------------------------------------------
 # Allowed sort columns — never interpolate user input directly into SQL
@@ -354,6 +364,145 @@ def get_issue_counts() -> dict[str, int]:
 
 def get_track_by_id(track_id: int) -> Optional[Track]:
     return get_track(track_id)
+
+
+# ---------------------------------------------------------------------------
+# get_compatible_tracks
+# ---------------------------------------------------------------------------
+
+def _classify_camelot_match(
+    from_key: str,
+    to_key: str,
+    *,
+    include_same_key: bool,
+    include_adjacent: bool,
+) -> Optional[str]:
+    """
+    Classify a candidate key against the selected track's key.
+
+    Returns "same_key" | "adjacent_key" | "relative_key", or None when the
+    candidate falls outside the three supported Camelot relations (or is
+    excluded by the include_* flags). Reuses modules.harmonic's wheel-distance
+    math so this stays consistent with the existing set-builder scoring.
+    """
+    if not to_key:
+        return None
+    dist, switched = _camelot_distance(from_key, to_key)
+    if dist == 0 and not switched:
+        return "same_key" if include_same_key else None
+    if dist == 0 and switched:
+        return "relative_key"
+    if dist == 1 and not switched:
+        return "adjacent_key" if include_adjacent else None
+    return None
+
+
+def get_compatible_tracks(
+    track_id: int,
+    *,
+    limit: int = 8,
+    bpm_tolerance: float = 6.0,
+    include_same_key: bool = True,
+    include_adjacent: bool = True,
+    genre: Optional[str] = None,
+) -> Optional[CompatibleTracksResponse]:
+    """
+    Return ranked harmonically-compatible tracks for track_id, or None if the
+    track itself does not exist (caller should 404).
+
+    Read-only: never scans audio, never mutates tracks/queue state. Camelot
+    compatibility is restricted to the three standard mixable relations (same
+    key, adjacent wheel position, relative major/minor) per modules.harmonic;
+    BPM closeness and genre are read-only scoring/ranking signals reused from
+    the same module, not separate inclusion routes.
+    """
+    track = get_track(track_id)
+    if track is None:
+        return None
+
+    from_key = (track.key_camelot or "").strip()
+    if not from_key:
+        return CompatibleTracksResponse(
+            track_id=track_id,
+            status="missing_key",
+            reason="Track has no Camelot key data.",
+            items=[],
+        )
+
+    limit = max(1, min(int(limit or 8), 25))
+    bpm_tolerance = max(1.0, float(bpm_tolerance or 6.0))
+    from_bpm = track.bpm
+    from_genre = (track.genre or "").strip()
+
+    if not pipeline_db_exists():
+        return CompatibleTracksResponse(track_id=track_id, status="ok", items=[])
+
+    where_clauses = ["id != ?", "TRIM(COALESCE(key_camelot, '')) != ''"]
+    params: list = [track_id]
+    if genre:
+        where_clauses.append("LOWER(COALESCE(genre, '')) = LOWER(?)")
+        params.append(genre)
+    where_sql = "WHERE " + " AND ".join(where_clauses)
+
+    try:
+        with get_pipeline_conn() as conn:
+            rows = conn.execute(f"SELECT * FROM tracks {where_sql}", params).fetchall()
+    except FileNotFoundError:
+        return CompatibleTracksResponse(track_id=track_id, status="ok", items=[])
+    except Exception as exc:
+        log.exception("get_compatible_tracks(%s) query failed: %s", track_id, exc)
+        return CompatibleTracksResponse(track_id=track_id, status="ok", items=[])
+
+    ranked: list[tuple[float, float, CompatibleTrackItem]] = []
+    for row in rows:
+        cand = Track.from_row(row)
+        match_type = _classify_camelot_match(
+            from_key,
+            (cand.key_camelot or "").strip(),
+            include_same_key=include_same_key,
+            include_adjacent=include_adjacent,
+        )
+        if match_type is None:
+            continue
+
+        bpm_delta: Optional[float] = None
+        if from_bpm is not None and cand.bpm is not None:
+            bpm_delta = round(abs(cand.bpm - from_bpm), 1)
+            if bpm_delta > bpm_tolerance:
+                continue
+
+        c_score = camelot_score(from_key, cand.key_camelot or "")
+        b_score = bpm_score(from_bpm, cand.bpm) if from_bpm and cand.bpm else 0.5
+        g_score = genre_score(from_genre, cand.genre or "")
+        composite = round(100 * (0.55 * c_score + 0.30 * b_score + 0.15 * g_score), 1)
+
+        reason_parts = [_MATCH_LABELS[match_type]]
+        if bpm_delta is not None and bpm_delta <= min(2.0, bpm_tolerance):
+            reason_parts.append("BPM close")
+        if from_genre and cand.genre and from_genre.lower() == cand.genre.strip().lower():
+            reason_parts.append("Same genre")
+
+        ranked.append((
+            composite,
+            bpm_delta if bpm_delta is not None else 9999.0,
+            CompatibleTrackItem.from_track(
+                cand,
+                match_type=match_type,
+                compatibility_score=composite,
+                compatibility_reason=" · ".join(reason_parts),
+                bpm_delta=bpm_delta,
+            ),
+        ))
+
+    ranked.sort(key=lambda entry: (-entry[0], entry[1]))
+    items = [entry[2] for entry in ranked[:limit]]
+
+    return CompatibleTracksResponse(
+        track_id=track_id,
+        status="ok",
+        reason=None if items else "No compatible tracks found with current matching rules.",
+        items=items,
+    )
 
 
 # ---------------------------------------------------------------------------

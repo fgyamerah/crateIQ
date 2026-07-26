@@ -1,5 +1,5 @@
 import type { CSSProperties } from 'react'
-import type { QualityTier } from '../../types/track'
+import type { CamelotMatchType, QualityTier } from '../../types/track'
 
 export type SortKey = 'artist' | 'title' | 'bpm' | 'filename'
 export type SortOrder = 'asc' | 'desc'
@@ -164,4 +164,66 @@ export function qualityRank(tier: QualityTierValue): number {
     case 'LOW': return 1
     default: return 0
   }
+}
+
+// ---------------------------------------------------------------------------
+// Camelot wheel math — shared by the table/inspector color coding above and
+// CamelotWheel.tsx's SVG rendering.
+// ---------------------------------------------------------------------------
+
+/** Alias kept for parity with CamelotWheel's helper naming; same math as camelotHue(). */
+export const getCamelotHue = camelotHue
+
+export interface ParsedCamelotKey {
+  number: number
+  letter: 'A' | 'B'
+  code: string
+}
+
+/** Parse a Camelot code like "8a" into { number: 8, letter: 'A', code: '8A' }, or null. */
+export function parseCamelotKey(camelot: string | null | undefined): ParsedCamelotKey | null {
+  if (!camelot) return null
+  const match = /^(1[0-2]|[1-9])([ABab])$/.exec(camelot.trim())
+  if (!match) return null
+  const number = parseInt(match[1], 10)
+  const letter = match[2].toUpperCase() as 'A' | 'B'
+  return { number, letter, code: `${number}${letter}` }
+}
+
+export interface CompatibleCamelotKeys {
+  sameKey: string
+  adjacent: [string, string]
+  relative: string
+}
+
+/**
+ * Return the three standard mixable relations for a Camelot key: itself,
+ * its two wheel-adjacent neighbors (same letter), and its relative
+ * major/minor (same number, other letter). Mirrors the inclusion rules used
+ * by GET /api/tracks/{id}/compatible (modules/harmonic.py's wheel distance).
+ */
+export function getCompatibleCamelotKeys(camelot: string | null | undefined): CompatibleCamelotKeys | null {
+  const parsed = parseCamelotKey(camelot)
+  if (!parsed) return null
+  const { number, letter } = parsed
+  const prev = ((number + 10) % 12) + 1
+  const next = (number % 12) + 1
+  const other: 'A' | 'B' = letter === 'A' ? 'B' : 'A'
+  return {
+    sameKey: `${number}${letter}`,
+    adjacent: [`${prev}${letter}`, `${next}${letter}`],
+    relative: `${number}${other}`,
+  }
+}
+
+const MATCH_TYPE_LABELS: Record<CamelotMatchType, string> = {
+  same_key: 'Same key',
+  adjacent_key: 'Adjacent key',
+  relative_key: 'Relative major/minor',
+}
+
+/** Human-readable label for a compatible-tracks match_type; falls back for unknown values. */
+export function formatCompatibilityReason(matchType: CamelotMatchType | string | null | undefined): string {
+  if (matchType && matchType in MATCH_TYPE_LABELS) return MATCH_TYPE_LABELS[matchType as CamelotMatchType]
+  return 'Compatible'
 }

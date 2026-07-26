@@ -1,5 +1,7 @@
 import { apiFetch } from './client'
 import type {
+  CompatibleTracksParams,
+  CompatibleTracksResponse,
   TrackDetail,
   TrackIssueCounts,
   TrackListParams,
@@ -38,4 +40,22 @@ export function fetchTrackStats(): Promise<TrackStats> {
 
 export function fetchTrackIssues(): Promise<TrackIssueCounts> {
   return apiFetch.get<TrackIssueCounts>('/tracks/issues')
+}
+
+function buildCompatQS(params: CompatibleTracksParams): string {
+  const parts: string[] = []
+  for (const [k, v] of Object.entries(params)) {
+    if (v !== undefined && v !== null && v !== '') {
+      parts.push(`${encodeURIComponent(k)}=${encodeURIComponent(String(v))}`)
+    }
+  }
+  return parts.length ? `?${parts.join('&')}` : ''
+}
+
+/** GET /api/tracks/{id}/compatible — read-only harmonic/Camelot match lookup. */
+export function fetchCompatibleTracks(
+  trackId: number,
+  params: CompatibleTracksParams = {},
+): Promise<CompatibleTracksResponse> {
+  return apiFetch.get<CompatibleTracksResponse>(`/tracks/${trackId}/compatible${buildCompatQS(params)}`)
 }

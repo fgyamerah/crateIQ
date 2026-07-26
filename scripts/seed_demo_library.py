@@ -147,6 +147,89 @@ def build_rows(count: int) -> list[dict]:
     return rows
 
 
+def _musical_for_camelot(camelot: str) -> str:
+    letter = camelot[-1]
+    number = int(camelot[:-1])
+    return MUSICAL_KEYS[letter][(number - 1) % 12]
+
+
+def _cluster_row(
+    *,
+    slug: str,
+    artist: str,
+    title: str,
+    genre: str,
+    bpm: float,
+    camelot: str,
+    bitrate: int = 320,
+) -> dict:
+    """Build one fixed-filepath demo row for the compatible-tracks clusters below."""
+    return dict(
+        filepath=f"/music/Compatibility Demo/{artist} - {title} [{slug}].mp3",
+        artist=artist,
+        title=title,
+        genre=genre,
+        bpm=bpm,
+        key_musical=_musical_for_camelot(camelot),
+        key_camelot=camelot,
+        bitrate_kbps=bitrate,
+        status="ok",
+        parse_confidence="HIGH",
+        quality_tier=QUALITY_BY_BITRATE.get(bitrate, "MEDIUM"),
+    )
+
+
+def build_compatibility_cluster_rows() -> list[dict]:
+    """
+    Fixed, deterministic demo tracks guaranteeing that the compatible-tracks
+    API/UI always has interesting real results to show, regardless of what
+    the random --count rows happen to roll. Two anchors:
+
+      - "Coastal Anchor" (8A, Afro House, 122 BPM) — same-key, adjacent-key,
+        relative-major/minor, and close-BPM clusters.
+      - "Motherland Anchor" (3A, Amapiano, 110 BPM) — a same-key cluster that
+        spans the required Ghana/Africa genre set (Amapiano, Afrobeats,
+        Highlife, Hiplife, Gospel), demonstrating the genre-boost signal.
+    """
+    return [
+        # --- Anchor 1: 8A / Afro House / 122 BPM -------------------------------
+        _cluster_row(slug="c01", artist="Coastal Collective", title="Coastal Anchor",
+                     genre="Afro House", bpm=122.0, camelot="8A"),
+        # Same-key group (8A)
+        _cluster_row(slug="c02", artist="Coastal Collective", title="Coastal Sunrise",
+                     genre="Afro House", bpm=121.0, camelot="8A"),
+        _cluster_row(slug="c03", artist="Coastal Collective", title="Coastal Drift",
+                     genre="Amapiano", bpm=120.0, camelot="8A"),
+        _cluster_row(slug="c04", artist="Coastal Collective", title="Coastal Horizon",
+                     genre="Tech House", bpm=123.0, camelot="8A"),
+        # Adjacent-key group (7A / 9A) — includes a close-BPM and a farther-BPM
+        # candidate at the same adjacent key so BPM tolerance visibly affects rank.
+        _cluster_row(slug="c05", artist="Coastal Collective", title="Adjacent Tide",
+                     genre="Deep House", bpm=119.0, camelot="7A"),
+        _cluster_row(slug="c06", artist="Coastal Collective", title="Adjacent Pulse",
+                     genre="Melodic House", bpm=122.5, camelot="9A"),
+        _cluster_row(slug="c07", artist="Coastal Collective", title="Adjacent Runout",
+                     genre="Melodic House", bpm=127.0, camelot="9A"),
+        # Relative major/minor group (8B)
+        _cluster_row(slug="c08", artist="Coastal Collective", title="Relative Bloom",
+                     genre="Progressive House", bpm=122.0, camelot="8B"),
+        # --- Anchor 2: 3A / Amapiano / 110 BPM — mixed-genre same-key cluster --
+        _cluster_row(slug="c09", artist="Motherland Sound", title="Motherland Anchor",
+                     genre="Amapiano", bpm=110.0, camelot="3A"),
+        _cluster_row(slug="c10", artist="Motherland Sound", title="Motherland Pulse",
+                     genre="Afrobeats", bpm=108.0, camelot="3A"),
+        _cluster_row(slug="c11", artist="Motherland Sound", title="Motherland Highlife",
+                     genre="Highlife", bpm=104.0, camelot="3A"),
+        _cluster_row(slug="c12", artist="Motherland Sound", title="Motherland Praise",
+                     genre="Gospel", bpm=100.0, camelot="3A"),
+        # Adjacent + relative coverage for anchor 2
+        _cluster_row(slug="c13", artist="Motherland Sound", title="Motherland Echo",
+                     genre="Hiplife", bpm=96.0, camelot="2A"),
+        _cluster_row(slug="c14", artist="Motherland Sound", title="Motherland Uplift",
+                     genre="Afro House", bpm=114.0, camelot="3B"),
+    ]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--count", type=int, default=52, help="number of demo tracks (default 52)")
@@ -181,7 +264,7 @@ def main() -> int:
             conn.commit()
         print(f"Reset tracks table at {config.DB_PATH}")
 
-    rows = build_rows(args.count)
+    rows = build_rows(args.count) + build_compatibility_cluster_rows()
     for row in rows:
         db.upsert_track(row.pop("filepath"), **row)
 
@@ -190,6 +273,11 @@ def main() -> int:
 
     print(f"Seeded {len(rows)} demo tracks ({total} total rows) at {config.DB_PATH}")
     print(f"Genres: {', '.join(GENRE_BPM.keys())}")
+    print(
+        "Includes 14 fixed 'Compatibility Demo' tracks (Coastal Collective / "
+        "Motherland Sound) covering same-key, adjacent-key, relative major/"
+        "minor, close-BPM, and mixed-genre clusters for GET /api/tracks/{id}/compatible."
+    )
     print()
     print("To run the app against this demo library:")
     print(f'  export DJ_MUSIC_ROOT="{DEMO_ROOT}"')

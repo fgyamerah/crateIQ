@@ -113,3 +113,44 @@ export const ISSUE_LABELS: Record<TrackIssue, string> = {
 }
 
 export const QUALITY_ORDER: QualityTier[] = ['LOSSLESS', 'HIGH', 'MEDIUM', 'LOW', 'UNKNOWN']
+
+// Shape returned by GET /api/tracks/{id}/compatible
+export type CamelotMatchType = 'same_key' | 'adjacent_key' | 'relative_key'
+
+export interface CompatibleTrack {
+  id:                   number
+  filepath:             string
+  filename:             string
+  artist:               string | null
+  title:                string | null
+  display_title:        string
+  genre:                string | null
+  bpm:                  number | null
+  key_camelot:          string | null
+  key_musical:          string | null
+  quality_tier:         QualityTier | null
+  parse_confidence:     ParseConfidence | null
+  status:               TrackStatus
+  issues:               TrackIssue[]
+  match_type:           CamelotMatchType
+  compatibility_score:  number
+  compatibility_reason: string
+  bpm_delta:            number | null
+}
+
+export type CompatibleTracksStatus = 'ok' | 'missing_key'
+
+export interface CompatibleTracksResponse {
+  track_id: number
+  status:   CompatibleTracksStatus
+  reason:   string | null
+  items:    CompatibleTrack[]
+}
+
+export interface CompatibleTracksParams {
+  limit?:            number
+  bpm_tolerance?:     number
+  include_same_key?:  boolean
+  include_adjacent?:  boolean
+  genre?:             string
+}

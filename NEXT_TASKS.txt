@@ -47,9 +47,13 @@ CURRENT FOCUS
          auto-selected first row, always-populated inspector, camelot-hue
          color coding, Inter font app-wide, scripts/seed_demo_library.py
          (52 demo tracks). See CHANGELOG.txt 2026-07-26 entry.
-[ ] (P3) Inspector: add a mini Camelot-wheel graphic next to the BPM/Key/
-         Camelot tiles (mockup has one; deferred — no functional gap, purely
-         decorative polish).
+[x] (P3) Inspector: add a real Camelot-wheel graphic next to the BPM/Key/
+         Camelot tiles (2026-07-26) — frontend/src/components/library/
+         CamelotWheel.tsx (SVG, 24 wedges, highlights selected/adjacent/
+         relative keys + API-returned compatible keys, accessible aria-
+         label + aria-describedby, graceful "no key" state). See
+         CHANGELOG.txt 2026-07-26 "Compatible-tracks API + real Camelot
+         wheel" entry.
 [ ] (P3) Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
          current "Quality" column is a compact vertical 4-bar meter driven
          by the real quality_tier field. Revisit only if an actual
@@ -67,10 +71,26 @@ CURRENT FOCUS
 [ ] (P3) Wire genre/BPM/has-key filter chips into the Issues/Enrichment
          sections too if useful, or keep them Library-only by design —
          currently scoped to the library UI section only.
-[ ] (P3) Expose a per-track "compatible tracks" (harmonic match) read API
-         so the Library inspector's deferred placeholder can go live —
-         the scoring engine already exists for Set Builder
-         (see docs/strategy roadmap, intelligence/harmonic).
+[x] (P3) Expose a per-track "compatible tracks" (harmonic match) read API
+         so the Library inspector's deferred placeholder can go live
+         (2026-07-26) — GET /api/tracks/{id}/compatible, reusing
+         modules/harmonic.py's existing Camelot/BPM/genre scoring (no
+         duplicate algorithm). Same-key/adjacent/relative-key matching
+         only; energy-tier boost remains deferred (no persisted energy
+         field yet). See CHANGELOG.txt 2026-07-26 entry.
+[ ] (P2) Follow-up: extract intelligence/harmonic/ pure engine from
+         modules/harmonic.py per docs/strategy roadmap Phase 4, add
+         notation conversion (Camelot ↔ traditional ↔ Open Key) and half/
+         double-time BPM awareness, and switch the compatible-tracks
+         endpoint's genre scoring to the taxonomy-driven relations instead
+         of the hardcoded _GENRE_RELATIONS — deferred out of the 2026-07-26
+         compatible-tracks pass to keep that change minimal/reuse-only.
+[ ] (P3) docs/generated/repo_file_index.md is stale (predates this
+         session): missing the entire frontend/src/components/library/*
+         split from 2026-07-25/26 and this session's CamelotWheel.tsx.
+         Regenerate via tools/static_analysis/generate_repo_inventory.py
+         when convenient — not run as part of the 2026-07-26 compatible-
+         tracks change to keep that diff focused.
 [ ] (P3) Expose a duplicates count via a read API (dedupe is CLI-only
          today) so the Library overview "Duplicates" card can show a real
          number instead of "Not available".

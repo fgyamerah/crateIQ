@@ -17,7 +17,7 @@ from typing import List, Optional
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
-from ...schemas.track import TrackDetail, TrackStats, TrackSummary
+from ...schemas.track import CompatibleTracksResponse, TrackDetail, TrackStats, TrackSummary
 from ...services import read_only as read_only_service
 from ...services import track_service
 
@@ -122,3 +122,39 @@ async def get_track(track_id: int) -> TrackDetail:
         raise HTTPException(status_code=404, detail=f"Track {track_id} not found.")
     queue_item = read_only_service.lookup_enrichment_queue_item(track.filepath)
     return TrackDetail.from_track(track, enrichment_queue_item=queue_item)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/tracks/{track_id}/compatible
+# ---------------------------------------------------------------------------
+
+@router.get("/tracks/{track_id}/compatible", response_model=CompatibleTracksResponse)
+async def get_compatible_tracks(
+    track_id: int,
+    limit: int = Query(default=8, ge=1, le=25, description="Max compatible tracks to return"),
+    bpm_tolerance: float = Query(default=6.0, ge=1.0, le=60.0, description="Max BPM delta to include"),
+    include_same_key: bool = Query(default=True, description="Include exact Camelot key matches"),
+    include_adjacent: bool = Query(default=True, description="Include ±1 Camelot wheel position matches"),
+    genre: Optional[str] = Query(default=None, description="Restrict candidates to this genre (case-insensitive)"),
+) -> CompatibleTracksResponse:
+    """
+    Return harmonically compatible tracks for a single track, read-only.
+
+    Compatibility is limited to the three standard Camelot mixing relations
+    (same key, adjacent wheel position, relative major/minor) — relative-key
+    matches are always included; include_same_key/include_adjacent gate the
+    other two. BPM and genre only affect ranking/inclusion tolerance, never
+    trigger audio scanning or writes. Tracks without a Camelot key return a
+    "missing_key" status with an empty list rather than a guess.
+    """
+    result = track_service.get_compatible_tracks(
+        track_id,
+        limit=limit,
+        bpm_tolerance=bpm_tolerance,
+        include_same_key=include_same_key,
+        include_adjacent=include_adjacent,
+        genre=genre,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Track {track_id} not found.")
+    return result

@@ -328,6 +328,7 @@ GET  /api/health
 GET  /api/stats
 GET  /api/tracks
 GET  /api/tracks/{id}
+GET  /api/tracks/{id}/compatible
 GET  /api/tracks/issues
 GET  /api/library/folders
 GET  /api/library/overview
@@ -351,6 +352,31 @@ Backend safety rules:
 - Enrichment review endpoints write only queue review state.
 - Apply-approved endpoint writes only approved metadata fields to `tracks`.
 - Apply endpoint requires explicit `confirm=true`.
+
+### Compatible tracks (harmonic/Camelot matching)
+
+`GET /api/tracks/{id}/compatible` returns read-only, ranked harmonic matches
+for one track, reusing `modules/harmonic.py`'s existing Camelot/BPM/genre
+scoring rather than a separate algorithm.
+
+Query parameters:
+
+| Param | Default | Meaning |
+|---|---|---|
+| `limit` | 8 (max 25) | Max results returned |
+| `bpm_tolerance` | 6 | Max BPM delta to include a candidate (hard cutoff when both tracks have a BPM) |
+| `include_same_key` | true | Include exact Camelot key matches |
+| `include_adjacent` | true | Include ±1 Camelot wheel position matches |
+| `genre` | — | Optional case-insensitive genre filter |
+
+Matching is restricted to the three standard Camelot mixing relations —
+same key, adjacent wheel position, and relative major/minor — relative-key
+matches are always included; `include_same_key`/`include_adjacent` gate the
+other two. BPM closeness and genre only affect ranking/inclusion tolerance
+inside that candidate set, they are not separate match routes. A track
+without a Camelot key returns `status: "missing_key"` and an empty list
+instead of a guess; an empty match set returns `status: "ok"` with a
+`reason` string. The endpoint never scans audio and never writes.
 
 ## Frontend Dashboard
 
@@ -417,10 +443,12 @@ in `frontend/src/index.css`, e.g. `--brand-teal`, `--brand-cyan`,
   pipeline scan, not exposed via a read API.
 - The **tracks table** gained a row number column, a separate musical Key
   column alongside Camelot, and a Quality-tier badge column.
-- The **track inspector** gained BPM/Key/Camelot stat tiles, a disabled
+- The **track inspector** has BPM/Key/Camelot stat tiles, a disabled
   play-button placeholder, a deterministic decorative waveform placeholder,
-  and a "Compatible tracks coming soon" deferred note — harmonic scoring
-  exists for Set Builder but is not yet exposed as a per-track lookup API.
+  a real SVG **Camelot wheel** (`frontend/src/components/library/
+  CamelotWheel.tsx`), and a real **Compatible tracks** panel backed by
+  `GET /api/tracks/{id}/compatible` (see "Compatible tracks" above) — added
+  2026-07-26, superseding the earlier "coming soon" placeholder.
 - The sidebar (`frontend/src/components/Sidebar.tsx`) gained a teal
   glow active state, real nav badges (Issues / Enrichment Queue / Metadata
   Repair / BPM Review pending counts, from existing endpoints), and a
@@ -650,6 +678,13 @@ real `DJ_MUSIC_ROOT` by accident.
 .venv/bin/python scripts/seed_demo_library.py --reset     # wipe + reseed
 .venv/bin/python scripts/seed_demo_library.py --count 60  # more demo tracks (1-500)
 ```
+
+On top of the random `--count` rows, the seed always adds 14 fixed
+"Compatibility Demo" tracks (`Coastal Collective` / `Motherland Sound`) so
+`GET /api/tracks/{id}/compatible` and the Library inspector's Camelot wheel
+always have real same-key, adjacent-key, relative-major/minor, close-BPM,
+and mixed-genre clusters to show — search "Coastal Anchor" or "Motherland
+Anchor" in the Library view to see them.
 
 Then point a local run at it:
 

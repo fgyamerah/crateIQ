@@ -2,6 +2,85 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-26] — feat: Compatible-tracks API + real Camelot wheel in Library inspector
+----------------------------------------------------------------------
+TYPE: Backend read-only additive endpoint + frontend UI. No pipeline, auth,
+      sync/export/reconciliation, or destructive-workflow changes.
+SUMMARY: The Library inspector's "Compatible tracks coming soon" placeholder
+         and decorative stat tiles are now backed by a real, read-only
+         harmonic-match API.
+  - New endpoint: GET /api/tracks/{track_id}/compatible. Follows the route
+    shape documented in docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md
+    section 9/Phase 4 (`GET /api/tracks/{id}/compatible`), i.e. nested under
+    the existing /api/tracks resource rather than a new /api/library path.
+    Query params: limit (default 8, max 25), bpm_tolerance (default 6,
+    hard BPM-delta cutoff), include_same_key / include_adjacent (bool
+    gates), genre (optional exact-match filter). Read-only: SELECT-only
+    queries against the existing pipeline_conn, no audio scanning, no
+    writes.
+  - Compatibility logic reuses modules/harmonic.py's existing Camelot wheel
+    math (camelot_score, bpm_score, genre_score, _camelot_distance) rather
+    than reimplementing it — no duplicate harmonic algorithm. Candidates are
+    restricted to the three standard mixable relations: same key, ±1
+    adjacent wheel position (same letter), and relative major/minor (same
+    number, other letter). BPM and genre are read-only ranking/inclusion
+    signals, not separate match routes. Composite score = 55% Camelot +
+    30% BPM + 15% genre. A track with no Camelot key returns
+    status: "missing_key" and an empty list rather than a guess; an empty
+    match set returns status: "ok" with a reason string.
+  - backend/app/schemas/track.py: CompatibleTrackItem, CompatibleTracksResponse.
+  - backend/app/services/track_service.py: get_compatible_tracks() +
+    _classify_camelot_match() helper.
+  - backend/app/api/routes/tracks.py: the new route.
+  - tests/test_backend_api.py: 9 new tests (same-key/adjacent/relative
+    matches, self-exclusion, bpm_tolerance inclusion, include_same_key/
+    include_adjacent gating, missing-key empty response, 404, limit
+    respected, read-only/no-mutation, genre filter).
+  - scripts/seed_demo_library.py: added 14 fixed "Compatibility Demo"
+    tracks (build_compatibility_cluster_rows()) on top of the existing
+    random --count rows, so the new endpoint always has real same-key/
+    adjacent-key/relative-key/close-BPM/mixed-genre clusters to show,
+    regardless of the random seed's rolls. Two anchors: "Coastal Anchor"
+    (8A, Afro House) and "Motherland Anchor" (3A, Amapiano) — the second
+    anchor's cluster spans Amapiano/Afrobeats/Highlife/Gospel/Hiplife to
+    exercise the genre-boost signal against the required Ghana/Africa
+    genre set. Still writes only to <repo>/.run/demo-library, still never
+    touches real audio; --reset remains idempotent (66 total demo tracks
+    at default --count 52).
+  - Frontend: frontend/src/types/track.ts (CompatibleTrack,
+    CompatibleTracksResponse, CompatibleTracksParams types),
+    frontend/src/api/tracks.ts (fetchCompatibleTracks()).
+  - New frontend/src/components/library/CamelotWheel.tsx: a real SVG
+    Camelot wheel (12 numbers x A/B rings, 24 wedges) replacing the old
+    decorative BPM/Key/Camelot-only stat tiles' implicit "wheel" gap. It
+    highlights the selected key, its two adjacent positions, its relative
+    major/minor, and any extra keys returned by the compatible-tracks API,
+    with an aria-label + aria-describedby text alternative and a graceful
+    "NO KEY" state when the track has no Camelot data. Helpers added to
+    frontend/src/components/library/libraryUtils.ts: parseCamelotKey(),
+    getCompatibleCamelotKeys(), formatCompatibilityReason(), getCamelotHue()
+    (alias of the existing camelotHue()).
+  - frontend/src/components/library/TrackInspector.tsx: replaced the
+    "Compatible-tracks matching coming soon" deferred note with a real
+    list (loading skeleton, error state, "no matches" state, "add key data"
+    state for keyless tracks) fed by a request-sequence guard so a fast
+    re-selection can't let a stale response overwrite a newer one. Mounted
+    CamelotWheel between the stat tiles and the Metadata section.
+  - frontend/src/index.css: new .lib-camelot-wheel, .lib-compat-*,
+    .lib-inspector-section--wheel, .lib-visually-hidden rules, reusing
+    existing --brand-teal/cyan/violet/coral tokens and the app-wide Inter
+    font — no new font introduced.
+MIGRATION NOTES: Purely additive backend endpoint and frontend UI; no schema
+  migration, no existing endpoint's behavior changed, no CLI flag changes.
+LIMITATIONS/DEFERRED: Half-time/double-time BPM matching, energy-tier
+  boost (no persisted energy field exists yet — see prior CHANGELOG
+  entries), and taxonomy-driven genre relations (still the hardcoded
+  _GENRE_RELATIONS in modules/harmonic.py) are out of scope for this pass;
+  see docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md section 9 for the
+  full target design. docs/generated/repo_file_index.md was already stale
+  before this session (missing the whole frontend/src/components/library/
+  split) and was not regenerated as part of this focused change.
+
 [2026-07-26] — feat: Library view split + mockup-faithful visual pass
 ----------------------------------------------------------------------
 TYPE: Frontend UI/UX + minor backend read-only additive field. No pipeline,

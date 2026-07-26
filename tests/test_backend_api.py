@@ -964,3 +964,199 @@ def test_root_containment_rejects_traversal(tmp_path):
 
     with pytest.raises(ValueError, match="path outside selected root"):
         assert_path_under_root("../escape.mp3", root)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/tracks/{id}/compatible
+# ---------------------------------------------------------------------------
+
+def _create_compat_tracks_db(root: Path) -> Path:
+    """
+    Dedicated fixture DB for compatible-tracks tests: an 8A anchor plus one
+    candidate per Camelot relation, a BPM-tolerance edge case, a genre-only
+    match, a Camelot clash, and a missing-key track.
+    """
+    db_path = root / "logs" / "processed.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE tracks (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            filepath TEXT NOT NULL UNIQUE,
+            filename TEXT NOT NULL,
+            artist TEXT,
+            title TEXT,
+            genre TEXT,
+            bpm REAL,
+            key_musical TEXT,
+            key_camelot TEXT,
+            duration_sec REAL,
+            bitrate_kbps INTEGER,
+            filesize_bytes INTEGER,
+            status TEXT NOT NULL DEFAULT 'pending',
+            error_msg TEXT,
+            processed_at TEXT,
+            pipeline_ver TEXT,
+            quality_tier TEXT,
+            parse_confidence TEXT
+        )
+        """
+    )
+    # (filepath, artist, title, genre, bpm, key_musical, key_camelot, status)
+    rows = [
+        ("anchor.mp3",   "Anchor Artist",   "Anchor Track",   "Afro House",  122.0, "A Minor", "8A", "ok"),
+        ("samekey.mp3",  "Same Key Artist", "Same Key Track", "Amapiano",    121.0, "A Minor", "8A", "ok"),
+        ("adjacent.mp3", "Adjacent Artist", "Adjacent Track", "Deep House",  124.0, "E Minor", "9A", "ok"),
+        ("relative.mp3", "Relative Artist", "Relative Track", "Progressive House", 120.0, "C Major", "8B", "ok"),
+        ("farbpm.mp3",   "Far BPM Artist",  "Far BPM Track",  "Amapiano",    140.0, "A Minor", "8A", "ok"),
+        ("clash.mp3",    "Clash Artist",    "Clash Track",    "Techno",      126.0, "D Minor", "2A", "ok"),
+        ("nokey.mp3",    "No Key Artist",   "No Key Track",   "House",       122.0, None,      None, "ok"),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO tracks (
+            filepath, filename, artist, title, genre, bpm, key_musical, key_camelot, status
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        [
+            (str(root / "library" / fp), fp, artist, title, genre, bpm, key_musical, key_camelot, status)
+            for fp, artist, title, genre, bpm, key_musical, key_camelot, status in rows
+        ],
+    )
+    conn.commit()
+    conn.close()
+    return db_path
+
+
+@pytest.fixture()
+def compat_client(tmp_path, monkeypatch):
+    root = tmp_path / "compat_library_root"
+    root.mkdir(parents=True)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+    _create_compat_tracks_db(root)
+    with TestClient(backend_main.app) as test_client:
+        yield test_client
+
+
+def _track_id_by_filename(test_client, filename: str) -> int:
+    payload = test_client.get("/api/tracks", params={"search": filename}).json()
+    matches = [item for item in payload["items"] if item["filename"] == filename]
+    assert matches, f"no track found for filename {filename!r}"
+    return matches[0]["id"]
+
+
+def test_compatible_tracks_returns_same_key_adjacent_and_relative_matches(compat_client):
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    response = compat_client.get(f"/api/tracks/{anchor_id}/compatible")
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "ok"
+    match_types = {item["filename"]: item["match_type"] for item in payload["items"]}
+    assert match_types["samekey.mp3"] == "same_key"
+    assert match_types["adjacent.mp3"] == "adjacent_key"
+    assert match_types["relative.mp3"] == "relative_key"
+    # Camelot clash (2A, 6 wheel positions from 8A) is never a candidate.
+    assert "clash.mp3" not in match_types
+    reasons = {item["filename"]: item["compatibility_reason"] for item in payload["items"]}
+    assert reasons["samekey.mp3"].startswith("Same key")
+    assert reasons["adjacent.mp3"].startswith("Adjacent key")
+    assert reasons["relative.mp3"].startswith("Relative major/minor")
+
+
+def test_compatible_tracks_excludes_the_selected_track_itself(compat_client):
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    payload = compat_client.get(f"/api/tracks/{anchor_id}/compatible").json()
+
+    assert all(item["id"] != anchor_id for item in payload["items"])
+
+
+def test_compatible_tracks_bpm_tolerance_controls_inclusion(compat_client):
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    # farbpm.mp3 is the same key (8A) as the anchor but 18 BPM away.
+    wide = compat_client.get(
+        f"/api/tracks/{anchor_id}/compatible", params={"bpm_tolerance": 20}
+    ).json()
+    tight = compat_client.get(
+        f"/api/tracks/{anchor_id}/compatible", params={"bpm_tolerance": 5}
+    ).json()
+
+    wide_names = {item["filename"] for item in wide["items"]}
+    tight_names = {item["filename"] for item in tight["items"]}
+    assert "farbpm.mp3" in wide_names
+    assert "farbpm.mp3" not in tight_names
+
+
+def test_compatible_tracks_include_flags_gate_same_key_and_adjacent(compat_client):
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    payload = compat_client.get(
+        f"/api/tracks/{anchor_id}/compatible",
+        params={"include_same_key": False, "include_adjacent": False, "bpm_tolerance": 30},
+    ).json()
+
+    match_types = {item["match_type"] for item in payload["items"]}
+    # Only the relative-key relation remains selectable; same-key/adjacent are gated off.
+    assert match_types <= {"relative_key"}
+    assert "same_key" not in match_types
+    assert "adjacent_key" not in match_types
+
+
+def test_compatible_tracks_missing_camelot_key_returns_safe_empty_response(compat_client):
+    nokey_id = _track_id_by_filename(compat_client, "nokey.mp3")
+
+    response = compat_client.get(f"/api/tracks/{nokey_id}/compatible")
+    payload = response.json()
+
+    assert response.status_code == 200
+    assert payload["status"] == "missing_key"
+    assert payload["items"] == []
+    assert payload["reason"]
+
+
+def test_compatible_tracks_unknown_track_id_returns_404(compat_client):
+    response = compat_client.get("/api/tracks/999999/compatible")
+    assert response.status_code == 404
+
+
+def test_compatible_tracks_limit_is_respected(compat_client):
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    payload = compat_client.get(
+        f"/api/tracks/{anchor_id}/compatible",
+        params={"limit": 1, "bpm_tolerance": 30},
+    ).json()
+
+    assert len(payload["items"]) == 1
+
+
+def test_compatible_tracks_endpoint_is_read_only(compat_client):
+    root_db = None
+    # Recover the db path via the health endpoint rather than the fixture,
+    # to exercise the same read path the running app uses.
+    health = compat_client.get("/api/health").json()
+    root_db = Path(health["db_path"])
+    before = root_db.read_bytes()
+
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+    compat_client.get(f"/api/tracks/{anchor_id}/compatible")
+    compat_client.get(f"/api/tracks/{anchor_id}/compatible", params={"genre": "Amapiano"})
+
+    assert root_db.read_bytes() == before
+
+
+def test_compatible_tracks_genre_filter_restricts_candidates(compat_client):
+    anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
+
+    payload = compat_client.get(
+        f"/api/tracks/{anchor_id}/compatible",
+        params={"genre": "Amapiano", "bpm_tolerance": 30},
+    ).json()
+
+    genres = {item["genre"] for item in payload["items"]}
+    assert genres <= {"Amapiano"}
