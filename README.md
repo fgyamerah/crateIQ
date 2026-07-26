@@ -460,6 +460,31 @@ No backend endpoint, pipeline behavior, or route was changed for this
 redesign — see `CHANGELOG.txt` for the full functionality classification
 (implemented / read-only placeholder / deferred).
 
+### App-wide visual system
+
+The Library view above is the visual system's source of truth. Every other
+route shares the same `frontend/src/index.css` stylesheet, so the base
+tokens/primitives (`--accent`, `--brand-*`, `.card`, `.badge--*`, `.btn`,
+`.table`) and a small set of reusable components apply everywhere rather than
+per page:
+
+- `frontend/src/components/ui/StatusStrip.tsx` — the shared good/warn/danger/
+  info compact strip (full 1px border + tinted background, never a colored
+  side border). Used by `ReadinessBanner.tsx` and by `Export.tsx`/
+  `SsdSync.tsx`'s validation/mount warnings.
+- `frontend/src/components/ui/KpiCard.tsx` — the shared overview/stat card,
+  reusing the Library's own `.lib-overview-card` styling and `RingProgress`.
+- `frontend/src/components/ui/EmptyState.tsx`, `Badge.tsx` — shared "nothing
+  here" state and semantic badge, available for new call sites.
+- `.app-main` (the shared page container in `Layout.tsx`) carries the same
+  subtle radial-gradient wash as the Library/CrateMind workspaces, so every
+  other page (Quality, Metadata Repair, Metadata Sanitation, BPM Review,
+  Jobs, Set Builder, Export, SSD Sync, Reconciliation) shares that atmosphere
+  instead of a flat background.
+
+No backend/pipeline/route/API behavior changed for this rollout — it is a
+CSS/component-level pass over the existing pages, not a per-page redesign.
+
 The frontend is not allowed to write audio tags or modify files.
 
 ## Performance Features

@@ -83,9 +83,3 @@ export const CATEGORY_LABELS: Record<ExclusionCategory, string> = {
   BAD_PATH:         'Bad Path',
   OTHER:            'Other',
 }
-
-export const WARNING_COLORS: Record<WarningLevel, string> = {
-  error:   '#ef4444',
-  warning: '#f59e0b',
-  info:    '#3b82f6',
-}

@@ -102,6 +102,13 @@ body {
   flex: 1;
   min-width: 0;
   overflow-y: auto;
+  /* Same atmospheric wash as .lib-workspace / .crate-workspace, subtler since
+     it sits behind dense card grids on every other route. Library/CrateMind
+     paint their own opaque full-height background over this one. */
+  background:
+    radial-gradient(circle at 12% 0%, rgba(20,184,166,0.08), transparent 30%),
+    radial-gradient(circle at 88% 6%, rgba(167,139,250,0.06), transparent 26%),
+    var(--bg);
 }
 
 /* -------------------------------------------------------------------------
@@ -462,9 +469,9 @@ body {
    ------------------------------------------------------------------------- */
 
 .card {
-  background: var(--bg-surface);
+  background: rgba(17, 21, 31, 0.96);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 20px 24px;
 }
 
@@ -517,9 +524,9 @@ body {
 }
 
 .stat-card {
-  background: var(--bg-surface);
+  background: rgba(17, 21, 31, 0.96);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
   padding: 16px 20px;
   text-align: center;
 }
@@ -656,7 +663,7 @@ body {
 .td-cancel-error {
   padding: 4px 12px !important;
   font-size: 12px;
-  color: #ef4444;
+  color: var(--status-failed);
 }
 
 .text--ok {
@@ -709,7 +716,7 @@ body {
 .badge--succeeded { color: var(--status-succeeded); background: var(--badge-succeeded-bg); }
 .badge--failed    { color: var(--status-failed);    background: var(--badge-failed-bg); }
 .badge--cancelled { color: var(--status-cancelled); background: var(--badge-cancelled-bg); }
-.badge--info      { color: #60a5fa; background: #0c1e40; }
+.badge--info      { color: var(--brand-cyan); background: rgba(34,211,238,0.14); }
 
 /* -------------------------------------------------------------------------
    Buttons
@@ -743,8 +750,7 @@ body {
 }
 
 .btn--primary:not(:disabled):hover {
-  background: #3a6ee8;
-  border-color: #3a6ee8;
+  filter: brightness(1.12);
 }
 
 .btn--ghost {
@@ -805,20 +811,13 @@ body {
 }
 .error-banner-dismiss:hover { opacity: 1; }
 
-/* .crate-warning-banner never carried its own dismiss button before the
-   readiness banner reused it — override the hard-coded error-red so the
-   "×" matches the surrounding amber, not the .error-banner palette. */
-.crate-warning-banner .error-banner-dismiss { color: #f6d46a; }
-
 /* -------------------------------------------------------------------------
-   Readiness banner (runtime preflight status in the app shell)
+   Readiness banner (runtime preflight status in the app shell) — renders a
+   <StatusStrip> (components/ui/StatusStrip.tsx); this just adds page-shell
+   margin around it.
    ------------------------------------------------------------------------- */
 
 .readiness-banner {
-  display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  gap: 6px;
   margin: 16px 32px;
 }
 
@@ -826,41 +825,6 @@ body {
   .readiness-banner {
     margin: 12px 16px;
   }
-}
-
-.readiness-banner-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.readiness-banner-checks {
-  list-style: none;
-  padding-left: 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  font-size: 12.5px;
-  opacity: 0.92;
-}
-
-.readiness-banner-checks li {
-  position: relative;
-}
-
-.readiness-banner-checks li::before {
-  content: '\2014';
-  position: absolute;
-  left: -14px;
-  opacity: 0.6;
-}
-
-.readiness-banner-footnote {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 11px;
-  opacity: 0.75;
 }
 
 .readiness-banner-refresh {
@@ -1115,6 +1079,164 @@ code {
   color: var(--text-muted);
   font-size: 13px;
   padding: 8px 0;
+}
+
+/* -------------------------------------------------------------------------
+   Shared ui/ primitives — StatusStrip, EmptyState (full block/card variant).
+   Reuses the same visual language as the Library route's .lib-status-strip
+   family (full border + tinted background, never a colored side border).
+   ------------------------------------------------------------------------- */
+
+.ui-status-strip {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 9px 14px;
+  border-radius: 8px;
+  font-size: 12.5px;
+  margin-bottom: 16px;
+  line-height: 1.5;
+}
+
+.ui-status-strip:last-child { margin-bottom: 0; }
+
+.ui-status-strip-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  padding-top: 1px;
+}
+
+.ui-status-strip-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.ui-status-strip-message {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.ui-status-strip-list {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 11.5px;
+  opacity: 0.9;
+}
+
+.ui-status-strip-list li {
+  position: relative;
+  padding-left: 14px;
+}
+
+.ui-status-strip-list li::before {
+  content: '\2014';
+  position: absolute;
+  left: 0;
+  opacity: 0.6;
+}
+
+.ui-status-strip-footnote {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  opacity: 0.75;
+}
+
+.ui-status-strip-actions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ui-status-strip-dismiss {
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+  opacity: 0.7;
+}
+
+.ui-status-strip-dismiss:hover { opacity: 1; }
+
+.ui-status-strip--info {
+  border: 1px solid rgba(34,211,238,0.28);
+  background: rgba(34,211,238,0.08);
+  color: #d6f8ff;
+}
+
+.ui-status-strip--good {
+  border: 1px solid rgba(52,211,153,0.25);
+  background: rgba(52,211,153,0.07);
+  color: #d6fff0;
+}
+
+.ui-status-strip--warn {
+  border: 1px solid rgba(245,158,11,0.32);
+  background: rgba(245,158,11,0.08);
+  color: #fcd34d;
+}
+
+.ui-status-strip--danger {
+  border: 1px solid rgba(251,113,133,0.32);
+  background: rgba(251,113,133,0.08);
+  color: #ffd7dd;
+}
+
+.ui-empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  gap: 6px;
+  padding: 32px 20px;
+  border: 1px dashed rgba(107,116,150,0.35);
+  border-radius: 10px;
+  background: rgba(255,255,255,0.015);
+  color: var(--text-muted);
+}
+
+.ui-empty-state-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border-radius: 10px;
+  background: rgba(255,255,255,0.05);
+  color: var(--text-muted);
+  margin-bottom: 4px;
+}
+
+.ui-empty-state-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ui-empty-state-message {
+  font-size: 12.5px;
+  line-height: 1.5;
+  max-width: 360px;
+}
+
+.ui-empty-state-action {
+  margin-top: 6px;
 }
 
 .recon-grid {
@@ -1468,8 +1590,8 @@ code {
 }
 
 .metadata-repair-row--selected td {
-  background: rgba(74, 126, 255, 0.09) !important;
-  box-shadow: inset 0 0 0 1px rgba(74, 126, 255, 0.16);
+  background: rgba(20, 184, 166, 0.09) !important;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166, 0.16);
 }
 
 .metadata-repair-row--low td {
@@ -1481,7 +1603,7 @@ code {
 }
 
 .metadata-repair-row--partial td {
-  background: rgba(74, 126, 255, 0.045);
+  background: rgba(20, 184, 166, 0.045);
 }
 
 .metadata-repair-track-cell {
@@ -1574,8 +1696,8 @@ button.metadata-repair-value:disabled {
 }
 
 button.metadata-repair-value:not(:disabled):hover {
-  border-color: rgba(74, 126, 255, 0.35);
-  background: rgba(74, 126, 255, 0.06);
+  border-color: rgba(20, 184, 166, 0.35);
+  background: rgba(20, 184, 166, 0.06);
 }
 
 .metadata-repair-value span {
@@ -1624,8 +1746,8 @@ button.metadata-repair-value:not(:disabled):hover {
   height: 14px;
   padding: 0 4px;
   border-radius: 3px;
-  background: rgba(74, 126, 255, 0.14);
-  color: #9fb7ff;
+  background: rgba(20, 184, 166, 0.14);
+  color: var(--brand-cyan);
   font-style: normal;
   font-size: 8.5px;
   font-weight: 700;
@@ -1635,7 +1757,7 @@ button.metadata-repair-value:not(:disabled):hover {
 .metadata-repair-proposed-input {
   width: 100%;
   min-width: 0;
-  border: 1px solid rgba(74, 126, 255, 0.55);
+  border: 1px solid rgba(20, 184, 166, 0.55);
   border-radius: 4px;
   background: var(--bg);
   color: var(--text);
@@ -1876,8 +1998,8 @@ button.metadata-repair-value:not(:disabled):hover {
 }
 
 .metadata-repair-primary {
-  border-color: rgba(74, 126, 255, 0.5) !important;
-  background: rgba(74, 126, 255, 0.18) !important;
+  border-color: rgba(20, 184, 166, 0.5) !important;
+  background: rgba(20, 184, 166, 0.18) !important;
 }
 
 .metadata-repair-success,
@@ -1902,8 +2024,8 @@ button.metadata-repair-value:not(:disabled):hover {
 }
 
 .metadata-repair-apply-preview {
-  border: 1px solid rgba(74, 126, 255, 0.3);
-  background: rgba(74, 126, 255, 0.08);
+  border: 1px solid rgba(20, 184, 166, 0.3);
+  background: rgba(20, 184, 166, 0.08);
 }
 
 .metadata-repair-metrics {
@@ -1991,7 +2113,7 @@ button.metadata-repair-row {
 
 button.metadata-repair-row:hover,
 button.metadata-repair-row--selected {
-  background: rgba(74, 126, 255, 0.09);
+  background: rgba(20, 184, 166, 0.09);
 }
 
 .metadata-repair-row strong,
@@ -2126,8 +2248,8 @@ button.metadata-repair-row--selected {
 }
 
 .metadata-repair-edit-toggle:hover {
-  border-color: rgba(74, 126, 255, 0.42);
-  background: rgba(74, 126, 255, 0.08);
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(20, 184, 166, 0.08);
 }
 
 .metadata-repair-field-actions button {
@@ -2159,7 +2281,7 @@ button.metadata-repair-row--selected {
 
 .metadata-repair-inline-input {
   background: var(--bg);
-  outline: 1px solid rgba(74, 126, 255, 0.5);
+  outline: 1px solid rgba(20, 184, 166, 0.5);
 }
 
 .metadata-repair-current {
@@ -2177,8 +2299,8 @@ button.metadata-repair-row--selected {
   white-space: nowrap;
   padding: 1px 5px;
   border-radius: 3px;
-  background: rgba(74, 126, 255, 0.14);
-  color: #9fb7ff;
+  background: rgba(20, 184, 166, 0.14);
+  color: var(--brand-cyan);
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
@@ -2228,7 +2350,7 @@ button.metadata-repair-row--selected {
 }
 
   .metadata-repair-confirm-note {
-  color: #9fb7ff;
+  color: var(--brand-cyan);
 }
 
 .sanitation-field-card {
@@ -2286,8 +2408,8 @@ button.metadata-repair-row--selected {
 
 .field-edit-button:hover,
 .field-actions-row button:hover {
-  border-color: rgba(74, 126, 255, 0.42);
-  background: rgba(74, 126, 255, 0.08);
+  border-color: rgba(20, 184, 166, 0.42);
+  background: rgba(20, 184, 166, 0.08);
 }
 
 .field-compare-grid {
@@ -2333,7 +2455,7 @@ button.metadata-repair-row--selected {
 
 .field-input {
   background: var(--bg);
-  outline: 1px solid rgba(74, 126, 255, 0.5);
+  outline: 1px solid rgba(20, 184, 166, 0.5);
 }
 
 .field-input,
@@ -2363,8 +2485,8 @@ button.metadata-repair-row--selected {
   width: fit-content;
   padding: 1px 6px;
   border-radius: 999px;
-  background: rgba(74, 126, 255, 0.14);
-  color: #9fb7ff;
+  background: rgba(20, 184, 166, 0.14);
+  color: var(--brand-cyan);
   font-size: 9px;
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -2460,7 +2582,7 @@ button.metadata-repair-row--selected {
 }
 
 .quality-badge--lossless { color: #34d399; background: #0a2a1a; }
-.quality-badge--high     { color: #60a5fa; background: #0c1e40; }
+.quality-badge--high     { color: var(--brand-cyan); background: rgba(34,211,238,0.14); }
 .quality-badge--medium   { color: #fbbf24; background: #2a1a00; }
 .quality-badge--low      { color: var(--status-failed); background: var(--badge-failed-bg); }
 .quality-badge--unknown  { color: var(--text-muted); background: #1a1a26; }
@@ -2962,7 +3084,7 @@ button.metadata-repair-row--selected {
 }
 
 .bpm-suggestion {
-  color: #60a5fa;
+  color: var(--brand-cyan);
   font-weight: 600;
 }
 
@@ -3132,7 +3254,7 @@ button.metadata-repair-row--selected {
 
 /* Selected row highlight */
 tr.row--selected td {
-  background: rgba(74, 126, 255, 0.08);
+  background: rgba(20, 184, 166, 0.08);
 }
 
 /* Hint text when list is empty */
@@ -3227,7 +3349,8 @@ tr.row--selected td {
   margin-top: 2px;
 }
 
-/* Warnings */
+/* Warnings — each row renders a <StatusStrip> (components/ui/StatusStrip.tsx);
+   it supplies its own margin, so zero it out here in favor of the list gap. */
 .export-warnings-list {
   display: flex;
   flex-direction: column;
@@ -3235,15 +3358,8 @@ tr.row--selected td {
   margin-bottom: 14px;
 }
 
-.export-warning {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
-  background: var(--bg);
-  border: 1px solid var(--border);
-  border-left: 3px solid var(--border);
-  border-radius: 4px;
+.export-warnings-list .ui-status-strip {
+  margin-bottom: 0;
   font-size: 13px;
 }
 
@@ -3730,25 +3846,12 @@ tr.row--selected td {
   letter-spacing: 0.03em;
 }
 
-.sync-mount-warning {
-  background: #2a1000;
-  border: 1px solid #d97706;
-  border-radius: 6px;
-  padding: 10px 14px;
-  color: #fbbf24;
-  font-size: 13px;
-  margin-bottom: 14px;
-}
-
+/* .sync-mount-warning / .sync-warning-item previously duplicated a hand-rolled
+   warning box with a colored side border; both spots now render a
+   <StatusStrip> (components/ui/StatusStrip.tsx). This just adds spacing. */
 .sync-warning-item {
-  background: #2a1000;
-  border: 1px solid #d97706;
-  border-left: 3px solid #d97706;
-  border-radius: 4px;
-  padding: 7px 12px;
-  color: #fbbf24;
-  font-size: 12px;
   margin-bottom: 6px;
+  font-size: 12px;
 }
 
 .sync-run-panel {
@@ -4710,8 +4813,8 @@ tr.row--selected td {
   grid-template-rows: 44px 1fr;
   overflow: hidden;
   background:
-    radial-gradient(circle at top left, rgba(74,126,255,0.12), transparent 28%),
-    radial-gradient(circle at 85% 0%, rgba(34,197,94,0.08), transparent 22%),
+    radial-gradient(circle at 12% 0%, rgba(20,184,166,0.10), transparent 30%),
+    radial-gradient(circle at 88% 6%, rgba(167,139,250,0.08), transparent 26%),
     #0d1016;
 }
 
@@ -4822,9 +4925,9 @@ tr.row--selected td {
 .crate-panel,
 .crate-table-panel,
 .crate-inspector {
-  background: rgba(22, 27, 39, 0.96);
+  background: rgba(17, 21, 31, 0.96);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 10px;
 }
 
 .crate-metric {
@@ -4876,7 +4979,7 @@ tr.row--selected td {
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--accent), #82a6ff);
+  background: linear-gradient(90deg, var(--accent), var(--brand-cyan));
 }
 
 .crate-meter--warn span {
@@ -5107,7 +5210,7 @@ tr.row--selected td {
 .crate-pill--active {
   border-color: var(--accent);
   color: var(--text);
-  background: rgba(74,126,255,0.12);
+  background: rgba(20, 184, 166,0.12);
 }
 
 .crate-queue-summary {
@@ -5422,8 +5525,8 @@ tr.row--selected td {
 }
 
 .crate-row-selected td {
-  background: rgba(74,126,255,0.08) !important;
-  box-shadow: inset 0 0 0 1px rgba(74,126,255,0.18);
+  background: rgba(20, 184, 166,0.08) !important;
+  box-shadow: inset 0 0 0 1px rgba(20, 184, 166,0.18);
 }
 
 .crate-row-selected .crate-issue-badge,
@@ -7178,7 +7281,7 @@ tr.row--selected td {
 
 .quality-inline-link {
   align-self: flex-start;
-  color: #9fb7ff;
+  color: var(--brand-cyan);
   font-size: 12px;
   text-decoration: none;
 }
@@ -7206,7 +7309,7 @@ tr.row--selected td {
 .quality-action-card:hover,
 .quality-nav-card:hover,
 .quality-inline-link:hover {
-  border-color: rgba(74, 126, 255, 0.42);
+  border-color: rgba(20, 184, 166, 0.42);
 }
 
 .quality-action-card strong,

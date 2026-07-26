@@ -9,6 +9,7 @@ import { isActive } from '../types/job'
 import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
+import StatusStrip from '../components/ui/StatusStrip'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -32,10 +33,10 @@ function fmtDuration(start: string | null, end: string | null): string {
 
 function MountWarning() {
   return (
-    <div className="sync-mount-warning">
+    <StatusStrip tone="danger" role="alert">
       <strong>SSD not mounted.</strong>
       {' '}Connect the drive and mount it before syncing.
-    </div>
+    </StatusStrip>
   )
 }
 
@@ -106,7 +107,7 @@ function PreviewResults({ preview }: { preview: SyncPreviewResponse }) {
   return (
     <div className="preview-results">
       {warnings.map((w, i) => (
-        <div key={i} className="sync-warning-item">{w}</div>
+        <StatusStrip key={i} tone="warn" className="sync-warning-item">{w}</StatusStrip>
       ))}
 
       {file_count === 0 && warnings.length === 0 && (
@@ -297,9 +298,9 @@ function ActiveJobPanel({
       </div>
 
       {cancelErr && (
-        <div className="sync-warning-item" style={{ marginBottom: 8 }}>
+        <StatusStrip tone="danger" role="alert" className="sync-warning-item">
           Cancel failed: {cancelErr}
-        </div>
+        </StatusStrip>
       )}
 
       {/* Progress bar (only for jobs that have progress data) */}

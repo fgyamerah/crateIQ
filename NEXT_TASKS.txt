@@ -54,6 +54,32 @@ CURRENT FOCUS
          label + aria-describedby, graceful "no key" state). See
          CHANGELOG.txt 2026-07-26 "Compatible-tracks API + real Camelot
          wheel" entry.
+[x] (P1) App-wide visual system rollout from the Library view (2026-07-26)
+         Extended the Library view's visual system to the rest of the app via
+         shared CSS tokens/primitives instead of a per-page redesign. New:
+         frontend/src/components/ui/{StatusStrip,KpiCard,EmptyState,Badge}.tsx.
+         ReadinessBanner.tsx now renders <StatusStrip>. Fixed both
+         Impeccable-flagged side-tab-border warnings (Export.tsx, SsdSync.tsx)
+         via StatusStrip. Removed ~26 leftover pre-teal-swap blue color
+         instances across index.css (Metadata Repair/Sanitation, Quality, Set
+         Builder, CrateMind workspace) that were never migrated when --accent
+         changed from blue to teal. Added a shared atmospheric gradient wash
+         to .app-main so every non-Library/CrateMind page gets the same
+         background treatment. See CHANGELOG.txt 2026-07-26 entry for full
+         detail. No backend/pipeline/route/API changes.
+[ ] (P2) Follow-up from the 2026-07-26 visual rollout: Jobs.tsx, SetBuilder.tsx,
+         and Reconciliation.tsx were only reached via the global CSS-token
+         pass (cards/badges/colors), not a JSX-level pass — their own bespoke
+         markup (job progress panel, set-detail cards, ledger detail/JSON
+         viewer) still uses hand-rolled structure rather than the new
+         StatusStrip/KpiCard/EmptyState/Badge primitives. Revisit only if/when
+         one of those pages needs real feature work anyway — do not force a
+         cosmetic-only rewrite.
+[ ] (P3) Jobs.tsx: pre-existing React "missing key prop" warning in
+         JobsTable's rendered list (observed during the 2026-07-26 visual
+         rollout's browser QA pass, not caused by it — Jobs.tsx has zero diff
+         from that pass). Small, isolated fix; low risk whenever Jobs.tsx is
+         next touched.
 [ ] (P3) Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
          current "Quality" column is a compact vertical 4-bar meter driven
          by the real quality_tier field. Revisit only if an actual

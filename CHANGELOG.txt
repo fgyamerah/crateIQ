@@ -2,6 +2,95 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-26] — feat: App-wide visual system rollout from the Library view
+----------------------------------------------------------------------
+TYPE: Frontend-only design-system rollout. No backend/pipeline/business
+      behavior changed; no routes changed; no API response semantics
+      changed. A handful of small frontend type/API-alignment cleanups
+      were already done in an earlier same-day commit, not this one.
+SUMMARY: Extends the Library view's approved visual system (Inter, dark
+         background, emerald/teal/cyan/violet/coral palette, compact
+         status strips, KPI cards, tables, badges, accessible Camelot
+         wheel) to the rest of the app via shared CSS tokens/primitives
+         and a small set of new reusable components, rather than
+         redesigning each page's structure individually.
+  - New shared primitives: frontend/src/components/ui/StatusStrip.tsx,
+    KpiCard.tsx, EmptyState.tsx, Badge.tsx. KpiCard reuses the Library's
+    own .lib-overview-card classes and RingProgress component directly
+    (no duplicated CSS/logic). StatusStrip generalizes the
+    good/warn/danger/info compact-strip pattern already used by the
+    Library route's runtime/status strips: full 1px border + tinted
+    background, never a colored side border.
+  - frontend/src/components/ReadinessBanner.tsx now renders <StatusStrip>
+    internally instead of hand-rolled .error-banner/.crate-warning-banner
+    markup; same three states (fetch-error/degraded/not_ready), same
+    "local diagnostic only" footnote and Recheck button, same suppression
+    on the Library route via Layout.tsx (unchanged). not_ready now reads
+    coral instead of red, consistent with how the Library route already
+    treats its own most-severe runtime state — a deliberate softening,
+    not an accidental one; it is still a local-only diagnostic banner,
+    never a security signal.
+  - Fixed the two Impeccable-flagged side-tab-border warnings: Export.tsx's
+    WarningItem and SsdSync.tsx's MountWarning/preview-warnings/cancel-error
+    now render <StatusStrip> instead of a div with border-left. The old
+    per-level WARNING_COLORS map (which also hardcoded blue for "info")
+    is gone in Export.tsx in favor of a level->StatusStrip-tone map.
+  - Global CSS/theme cleanup (frontend/src/index.css), all app-wide since
+    every page shares this one stylesheet:
+    - .app-main now carries the same subtle radial-gradient wash as
+      .lib-workspace/.crate-workspace, so every page outside Library/
+      CrateMind (Quality, Metadata Repair, Metadata Sanitation, BPM
+      Review, Jobs, Set Builder, Export, SSD Sync, Reconciliation) gets
+      the same atmospheric background instead of a flat one. Library and
+      CrateMind already paint their own opaque full-height background
+      over this, so neither regresses.
+    - .card / .stat-card radius+background unified with the Library's
+      .lib-card treatment (8px -> 10px radius, same surface tint) — this
+      alone reaches every page using the shared .card primitive.
+    - Removed a leftover pre-teal-swap blue accent, rgba(74, 126, 255, *),
+      used for selected/hover/focus states across Metadata Repair,
+      Metadata Sanitation, Quality, Set Builder, and the CrateMind
+      (Issues/Enrichment/Audit/Folders) workspace — 21 occurrences
+      repainted teal to match --accent; a parallel light-blue text color
+      (#9fb7ff, 5 occurrences) repainted to var(--brand-cyan). Left
+      untouched in the two spots that only style the legacy, unreachable
+      Collection.tsx page (redirects to "/", out of scope).
+    - .btn--primary:hover no longer hardcodes a pre-swap blue
+      (#3a6ee8) — now a brightness filter on the teal accent, matching
+      the Library's own .lib-btn--primary:hover treatment.
+    - .badge--info, .quality-badge--high, .bpm-suggestion, and
+      .metadata-repair-primary/.metadata-repair-apply-preview all had
+      the same leftover hardcoded blue; repainted to cyan/teal tokens.
+    - .crate-workspace's background gradient and .crate-meter's gradient
+      used a leftover blue glow/endpoint; now match the Library's
+      teal/violet wash and teal->cyan meter gradient respectively.
+    - Removed now-dead CSS (.readiness-banner-row/-checks/-footnote, the
+      stale .crate-warning-banner .error-banner-dismiss override, the
+      unused .export-warning/.sync-mount-warning/.sync-warning-item fill
+      rules) after the StatusStrip migration made them unreachable.
+  - Deliberately NOT changed: .job-progress-fill/.progress-bar-fill/
+    .inline-progress-fill's width-based transitions (Jobs/Export/SSD Sync
+    progress bars) — Jobs.tsx itself was not touched this pass, so per
+    guidance these are left alone rather than rewritten in passing.
+    modules/harmonic.py scoring, any backend route, sync/export/
+    reconciliation/apply behavior, auth, AI/provider behavior, and the
+    four legacy/unreachable pages (Dashboard/Collection/Tracks/Settings,
+    all redirect-only) were not touched.
+  - Verification: npm run typecheck/build clean, python -m pytest -q
+    888 passed (unchanged from before this pass — no backend edits),
+    pip check clean, git diff --check clean. Re-ran the Impeccable
+    detector before/after: 6 findings -> 4 (both side-tab findings
+    fixed; the remaining 4 are the pre-existing/deferred width- and
+    height-transitions above, none introduced by this change).
+    Manually clicked through Library, Quality, Issues, Enrichment Queue,
+    Metadata Repair, BPM Review, Jobs, Set Builder, Export (incl. its
+    validation warnings), SSD Sync (incl. its mount warning), and
+    Reconciliation against a freshly reset demo library; compatible
+    tracks and the Camelot wheel on the Library route still work
+    unchanged. One pre-existing console warning (missing React "key"
+    prop in Jobs.tsx's JobsTable) was observed but is unrelated to this
+    change (Jobs.tsx has zero diff this pass) and was left as-is.
+
 [2026-07-26] — feat: Compatible-tracks API + real Camelot wheel in Library inspector
 ----------------------------------------------------------------------
 TYPE: Backend read-only additive endpoint + frontend UI. No pipeline, auth,

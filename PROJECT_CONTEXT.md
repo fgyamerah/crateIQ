@@ -6,6 +6,47 @@
 
 ## Latest Milestone
 
+- 2026-07-26: App-wide visual system rollout extending the Library view's
+  approved visual system (Inter, dark background, emerald/teal/cyan/violet/
+  coral palette) to the rest of the frontend, as a shared CSS-token/primitive
+  pass rather than a per-page redesign. New reusable components:
+  `frontend/src/components/ui/StatusStrip.tsx` (good/warn/danger/info compact
+  strip — full 1px border + tint, never a colored side border), `KpiCard.tsx`
+  (reuses the Library's own `.lib-overview-card`/`RingProgress` directly, no
+  duplicated CSS), `EmptyState.tsx`, `Badge.tsx`. `ReadinessBanner.tsx` now
+  renders `<StatusStrip>` internally (same three states, same suppression on
+  `/` via `Layout.tsx`, unchanged). Fixed both Impeccable-flagged side-tab-
+  border findings (`Export.tsx`'s `WarningItem`, `SsdSync.tsx`'s
+  `MountWarning`/preview-warnings/cancel-error) by swapping to `StatusStrip`.
+  Global `index.css` changes (all app-wide, one shared stylesheet): `.app-main`
+  gained the same subtle radial-gradient wash as `.lib-workspace`/
+  `.crate-workspace` (every non-Library/CrateMind page now shares that
+  atmosphere instead of a flat background); `.card`/`.stat-card` radius+surface
+  unified with `.lib-card`; removed a pervasive leftover pre-teal-swap blue
+  accent (`rgba(74,126,255,*)`, 21 occurrences) used for selected/hover/focus
+  states across Metadata Repair, Metadata Sanitation, Quality, Set Builder,
+  and the CrateMind workspace — repainted to the teal `--accent`; a matching
+  light-blue text color (`#9fb7ff`, 5 occurrences) repainted to
+  `var(--brand-cyan)`; `.btn--primary:hover`, `.badge--info`,
+  `.quality-badge--high`, `.bpm-suggestion`, `.metadata-repair-primary`/
+  `.metadata-repair-apply-preview`, and `.crate-workspace`/`.crate-meter`'s
+  gradients all had the same leftover blue, now cyan/teal. Left untouched:
+  the two legacy-Collection.tsx-only occurrences of that blue (unreachable
+  page), Jobs/Export/SsdSync's width-transition progress bars (Jobs.tsx not
+  touched this pass), and `--status-running` blue / `.lib-btn--primary`'s own
+  indigo-blue-cyan gradient (both intentional, not leftovers). Verification:
+  frontend typecheck/build clean, `python -m pytest -q` 888 passed (no backend
+  changes), `pip check` clean, `git diff --check` clean. Impeccable detector
+  findings went from 6 to 4 (both side-tab findings fixed; the remaining 4 are
+  the pre-existing/deferred width/height-transition progress bars). Manually
+  verified Library/compatible-tracks/Camelot-wheel/demo-seed still work
+  unchanged, and clicked through Quality, Issues, Enrichment Queue, Metadata
+  Repair, BPM Review, Jobs, Set Builder, Export, SSD Sync, and Reconciliation
+  against a freshly reset demo library — no broken/blank pages, no new console
+  errors (one pre-existing React "key" prop warning in Jobs.tsx's JobsTable
+  was observed but is unrelated — Jobs.tsx has zero diff this pass). No
+  backend/pipeline/route/API/auth/AI/sync/export/reconciliation behavior
+  changed.
 - 2026-07-26: Real compatible-tracks API + Camelot wheel for the Library
   inspector, replacing the two remaining honest placeholders from the prior
   redesign pass. New `GET /api/tracks/{id}/compatible` (backend/app/api/

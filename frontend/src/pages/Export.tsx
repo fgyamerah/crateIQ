@@ -10,15 +10,16 @@ import type {
   ExportWarning,
   ValidateResponse,
   ValidationStats,
+  WarningLevel,
 } from '../types/export'
 import {
   CATEGORY_COLORS,
   CATEGORY_LABELS,
-  WARNING_COLORS,
 } from '../types/export'
 import type { Job } from '../types/job'
 import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
+import StatusStrip, { type StatusStripTone } from '../components/ui/StatusStrip'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -37,20 +38,18 @@ function pct(n: number, total: number): string {
 // Warning banner row
 // ---------------------------------------------------------------------------
 
+const WARNING_TONE: Record<WarningLevel, StatusStripTone> = {
+  info: 'info',
+  warning: 'warn',
+  error: 'danger',
+}
+
 function WarningItem({ w }: { w: ExportWarning }) {
   return (
-    <div
-      className="export-warning"
-      style={{ borderLeftColor: WARNING_COLORS[w.level] }}
-    >
-      <span
-        className="export-warning-level"
-        style={{ color: WARNING_COLORS[w.level] }}
-      >
-        {w.level.toUpperCase()}
-      </span>
+    <StatusStrip tone={WARNING_TONE[w.level]} role={w.level === 'error' ? 'alert' : 'status'}>
+      <span className="export-warning-level">{w.level.toUpperCase()}</span>
       <span>{w.message}</span>
-    </div>
+    </StatusStrip>
   )
 }
 
