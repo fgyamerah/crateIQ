@@ -219,10 +219,11 @@ RMLINT_BIN     = os.environ.get("RMLINT_BIN", "rmlint")
 AUBIO_BIN      = os.environ.get("AUBIO_BIN", "")
 # Legacy name kept so existing config_local.py overrides still work.
 AUBIOBPM_BIN   = os.environ.get("AUBIOBPM_BIN", "aubiobpm")
-KEYFINDER_BIN  = os.environ.get("KEYFINDER_BIN", "keyfinder-cli")
+# Empty overrides intentionally mean "search PATH", matching .env.example.
+KEYFINDER_BIN  = os.environ.get("KEYFINDER_BIN", "").strip() or "keyfinder-cli"
 FFPROBE_BIN    = os.environ.get("FFPROBE_BIN", "ffprobe")
 FFMPEG_BIN     = os.environ.get("FFMPEG_BIN",  "ffmpeg")
-BEET_BIN       = os.environ.get("BEET_BIN", "beet")
+BEET_BIN       = os.environ.get("BEET_BIN", "").strip() or "beet"
 
 # ---------------------------------------------------------------------------
 # Artist Intelligence (artist-intelligence subcommand)

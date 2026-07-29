@@ -316,6 +316,16 @@ The selected root can be configured with the preferred CrateIQ variable:
 export CRATEIQ_LIBRARY_ROOT=/path/to/library
 ```
 
+### Optional local analysis and metadata tools
+
+Python packages in `requirements.txt` are separate from the optional external
+executables used by particular workflows. `keyfinder-cli`, `aubio`, and
+`beet` are never installed by the project requirements and are not needed to
+start CrateIQ. Missing tools make runtime readiness `degraded` and limit only
+the workflows that use them. See [Local tooling for Linux Mint and
+Ubuntu](docs/operations/LOCAL_TOOLING.md) for safe installation, verification,
+and `KEYFINDER_BIN`/`AUBIO_BIN`/`BEET_BIN` override guidance.
+
 `CRATEMINDAI_LIBRARY_ROOT` remains a deprecated fallback for existing local
 setups when `CRATEIQ_LIBRARY_ROOT` is not set. Database paths, API paths,
 pipeline command names, and serialized queue formats are intentionally not
@@ -474,8 +484,14 @@ per page:
   `SsdSync.tsx`'s validation/mount warnings.
 - `frontend/src/components/ui/KpiCard.tsx` — the shared overview/stat card,
   reusing the Library's own `.lib-overview-card` styling and `RingProgress`.
-- `frontend/src/components/ui/EmptyState.tsx`, `Badge.tsx` — shared "nothing
-  here" state and semantic badge, available for new call sites.
+  Used by `Quality.tsx`'s top metric row.
+- `frontend/src/components/ui/EmptyState.tsx` — shared "nothing here" state.
+  Used by `Quality.tsx` ("Recommended Next Actions") and `BpmReview.tsx`
+  (the anomaly summary/table empty states).
+- `frontend/src/components/ui/Badge.tsx` — shared semantic badge. Used by
+  `Quality.tsx`'s HIGH/MEDIUM/LOW confidence chips. Not yet adopted by
+  `Jobs.tsx`, `SetBuilder.tsx`, or `Reconciliation.tsx`, whose own bespoke
+  markup wasn't touched by the visual rollout.
 - `.app-main` (the shared page container in `Layout.tsx`) carries the same
   subtle radial-gradient wash as the Library/CrateMind workspaces, so every
   other page (Quality, Metadata Repair, Metadata Sanitation, BPM Review,
@@ -611,6 +627,10 @@ export CRATEIQ_LIBRARY_ROOT=/path/to/library
 
 ## Running Backend/Frontend
 
+### Interactive launcher
+
+Source `scripts/crateiq-local-services.sh --aliases` (add the same source line once to `~/.bashrc`, then run `source ~/.bashrc`) and use `crateiq_start`. It offers the safe `.run/demo-library` database and the explicitly configured `CRATEIQ_LIBRARY_ROOT` database, then LAN (default) or local-only access. Direct commands are `crateiq_start_demo_local|lan` and `crateiq_start_library_local|lan`; management commands are `crateiq_stop`, `crateiq_status [--short|--verbose]`, `crateiq_logs`, `crateiq_logs_backend`, and `crateiq_logs_frontend`. Runtime PID files and logs are under `.run/` (ignored). Ports are backend 8020 and frontend 5175; LAN listens on `0.0.0.0`, local on `127.0.0.1`. If LAN IP detection fails, use `ip -4 addr show scope global`; permit 5175/8020 in your firewall before opening the displayed URL from a phone or tablet on the same trusted network.
+
 Run the backend from the repository root:
 
 ```bash
@@ -711,7 +731,7 @@ always have real same-key, adjacent-key, relative-major/minor, close-BPM,
 and mixed-genre clusters to show — search "Coastal Anchor" or "Motherland
 Anchor" in the Library view to see them.
 
-Then point a local run at it:
+Then point a local run at it (or use `crateiq_start_demo_local` after sourcing the launcher):
 
 ```bash
 export DJ_MUSIC_ROOT="$(pwd)/.run/demo-library"
@@ -760,6 +780,11 @@ containment under the root, `pipeline.py` entrypoint, backend data
 directory, and availability of `ffprobe`, `ffmpeg`, `keyfinder-cli`,
 `aubio`, `beet`, `rmlint`, and `rsync`. Missing binaries warn; they never
 fail startup.
+
+For the optional fallback analysis/import tools specifically, see [Local
+tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md). The
+readiness check reports the affected workflow without exposing configured
+override values.
 
 Environment configuration is documented in [.env.example](.env.example) —
 copy the values you need into your shell or a local env file. Never commit

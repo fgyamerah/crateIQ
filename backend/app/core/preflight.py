@@ -257,8 +257,12 @@ def _check_binary(
             )
     return CheckResult(
         check_name, "warn",
-        f"{name} not found on PATH (override with {env_name}). "
-        f"Workflows that need it will be unavailable: {purpose}.",
+        (
+            f"Optional tool {name} was not found using {env_name}. "
+            if override
+            else f"Optional tool {name} was not found on PATH (override with {env_name}). "
+        )
+        + f"Workflows that need it will be unavailable: {purpose}.",
         metadata={"env_override": env_name},
     )
 

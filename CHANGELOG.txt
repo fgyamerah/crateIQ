@@ -2,6 +2,78 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-07-29] — Optional local music-analysis tooling guidance
+
+- Added Linux Mint/Ubuntu setup, verification, override, and safety guidance
+  for optional `keyfinder-cli`, `aubio`, and `beet` executables.
+- Documented that Beets is invoked only through the `beet` CLI, so no Python
+  dependency files changed; keyfinder-cli remains a manual/package/build
+  install depending on the distribution.
+- Added blank PATH-search override entries to `.env.example`; blank
+  keyfinder/Beets overrides now resolve to their normal PATH command.
+- Clarified non-fatal optional-tool readiness messages and added focused
+  override tests. No scanning, pipeline, export, or library-data behavior
+  changed.
+- Files affected: `.env.example`, `config.py`, `backend/app/core/preflight.py`,
+  `tests/test_preflight.py`, `README.md`, `docs/operations/LOCAL_TOOLING.md`,
+  `NEXT_TASKS.txt`, `PROJECT_CONTEXT.md`.
+
+[2026-07-26] — fix: Adopt KpiCard/EmptyState/Badge, the shared primitives left unused by the visual rollout
+----------------------------------------------------------------------
+TYPE: Frontend-only cleanup/adoption pass. No backend/pipeline/business
+      behavior changed; no routes changed; no API response semantics
+      changed; no destructive/sync/export/reconciliation/auth/AI behavior
+      touched; Library's compatible-tracks and Camelot wheel untouched.
+SUMMARY: The previous visual-rollout review found that three of the four
+         new shared UI primitives (KpiCard.tsx, EmptyState.tsx, Badge.tsx)
+         had zero real call sites — only StatusStrip was actually used.
+         This pass wires all three into Quality.tsx and BpmReview.tsx
+         (the two lowest-risk pages), rather than leaving them as
+         speculative dead code or deleting them.
+  - Quality.tsx: the 5-card top metric row (Total Tracks, Issue Total,
+    Artist Coverage, Title Coverage, BPM/Camelot/Genre) now renders
+    <KpiCard> instead of a bespoke `Metric` helper (removed). The 3
+    percentage-based cards (Issue Total, Artist Coverage, Title Coverage)
+    use KpiCard's ring-progress variant instead of a linear meter bar —
+    same information, matches how the Library route already shows
+    Analyzed%/BPM Coverage% — nothing removed. Total Tracks and
+    BPM/Camelot/Genre use icon-based KpiCards (Music2/KeyRound, matching
+    Library's own icon choices).
+  - Quality.tsx: the HIGH/MEDIUM/LOW confidence chips (Repair Queue Status
+    and Sanitation Queue Status sections) now render <Badge> instead of
+    `conf-chip conf-chip--quality conf-chip--{high,medium,low}` spans.
+    This incidentally fixes a real pre-existing bug: `.conf-chip--high`/
+    `--medium`/`--low` had no CSS definitions at all, so all three
+    confidence tiers rendered as identical, uncolored chips. Badge tones
+    (succeeded/pending/failed = green/amber/red) restore the intended
+    color-coding using the exact tokens the dead classes were meant to
+    reuse. The now-fully-dead `.conf-chip--quality` CSS rule was removed.
+  - Quality.tsx: "Recommended Next Actions" now renders <EmptyState>
+    when the list is genuinely empty (post-load), instead of silently
+    rendering a blank grid with a title/subtitle and no content — a real
+    UX gap in the original page. Loading behavior is unchanged (guarded
+    on the existing `loading` flag so the message never flashes before
+    data arrives).
+  - BpmReview.tsx: the "no anomalies yet" summary message and the
+    anomaly table's "no pending anomalies" / "no records match filters"
+    messages now render <EmptyState> instead of bare `<p>` tags — same
+    exact copy, same trigger conditions, no behavior change.
+  - KpiCard and Badge were not adopted into BpmReview.tsx: its anomaly
+    reason/status labels already have a working, more granular 5+3-state
+    color taxonomy (reason--missing/critical/warn, anomaly-status--
+    pending/reviewed/ignored/requeued/resolved) that doesn't map cleanly
+    onto Badge's 6-tone type without losing precision or reshaping the
+    primitive — left as-is rather than forced. BpmReview also has no
+    metric/stat-card grid, so KpiCard had no natural fit there either.
+  - Verification: typecheck/build clean, python -m pytest -q 888 passed
+    (no backend changes), pip check clean, git diff --check clean.
+    Impeccable detector: 4 findings before and after (same pre-existing
+    Jobs/SetBuilder/Export progress-bar width-transitions and the legacy
+    Collection.tsx height-transition; nothing new). Manually verified
+    Library/Camelot-wheel/compatible-tracks unaffected, and Quality/BPM
+    Review render correctly with the new primitives and no new console
+    errors.
+
 [2026-07-26] — feat: App-wide visual system rollout from the Library view
 ----------------------------------------------------------------------
 TYPE: Frontend-only design-system rollout. No backend/pipeline/business

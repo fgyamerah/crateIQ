@@ -38,6 +38,14 @@ P3 = low
 
 ----------------------------------------------------------------------
 CURRENT FOCUS
+
+[x] (P1) Document optional local music-analysis tooling and readiness guidance
+         (2026-07-29): added docs/operations/LOCAL_TOOLING.md, explicit blank
+         KEYFINDER_BIN/AUBIO_BIN/BEET_BIN PATH-search defaults in .env.example,
+         and focused preflight override coverage. Beets remains an optional
+         `beet` CLI runtime tool, not a Python requirements dependency;
+         keyfinder-cli remains a manual/package/build installation depending
+         on the Linux distribution. No scanning or pipeline behavior changed.
 ----------------------------------------------------------------------
 [x] (P1) Library view: split out of CrateMind.tsx + mockup-faithful visual
          pass (2026-07-26) — frontend/src/components/library/* (new),
@@ -67,14 +75,29 @@ CURRENT FOCUS
          to .app-main so every non-Library/CrateMind page gets the same
          background treatment. See CHANGELOG.txt 2026-07-26 entry for full
          detail. No backend/pipeline/route/API changes.
+[x] (P2) Adopt KpiCard/EmptyState/Badge — the visual rollout's three unused
+         shared primitives (2026-07-26). Quality.tsx: top metric row now uses
+         KpiCard (ring-progress for the 3 percentage metrics, icon-based for
+         the other 2); HIGH/MEDIUM/LOW confidence chips now use Badge (also
+         fixed a real pre-existing bug — `.conf-chip--high/medium/low` had no
+         CSS, so all three tiers rendered identically uncolored); "Recommended
+         Next Actions" now uses EmptyState when genuinely empty instead of a
+         silent blank grid. BpmReview.tsx: both "no anomalies" messages now
+         use EmptyState (same copy, same trigger conditions). KpiCard/Badge
+         were deliberately NOT forced into BpmReview — no metric-card grid,
+         and its anomaly reason/status labels already have a working, more
+         granular color taxonomy than Badge's 6 tones support. See
+         CHANGELOG.txt 2026-07-26 entry for full detail.
 [ ] (P2) Follow-up from the 2026-07-26 visual rollout: Jobs.tsx, SetBuilder.tsx,
          and Reconciliation.tsx were only reached via the global CSS-token
          pass (cards/badges/colors), not a JSX-level pass — their own bespoke
          markup (job progress panel, set-detail cards, ledger detail/JSON
-         viewer) still uses hand-rolled structure rather than the new
-         StatusStrip/KpiCard/EmptyState/Badge primitives. Revisit only if/when
-         one of those pages needs real feature work anyway — do not force a
-         cosmetic-only rewrite.
+         viewer) still uses hand-rolled structure rather than the shared
+         StatusStrip/KpiCard/EmptyState/Badge primitives (all four now have
+         real consumers elsewhere — Quality/BpmReview/Export/SsdSync/
+         ReadinessBanner — just not on these three pages). Revisit only if/
+         when one of those pages needs real feature work anyway — do not
+         force a cosmetic-only rewrite.
 [ ] (P3) Jobs.tsx: pre-existing React "missing key prop" warning in
          JobsTable's rendered list (observed during the 2026-07-26 visual
          rollout's browser QA pass, not caused by it — Jobs.tsx has zero diff

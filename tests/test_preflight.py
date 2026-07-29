@@ -140,6 +140,28 @@ def test_missing_optional_binaries_warn_but_do_not_crash(tmp_path, monkeypatch):
         assert check["required"] is False
 
 
+def test_analysis_tool_overrides_are_recognized(tmp_path, monkeypatch):
+    """Optional analysis/import binaries can be supplied without PATH edits."""
+    root = _make_root(tmp_path)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    overrides = {
+        "KEYFINDER_BIN": ("local-keyfinder", "binary_keyfinder_cli"),
+        "AUBIO_BIN": ("local-aubio", "binary_aubio"),
+        "BEET_BIN": ("local-beet", "binary_beet"),
+    }
+    for env_name, (binary, _) in overrides.items():
+        monkeypatch.setenv(env_name, binary)
+    _mock_all_binaries_found(monkeypatch)
+
+    report = preflight.run_preflight()
+
+    for env_name, (binary, check_name) in overrides.items():
+        check = _check_by_name(report, check_name)
+        assert check["status"] == "pass"
+        assert check["metadata"]["source"] == env_name
+        assert check["metadata"]["resolved"] == binary
+
+
 def test_preflight_is_read_only(tmp_path, monkeypatch):
     root = _make_root(tmp_path)
     monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))

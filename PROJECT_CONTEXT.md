@@ -6,6 +6,36 @@
 
 ## Latest Milestone
 
+- 2026-07-29: Added a local tooling setup layer for the optional
+  `keyfinder-cli`, `aubio`, and `beet` executables. `requirements.txt` and
+  `requirements-dev.txt` remain Python-only: CrateIQ invokes Beets only via
+  the `beet` CLI and does not import its Python package. New
+  `docs/operations/LOCAL_TOOLING.md` provides Linux Mint/Ubuntu installation,
+  verification, override, and safety guidance; `.env.example` now documents
+  blank `KEYFINDER_BIN`, `AUBIO_BIN`, and `BEET_BIN` values as PATH search.
+  `config.py` treats blank keyfinder/Beets overrides the same way. Readiness
+  remains read-only and non-fatal: missing optional tools report a degraded
+  warning with the unavailable workflow, and focused tests cover overrides.
+  No music scanning, analysis, export, or pipeline behavior changed.
+
+- 2026-07-26: Adopted the visual rollout's three previously-unused shared
+  primitives (KpiCard, EmptyState, Badge — see prior milestone entry below)
+  into `Quality.tsx` and `BpmReview.tsx`, the two lowest-risk pages, rather
+  than leaving them as dead code. `Quality.tsx`'s top metric row now uses
+  `KpiCard` (ring-progress for percentage metrics, icon-based for the rest),
+  its confidence chips now use `Badge` (which also fixed a real bug — the
+  old `conf-chip--high/medium/low` classes had no CSS, so HIGH/MEDIUM/LOW
+  all rendered identically uncolored), and its "Recommended Next Actions"
+  section now uses `EmptyState` instead of silently rendering blank when
+  empty. `BpmReview.tsx`'s two "no anomalies" messages now use `EmptyState`
+  with identical copy. `KpiCard`/`Badge` were deliberately not forced into
+  `BpmReview.tsx` — no metric-card grid exists there, and its anomaly
+  reason/status labels already have a working, more granular color
+  taxonomy than `Badge`'s six tones support. All four shared primitives
+  (`StatusStrip`, `KpiCard`, `EmptyState`, `Badge`) now have real
+  consumers. No backend/pipeline/route/API/auth/AI/sync/export/
+  reconciliation behavior changed; Library's Camelot wheel and
+  compatible-tracks verified unaffected. See CHANGELOG.txt for detail.
 - 2026-07-26: App-wide visual system rollout extending the Library view's
   approved visual system (Inter, dark background, emerald/teal/cyan/violet/
   coral palette) to the rest of the frontend, as a shared CSS-token/primitive
