@@ -10,6 +10,7 @@ From the project root (crateIQ/):
 from __future__ import annotations
 
 import logging
+import os
 import sys
 import time
 from contextlib import asynccontextmanager
@@ -84,9 +85,12 @@ app = FastAPI(
 
 # Allow the local frontend dev server (Phase 2) to call the API.
 # In production restrict origins explicitly.
+cors_origins = [origin.strip() for origin in os.getenv(
+    "CORS_ORIGINS", "http://localhost:3000,http://localhost:5173,http://127.0.0.1:5175"
+).split(",") if origin.strip()]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "http://localhost:5173"],
+    allow_origins=cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )

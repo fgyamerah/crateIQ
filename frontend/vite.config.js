@@ -10,7 +10,8 @@ export default defineConfig(({ mode }) => {
     return {
         plugins: [react()],
         server: {
-            port: 5173,
+            port: 5175,
+            strictPort: true,
             proxy: {
                 // All /api/* requests are forwarded to the FastAPI backend.
                 '/api': {
