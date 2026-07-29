@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
+import { Music2, KeyRound } from 'lucide-react'
 import { fetchLibraryQuality } from '../api/libraryQuality'
 import type { LibraryQualityResponse } from '../types/libraryQuality'
+import KpiCard from '../components/ui/KpiCard'
+import EmptyState from '../components/ui/EmptyState'
+import Badge, { type BadgeTone } from '../components/ui/Badge'
 
 function clamp(value: number, min = 0, max = 100): number {
   return Math.max(min, Math.min(max, value))
@@ -25,31 +29,13 @@ function scoreFromQuality(data: LibraryQualityResponse | null): number {
   return clamp(Math.round(100 - (missing * 8 + suspicious * 4 + weak * 2)))
 }
 
-function Metric({
-  label,
-  value,
-  sub,
-  progress,
-  warning,
-}: {
-  label: string
-  value: string
-  sub?: string
-  progress?: number
-  warning?: boolean
-}) {
-  return (
-    <div className="crate-metric quality-metric">
-      <span className="crate-metric-label">{label}</span>
-      <strong>{value}</strong>
-      {progress !== undefined && (
-        <div className={`crate-meter${warning ? ' crate-meter--warn' : ''}`}>
-          <span style={{ width: `${progress}%` }} />
-        </div>
-      )}
-      {sub && <span className="crate-metric-sub">{sub}</span>}
-    </div>
-  )
+/** HIGH/MEDIUM/LOW confidence -> Badge tone. Reuses the same succeeded/
+ *  pending/failed color tokens the confidence chips already carried
+ *  conceptually (green/amber/red), via the shared Badge primitive. */
+const CONFIDENCE_TONE: Record<'HIGH' | 'MEDIUM' | 'LOW', BadgeTone> = {
+  HIGH: 'succeeded',
+  MEDIUM: 'pending',
+  LOW: 'failed',
 }
 
 function SectionCard({
@@ -127,31 +113,34 @@ export default function Quality() {
       {error && <div className="metadata-repair-error">{error}</div>}
 
       <section className="crate-card-grid quality-top-grid">
-        <Metric
+        <KpiCard
+          icon={<Music2 size={15} />}
+          tone="emerald"
           label="Total tracks"
           value={loading ? '...' : total.toLocaleString()}
           sub="Read-only DB snapshot"
         />
-        <Metric
+        <KpiCard
+          ring={{ value: pctValue(quality?.issue_total ?? 0, total), color: 'var(--brand-coral)' }}
           label="Issue total"
           value={loading ? '...' : (quality?.issue_total ?? 0).toLocaleString()}
           sub="Remaining cleanup targets"
-          progress={pctValue(quality?.issue_total ?? 0, total)}
-          warning
         />
-        <Metric
+        <KpiCard
+          ring={{ value: pctValue(coverage?.with_artist ?? 0, total), color: 'var(--brand-emerald)' }}
           label="Artist coverage"
           value={loading ? '...' : pct(coverage?.with_artist ?? 0, total)}
           sub={`${coverage?.with_artist ?? 0} tracks with artist`}
-          progress={pctValue(coverage?.with_artist ?? 0, total)}
         />
-        <Metric
+        <KpiCard
+          ring={{ value: pctValue(coverage?.with_title ?? 0, total), color: 'var(--brand-cyan)' }}
           label="Title coverage"
           value={loading ? '...' : pct(coverage?.with_title ?? 0, total)}
           sub={`${coverage?.with_title ?? 0} tracks with title`}
-          progress={pctValue(coverage?.with_title ?? 0, total)}
         />
-        <Metric
+        <KpiCard
+          icon={<KeyRound size={15} />}
+          tone="violet"
           label="BPM / Camelot / Genre"
           value={loading ? '...' : `${pct(coverage?.with_bpm ?? 0, total)} / ${pct(coverage?.with_camelot ?? 0, total)} / ${pct(coverage?.with_genre ?? 0, total)}`}
           sub="Metadata completeness"
@@ -195,9 +184,9 @@ export default function Quality() {
           </div>
           <div className="quality-confidence-row">
             {(['HIGH', 'MEDIUM', 'LOW'] as const).map((key) => (
-              <span key={key} className={`conf-chip conf-chip--quality conf-chip--${key.toLowerCase()}`}>
+              <Badge key={key} tone={CONFIDENCE_TONE[key]}>
                 {key} {repair?.by_confidence?.[key] ?? 0}
-              </span>
+              </Badge>
             ))}
           </div>
           <Link className="quality-inline-link" to="/metadata-repair">Open Metadata Repair</Link>
@@ -214,9 +203,9 @@ export default function Quality() {
           </div>
           <div className="quality-confidence-row">
             {(['HIGH', 'MEDIUM', 'LOW'] as const).map((key) => (
-              <span key={key} className={`conf-chip conf-chip--quality conf-chip--${key.toLowerCase()}`}>
+              <Badge key={key} tone={CONFIDENCE_TONE[key]}>
                 {key} {sanitation?.by_confidence?.[key] ?? 0}
-              </span>
+              </Badge>
             ))}
           </div>
           <Link className="quality-inline-link" to="/metadata-sanitation">Open Metadata Sanitation</Link>
@@ -224,14 +213,18 @@ export default function Quality() {
       </section>
 
       <SectionCard title="Recommended Next Actions" subtitle="Prioritized cleanup actions from the current snapshot.">
-        <div className="quality-actions">
-          {(quality?.recommended_next_actions || []).map((action) => (
-            <Link key={`${action.target}-${action.label}`} to={action.target} className="quality-action-card">
-              <strong>{action.label}</strong>
-              <span>{action.reason}</span>
-            </Link>
-          ))}
-        </div>
+        {!loading && (quality?.recommended_next_actions?.length ?? 0) === 0 ? (
+          <EmptyState message="No recommended actions right now — the library looks clean." />
+        ) : (
+          <div className="quality-actions">
+            {(quality?.recommended_next_actions || []).map((action) => (
+              <Link key={`${action.target}-${action.label}`} to={action.target} className="quality-action-card">
+                <strong>{action.label}</strong>
+                <span>{action.reason}</span>
+              </Link>
+            ))}
+          </div>
+        )}
       </SectionCard>
 
       <SectionCard title="Cleanup Progress" subtitle="Operational shortcuts to the main cleanup screens.">

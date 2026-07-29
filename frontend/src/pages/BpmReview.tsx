@@ -11,6 +11,7 @@ import {
 import { fetchJobLogs } from '../api/jobs'
 import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
+import EmptyState from '../components/ui/EmptyState'
 import type { BpmAnomaly, AnomalyReviewStatus, BpmSummary } from '../types/analysis'
 import { REASON_COLORS, STATUS_COLORS } from '../types/analysis'
 import type { Job } from '../types/job'
@@ -47,7 +48,7 @@ function SummaryBar({ summary }: { summary: BpmSummary | null }) {
   if (!summary) return null
   const { by_status, by_reason } = summary
   const total = Object.values(by_status).reduce((a, b) => a + b, 0)
-  if (total === 0) return <p className="muted" style={{ fontSize: 12 }}>No anomalies recorded. Run a BPM check first.</p>
+  if (total === 0) return <EmptyState message="No anomalies recorded. Run a BPM check first." />
   return (
     <div className="bpm-summary-bar">
       <div className="bpm-summary-section">
@@ -459,11 +460,15 @@ export default function BpmReview() {
           </div>
 
           {anomalies.length === 0 && !loading ? (
-            <p className="empty-state" style={{ padding: '20px 24px' }}>
-              {filterStatus === 'pending'
-                ? 'No pending anomalies. Run a BPM check to scan the library.'
-                : 'No records match the current filters.'}
-            </p>
+            <div style={{ padding: '20px 24px' }}>
+              <EmptyState
+                message={
+                  filterStatus === 'pending'
+                    ? 'No pending anomalies. Run a BPM check to scan the library.'
+                    : 'No records match the current filters.'
+                }
+              />
+            </div>
           ) : (
             <div className="table-wrapper">
               <table className="table table--anomalies">

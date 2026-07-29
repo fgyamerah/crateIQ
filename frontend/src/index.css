@@ -7275,10 +7275,6 @@ tr.row--selected td {
   gap: 6px;
 }
 
-.conf-chip--quality {
-  border: 1px solid var(--border);
-}
-
 .quality-inline-link {
   align-self: flex-start;
   color: var(--brand-cyan);
