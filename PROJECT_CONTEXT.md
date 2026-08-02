@@ -60,6 +60,16 @@
   warning with the unavailable workflow, and focused tests cover overrides.
   No music scanning, analysis, export, or pipeline behavior changed.
 
+- 2026-08-02: Expanded `docs/operations/LOCAL_TOOLING.md` with a safe,
+  source-only fallback for Linux Mint/Ubuntu systems where apt does not package
+  `keyfinder-cli`: pinned upstream `keyfinder-cli` v1.2.0 plus
+  Mixxx-maintained `libkeyfinder` 2.2.8, built with CMake into a user-local
+  prefix. The documented static-libkeyfinder build avoids a local shared
+  library search-path requirement. It remains an opt-in fallback for tracks
+  without MIK key data, and `KEYFINDER_BIN` may point to the resulting binary.
+  No script, automatic package installation, binary artifact, or application
+  behavior was added or changed.
+
 - 2026-07-26: Adopted the visual rollout's three previously-unused shared
   primitives (KpiCard, EmptyState, Badge — see prior milestone entry below)
   into `Quality.tsx` and `BpmReview.tsx`, the two lowest-risk pages, rather

@@ -324,7 +324,9 @@ executables used by particular workflows. `keyfinder-cli`, `aubio`, and
 start CrateIQ. Missing tools make runtime readiness `degraded` and limit only
 the workflows that use them. See [Local tooling for Linux Mint and
 Ubuntu](docs/operations/LOCAL_TOOLING.md) for safe installation, verification,
-and `KEYFINDER_BIN`/`AUBIO_BIN`/`BEET_BIN` override guidance.
+and `KEYFINDER_BIN`/`AUBIO_BIN`/`BEET_BIN` override guidance. When a
+distribution does not package `keyfinder-cli`, that guide uses a pinned,
+upstream-source-only user-local build; CrateIQ never installs it.
 
 `CRATEMINDAI_LIBRARY_ROOT` remains a deprecated fallback for existing local
 setups when `CRATEIQ_LIBRARY_ROOT` is not set. Database paths, API paths,

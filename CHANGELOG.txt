@@ -2,6 +2,18 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-02] — docs: safe local keyfinder-cli source build
+
+- Documented a pinned, upstream-source-only Linux Mint/Ubuntu build path for
+  optional `keyfinder-cli` v1.2.0 and Mixxx-maintained `libkeyfinder` 2.2.8.
+- Listed the required Ubuntu/Mint development packages, user-local CMake
+  commands, no-audio verification, and `KEYFINDER_BIN` readiness override.
+- The guidance rejects unverified `.deb`/binary downloads and keeps the tool
+  optional; no helper, automatic installation, binary artifact, or pipeline
+  behavior was added or changed.
+- Files affected: `docs/operations/LOCAL_TOOLING.md`, `README.md`,
+  `NEXT_TASKS.txt`, `PROJECT_CONTEXT.md`, `CHANGELOG.txt`.
+
 [2026-08-02] — fix: SetBuilder + Reconciliation adopt shared UI primitives
 ----------------------------------------------------------------------
 TYPE: Frontend-only cleanup (two page JSX files only). No backend/

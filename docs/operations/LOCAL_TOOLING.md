@@ -58,13 +58,88 @@ dependency, so it is deliberately absent from `requirements.txt` and
 
 ### keyfinder-cli
 
-`keyfinder-cli` may not be available in default Linux Mint/Ubuntu apt
-repositories. Install it using a trusted distribution package when available,
-or follow the upstream project's manual build/release-binary instructions.
-The resulting executable can be placed on `PATH` or referenced with
-`KEYFINDER_BIN`. Its location depends on whether it was installed from a
-package, downloaded as a release binary, or built locally; do not assume or
-commit a fixed path.
+`keyfinder-cli` is not packaged in the default Linux Mint/Ubuntu Noble
+repositories at the time this guide was verified. It is an optional fallback
+for tracks that have no existing MIK key data; a missing executable must not
+block CrateIQ startup or normal MIK-preserving workflows.
+
+Use only the two upstream source repositories below. Do not download
+third-party `.deb` files, prebuilt binaries from unverified mirrors, or vendor
+the resulting executable in this repository:
+
+- [Evan Purkhiser's keyfinder-cli](https://github.com/EvanPurkhiser/keyfinder-cli)
+  is the CLI upstream. Its current `v1.2.0` release and CMake build recipe are
+  suitable for a local source build.
+- [Mixxx libkeyfinder](https://github.com/mixxxdj/libkeyfinder) is the
+  maintained library upstream. Mixxx took over maintenance in 2020; use its
+  current `2.2.8` tag rather than the original unmaintained library project.
+
+The CLI is small and recently released, but it is not an Ubuntu/Mint-supported
+package. Recommend it only as an opt-in local fallback, not as a required
+CrateIQ dependency. Building the exact tagged sources below is preferred over
+an unverified binary download.
+
+#### Safe user-local source build
+
+Review and run these commands yourself. They install only compiler and
+development packages through the configured Ubuntu/Mint repositories, then
+clone the two named upstream projects into a user-controlled directory. They
+do not write to the CrateIQ checkout and do not analyze music files.
+
+`ffmpeg` alone is not sufficient for a build: the CLI needs FFmpeg development
+headers, while libkeyfinder needs FFTW3 headers. `BUILD_SHARED_LIBS=OFF` makes
+libkeyfinder static inside the CLI so the installed executable does not depend
+on a user-local `libkeyfinder.so` search path.
+
+```bash
+sudo apt update
+sudo apt install build-essential cmake git pkg-config libfftw3-dev \
+  libavcodec-dev libavformat-dev libavutil-dev libswresample-dev
+
+export KEYFINDER_BUILD_ROOT="$HOME/src/keyfinder-build"
+export KEYFINDER_PREFIX="$HOME/.local/opt/keyfinder-cli"
+mkdir -p "$KEYFINDER_BUILD_ROOT" "$KEYFINDER_PREFIX"
+
+git clone --depth 1 --branch 2.2.8 \
+  https://github.com/mixxxdj/libkeyfinder.git \
+  "$KEYFINDER_BUILD_ROOT/libkeyfinder-2.2.8"
+cmake -S "$KEYFINDER_BUILD_ROOT/libkeyfinder-2.2.8" \
+  -B "$KEYFINDER_BUILD_ROOT/libkeyfinder-2.2.8/build" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$KEYFINDER_PREFIX" \
+  -DBUILD_SHARED_LIBS=OFF \
+  -DBUILD_TESTING=OFF
+cmake --build "$KEYFINDER_BUILD_ROOT/libkeyfinder-2.2.8/build" --parallel
+cmake --install "$KEYFINDER_BUILD_ROOT/libkeyfinder-2.2.8/build"
+
+git clone --depth 1 --branch v1.2.0 \
+  https://github.com/EvanPurkhiser/keyfinder-cli.git \
+  "$KEYFINDER_BUILD_ROOT/keyfinder-cli-1.2.0"
+cmake -S "$KEYFINDER_BUILD_ROOT/keyfinder-cli-1.2.0" \
+  -B "$KEYFINDER_BUILD_ROOT/keyfinder-cli-1.2.0/build" \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_INSTALL_PREFIX="$KEYFINDER_PREFIX" \
+  -DCMAKE_PREFIX_PATH="$KEYFINDER_PREFIX"
+cmake --build "$KEYFINDER_BUILD_ROOT/keyfinder-cli-1.2.0/build" --parallel
+cmake --install "$KEYFINDER_BUILD_ROOT/keyfinder-cli-1.2.0/build"
+```
+
+This places the executable at
+`$HOME/.local/opt/keyfinder-cli/bin/keyfinder-cli`. The build and install
+prefix are examples, not CrateIQ configuration; choose different directories
+if preferred. Do not set either directory inside the repository or commit its
+contents.
+
+Verify the resulting program without passing it an audio file:
+
+```bash
+"$KEYFINDER_PREFIX/bin/keyfinder-cli" --help
+test -x "$KEYFINDER_PREFIX/bin/keyfinder-cli"
+```
+
+Then either add its `bin` directory to your shell `PATH`, or use the explicit
+override shown below. Keep `KEYFINDER_BIN` in a private local environment file
+or export it in the shell that starts CrateIQ; do not commit the path.
 
 ## Verify the local tools
 
@@ -84,7 +159,7 @@ CrateIQ readiness performs only availability checks; it does not invoke these
 commands or analyze audio. You can inspect its report with:
 
 ```bash
-curl -s http://127.0.0.1:8020/api/runtime/readiness | python -m json.tool
+curl -s http://127.0.0.1:8020/api/runtime/readiness | python3 -m json.tool
 ```
 
 ## Optional executable overrides
@@ -110,6 +185,18 @@ The readiness endpoint respects these overrides and reports the unavailable
 workflow if an override cannot be resolved. It does not return the configured
 override value in a missing-tool warning. See [`.env.example`](../../.env.example)
 for the repository template.
+
+For the user-local build above:
+
+```bash
+export KEYFINDER_BIN="$HOME/.local/opt/keyfinder-cli/bin/keyfinder-cli"
+"$KEYFINDER_BIN" --help
+curl -s http://127.0.0.1:8020/api/runtime/readiness | python3 -m json.tool
+```
+
+Start or restart CrateIQ from that environment before checking readiness, so
+the backend inherits the override. A passing optional-tool check confirms only
+that the executable is discoverable; it does not run key analysis.
 
 ## Safety boundaries
 

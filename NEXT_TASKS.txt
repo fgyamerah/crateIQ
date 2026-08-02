@@ -46,6 +46,12 @@ CURRENT FOCUS
          `beet` CLI runtime tool, not a Python requirements dependency;
          keyfinder-cli remains a manual/package/build installation depending
          on the Linux distribution. No scanning or pipeline behavior changed.
+[x] (P1) Document a safe Linux Mint/Ubuntu keyfinder-cli source-build path
+         (2026-08-02): verified the upstream keyfinder-cli v1.2.0 and
+         Mixxx-maintained libkeyfinder 2.2.8 sources; documented a pinned,
+         user-local, source-only CMake build with the needed Ubuntu/Mint
+         development packages and KEYFINDER_BIN readiness check. No helper,
+         automated package installation, binaries, or pipeline changes added.
 ----------------------------------------------------------------------
 [x] (P1) Library view: split out of CrateMind.tsx + mockup-faithful visual
          pass (2026-07-26) — frontend/src/components/library/* (new),
