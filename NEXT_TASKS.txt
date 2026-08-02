@@ -88,21 +88,24 @@ CURRENT FOCUS
          and its anomaly reason/status labels already have a working, more
          granular color taxonomy than Badge's 6 tones support. See
          CHANGELOG.txt 2026-07-26 entry for full detail.
-[ ] (P2) Follow-up from the 2026-07-26 visual rollout: Jobs.tsx, SetBuilder.tsx,
-         and Reconciliation.tsx were only reached via the global CSS-token
-         pass (cards/badges/colors), not a JSX-level pass — their own bespoke
-         markup (job progress panel, set-detail cards, ledger detail/JSON
-         viewer) still uses hand-rolled structure rather than the shared
-         StatusStrip/KpiCard/EmptyState/Badge primitives (all four now have
-         real consumers elsewhere — Quality/BpmReview/Export/SsdSync/
-         ReadinessBanner — just not on these three pages). Revisit only if/
-         when one of those pages needs real feature work anyway — do not
-         force a cosmetic-only rewrite.
-[ ] (P3) Jobs.tsx: pre-existing React "missing key prop" warning in
-         JobsTable's rendered list (observed during the 2026-07-26 visual
-         rollout's browser QA pass, not caused by it — Jobs.tsx has zero diff
-         from that pass). Small, isolated fix; low risk whenever Jobs.tsx is
-         next touched.
+[~] (P2) Follow-up from the 2026-07-26 visual rollout (Jobs.tsx done
+         2026-08-02): Jobs.tsx adopted StatusStrip (jobs-fetch error) and
+         EmptyState (no-jobs state) and had its React key warning fixed —
+         see CHANGELOG.txt 2026-08-02. SetBuilder.tsx and Reconciliation.tsx
+         were only reached via the global CSS-token pass (cards/badges/
+         colors), not a JSX-level pass — their own bespoke markup
+         (set-detail cards, ledger detail/JSON viewer) still uses
+         hand-rolled structure rather than the shared StatusStrip/KpiCard/
+         EmptyState/Badge primitives. Revisit only if/when one of those
+         pages needs real feature work anyway — do not force a
+         cosmetic-only rewrite.
+[x] (P3) Jobs.tsx: pre-existing React "missing key prop" warning in
+         JobsTable's rendered list — fixed 2026-08-02. Root cause:
+         jobs.map() returned a <> fragment with the keys on the inner
+         <tr> elements; React requires the key on the map callback's
+         top-level element. Now <Fragment key={job.id}> (stable real job
+         ID, no array index). Verified gone via headless Chrome against
+         the demo library.
 [ ] (P3) Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
          current "Quality" column is a compact vertical 4-bar meter driven
          by the real quality_tier field. Revisit only if an actual

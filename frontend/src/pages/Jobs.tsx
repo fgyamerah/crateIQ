@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { Fragment, useState } from 'react'
 import { RefreshCw, Loader2, XCircle, ScrollText } from 'lucide-react'
 import { useJobs } from '../hooks/useJobs'
 import { submitJob, cancelJob } from '../api/jobs'
@@ -6,7 +6,8 @@ import { ApiError } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import PageHeader from '../components/PageHeader'
 import LogModal from '../components/LogModal'
-import ErrorBanner from '../components/ErrorBanner'
+import EmptyState from '../components/ui/EmptyState'
+import StatusStrip from '../components/ui/StatusStrip'
 import { ALLOWED_COMMANDS, isActive } from '../types/job'
 import type { Job } from '../types/job'
 
@@ -156,7 +157,7 @@ function JobsTable({ jobs, onViewLogs, onCancelled }: JobsTableProps) {
   const [cancelErrors,  setCancelErrors]  = useState<Record<string, string>>({})
 
   if (jobs.length === 0) {
-    return <p className="empty-state">No jobs yet. Submit one above.</p>
+    return <EmptyState message="No jobs yet. Submit one above." />
   }
 
   async function handleCancel(jobId: string) {
@@ -201,8 +202,8 @@ function JobsTable({ jobs, onViewLogs, onCancelled }: JobsTableProps) {
             ].filter(Boolean).join(' ')
 
             return (
-              <>
-                <tr key={job.id} className={rowClass}>
+              <Fragment key={job.id}>
+                <tr className={rowClass}>
                   <td>
                     <code className="job-id">{job.id.slice(0, 8)}</code>
                   </td>
@@ -251,13 +252,13 @@ function JobsTable({ jobs, onViewLogs, onCancelled }: JobsTableProps) {
                   </td>
                 </tr>
                 {cancelErr && (
-                  <tr key={`${job.id}-err`}>
+                  <tr>
                     <td colSpan={9} className="td-cancel-error">
                       Cancel failed: {cancelErr}
                     </td>
                   </tr>
                 )}
-              </>
+              </Fragment>
             )
           })}
         </tbody>
@@ -293,7 +294,11 @@ export default function Jobs() {
         }
       />
 
-      <ErrorBanner message={error} />
+      {error && (
+        <StatusStrip tone="danger" role="alert">
+          <strong>Error:</strong> {error}
+        </StatusStrip>
+      )}
 
       <section className="section">
         <div className="card">

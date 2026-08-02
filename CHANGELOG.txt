@@ -2,6 +2,49 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-02] — fix: Jobs page adopts shared UI primitives + React key warning fixed
+----------------------------------------------------------------------
+TYPE: Frontend-only cleanup (Jobs page JSX only). No backend/pipeline/
+      job-execution behavior changed; no routes changed; no sync/export/
+      reconciliation/destructive/auth/AI/metadata behavior touched.
+SUMMARY: Migrates the Jobs page's remaining bespoke markup to the visual
+         rollout's shared primitives where they naturally fit, and fixes
+         the pre-existing React "missing key prop" warning in JobsTable
+         first observed during the 2026-07-26 rollout QA pass.
+  - frontend/src/pages/Jobs.tsx: the jobs-fetch error now renders
+    <StatusStrip tone="danger" role="alert"> (same "Error: <message>"
+    content, same alert role) instead of the bespoke .error-banner red
+    slab. The shared ErrorBanner component itself is untouched and still
+    used by the other pages that import it.
+  - The "No jobs yet. Submit one above." empty state now renders
+    <EmptyState> — identical copy, identical trigger condition, matching
+    the Quality/BpmReview adoption pattern. The shared .empty-state CSS
+    rule stays for the pages still using it.
+  - React key warning fixed: JobsTable's jobs.map() returned a <>
+    fragment with the keys on the inner <tr> elements; React requires
+    the key on the map callback's top-level element. It now returns
+    <Fragment key={job.id}> (stable real job ID, no array index) and the
+    redundant inner keys were removed. Displayed data unchanged.
+  - Deliberately NOT changed: JobProgress markup and .job-progress-fill's
+    width transition (isolated, appropriate for a progress bar; the
+    documented pre-existing deferred Impeccable finding); StatusBadge for
+    job status (Badge.tsx's own guidance prefers it for job status); the
+    "N active" live-indicator chip (same pattern shared by BpmReview/
+    Export/SetBuilder/SsdSync); KpiCard (Jobs has no genuine metric-card
+    grid, so it was not forced).
+  - Verification: npm run typecheck/build clean, git diff --check clean.
+    Impeccable detector: 4 findings before and after (the documented
+    pre-existing Jobs/Export/SsdSync progress-bar width transitions plus
+    the legacy Collection.tsx height transition; nothing introduced).
+    Headless-Chrome pass against the demo library with 2 real job rows:
+    page and table render, no React key warning, no new console errors.
+    Backend tests skipped — frontend-only change, no backend files
+    touched.
+FILES: frontend/src/pages/Jobs.tsx, README.md, NEXT_TASKS.txt,
+       PROJECT_CONTEXT.md, CHANGELOG.txt
+IMPACT: Frontend-only. Job submission, cancellation, progress reporting,
+        log viewing, polling, and all API/route behavior unchanged.
+
 [2026-07-29] — Optional local music-analysis tooling guidance
 
 - Added Linux Mint/Ubuntu setup, verification, override, and safety guidance

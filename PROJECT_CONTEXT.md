@@ -1,10 +1,29 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-07-26
+**Updated:** 2026-08-02
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
 ## Latest Milestone
+
+- 2026-08-02: Jobs page adopted the visual rollout's shared primitives
+  where they naturally fit and had its pre-existing React "missing key
+  prop" warning fixed. `frontend/src/pages/Jobs.tsx` now renders the
+  jobs-fetch error via `<StatusStrip tone="danger" role="alert">` (same
+  content/semantics as the old `.error-banner`, which remains in use on
+  other pages) and the no-jobs state via `<EmptyState>` (identical copy).
+  Badge/KpiCard were deliberately not forced: `StatusBadge` remains the
+  preferred job-status badge per Badge.tsx's own guidance, the "N active"
+  live-indicator chip stays (pattern shared with BpmReview/Export/
+  SetBuilder/SsdSync), and Jobs has no metric-card grid. Key-warning root
+  cause: `JobsTable`'s `jobs.map()` returned a `<>` fragment with keys on
+  the inner `<tr>` elements; it now returns `<Fragment key={job.id}>`
+  (stable real job ID). `JobProgress` markup and its width-transition
+  fill, job execution/cancellation/polling, and all backend behavior are
+  unchanged. Frontend-only: typecheck/build clean, Impeccable detector
+  unchanged at the 4 documented pre-existing findings, headless-Chrome
+  render against the demo library verified no key warning and no new
+  console errors. See CHANGELOG.txt for detail.
 
 - 2026-07-29: Added a local tooling setup layer for the optional
   `keyfinder-cli`, `aubio`, and `beet` executables. `requirements.txt` and
