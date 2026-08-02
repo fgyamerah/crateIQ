@@ -481,20 +481,23 @@ per page:
 - `frontend/src/components/ui/StatusStrip.tsx` — the shared good/warn/danger/
   info compact strip (full 1px border + tinted background, never a colored
   side border). Used by `ReadinessBanner.tsx`, by `Export.tsx`/
-  `SsdSync.tsx`'s validation/mount warnings, and by `Jobs.tsx`'s
-  jobs-fetch error.
+  `SsdSync.tsx`'s validation/mount warnings, and by the page/form-level
+  error states on `Jobs.tsx`, `SetBuilder.tsx`, and `Reconciliation.tsx`.
 - `frontend/src/components/ui/KpiCard.tsx` — the shared overview/stat card,
   reusing the Library's own `.lib-overview-card` styling and `RingProgress`.
   Used by `Quality.tsx`'s top metric row.
 - `frontend/src/components/ui/EmptyState.tsx` — shared "nothing here" state.
   Used by `Quality.tsx` ("Recommended Next Actions"), `BpmReview.tsx`
-  (the anomaly summary/table empty states), and `Jobs.tsx` (the no-jobs
-  state).
+  (the anomaly summary/table empty states), `Jobs.tsx` (the no-jobs
+  state), `SetBuilder.tsx` (no saved sets), and `Reconciliation.tsx`
+  (empty ledger, unselected detail, unrun validation).
 - `frontend/src/components/ui/Badge.tsx` — shared semantic badge. Used by
-  `Quality.tsx`'s HIGH/MEDIUM/LOW confidence chips. Not adopted by
-  `Jobs.tsx` (job status keeps `StatusBadge`, which Badge's own guidance
-  prefers for job status), `SetBuilder.tsx`, or `Reconciliation.tsx` — the
-  latter two's bespoke markup wasn't touched by the visual rollout.
+  `Quality.tsx`'s HIGH/MEDIUM/LOW confidence chips, `SetBuilder.tsx`'s
+  job-status/Camelot-key/vibe chips, and `Reconciliation.tsx`'s ledger
+  status badges. `Jobs.tsx` job status keeps `StatusBadge`, which Badge's
+  own guidance prefers for job status; semantic taxonomies richer than
+  Badge's six tones (SetBuilder's phase colors, BpmReview's anomaly
+  labels) intentionally stay bespoke.
 - `.app-main` (the shared page container in `Layout.tsx`) carries the same
   subtle radial-gradient wash as the Library/CrateMind workspaces, so every
   other page (Quality, Metadata Repair, Metadata Sanitation, BPM Review,

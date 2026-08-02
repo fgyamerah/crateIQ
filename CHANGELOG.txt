@@ -2,6 +2,74 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-02] — fix: SetBuilder + Reconciliation adopt shared UI primitives
+----------------------------------------------------------------------
+TYPE: Frontend-only cleanup (two page JSX files only). No backend/
+      pipeline behavior changed; no set-building algorithm, scoring,
+      ranking, or reconciliation business logic touched; no routes
+      changed; no sync/export/destructive/auth/AI/metadata behavior
+      touched.
+SUMMARY: Completes the visual rollout's deferred JSX-level pass for the
+         last two bespoke-markup pages, following the same controlled
+         pattern used for Quality/BpmReview/Jobs.
+  - SetBuilder.tsx:
+    - Both <ErrorBanner onDismiss> sites (BuildForm submit error and the
+      page-level playlists/detail fetch error) now render <StatusStrip
+      tone="danger" role="alert" onDismiss> with the same "Error:
+      <message>" content — StatusStrip natively supports dismissal, so
+      behavior is identical.
+    - "No saved sets yet. Build one above." now renders <EmptyState>
+      (identical copy/trigger).
+    - JobPanel's inline badge span now renders <Badge tone={status}>
+      (drop-in identical markup); the Camelot key chip and the saved-set
+      vibe chip now render <Badge tone="info"> (vibe keeps its
+      capitalize override via an inner span, since Badge intentionally
+      takes no style prop).
+    - Deliberately NOT changed: phase-badge (5-color semantic phase
+      taxonomy from PHASE_COLORS that Badge's 6 tones cannot represent —
+      same precedent as BpmReview's anomaly taxonomy); the live-indicator
+      chip (pattern shared with Jobs/Export/SsdSync/BpmReview);
+      set-stat-card detail tiles (compact per-set summary tiles inside
+      the detail panel, not a page-level overview row — KpiCard not
+      forced); LogInline, all loading states, all actions.
+  - Reconciliation.tsx:
+    - LedgerBadge now renders the shared <Badge> primitive via a
+      statusTone() mapper (was statusClass() returning raw class
+      strings) — identical rendered markup.
+    - Both <ErrorBanner onDismiss> sites (ledger error, validation
+      error) now render <StatusStrip tone="danger" role="alert"
+      onDismiss> with identical content.
+    - The three standalone empty states ("No ledger entries found.",
+      "Select a ledger entry to inspect it.", "Run validation to
+      inspect the latest reconcile plan.") now render <EmptyState> —
+      identical copy. Loading messages and the two inline table-cell
+      fallbacks ("No invalid reasons/actions") stay as-is (loading is
+      not an empty state; table cells are not standalone empty states).
+    - React key hardening: the validation-records table keyed rows by
+      `${action_type}-${index}` (unstable filtered-array index).
+      Records have no real ID, so rows are now keyed on stable
+      plan-action content (`action_type:reason:JSON.stringify(action)`).
+      No displayed-data change.
+    - Deliberately NOT changed: recon-stat tiles (detail-level tiles
+      inside the Plan validation card — KpiCard not forced); the JSON
+      before/after viewers; all reconciliation guardrails and copy.
+  - Verification: npm run typecheck/build clean, git diff --check clean.
+    Impeccable detector: 4 findings before and after (the documented
+    pre-existing Jobs/Export/SsdSync progress-bar width transitions plus
+    the legacy Collection.tsx height transition); both changed files
+    scan clean. Headless-Chrome pass against the demo library:
+    /set-builder renders the build form + the new EmptyState (no saved
+    sets in demo data); /reconciliation renders all three cards + all
+    three new EmptyStates (empty ledger in demo data); no React key
+    warnings, no new console errors on either page. Backend tests
+    skipped — frontend-only change, no backend files touched.
+FILES: frontend/src/pages/SetBuilder.tsx,
+       frontend/src/pages/Reconciliation.tsx, README.md, NEXT_TASKS.txt,
+       PROJECT_CONTEXT.md, CHANGELOG.txt
+IMPACT: Frontend-only. Set-building dispatch, job polling, saved-set
+        browsing, ledger browsing, and plan-validation behavior are
+        unchanged; no API or route changes.
+
 [2026-08-02] — fix: Jobs page adopts shared UI primitives + React key warning fixed
 ----------------------------------------------------------------------
 TYPE: Frontend-only cleanup (Jobs page JSX only). No backend/pipeline/

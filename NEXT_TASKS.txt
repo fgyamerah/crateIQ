@@ -88,17 +88,18 @@ CURRENT FOCUS
          and its anomaly reason/status labels already have a working, more
          granular color taxonomy than Badge's 6 tones support. See
          CHANGELOG.txt 2026-07-26 entry for full detail.
-[~] (P2) Follow-up from the 2026-07-26 visual rollout (Jobs.tsx done
-         2026-08-02): Jobs.tsx adopted StatusStrip (jobs-fetch error) and
-         EmptyState (no-jobs state) and had its React key warning fixed —
-         see CHANGELOG.txt 2026-08-02. SetBuilder.tsx and Reconciliation.tsx
-         were only reached via the global CSS-token pass (cards/badges/
-         colors), not a JSX-level pass — their own bespoke markup
-         (set-detail cards, ledger detail/JSON viewer) still uses
-         hand-rolled structure rather than the shared StatusStrip/KpiCard/
-         EmptyState/Badge primitives. Revisit only if/when one of those
-         pages needs real feature work anyway — do not force a
-         cosmetic-only rewrite.
+[x] (P2) Follow-up from the 2026-07-26 visual rollout — completed 2026-08-02.
+         Jobs.tsx (StatusStrip + EmptyState + React key fix), SetBuilder.tsx
+         (StatusStrip for both error sites, EmptyState for no-saved-sets,
+         Badge for job-status/Camelot-key/vibe chips), and Reconciliation.tsx
+         (Badge-based LedgerBadge, StatusStrip for both error sites,
+         EmptyState x3, index-based validation-records key replaced with a
+         stable content-derived key) all adopted the shared primitives where
+         they naturally fit — see CHANGELOG.txt 2026-08-02 entries.
+         Deliberately left bespoke: phase-badge's 5-color semantic taxonomy,
+         set-stat-card/recon-stat detail tiles (KpiCard not forced — compact
+         detail-panel tiles, not page-level overview rows), live-indicator
+         chips, loading text, and inline table-cell fallback messages.
 [x] (P3) Jobs.tsx: pre-existing React "missing key prop" warning in
          JobsTable's rendered list — fixed 2026-08-02. Root cause:
          jobs.map() returned a <> fragment with the keys on the inner

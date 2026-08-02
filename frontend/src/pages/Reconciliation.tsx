@@ -9,8 +9,10 @@ import {
 } from '../api/reconciliation'
 import type { ReconciliationLedgerEntry } from '../types/reconciliation'
 import type { ReconciliationPlanValidationResult } from '../types/reconciliation'
-import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
+import Badge, { type BadgeTone } from '../components/ui/Badge'
+import EmptyState from '../components/ui/EmptyState'
+import StatusStrip from '../components/ui/StatusStrip'
 
 function formatDateTime(value: string | null): string {
   if (!value) return '—'
@@ -40,18 +42,18 @@ function prettyJson(value: string | null): string {
   }
 }
 
-function statusClass(status: string | null): string {
+function statusTone(status: string | null): BadgeTone {
   const value = (status || 'unknown').toLowerCase()
-  if (value.includes('fail') || value.includes('error')) return 'badge--failed'
-  if (value.includes('pend') || value.includes('queue')) return 'badge--pending'
+  if (value.includes('fail') || value.includes('error')) return 'failed'
+  if (value.includes('pend') || value.includes('queue')) return 'pending'
   if (value.includes('ok') || value.includes('success') || value.includes('applied') || value.includes('done')) {
-    return 'badge--succeeded'
+    return 'succeeded'
   }
-  return 'badge--info'
+  return 'info'
 }
 
 function LedgerBadge({ status }: { status: string | null }) {
-  return <span className={`badge ${statusClass(status)}`}>{status || 'unknown'}</span>
+  return <Badge tone={statusTone(status)}>{status || 'unknown'}</Badge>
 }
 
 function DetailField({ label, value }: { label: string; value: ReactNode }) {
@@ -174,8 +176,16 @@ export default function Reconciliation() {
         )}
       />
 
-      {error && <ErrorBanner message={error} onDismiss={() => setError(null)} />}
-      {validationError && <ErrorBanner message={validationError} onDismiss={() => setValidationError(null)} />}
+      {error && (
+        <StatusStrip tone="danger" role="alert" onDismiss={() => setError(null)}>
+          <strong>Error:</strong> {error}
+        </StatusStrip>
+      )}
+      {validationError && (
+        <StatusStrip tone="danger" role="alert" onDismiss={() => setValidationError(null)}>
+          <strong>Error:</strong> {validationError}
+        </StatusStrip>
+      )}
 
       <section className="section">
         <div className="recon-grid">
@@ -186,7 +196,7 @@ export default function Reconciliation() {
             {loadingList ? (
               <p className="empty-state">Loading ledger entries…</p>
             ) : tableRows === 0 ? (
-              <p className="empty-state">No ledger entries found.</p>
+              <EmptyState message="No ledger entries found." />
             ) : (
               <div className="table-wrapper">
                 <table className="table recon-table">
@@ -253,7 +263,7 @@ export default function Reconciliation() {
                 </div>
               </div>
             ) : (
-              <p className="empty-state">Select a ledger entry to inspect it.</p>
+              <EmptyState message="Select a ledger entry to inspect it." />
             )}
           </div>
         </div>
@@ -329,8 +339,11 @@ export default function Reconciliation() {
                       {validation.validation_records.filter((record) => record.status !== 'valid').length > 0 ? (
                         validation.validation_records
                           .filter((record) => record.status !== 'valid')
-                          .map((record, index) => (
-                            <tr key={`${record.action_type}-${index}`}>
+                          .map((record) => (
+                            // No real ID on validation records; key on the
+                            // stable plan-action content instead of the
+                            // (unstable) filtered-array index.
+                            <tr key={`${record.action_type}:${record.reason ?? ''}:${JSON.stringify(record.action)}`}>
                               <td className="td-mono">{record.action_type}</td>
                               <td><LedgerBadge status={record.status} /></td>
                               <td className="td-mono">{record.reason || '—'}</td>
@@ -347,7 +360,7 @@ export default function Reconciliation() {
               </div>
             </div>
           ) : (
-            <p className="empty-state">Run validation to inspect the latest reconcile plan.</p>
+            <EmptyState message="Run validation to inspect the latest reconcile plan." />
           )}
         </div>
       </section>

@@ -6,6 +6,29 @@
 
 ## Latest Milestone
 
+- 2026-08-02 (later same day): SetBuilder and Reconciliation completed
+  the visual rollout's deferred JSX-level pass, closing the last two
+  bespoke-markup pages. SetBuilder.tsx: both ErrorBanner sites now render
+  `<StatusStrip tone="danger" role="alert" onDismiss>` (identical
+  content/behavior), the no-saved-sets hint renders `<EmptyState>`, and
+  the job-status/Camelot-key/vibe chips render `<Badge>` (vibe keeps its
+  capitalize override via an inner span). Reconciliation.tsx: LedgerBadge
+  now renders `<Badge>` via a `statusTone()` mapper (identical markup),
+  both ErrorBanner sites render StatusStrip, and the three standalone
+  empty states render `<EmptyState>`; the validation-records table's
+  index-based key (`${action_type}-${index}`) was replaced with a stable
+  content-derived key (`action_type:reason:JSON.stringify(action)`) since
+  records carry no real ID. Deliberately left bespoke (documented in
+  CHANGELOG): phase-badge's 5-color taxonomy, set-stat-card/recon-stat
+  detail tiles (KpiCard not forced — not page-level overview rows),
+  live-indicator chips, loading text, inline table-cell fallbacks. No
+  set-building/scoring/reconciliation/backend behavior changed.
+  Verification: typecheck/build clean, Impeccable detector unchanged at
+  the 4 documented pre-existing findings (both changed files scan
+  clean), headless-Chrome render of both pages against the demo library
+  verified the new EmptyStates live with no key warnings and no new
+  console errors. See CHANGELOG.txt for detail.
+
 - 2026-08-02: Jobs page adopted the visual rollout's shared primitives
   where they naturally fit and had its pre-existing React "missing key
   prop" warning fixed. `frontend/src/pages/Jobs.tsx` now renders the

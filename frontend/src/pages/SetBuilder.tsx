@@ -18,8 +18,10 @@ import {
   VIBE_LABELS,
 } from '../types/playlist'
 import type { Job } from '../types/job'
-import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
+import Badge from '../components/ui/Badge'
+import EmptyState from '../components/ui/EmptyState'
+import StatusStrip from '../components/ui/StatusStrip'
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -137,7 +139,11 @@ function BuildForm({ onJobStarted }: BuildFormProps) {
 
   return (
     <div className="set-builder-form">
-      {err && <ErrorBanner message={err} onDismiss={() => setErr(null)} />}
+      {err && (
+        <StatusStrip tone="danger" role="alert" onDismiss={() => setErr(null)}>
+          <strong>Error:</strong> {err}
+        </StatusStrip>
+      )}
 
       <div className="form-grid">
         <label className="form-label">
@@ -255,7 +261,7 @@ function JobPanel({ job, onRefresh }: JobPanelProps) {
         <span className="muted" style={{ fontSize: 12 }}>
           Job <code>{current.id.slice(0, 8)}</code>
         </span>
-        <span className={`badge badge--${current.status}`}>{current.status}</span>
+        <Badge tone={current.status}>{current.status}</Badge>
         {active && <span className="live-indicator">live · polling 2s</span>}
         {current.status === 'succeeded' && (
           <span className="muted" style={{ fontSize: 12 }}>Playlist saved — see list below</span>
@@ -341,7 +347,7 @@ function SetDetail({ detail, onClose }: { detail: PlaylistDetail; onClose: () =>
                   <td className="td-mono">{t.bpm != null ? t.bpm.toFixed(1) : '—'}</td>
                   <td>
                     {t.key_camelot
-                      ? <span className="badge badge--info">{t.key_camelot}</span>
+                      ? <Badge tone="info">{t.key_camelot}</Badge>
                       : <span className="muted">—</span>
                     }
                   </td>
@@ -410,7 +416,11 @@ export default function SetBuilder() {
         }
       />
 
-      {err && <ErrorBanner message={err} onDismiss={() => setErr(null)} />}
+      {err && (
+        <StatusStrip tone="danger" role="alert" onDismiss={() => setErr(null)}>
+          <strong>Error:</strong> {err}
+        </StatusStrip>
+      )}
 
       {/* Build form */}
       <section className="section">
@@ -441,7 +451,7 @@ export default function SetBuilder() {
           </div>
 
           {playlists.length === 0 ? (
-            <p className="muted empty-hint">No saved sets yet. Build one above.</p>
+            <EmptyState message="No saved sets yet. Build one above." />
           ) : (
             <div className="table-wrapper">
               <table className="table">
@@ -476,7 +486,7 @@ export default function SetBuilder() {
                         <td>{pl.track_count}</td>
                         <td className="muted">{fmtMins(pl.duration_sec)}</td>
                         <td>
-                          {vibe ? <span className="badge badge--info" style={{ textTransform: 'capitalize' }}>{vibe}</span> : <span className="muted">—</span>}
+                          {vibe ? <Badge tone="info"><span style={{ textTransform: 'capitalize' }}>{vibe}</span></Badge> : <span className="muted">—</span>}
                         </td>
                         <td className="muted">{genre || '—'}</td>
                         <td>
