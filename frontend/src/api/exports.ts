@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { CrateExportPreview, CrateExportRequest, CrateExportResult, ExportRunRequest, ExportRunResponse, ValidateResponse } from '../types/export'
+import type { CrateExportPreview, CrateExportRequest, CrateExportResult, ExportRunRequest, ExportRunResponse, SeratoExportPreview, SeratoExportRequest, SeratoExportResult, ValidateResponse } from '../types/export'
 import type { CrateSummary } from '../types/crate'
 import type { Job } from '../types/job'
 
@@ -22,3 +22,5 @@ export function fetchExport(id: string): Promise<Job> {
 export const fetchExportableCrates = () => apiFetch.get<CrateSummary[]>('/exports/crates')
 export const previewCrateExport = (id: number, request: CrateExportRequest) => apiFetch.get<CrateExportPreview>(`/exports/crates/${id}/preview?format=${request.format}&path_mode=${request.path_mode}&include_metadata=${request.include_metadata}&line_endings=${request.line_endings}`)
 export const exportCrate = (id: number, request: CrateExportRequest) => apiFetch.post<CrateExportResult>(`/exports/crates/${id}`, request)
+export const previewSeratoExport = (id: number, pathMode: SeratoExportRequest['path_mode']) => apiFetch.get<SeratoExportPreview>(`/exports/serato/preview/${id}?path_mode=${pathMode}`)
+export const exportSerato = (id: number, request: SeratoExportRequest) => apiFetch.post<SeratoExportResult>(`/exports/serato/${id}`, request)

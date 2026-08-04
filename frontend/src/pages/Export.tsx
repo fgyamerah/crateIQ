@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, Loader2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { fetchJobLogs, fetchJob } from '../api/jobs'
-import { validateExport, runExport, fetchExports, exportCrate, fetchExportableCrates, previewCrateExport } from '../api/exports'
+import { validateExport, runExport, fetchExports, exportCrate, exportSerato, fetchExportableCrates, previewCrateExport, previewSeratoExport } from '../api/exports'
 import type {
   ExcludedTrack,
   ExclusionCategory,
@@ -15,6 +15,8 @@ import type {
   CrateExportPreview,
   CrateExportRequest,
   CratePathMode,
+  SeratoExportPreview,
+  SeratoExportRequest,
 } from '../types/export'
 import type { CrateSummary } from '../types/crate'
 import {
@@ -492,6 +494,73 @@ function CrateExportPanel() {
   return <section className="section"><div className="card crate-export-panel"><div className="card-title-row"><div><h2 className="card-title">Manual Crate Exports</h2><p className="muted">Portable files only — never writes music files, tags, or DJ app databases.</p></div><Badge tone="info">Safe local export</Badge></div>{error && <StatusStrip tone="danger" role="alert" onDismiss={() => setError(null)}>{error}</StatusStrip>}{result && <StatusStrip tone="good">Created export: <code>{result}</code></StatusStrip>}{crates.length === 0 ? <EmptyState title="No Manual Crates" message="Create or save a crate before exporting a portable playlist." /> : <><div className="crate-export-controls"><label>Crate<select className="form-input" value={selected ?? ''} onChange={(e) => { setSelected(Number(e.target.value)); setPreview(null); setResult(null) }}>{crates.map((crate) => <option key={crate.id} value={crate.id}>{crate.name} ({crate.track_count})</option>)}</select></label><label>Format<select className="form-input" value={request.format} onChange={(e) => setRequest({ ...request, format: e.target.value as CrateExportFormat })}><option value="csv">CSV</option><option value="json">JSON</option><option value="m3u">M3U</option><option value="m3u8">M3U8 (UTF-8)</option></select></label><label>Path mode<select className="form-input" value={request.path_mode} onChange={(e) => setRequest({ ...request, path_mode: e.target.value as CratePathMode })}><option value="filename">Filename (safe default)</option><option value="relative">Relative to library root</option><option value="absolute">Absolute path</option></select></label><label>Line endings<select className="form-input" value={request.line_endings} onChange={(e) => setRequest({ ...request, line_endings: e.target.value as 'lf' | 'crlf' })}><option value="lf">LF</option><option value="crlf">CRLF</option></select></label></div><div className="form-checkboxes"><label className="form-check"><input type="checkbox" checked={request.include_metadata} onChange={(e) => setRequest({ ...request, include_metadata: e.target.checked })} /> Include metadata</label></div><div className="crate-export-actions"><button className="btn btn--ghost" disabled={busy} onClick={() => void makePreview()}>{busy ? 'Working…' : 'Preview content'}</button><button className="btn btn--primary" disabled={busy} onClick={() => void write()}>{busy ? 'Writing…' : 'Create export file'}</button></div>{preview && <><div className="crate-export-summary"><Badge tone="info">{preview.track_count} tracks</Badge><span>{preview.format.toUpperCase()} · {preview.path_mode} paths</span></div>{preview.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}<pre className="crate-export-preview">{preview.content}</pre></>}</>}</div></section>
 }
 
+function SeratoExportPanel() {
+  const [crates, setCrates] = useState<CrateSummary[]>([])
+  const [selected, setSelected] = useState<number | null>(null)
+  const [pathMode, setPathMode] = useState<CratePathMode>('filename')
+  const [dryRun, setDryRun] = useState(true)
+  const [preview, setPreview] = useState<SeratoExportPreview | null>(null)
+  const [result, setResult] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    fetchExportableCrates()
+      .then((items) => {
+        setCrates(items)
+        setSelected((value) => value ?? items[0]?.id ?? null)
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.displayMessage : 'Could not load Manual Crates.'))
+  }, [])
+
+  const makePreview = async () => {
+    if (!selected) return
+    setBusy(true); setError(null); setResult(null)
+    try { setPreview(await previewSeratoExport(selected, pathMode)) }
+    catch (e) { setError(e instanceof ApiError ? e.displayMessage : 'Could not preview the staged Serato export.') }
+    finally { setBusy(false) }
+  }
+
+  const write = async () => {
+    if (!selected) return
+    setBusy(true); setError(null)
+    const request: SeratoExportRequest = { path_mode: pathMode, destination_mode: 'staged', backup_existing: true, dry_run: dryRun }
+    try {
+      const output = await exportSerato(selected, request)
+      setPreview(output)
+      setResult(output.written ? output.staged_directory : null)
+    } catch (e) { setError(e instanceof ApiError ? e.displayMessage : 'Could not create the staged Serato export.') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <section className="section">
+      <div className="card crate-export-panel">
+        <div className="card-title-row">
+          <div>
+            <h2 className="card-title">Serato Staged Export</h2>
+            <p className="muted">Preview-first, backup-first handoff for a Manual Crate. It never writes to your live Serato library.</p>
+          </div>
+          <Badge tone="info">Staged only</Badge>
+        </div>
+        <StatusStrip tone="info">Creates an M3U8 and manifest under the local export folder. Exact Serato <code>.crate</code> binary writing is deferred.</StatusStrip>
+        {error && <StatusStrip tone="danger" role="alert" onDismiss={() => setError(null)}>{error}</StatusStrip>}
+        {result && <StatusStrip tone="good">Created staged export: <code>{result}</code></StatusStrip>}
+        {crates.length === 0 ? <EmptyState title="No Manual Crates" message="Create or save a Manual Crate before staging a Serato handoff." /> : <>
+          <div className="crate-export-controls serato-export-controls">
+            <label>Crate<select className="form-input" value={selected ?? ''} onChange={(e) => { setSelected(Number(e.target.value)); setPreview(null); setResult(null) }}>{crates.map((crate) => <option key={crate.id} value={crate.id}>{crate.name} ({crate.track_count})</option>)}</select></label>
+            <label>Path mode<select className="form-input" value={pathMode} onChange={(e) => setPathMode(e.target.value as CratePathMode)}><option value="filename">Filename (safe default)</option><option value="relative">Relative to library root</option><option value="absolute">Absolute path</option></select></label>
+          </div>
+          <label className="form-check"><input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} /> Dry run only (do not create files)</label>
+          <p className="muted serato-export-note">Custom and live Serato destinations are deliberately unavailable. Each staged export gets a new folder, so existing files are never replaced.</p>
+          <div className="crate-export-actions"><button className="btn btn--ghost" disabled={busy} onClick={() => void makePreview()}>{busy ? 'Working…' : 'Preview staged export'}</button><button className="btn btn--primary" disabled={busy} onClick={() => void write()}>{busy ? 'Working…' : dryRun ? 'Run dry preview' : 'Create staged export'}</button></div>
+          {preview && <><div className="crate-export-summary"><Badge tone="info">{preview.track_count} tracks</Badge><span>Staged M3U8 · {pathMode} paths</span></div><div className="serato-export-paths"><span>Folder: <code>{preview.staged_directory}</code></span><span>M3U8: <code>{preview.m3u8_path}</code></span></div>{preview.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}<pre className="crate-export-preview">{preview.m3u8_content}</pre></>}
+        </>}
+      </div>
+    </section>
+  )
+}
+
 export default function Export() {
   const [validation,    setValidation]   = useState<ValidateResponse | null>(null)
   const [validating,    setValidating]   = useState(false)
@@ -537,6 +606,7 @@ export default function Export() {
       />
 
       <CrateExportPanel />
+      <SeratoExportPanel />
 
       {/* ------------------------------------------------------------------ */}
       {/* Validation section                                                  */}

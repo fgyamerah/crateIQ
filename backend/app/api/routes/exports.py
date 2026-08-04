@@ -13,15 +13,49 @@ from typing import List
 
 from fastapi import APIRouter, HTTPException, Query
 
-from ...schemas.export import ExportRunRequest, ExportRunResponse, ValidateResponse
-from ...schemas.export import CrateExportPreview, CrateExportRequest, CrateExportResult
+from ...schemas.export import (
+    CrateExportPreview,
+    CrateExportRequest,
+    CrateExportResult,
+    ExportRunRequest,
+    ExportRunResponse,
+    SeratoExportPreview,
+    SeratoExportRequest,
+    SeratoExportResult,
+    ValidateResponse,
+)
 from ...schemas.job import JobResponse
 from ...services import job_service, toolkit_runner
 from ...services.export_validation import run_validation
-from ...services import crate_export_service, crate_service
+from ...services import crate_export_service, crate_service, serato_export_service
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["exports"])
+
+@router.get("/exports/serato/preview/{crate_id}", response_model=SeratoExportPreview)
+async def preview_serato_export(
+    crate_id: int, path_mode: str = "filename"
+) -> SeratoExportPreview:
+    try:
+        result = serato_export_service.preview(
+            crate_id, SeratoExportRequest(path_mode=path_mode)
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Crate not found")
+    return result
+
+
+@router.post("/exports/serato/{crate_id}", response_model=SeratoExportResult)
+async def export_serato(crate_id: int, body: SeratoExportRequest) -> SeratoExportResult:
+    try:
+        result = serato_export_service.write(crate_id, body)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Crate not found")
+    return result
 
 @router.get("/exports/crates")
 async def list_exportable_crates():

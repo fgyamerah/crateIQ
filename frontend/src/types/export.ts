@@ -64,6 +64,9 @@ export type CratePathMode = 'filename' | 'relative' | 'absolute'
 export interface CrateExportRequest { format: CrateExportFormat; path_mode: CratePathMode; include_metadata: boolean; line_endings: 'lf' | 'crlf' }
 export interface CrateExportPreview { crate_id: number; crate_name: string; format: CrateExportFormat; path_mode: CratePathMode; track_count: number; warnings: string[]; content: string }
 export interface CrateExportResult extends CrateExportPreview { output_path: string }
+export interface SeratoExportRequest { path_mode: CratePathMode; destination_mode: 'staged'; backup_existing: boolean; dry_run: boolean }
+export interface SeratoExportPreview { crate_id: number; crate_name: string; track_count: number; destination_mode: 'staged'; staged_directory: string; m3u8_path: string; manifest_path: string; warnings: string[]; m3u8_content: string; exact_crate_binary_supported: false }
+export interface SeratoExportResult extends SeratoExportPreview { written: boolean }
 
 // Re-export for convenience
 export type { Job }

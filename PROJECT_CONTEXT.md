@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-04: Serato Export Foundation adds a preview-first staged handoff to
+  `/exports`. A saved Manual Crate can produce an M3U8 and JSON manifest under
+  `<library-root>/exports/serato/`; each export uses a new safe folder and
+  never touches a live `_Serato_` folder. Exact Serato binary `.crate` writing
+  and custom destinations are intentionally deferred. No audio files, tags,
+  BPM/key/cues, MIK data, or DJ-app databases are modified.
 - 2026-08-04: Crate Export Foundation added to the existing `/exports` page
   without changing Rekordbox job workflows. Manual Crates can now be previewed
   and explicitly written as CSV, JSON, M3U, or UTF-8 M3U8 under the selected

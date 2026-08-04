@@ -29,6 +29,7 @@ class ExportRunResponse(BaseModel):
 CrateExportFormat = Literal["csv", "json", "m3u", "m3u8"]
 CratePathMode = Literal["filename", "relative", "absolute"]
 CrateLineEndings = Literal["lf", "crlf"]
+SeratoDestinationMode = Literal["staged", "custom"]
 
 
 class CrateExportRequest(BaseModel):
@@ -50,6 +51,31 @@ class CrateExportPreview(BaseModel):
 
 class CrateExportResult(CrateExportPreview):
     output_path: str
+
+
+class SeratoExportRequest(BaseModel):
+    path_mode: CratePathMode = "filename"
+    destination_mode: SeratoDestinationMode = "staged"
+    destination_path: Optional[str] = None
+    backup_existing: bool = True
+    dry_run: bool = True
+
+
+class SeratoExportPreview(BaseModel):
+    crate_id: int
+    crate_name: str
+    track_count: int
+    destination_mode: SeratoDestinationMode
+    staged_directory: str
+    m3u8_path: str
+    manifest_path: str
+    warnings: List[str]
+    m3u8_content: str
+    exact_crate_binary_supported: bool = False
+
+
+class SeratoExportResult(SeratoExportPreview):
+    written: bool
 
 
 # ---------------------------------------------------------------------------

@@ -2,6 +2,19 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-04] — feat: preview-first Serato staged exports
+
+- Added staged Serato preview and write endpoints for saved Manual Crates.
+  The output is an ordered UTF-8 M3U8 and JSON manifest in a new directory
+  under `<library-root>/exports/serato/`; dry runs write nothing and existing
+  staged files are never replaced.
+- Added a clearly labelled Serato Staged Export panel to `/exports`, including
+  Manual Crate selection, path-mode choice, preview, warnings, and explicit
+  dry-run/write states. Custom and live Serato destinations are not exposed.
+- Exact Serato binary `.crate` generation remains deliberately deferred. This
+  staged/importable handoff never writes a live `_Serato_` folder or modifies
+  audio files, tags, BPM/key/cues, Mixed In Key data, or DJ app databases.
+
 [2026-08-04] — feat: safe portable Manual Crate exports
 
 - Added Manual Crate list, preview, and write endpoints under `/api/exports/

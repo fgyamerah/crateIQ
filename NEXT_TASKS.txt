@@ -39,11 +39,18 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Serato Export / Crate Writer foundation (2026-08-04)
+         Saved Manual Crates now support preview-first staged Serato handoff as
+         M3U8 plus manifest under `<library-root>/exports/serato/`. The flow
+         never writes live `_Serato_` folders, never replaces outputs, and
+         does not claim binary `.crate` support; direct writers are deferred.
+         No music, metadata, BPM/key/cues, or MIK data is modified.
+
 [x] (P1) Crate Export Foundation (2026-08-04)
          Manual Crates can be previewed/exported as CSV, JSON, M3U, or M3U8
          under `<library-root>/exports/`, with filename/relative/absolute path
          modes and no-overwrite output naming. This is portable-file-only;
-         Serato/Rekordbox-specific writers remain a future phase.
+         Rekordbox-specific writers remain a future phase.
 
 [x] (P1) Smart Crates / Smart Playlists suggestions (2026-08-04)
          Deterministic local previews now filter/rank existing BPM, Camelot,

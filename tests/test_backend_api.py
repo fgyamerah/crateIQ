@@ -1355,3 +1355,63 @@ def test_crate_exports_reject_invalid_options_and_handle_empty_crate(client):
     assert empty.json()["warnings"]
     invalid = test_client.get(f"/api/exports/crates/{crate['id']}/preview", params={"format": "../../bad"})
     assert invalid.status_code == 422
+
+
+def test_serato_staged_preview_and_write_preserve_crate_order(client):
+    test_client, root = client
+    crate = test_client.post("/api/crates", json={"name": "Serato / Safe"}).json()
+    ids = [item["id"] for item in test_client.get("/api/tracks", params={"limit": 2}).json()["items"]]
+    for track_id in ids:
+        assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    preview = test_client.get(f"/api/exports/serato/preview/{crate['id']}")
+    assert preview.status_code == 200
+    planned = preview.json()
+    assert planned["exact_crate_binary_supported"] is False
+    assert "live _Serato_ folder" in " ".join(planned["warnings"])
+    assert planned["m3u8_content"].startswith("#EXTM3U\n")
+    assert planned["m3u8_content"].find("alpha.mp3") < planned["m3u8_content"].find("beta.mp3")
+
+    dry_run = test_client.post(f"/api/exports/serato/{crate['id']}", json={"dry_run": True})
+    assert dry_run.status_code == 200
+    assert dry_run.json()["written"] is False
+    assert not Path(dry_run.json()["staged_directory"]).exists()
+
+    written = test_client.post(f"/api/exports/serato/{crate['id']}", json={"dry_run": False})
+    assert written.status_code == 200
+    result = written.json()
+    folder = Path(result["staged_directory"])
+    assert folder.parent == root / "exports" / "serato"
+    assert Path(result["m3u8_path"]).is_file()
+    assert Path(result["manifest_path"]).is_file()
+    manifest = json.loads(Path(result["manifest_path"]).read_text(encoding="utf-8"))
+    assert manifest["exact_crate_binary_supported"] is False
+    assert manifest["track_count"] == 2
+
+    second = test_client.post(f"/api/exports/serato/{crate['id']}", json={"dry_run": False})
+    assert second.status_code == 200
+    assert second.json()["staged_directory"] != result["staged_directory"]
+
+
+def test_serato_staged_export_handles_empty_missing_paths_and_unsafe_destinations(client):
+    test_client, root = client
+    empty = test_client.post("/api/crates", json={"name": "Empty Serato"}).json()
+    empty_preview = test_client.get(f"/api/exports/serato/preview/{empty['id']}")
+    assert empty_preview.status_code == 200
+    assert empty_preview.json()["track_count"] == 0
+    assert "empty" in " ".join(empty_preview.json()["warnings"]).lower()
+
+    crate = test_client.post("/api/crates", json={"name": "Missing Path"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute("DELETE FROM tracks WHERE id = ?", (track_id,))
+    missing_preview = test_client.get(f"/api/exports/serato/preview/{crate['id']}")
+    assert missing_preview.status_code == 200
+    assert "no usable library path" in " ".join(missing_preview.json()["warnings"]).lower()
+
+    unsafe = test_client.post(
+        f"/api/exports/serato/{crate['id']}",
+        json={"destination_mode": "custom", "destination_path": "../../_Serato_", "dry_run": False},
+    )
+    assert unsafe.status_code == 422
