@@ -1314,3 +1314,44 @@ def test_smart_crates_save_creates_ordered_manual_crate(client):
     assert saved.json()["name"] == "Saved Smart House"
     assert [item["track_id"] for item in saved.json()["tracks"]] == preview_ids
     assert [item["position"] for item in saved.json()["tracks"]] == list(range(1, len(preview_ids) + 1))
+
+
+def test_crate_exports_preview_order_formats_and_safe_write(client):
+    test_client, root = client
+    crate = test_client.post("/api/crates", json={"name": "Export / Safe", "notes": "Portable"}).json()
+    ids = [item["id"] for item in test_client.get("/api/tracks", params={"limit": 2}).json()["items"]]
+    for track_id in ids:
+        assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    listed = test_client.get("/api/exports/crates")
+    assert listed.status_code == 200
+    assert any(item["id"] == crate["id"] for item in listed.json())
+    csv_preview = test_client.get(f"/api/exports/crates/{crate['id']}/preview", params={"format": "csv", "path_mode": "filename"})
+    assert csv_preview.status_code == 200
+    assert "position,title,artist" in csv_preview.json()["content"]
+    assert [str(track_id) for track_id in ids] != []
+    json_preview = test_client.get(f"/api/exports/crates/{crate['id']}/preview", params={"format": "json", "path_mode": "filename"})
+    assert json_preview.status_code == 200
+    assert [item["track_id"] for item in json.loads(json_preview.json()["content"])["tracks"]] == ids
+    m3u8_preview = test_client.get(f"/api/exports/crates/{crate['id']}/preview", params={"format": "m3u8"})
+    assert m3u8_preview.status_code == 200
+    assert m3u8_preview.json()["content"].startswith("#EXTM3U\n#EXTINF:")
+
+    exported = test_client.post(f"/api/exports/crates/{crate['id']}", json={"format": "m3u8", "path_mode": "filename"})
+    assert exported.status_code == 201
+    output = Path(exported.json()["output_path"])
+    assert output.is_file()
+    assert output.parent == root / "exports"
+    assert output.name.startswith("Export_Safe_")
+    assert output.suffix == ".m3u8"
+
+
+def test_crate_exports_reject_invalid_options_and_handle_empty_crate(client):
+    test_client, _root = client
+    crate = test_client.post("/api/crates", json={"name": "Empty Export"}).json()
+    empty = test_client.get(f"/api/exports/crates/{crate['id']}/preview", params={"format": "m3u"})
+    assert empty.status_code == 200
+    assert empty.json()["content"] == "#EXTM3U\n"
+    assert empty.json()["warnings"]
+    invalid = test_client.get(f"/api/exports/crates/{crate['id']}/preview", params={"format": "../../bad"})
+    assert invalid.status_code == 422

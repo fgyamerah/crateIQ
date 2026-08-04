@@ -59,6 +59,12 @@ export interface ExportRunResponse {
   message: string
 }
 
+export type CrateExportFormat = 'csv' | 'json' | 'm3u' | 'm3u8'
+export type CratePathMode = 'filename' | 'relative' | 'absolute'
+export interface CrateExportRequest { format: CrateExportFormat; path_mode: CratePathMode; include_metadata: boolean; line_endings: 'lf' | 'crlf' }
+export interface CrateExportPreview { crate_id: number; crate_name: string; format: CrateExportFormat; path_mode: CratePathMode; track_count: number; warnings: string[]; content: string }
+export interface CrateExportResult extends CrateExportPreview { output_path: string }
+
 // Re-export for convenience
 export type { Job }
 

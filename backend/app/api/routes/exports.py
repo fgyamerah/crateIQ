@@ -14,12 +14,33 @@ from typing import List
 from fastapi import APIRouter, HTTPException, Query
 
 from ...schemas.export import ExportRunRequest, ExportRunResponse, ValidateResponse
+from ...schemas.export import CrateExportPreview, CrateExportRequest, CrateExportResult
 from ...schemas.job import JobResponse
 from ...services import job_service, toolkit_runner
 from ...services.export_validation import run_validation
+from ...services import crate_export_service, crate_service
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["exports"])
+
+@router.get("/exports/crates")
+async def list_exportable_crates():
+    """List local Manual Crates that can be exported safely."""
+    return crate_service.list_crates()
+
+@router.get("/exports/crates/{crate_id}/preview", response_model=CrateExportPreview)
+async def preview_crate_export(crate_id: int, format: str = "m3u8", path_mode: str = "filename", include_metadata: bool = True, line_endings: str = "lf") -> CrateExportPreview:
+    try: request = CrateExportRequest(format=format, path_mode=path_mode, include_metadata=include_metadata, line_endings=line_endings)
+    except Exception as exc: raise HTTPException(status_code=422, detail="Unsupported crate export options") from exc
+    preview = crate_export_service.preview(crate_id, request)
+    if preview is None: raise HTTPException(status_code=404, detail="Crate not found")
+    return preview
+
+@router.post("/exports/crates/{crate_id}", response_model=CrateExportResult, status_code=201)
+async def export_crate(crate_id: int, body: CrateExportRequest) -> CrateExportResult:
+    result = crate_export_service.write(crate_id, body)
+    if result is None: raise HTTPException(status_code=404, detail="Crate not found")
+    return result
 
 
 # ---------------------------------------------------------------------------

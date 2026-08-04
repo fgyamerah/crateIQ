@@ -430,6 +430,7 @@ Core dashboard capabilities:
 - Selected track inspector.
 - Manual crates: create named, ordered local track lists before later smart-playlist or export workflows. Crates are stored in `<library-root>/logs/manual_crates.db`; they never scan or modify music files, tags, BPM, key, or cue data, and never overwrite Mixed In Key data.
 - Smart Crates: deterministic, local-only suggestions from existing BPM, Camelot key, genre, and issue-state data. A preview is never persisted; saving creates a normal editable Manual Crate with the preview order. Current filters are BPM range, exact/compatible/directional Camelot matching, genre, issue-free-only, and maximum count. Energy/vibe and date-added are unavailable until trusted fields exist. Smart Crates never modify files, tags, or Mixed In Key data.
+- Manual Crate exports: CSV, JSON, M3U, and UTF-8 M3U8 exports are generated only on explicit request under `<library-root>/exports/`. The Export page previews content first; filename path mode is the safe default, relative paths are root-relative when possible, and absolute paths require explicit selection. These portable exports never write to music folders, tags, or Serato/Rekordbox databases. Serato/Rekordbox-specific writers remain future work.
 - Issue count page with clickable filters.
 - Folder statistics from DB paths only.
 - Overview cards for totals, BPM coverage, key coverage, missing metadata, parse confidence, and genre counts.

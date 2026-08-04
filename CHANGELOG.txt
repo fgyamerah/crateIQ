@@ -2,6 +2,18 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-04] — feat: safe portable Manual Crate exports
+
+- Added Manual Crate list, preview, and write endpoints under `/api/exports/
+  crates`, separate from existing Rekordbox job routes. CSV, JSON, M3U, and
+  UTF-8 M3U8 previews preserve crate order and surface missing-path/empty-crate
+  warnings.
+- Added an Export-page Manual Crate panel with format/path/line-ending choices,
+  content preview, and explicit output action. Generated files are uniquely
+  named below `<library-root>/exports/`; filename mode is the safe default.
+- Portable exports never modify music files, tags, BPM/key/cues, Mixed In Key,
+  Serato, or Rekordbox data. Dedicated writers remain future work.
+
 [2026-08-04] — feat: deterministic local Smart Crates
 
 - Added `/smart-crates` presets, preview, and explicit-save APIs. Suggestions

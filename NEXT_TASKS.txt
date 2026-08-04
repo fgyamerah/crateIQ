@@ -39,6 +39,12 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Crate Export Foundation (2026-08-04)
+         Manual Crates can be previewed/exported as CSV, JSON, M3U, or M3U8
+         under `<library-root>/exports/`, with filename/relative/absolute path
+         modes and no-overwrite output naming. This is portable-file-only;
+         Serato/Rekordbox-specific writers remain a future phase.
+
 [x] (P1) Smart Crates / Smart Playlists suggestions (2026-08-04)
          Deterministic local previews now filter/rank existing BPM, Camelot,
          genre, and issue data, then explicitly save to editable Manual Crates.

@@ -3,7 +3,7 @@ Pydantic schemas for the export API.
 """
 from __future__ import annotations
 
-from typing import Dict, List, Optional
+from typing import Dict, List, Optional, Literal
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +24,32 @@ class ExportRunRequest(BaseModel):
 class ExportRunResponse(BaseModel):
     job_id:  str
     message: str
+
+
+CrateExportFormat = Literal["csv", "json", "m3u", "m3u8"]
+CratePathMode = Literal["filename", "relative", "absolute"]
+CrateLineEndings = Literal["lf", "crlf"]
+
+
+class CrateExportRequest(BaseModel):
+    format: CrateExportFormat = "m3u8"
+    path_mode: CratePathMode = "filename"
+    include_metadata: bool = True
+    line_endings: CrateLineEndings = "lf"
+
+
+class CrateExportPreview(BaseModel):
+    crate_id: int
+    crate_name: str
+    format: CrateExportFormat
+    path_mode: CratePathMode
+    track_count: int
+    warnings: List[str]
+    content: str
+
+
+class CrateExportResult(CrateExportPreview):
+    output_path: str
 
 
 # ---------------------------------------------------------------------------

@@ -6,6 +6,14 @@
 
 ## Latest Milestone
 
+- 2026-08-04: Crate Export Foundation added to the existing `/exports` page
+  without changing Rekordbox job workflows. Manual Crates can now be previewed
+  and explicitly written as CSV, JSON, M3U, or UTF-8 M3U8 under the selected
+  library's `exports/` directory. Filename paths are the default; relative
+  paths are root-relative when safe and absolute paths require an explicit
+  choice. Export files are unique, no-overwrite, portable artifacts only—no
+  audio files, tags, MIK data, or Serato/Rekordbox databases are modified.
+
 - 2026-08-04: Smart Crates added at `/smart-crates`. The new local-only API
   exposes deterministic presets and preview/save endpoints. Previews remain
   ephemeral; an explicit save creates an ordered normal Manual Crate through

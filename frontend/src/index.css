@@ -7453,11 +7453,18 @@ tr.row--selected td {
 .smart-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
 .smart-preview { border-top: 1px solid var(--border); }
 .smart-preview .ui-status-strip { margin: 8px 0; }
+.crate-export-panel { display: grid; gap: 12px; }
+.crate-export-controls { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.crate-export-controls label { color: var(--text-muted); display: grid; font-size: 12px; gap: 5px; }
+.crate-export-actions, .crate-export-summary { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.crate-export-summary { color: var(--text-muted); font-size: 12px; }
+.crate-export-preview { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; padding: 12px; white-space: pre-wrap; word-break: break-word; }
 
 @media (max-width: 860px) {
   .manual-crates-page { padding: 16px; }
   .manual-crates-layout { grid-template-columns: 1fr; }
   .smart-crates-layout { grid-template-columns: 1fr; }
+  .crate-export-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .smart-criteria { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .manual-crate-meta { flex-direction: column; }
   .manual-crate-track { align-items: flex-start; flex-wrap: wrap; }
@@ -7468,6 +7475,7 @@ tr.row--selected td {
 @media (max-width: 520px) {
   .manual-crates-kpis { grid-template-columns: 1fr; }
   .smart-criteria { grid-template-columns: 1fr; }
+  .crate-export-controls { grid-template-columns: 1fr; }
   .smart-criteria label:first-child, .smart-criteria label:nth-child(6) { grid-column: auto; }
   .manual-crates-create > div { flex-direction: column; }
   .manual-crates-create .btn { width: 100%; }
