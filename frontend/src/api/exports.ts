@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { CrateExportPreview, CrateExportRequest, CrateExportResult, ExportRunRequest, ExportRunResponse, SeratoExportPreview, SeratoExportRequest, SeratoExportResult, ValidateResponse } from '../types/export'
+import type { CrateExportPreview, CrateExportRequest, CrateExportResult, ExportRunRequest, ExportRunResponse, RekordboxExportPreview, RekordboxExportRequest, RekordboxExportResult, SeratoExportPreview, SeratoExportRequest, SeratoExportResult, ValidateResponse } from '../types/export'
 import type { CrateSummary } from '../types/crate'
 import type { Job } from '../types/job'
 
@@ -24,3 +24,5 @@ export const previewCrateExport = (id: number, request: CrateExportRequest) => a
 export const exportCrate = (id: number, request: CrateExportRequest) => apiFetch.post<CrateExportResult>(`/exports/crates/${id}`, request)
 export const previewSeratoExport = (id: number, pathMode: SeratoExportRequest['path_mode']) => apiFetch.get<SeratoExportPreview>(`/exports/serato/preview/${id}?path_mode=${pathMode}`)
 export const exportSerato = (id: number, request: SeratoExportRequest) => apiFetch.post<SeratoExportResult>(`/exports/serato/${id}`, request)
+export const previewRekordboxExport = (id: number, request: Pick<RekordboxExportRequest, 'path_mode' | 'include_metadata'>) => apiFetch.get<RekordboxExportPreview>(`/exports/rekordbox/preview/${id}?path_mode=${request.path_mode}&include_metadata=${request.include_metadata}`)
+export const exportRekordbox = (id: number, request: RekordboxExportRequest) => apiFetch.post<RekordboxExportResult>(`/exports/rekordbox/${id}`, request)

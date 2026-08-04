@@ -2,6 +2,19 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-04] — feat: staged Rekordbox XML exports for Manual Crates
+
+- Added preview and explicit-write endpoints for a single Manual Crate's
+  ordered Rekordbox XML collection and playlist nodes. XML uses the Python
+  XML library, UTF-8 output, safe path modes, missing-path warnings, and
+  unique no-overwrite filenames below `<library-root>/exports/rekordbox/`.
+- Added a compact Rekordbox XML Export section to `/exports`, with crate/path
+  selection, metadata and dry-run controls, preview, warnings, safety notes,
+  and the staged output location.
+- This is a manual import handoff only: CrateIQ does not write a live
+  Rekordbox database, device, USB, or application folder. Audio files, tags,
+  BPM/key/cues, Mixed In Key data, and Serato state remain untouched.
+
 [2026-08-04] — feat: preview-first Serato staged exports
 
 - Added staged Serato preview and write endpoints for saved Manual Crates.

@@ -7460,6 +7460,7 @@ tr.row--selected td {
 .crate-export-summary { color: var(--text-muted); font-size: 12px; }
 .crate-export-preview { background: var(--bg); border: 1px solid var(--border); border-radius: 8px; max-height: 280px; overflow: auto; padding: 12px; white-space: pre-wrap; word-break: break-word; }
 .serato-export-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 620px; }
+.rekordbox-export-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 620px; }
 .serato-export-note, .serato-export-paths { font-size: 12px; line-height: 1.45; }
 .serato-export-paths { color: var(--text-muted); display: grid; gap: 4px; min-width: 0; }
 .serato-export-paths code { overflow-wrap: anywhere; }
@@ -7470,6 +7471,7 @@ tr.row--selected td {
   .smart-crates-layout { grid-template-columns: 1fr; }
   .crate-export-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .serato-export-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .rekordbox-export-controls { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .smart-criteria { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .manual-crate-meta { flex-direction: column; }
   .manual-crate-track { align-items: flex-start; flex-wrap: wrap; }
@@ -7482,6 +7484,7 @@ tr.row--selected td {
   .smart-criteria { grid-template-columns: 1fr; }
   .crate-export-controls { grid-template-columns: 1fr; }
   .serato-export-controls { grid-template-columns: 1fr; }
+  .rekordbox-export-controls { grid-template-columns: 1fr; }
   .smart-criteria label:first-child, .smart-criteria label:nth-child(6) { grid-column: auto; }
   .manual-crates-create > div { flex-direction: column; }
   .manual-crates-create .btn { width: 100%; }

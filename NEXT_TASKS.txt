@@ -39,6 +39,13 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Rekordbox XML Export foundation (2026-08-04)
+         Saved Manual Crates now support preview-first, staged XML exports
+         under `<library-root>/exports/rekordbox/`, with ordered collection and
+         playlist nodes. Files are for manual XML import only; no live
+         Rekordbox database/device/USB path is writable in this workflow.
+         No music, metadata, BPM/key/cues, MIK, or Serato data is modified.
+
 [x] (P1) Serato Export / Crate Writer foundation (2026-08-04)
          Saved Manual Crates now support preview-first staged Serato handoff as
          M3U8 plus manifest under `<library-root>/exports/serato/`. The flow

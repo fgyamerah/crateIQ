@@ -4,6 +4,7 @@ import contextlib
 import json
 import sqlite3
 from pathlib import Path
+from xml.etree import ElementTree as ET
 
 import pytest
 from fastapi.testclient import TestClient
@@ -1413,5 +1414,69 @@ def test_serato_staged_export_handles_empty_missing_paths_and_unsafe_destination
     unsafe = test_client.post(
         f"/api/exports/serato/{crate['id']}",
         json={"destination_mode": "custom", "destination_path": "../../_Serato_", "dry_run": False},
+    )
+    assert unsafe.status_code == 422
+
+
+def test_rekordbox_staged_preview_and_write_preserve_crate_order(client):
+    test_client, root = client
+    crate = test_client.post("/api/crates", json={"name": "Rekordbox / Safe"}).json()
+    ids = [item["id"] for item in test_client.get("/api/tracks", params={"limit": 2}).json()["items"]]
+    for track_id in ids:
+        assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    preview = test_client.get(f"/api/exports/rekordbox/preview/{crate['id']}")
+    assert preview.status_code == 200
+    planned = preview.json()
+    assert str(root) not in planned["xml_content"]
+    document = ET.fromstring(planned["xml_content"])
+    collection = document.find("COLLECTION")
+    playlist = document.find("./PLAYLISTS/NODE/NODE")
+    assert collection is not None and collection.attrib["Entries"] == "2"
+    assert playlist is not None and playlist.attrib["Name"] == "Rekordbox / Safe"
+    assert [track.attrib["Key"] for track in playlist.findall("TRACK")] == ["1", "2"]
+
+    dry_run = test_client.post(f"/api/exports/rekordbox/{crate['id']}", json={"dry_run": True})
+    assert dry_run.status_code == 200
+    assert dry_run.json()["written"] is False
+    assert not Path(dry_run.json()["output_path"]).exists()
+
+    written = test_client.post(f"/api/exports/rekordbox/{crate['id']}", json={"dry_run": False})
+    assert written.status_code == 200
+    output = Path(written.json()["output_path"])
+    assert output.is_file()
+    assert output.parent == root / "exports" / "rekordbox"
+    assert ET.parse(output).getroot().tag == "DJ_PLAYLISTS"
+
+    second = test_client.post(f"/api/exports/rekordbox/{crate['id']}", json={"dry_run": False})
+    assert second.status_code == 200
+    assert second.json()["output_path"] != written.json()["output_path"]
+
+
+def test_rekordbox_staged_export_escapes_metadata_and_handles_edge_cases(client):
+    test_client, root = client
+    crate = test_client.post("/api/crates", json={"name": "XML & <Safe>"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute("UPDATE tracks SET title = ?, filepath = ? WHERE id = ?", ("A & <B>", "", track_id))
+
+    preview = test_client.get(f"/api/exports/rekordbox/preview/{crate['id']}")
+    assert preview.status_code == 200
+    planned = preview.json()
+    assert "A &amp; &lt;B&gt;" in planned["xml_content"]
+    assert "no usable library path" in " ".join(planned["warnings"]).lower()
+    document = ET.fromstring(planned["xml_content"])
+    assert document.find("./COLLECTION/TRACK").attrib["Name"] == "A & <B>"  # type: ignore[union-attr]
+
+    empty = test_client.post("/api/crates", json={"name": "Empty Rekordbox"}).json()
+    empty_preview = test_client.get(f"/api/exports/rekordbox/preview/{empty['id']}")
+    assert empty_preview.status_code == 200
+    assert empty_preview.json()["track_count"] == 0
+    assert "empty" in " ".join(empty_preview.json()["warnings"]).lower()
+
+    unsafe = test_client.post(
+        f"/api/exports/rekordbox/{crate['id']}",
+        json={"destination_mode": "../../Rekordbox", "dry_run": False},
     )
     assert unsafe.status_code == 422

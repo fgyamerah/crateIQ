@@ -30,6 +30,7 @@ CrateExportFormat = Literal["csv", "json", "m3u", "m3u8"]
 CratePathMode = Literal["filename", "relative", "absolute"]
 CrateLineEndings = Literal["lf", "crlf"]
 SeratoDestinationMode = Literal["staged", "custom"]
+RekordboxDestinationMode = Literal["staged"]
 
 
 class CrateExportRequest(BaseModel):
@@ -75,6 +76,28 @@ class SeratoExportPreview(BaseModel):
 
 
 class SeratoExportResult(SeratoExportPreview):
+    written: bool
+
+
+class RekordboxExportRequest(BaseModel):
+    path_mode: CratePathMode = "filename"
+    destination_mode: RekordboxDestinationMode = "staged"
+    include_metadata: bool = True
+    dry_run: bool = True
+
+
+class RekordboxExportPreview(BaseModel):
+    crate_id: int
+    crate_name: str
+    track_count: int
+    destination_mode: RekordboxDestinationMode
+    output_path: str
+    warnings: List[str]
+    safety_notes: List[str]
+    xml_content: str
+
+
+class RekordboxExportResult(RekordboxExportPreview):
     written: bool
 
 

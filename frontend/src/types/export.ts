@@ -67,6 +67,9 @@ export interface CrateExportResult extends CrateExportPreview { output_path: str
 export interface SeratoExportRequest { path_mode: CratePathMode; destination_mode: 'staged'; backup_existing: boolean; dry_run: boolean }
 export interface SeratoExportPreview { crate_id: number; crate_name: string; track_count: number; destination_mode: 'staged'; staged_directory: string; m3u8_path: string; manifest_path: string; warnings: string[]; m3u8_content: string; exact_crate_binary_supported: false }
 export interface SeratoExportResult extends SeratoExportPreview { written: boolean }
+export interface RekordboxExportRequest { path_mode: CratePathMode; destination_mode: 'staged'; include_metadata: boolean; dry_run: boolean }
+export interface RekordboxExportPreview { crate_id: number; crate_name: string; track_count: number; destination_mode: 'staged'; output_path: string; warnings: string[]; safety_notes: string[]; xml_content: string }
+export interface RekordboxExportResult extends RekordboxExportPreview { written: boolean }
 
 // Re-export for convenience
 export type { Job }

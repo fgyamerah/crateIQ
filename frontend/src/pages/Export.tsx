@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, Loader2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { fetchJobLogs, fetchJob } from '../api/jobs'
-import { validateExport, runExport, fetchExports, exportCrate, exportSerato, fetchExportableCrates, previewCrateExport, previewSeratoExport } from '../api/exports'
+import { validateExport, runExport, fetchExports, exportCrate, exportRekordbox, exportSerato, fetchExportableCrates, previewCrateExport, previewRekordboxExport, previewSeratoExport } from '../api/exports'
 import type {
   ExcludedTrack,
   ExclusionCategory,
@@ -15,6 +15,8 @@ import type {
   CrateExportPreview,
   CrateExportRequest,
   CratePathMode,
+  RekordboxExportPreview,
+  RekordboxExportRequest,
   SeratoExportPreview,
   SeratoExportRequest,
 } from '../types/export'
@@ -561,6 +563,74 @@ function SeratoExportPanel() {
   )
 }
 
+function RekordboxExportPanel() {
+  const [crates, setCrates] = useState<CrateSummary[]>([])
+  const [selected, setSelected] = useState<number | null>(null)
+  const [pathMode, setPathMode] = useState<CratePathMode>('filename')
+  const [includeMetadata, setIncludeMetadata] = useState(true)
+  const [dryRun, setDryRun] = useState(true)
+  const [preview, setPreview] = useState<RekordboxExportPreview | null>(null)
+  const [result, setResult] = useState<string | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+
+  useEffect(() => {
+    fetchExportableCrates()
+      .then((items) => {
+        setCrates(items)
+        setSelected((value) => value ?? items[0]?.id ?? null)
+      })
+      .catch((e) => setError(e instanceof ApiError ? e.displayMessage : 'Could not load Manual Crates.'))
+  }, [])
+
+  const makePreview = async () => {
+    if (!selected) return
+    setBusy(true); setError(null); setResult(null)
+    try { setPreview(await previewRekordboxExport(selected, { path_mode: pathMode, include_metadata: includeMetadata })) }
+    catch (e) { setError(e instanceof ApiError ? e.displayMessage : 'Could not preview the staged Rekordbox XML export.') }
+    finally { setBusy(false) }
+  }
+
+  const write = async () => {
+    if (!selected) return
+    setBusy(true); setError(null)
+    const request: RekordboxExportRequest = { path_mode: pathMode, destination_mode: 'staged', include_metadata: includeMetadata, dry_run: dryRun }
+    try {
+      const output = await exportRekordbox(selected, request)
+      setPreview(output)
+      setResult(output.written ? output.output_path : null)
+    } catch (e) { setError(e instanceof ApiError ? e.displayMessage : 'Could not create the staged Rekordbox XML export.') }
+    finally { setBusy(false) }
+  }
+
+  return (
+    <section className="section">
+      <div className="card crate-export-panel">
+        <div className="card-title-row">
+          <div>
+            <h2 className="card-title">Rekordbox XML Export</h2>
+            <p className="muted">Creates an importable XML file for a Manual Crate without writing to your live Rekordbox database.</p>
+          </div>
+          <Badge tone="info">Staged XML</Badge>
+        </div>
+        <StatusStrip tone="info">This staged Rekordbox XML export does not modify files, tags, BPM, key, cue points, or Mixed In Key data.</StatusStrip>
+        {error && <StatusStrip tone="danger" role="alert" onDismiss={() => setError(null)}>{error}</StatusStrip>}
+        {result && <StatusStrip tone="good">Created staged XML: <code>{result}</code></StatusStrip>}
+        {crates.length === 0 ? <EmptyState title="No Manual Crates" message="Create or save a Manual Crate before staging a Rekordbox XML import." /> : <>
+          <div className="crate-export-controls rekordbox-export-controls">
+            <label>Crate<select className="form-input" value={selected ?? ''} onChange={(e) => { setSelected(Number(e.target.value)); setPreview(null); setResult(null) }}>{crates.map((crate) => <option key={crate.id} value={crate.id}>{crate.name} ({crate.track_count})</option>)}</select></label>
+            <label>Path mode<select className="form-input" value={pathMode} onChange={(e) => setPathMode(e.target.value as CratePathMode)}><option value="filename">Filename (safe default)</option><option value="relative">Relative to library root</option><option value="absolute">Absolute path</option></select></label>
+          </div>
+          <div className="form-checkboxes"><label className="form-check"><input type="checkbox" checked={includeMetadata} onChange={(e) => setIncludeMetadata(e.target.checked)} /> Include metadata</label><label className="form-check"><input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} /> Dry run only (do not create files)</label></div>
+          <p className="muted serato-export-note">The file is staged below the local export directory for manual import. Custom, live Rekordbox, USB, and device destinations are deliberately unavailable.</p>
+          <div className="crate-export-actions"><button className="btn btn--ghost" disabled={busy} onClick={() => void makePreview()}>{busy ? 'Working…' : 'Preview XML'}</button><button className="btn btn--primary" disabled={busy} onClick={() => void write()}>{busy ? 'Working…' : dryRun ? 'Run dry preview' : 'Create staged XML'}</button></div>
+          {preview && <><div className="crate-export-summary"><Badge tone="info">{preview.track_count} tracks</Badge><span>Rekordbox XML · {pathMode} paths</span></div><div className="serato-export-paths"><span>Output: <code>{preview.output_path}</code></span></div>{preview.safety_notes.map((note) => <StatusStrip key={note} tone="info">{note}</StatusStrip>)}{preview.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}<pre className="crate-export-preview">{preview.xml_content}</pre></>}
+        </>}
+      </div>
+    </section>
+  )
+}
+
 export default function Export() {
   const [validation,    setValidation]   = useState<ValidateResponse | null>(null)
   const [validating,    setValidating]   = useState(false)
@@ -607,6 +677,7 @@ export default function Export() {
 
       <CrateExportPanel />
       <SeratoExportPanel />
+      <RekordboxExportPanel />
 
       {/* ------------------------------------------------------------------ */}
       {/* Validation section                                                  */}

@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-04: Rekordbox XML Export Foundation adds a preview-first Manual Crate
+  XML handoff to `/exports`. It stages a unique UTF-8 XML file with ordered
+  collection and playlist nodes below `<library-root>/exports/rekordbox/`.
+  This is for manual Rekordbox XML import only; it never writes a live
+  Rekordbox database, device, USB, or application folder. No music files,
+  tags, BPM/key/cues, MIK data, or Serato state is modified.
 - 2026-08-04: Serato Export Foundation adds a preview-first staged handoff to
   `/exports`. A saved Manual Crate can produce an M3U8 and JSON manifest under
   `<library-root>/exports/serato/`; each export uses a new safe folder and

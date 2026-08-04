@@ -19,6 +19,9 @@ from ...schemas.export import (
     CrateExportResult,
     ExportRunRequest,
     ExportRunResponse,
+    RekordboxExportPreview,
+    RekordboxExportRequest,
+    RekordboxExportResult,
     SeratoExportPreview,
     SeratoExportRequest,
     SeratoExportResult,
@@ -27,10 +30,48 @@ from ...schemas.export import (
 from ...schemas.job import JobResponse
 from ...services import job_service, toolkit_runner
 from ...services.export_validation import run_validation
-from ...services import crate_export_service, crate_service, serato_export_service
+from ...services import (
+    crate_export_service,
+    crate_service,
+    rekordbox_crate_export_service,
+    serato_export_service,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["exports"])
+
+
+@router.get(
+    "/exports/rekordbox/preview/{crate_id}", response_model=RekordboxExportPreview
+)
+async def preview_rekordbox_export(
+    crate_id: int,
+    path_mode: str = "filename",
+    include_metadata: bool = True,
+) -> RekordboxExportPreview:
+    try:
+        result = rekordbox_crate_export_service.preview(
+            crate_id,
+            RekordboxExportRequest(
+                path_mode=path_mode, include_metadata=include_metadata
+            ),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Crate not found")
+    return result
+
+
+@router.post("/exports/rekordbox/{crate_id}", response_model=RekordboxExportResult)
+async def export_rekordbox(
+    crate_id: int, body: RekordboxExportRequest
+) -> RekordboxExportResult:
+    result = rekordbox_crate_export_service.write(crate_id, body)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Crate not found")
+    return result
+
 
 @router.get("/exports/serato/preview/{crate_id}", response_model=SeratoExportPreview)
 async def preview_serato_export(
