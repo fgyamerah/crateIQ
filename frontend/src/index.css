@@ -7394,7 +7394,17 @@ tr.row--selected td {
    Manual crates — local-first working lists
    ------------------------------------------------------------------------- */
 
-.manual-crates-page { padding: 24px; display: grid; gap: 16px; }
+/* Manual crates is a document-style workspace, unlike the virtualized Library
+   table. Undo the inherited fixed-height/hidden-overflow workspace contract so
+   its full ordered list and library finder remain reachable in the main scroll. */
+.crate-workspace.manual-crates-page {
+  height: auto;
+  min-height: 100vh;
+  grid-template-rows: none;
+  align-content: start;
+  overflow: visible;
+  padding: 24px 24px 40px;
+}
 .manual-crates-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; }
 .manual-crates-layout { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
 .manual-crates-list, .manual-crate-detail { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; }
