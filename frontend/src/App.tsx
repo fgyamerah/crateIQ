@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
 import Layout from './components/Layout'
 import CrateMind from './pages/CrateMind'
 import Crates from './pages/Crates'
+import SmartCrates from './pages/SmartCrates'
 import LibraryView from './components/library/LibraryView'
 import ErrorBoundary from './components/ErrorBoundary'
 import BpmReview from './pages/BpmReview'
@@ -30,6 +31,7 @@ export default function App() {
           <Route path="bpm-review" element={<ErrorBoundary><BpmReview /></ErrorBoundary>} />
           <Route path="jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
           <Route path="crates" element={<ErrorBoundary><Crates /></ErrorBoundary>} />
+          <Route path="smart-crates" element={<ErrorBoundary><SmartCrates /></ErrorBoundary>} />
           <Route path="set-builder" element={<ErrorBoundary><SetBuilder /></ErrorBoundary>} />
           <Route path="exports" element={<ErrorBoundary><Export /></ErrorBoundary>} />
           <Route path="sync" element={<ErrorBoundary><SsdSync /></ErrorBoundary>} />

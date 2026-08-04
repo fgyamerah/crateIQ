@@ -39,6 +39,12 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Smart Crates / Smart Playlists suggestions (2026-08-04)
+         Deterministic local previews now filter/rank existing BPM, Camelot,
+         genre, and issue data, then explicitly save to editable Manual Crates.
+         Energy/vibe and date-added remain unavailable until trusted track
+         fields exist; no files, metadata, MIK values, or exports are changed.
+
 [x] (P1) Manual crates / playlists (2026-08-04)
          Local-first manual crate CRUD, ordered track membership, demo crates,
          focused API coverage, and the `/crates` frontend workflow are complete.

@@ -6,6 +6,15 @@
 
 ## Latest Milestone
 
+- 2026-08-04: Smart Crates added at `/smart-crates`. The new local-only API
+  exposes deterministic presets and preview/save endpoints. Previews remain
+  ephemeral; an explicit save creates an ordered normal Manual Crate through
+  the existing library-scoped crate DB. Supported criteria are BPM range,
+  Camelot exact/compatible/energy-direction matching, genres, issue-free
+  state, and limit. Energy/vibe and date-added are explicitly unavailable
+  because `tracks` has no trusted values for them. No audio files, tags,
+  BPM/key/cues, Mixed In Key data, or exports are changed.
+
 - 2026-08-04: Manual Crates shipped as a local-first, review-before-apply
   working-list surface. `GET/POST/PATCH/DELETE /api/crates` plus scoped track
   add/remove/reorder endpoints persist only `<selected-library-root>/logs/
@@ -271,7 +280,7 @@
   and sidebar now expose only supported workflows.
 - Supported frontend routes: `/`, `/quality`, `/issues`, `/enrichment`,
   `/metadata-repair`, `/metadata-sanitation`, `/bpm-review`, `/audit`,
-  `/folders`, `/jobs`, `/crates`, `/set-builder`, `/exports`, `/sync`, and
+  `/folders`, `/jobs`, `/crates`, `/smart-crates`, `/set-builder`, `/exports`, `/sync`, and
   `/reconciliation`.
 - Legacy `Dashboard`, `Collection`, and `Tracks` pages and placeholder
   `Settings` remain in source but redirect to `/`; `/export` and `/ssd-sync`

@@ -31,6 +31,7 @@ from .api.routes import playlists as playlists_router
 from .api.routes import reconciliation as reconciliation_router
 from .api.routes import runtime as runtime_router
 from .api.routes import sync as sync_router
+from .api.routes import smart_crates as smart_crates_router
 from .api.routes import tracks as tracks_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
@@ -126,6 +127,7 @@ app.include_router(tracks_router.router,     prefix=API_PREFIX)
 app.include_router(insights_router.router,    prefix=API_PREFIX)
 app.include_router(analysis_router.router,   prefix=API_PREFIX)
 app.include_router(crates_router.router,     prefix=API_PREFIX)
+app.include_router(smart_crates_router.router, prefix=API_PREFIX)
 app.include_router(playlists_router.router,  prefix=API_PREFIX)
 app.include_router(metadata_repair_router.router, prefix=API_PREFIX)
 app.include_router(metadata_sanitation_router.router, prefix=API_PREFIX)

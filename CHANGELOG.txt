@@ -2,6 +2,19 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-04] — feat: deterministic local Smart Crates
+
+- Added `/smart-crates` presets, preview, and explicit-save APIs. Suggestions
+  are generated solely from the selected library's read-only track data and
+  are not persisted until saved as a normal ordered Manual Crate.
+- Added Smart Crates UI with presets, explainable track reasons, BPM/Camelot/
+  genre/issue-free/limit criteria, empty and unavailable-filter states, and a
+  link to the saved Manual Crate workflow.
+- Current data does not provide trusted energy/vibe or date-added fields, so
+  those filters are intentionally unavailable rather than inferred.
+- No audio files, tags, BPM/key/cues, Mixed In Key data, or exports are
+  modified. Focused API and supported-route contract coverage added.
+
 [2026-08-04] — feat: local-first manual crates
 
 - Added library-scoped persistent manual crates in

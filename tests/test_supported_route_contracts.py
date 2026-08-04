@@ -143,6 +143,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/smart-crates",
+        "purpose": "Smart crate suggestions",
+        "access": "read-only presets; preview/save deferred",
+        "endpoints": [
+            ("/api/smart-crates/presets", "list", ()),
+        ],
+    },
+    {
         "route": "/set-builder",
         "purpose": "Saved set review",
         "access": "read-only list; set generation deferred",
@@ -187,6 +195,7 @@ INFRA_ENDPOINTS: list[tuple[str, str, tuple[str, ...]]] = [
 # Mutating / job-submitting endpoints per route that the smoke suite must
 # never call. Kept here so the boundary is explicit and testable.
 DEFERRED_ENDPOINTS: dict[str, list[str]] = {
+    "/smart-crates": ["/api/smart-crates/preview (POST)", "/api/smart-crates/save (POST)"],
     "/crates": [
         "/api/crates (POST)", "/api/crates/{id} (PATCH, DELETE)",
         "/api/crates/{id}/tracks (POST, DELETE, PATCH reorder)",

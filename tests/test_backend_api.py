@@ -1269,3 +1269,48 @@ def test_manual_crates_add_prevent_duplicate_remove_reorder_and_delete(client):
     deleted = test_client.delete(f"/api/crates/{crate['id']}")
     assert deleted.status_code == 204
     assert test_client.get(f"/api/crates/{crate['id']}").status_code == 404
+
+
+def test_smart_crates_presets_preview_filters_and_empty_state(client):
+    test_client, _root = client
+
+    presets = test_client.get("/api/smart-crates/presets")
+    assert presets.status_code == 200
+    assert {item["id"] for item in presets.json()} >= {"afro-house-warmup", "peak-amapiano"}
+
+    bpm = test_client.post("/api/smart-crates/preview", json={"name": "BPM", "bpm_min": 123, "bpm_max": 126, "issue_free_only": False, "limit": 10})
+    assert bpm.status_code == 200
+    assert all(123 <= item["bpm"] <= 126 for item in bpm.json()["tracks"])
+
+    genre = test_client.post("/api/smart-crates/preview", json={"name": "House", "genres": ["House"], "issue_free_only": False, "limit": 10})
+    assert genre.status_code == 200
+    assert genre.json()["tracks"]
+    assert all(item["genre"] == "House" for item in genre.json()["tracks"])
+
+    exact = test_client.post("/api/smart-crates/preview", json={"name": "Exact", "camelot_key": "8A", "harmonic_mode": "exact", "issue_free_only": False, "limit": 10})
+    assert exact.status_code == 200
+    assert all(item["key_camelot"] == "8A" for item in exact.json()["tracks"])
+
+    clean = test_client.post("/api/smart-crates/preview", json={"name": "Clean", "issue_free_only": True, "limit": 10})
+    assert clean.status_code == 200
+    assert all("Issue-free" in item["reasons"] for item in clean.json()["tracks"])
+
+    empty = test_client.post("/api/smart-crates/preview", json={"name": "None", "genres": ["Not A Genre"], "limit": 10})
+    assert empty.status_code == 200
+    assert empty.json()["tracks"] == []
+    assert empty.json()["warnings"]
+
+
+def test_smart_crates_save_creates_ordered_manual_crate(client):
+    test_client, _root = client
+    request = {"name": "Saved Smart House", "genres": ["House"], "issue_free_only": False, "limit": 3}
+    preview = test_client.post("/api/smart-crates/preview", json=request)
+    assert preview.status_code == 200
+    preview_ids = [item["track_id"] for item in preview.json()["tracks"]]
+    assert preview_ids
+
+    saved = test_client.post("/api/smart-crates/save", json=request)
+    assert saved.status_code == 201
+    assert saved.json()["name"] == "Saved Smart House"
+    assert [item["track_id"] for item in saved.json()["tracks"]] == preview_ids
+    assert [item["position"] for item in saved.json()["tracks"]] == list(range(1, len(preview_ids) + 1))

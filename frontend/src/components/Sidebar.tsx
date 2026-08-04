@@ -71,6 +71,7 @@ const NAV: NavSection[] = [
     items: [
       { to: '/jobs',        label: 'Jobs',        Icon: ListChecks },
       { to: '/crates',      label: 'Manual Crates', Icon: ListMusic },
+      { to: '/smart-crates', label: 'Smart Crates', Icon: Sparkles },
       { to: '/set-builder', label: 'Set Builder', Icon: Music },
       { to: '/exports',     label: 'Export',      Icon: Download },
       { to: '/sync',        label: 'SSD Sync',    Icon: HardDrive },

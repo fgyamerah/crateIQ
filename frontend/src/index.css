@@ -7438,10 +7438,27 @@ tr.row--selected td {
 .manual-library-picker > .form-input { margin-bottom: 8px; max-width: 520px; }
 .manual-library-result { justify-content: space-between; }
 .manual-library-result > span { flex: 1; }
+.smart-crates-layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.smart-crates-controls, .smart-crates-work { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+.smart-crates-controls { display: grid; gap: 8px; }
+.smart-crates-controls h2 { font-size: 15px; margin-bottom: 3px; }
+.smart-preset { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); cursor: pointer; display: grid; gap: 3px; padding: 10px; text-align: left; }
+.smart-preset:hover { border-color: var(--accent); background: var(--bg-hover); }
+.smart-preset span, .smart-unavailable { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.smart-unavailable { border-top: 1px solid var(--border); margin-top: 8px; padding-top: 12px; }
+.smart-criteria { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; }
+.smart-criteria label { color: var(--text-muted); display: grid; font-size: 12px; gap: 5px; }
+.smart-criteria label:first-child, .smart-criteria label:nth-child(6) { grid-column: span 2; }
+.smart-criteria .form-check { align-items: center; color: var(--text); display: flex; gap: 7px; }
+.smart-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.smart-preview { border-top: 1px solid var(--border); }
+.smart-preview .ui-status-strip { margin: 8px 0; }
 
 @media (max-width: 860px) {
   .manual-crates-page { padding: 16px; }
   .manual-crates-layout { grid-template-columns: 1fr; }
+  .smart-crates-layout { grid-template-columns: 1fr; }
+  .smart-criteria { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .manual-crate-meta { flex-direction: column; }
   .manual-crate-track { align-items: flex-start; flex-wrap: wrap; }
   .manual-crate-track-main { min-width: calc(100% - 42px); }
@@ -7450,6 +7467,8 @@ tr.row--selected td {
 
 @media (max-width: 520px) {
   .manual-crates-kpis { grid-template-columns: 1fr; }
+  .smart-criteria { grid-template-columns: 1fr; }
+  .smart-criteria label:first-child, .smart-criteria label:nth-child(6) { grid-column: auto; }
   .manual-crates-create > div { flex-direction: column; }
   .manual-crates-create .btn { width: 100%; }
 }

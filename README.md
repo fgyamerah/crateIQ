@@ -411,6 +411,7 @@ Supported routes:
 | `/folders` | Folder-level library view |
 | `/jobs` | Allowlisted pipeline job submission and monitoring |
 | `/crates` | Manual local crate creation, ordering, and review |
+| `/smart-crates` | Deterministic local crate suggestions and preview-before-save |
 | `/set-builder` | Set generation and saved set review |
 | `/exports` | Export validation and Rekordbox export jobs |
 | `/sync` | SSD sync preview and controlled execution |
@@ -428,6 +429,7 @@ Core dashboard capabilities:
 - Track table with pagination, sorting, issue badges, search, and selection.
 - Selected track inspector.
 - Manual crates: create named, ordered local track lists before later smart-playlist or export workflows. Crates are stored in `<library-root>/logs/manual_crates.db`; they never scan or modify music files, tags, BPM, key, or cue data, and never overwrite Mixed In Key data.
+- Smart Crates: deterministic, local-only suggestions from existing BPM, Camelot key, genre, and issue-state data. A preview is never persisted; saving creates a normal editable Manual Crate with the preview order. Current filters are BPM range, exact/compatible/directional Camelot matching, genre, issue-free-only, and maximum count. Energy/vibe and date-added are unavailable until trusted fields exist. Smart Crates never modify files, tags, or Mixed In Key data.
 - Issue count page with clickable filters.
 - Folder statistics from DB paths only.
 - Overview cards for totals, BPM coverage, key coverage, missing metadata, parse confidence, and genre counts.
