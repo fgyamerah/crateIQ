@@ -135,6 +135,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/crates",
+        "purpose": "Manual local crate review",
+        "access": "read-only list; crate editing deferred",
+        "endpoints": [
+            ("/api/crates", "list", ()),
+        ],
+    },
+    {
         "route": "/set-builder",
         "purpose": "Saved set review",
         "access": "read-only list; set generation deferred",
@@ -179,6 +187,10 @@ INFRA_ENDPOINTS: list[tuple[str, str, tuple[str, ...]]] = [
 # Mutating / job-submitting endpoints per route that the smoke suite must
 # never call. Kept here so the boundary is explicit and testable.
 DEFERRED_ENDPOINTS: dict[str, list[str]] = {
+    "/crates": [
+        "/api/crates (POST)", "/api/crates/{id} (PATCH, DELETE)",
+        "/api/crates/{id}/tracks (POST, DELETE, PATCH reorder)",
+    ],
     "/jobs": ["/api/jobs (POST)", "/api/jobs/{id}/cancel (POST)"],
     "/set-builder": ["/api/playlists/set-builder (POST)"],
     "/exports": ["/api/exports/validate (POST)", "/api/exports/run (POST)"],
@@ -331,13 +343,13 @@ def test_contract_table_matches_frontend_router():
 
 
 def test_smoke_surface_is_get_only_and_excludes_deferred():
-    """Self-consistency: the smoke surface is GET-only and every deferred
-    endpoint is a POST, so the two surfaces are disjoint by method even when a
-    path (e.g. /api/jobs) supports both a safe GET and a deferred POST."""
+    """Self-consistency: the smoke surface is GET-only and deferred entries
+    are mutating methods, so the two surfaces remain disjoint even when a
+    path supports both safe GET and write methods."""
     for entries in DEFERRED_ENDPOINTS.values():
         for entry in entries:
-            assert "(POST" in entry, (
-                f"deferred entry {entry!r} must be a mutating POST; "
+            assert any(method in entry for method in ("(POST", "(PATCH", "(DELETE")), (
+                f"deferred entry {entry!r} must be a mutating method; "
                 "safe GETs belong in the smoke contract instead"
             )
     for route, (path, _expect, _keys) in _all_smoke_endpoints():

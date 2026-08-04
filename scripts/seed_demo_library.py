@@ -230,6 +230,49 @@ def build_compatibility_cluster_rows() -> list[dict]:
     ]
 
 
+DEMO_CRATES = [
+    ("Afro House Warmup", "A patient opening run for terraces and early rooms.", "Afro House"),
+    ("Peak Time Amapiano", "High-energy Amapiano selections for the main room.", "Amapiano"),
+    ("Highlife Classics", "A local-first Highlife reference crate.", "Highlife"),
+    ("Late Night Reset", "A lower-pressure reset before the final lift.", "Deep House"),
+]
+
+
+def seed_demo_crates(db_path: Path) -> None:
+    """Seed fixed manual crates in the demo root only; never touches music files."""
+    crate_db = db_path.parent / "manual_crates.db"
+    with sqlite3.connect(db_path) as pipeline_conn:
+        track_ids_by_genre = {
+            genre: [row[0] for row in pipeline_conn.execute(
+                "SELECT id FROM tracks WHERE genre = ? ORDER BY id LIMIT 4", (genre,)
+            ).fetchall()]
+            for _name, _notes, genre in DEMO_CRATES
+        }
+    with sqlite3.connect(crate_db) as conn:
+        conn.executescript("""
+            PRAGMA foreign_keys=ON;
+            CREATE TABLE IF NOT EXISTS manual_crates (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, name TEXT NOT NULL, notes TEXT,
+                created_at TEXT NOT NULL, updated_at TEXT NOT NULL
+            );
+            CREATE TABLE IF NOT EXISTS manual_crate_tracks (
+                crate_id INTEGER NOT NULL REFERENCES manual_crates(id) ON DELETE CASCADE,
+                track_id INTEGER NOT NULL, position INTEGER NOT NULL, added_at TEXT NOT NULL, note TEXT,
+                PRIMARY KEY (crate_id, track_id), UNIQUE (crate_id, position)
+            );
+        """)
+        for name, notes, genre in DEMO_CRATES:
+            existing = conn.execute("SELECT id FROM manual_crates WHERE name = ?", (name,)).fetchone()
+            if existing:
+                crate_id = existing[0]
+                conn.execute("UPDATE manual_crates SET notes = ?, updated_at = ? WHERE id = ?", (notes, "2026-08-04T12:00:00+00:00", crate_id))
+            else:
+                crate_id = conn.execute("INSERT INTO manual_crates (name, notes, created_at, updated_at) VALUES (?, ?, ?, ?)", (name, notes, "2026-08-04T12:00:00+00:00", "2026-08-04T12:00:00+00:00")).lastrowid
+            conn.execute("DELETE FROM manual_crate_tracks WHERE crate_id = ?", (crate_id,))
+            for position, track_id in enumerate(track_ids_by_genre[genre], start=1):
+                conn.execute("INSERT INTO manual_crate_tracks (crate_id, track_id, position, added_at) VALUES (?, ?, ?, ?)", (crate_id, track_id, position, "2026-08-04T12:00:00+00:00"))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--count", type=int, default=52, help="number of demo tracks (default 52)")
@@ -268,10 +311,13 @@ def main() -> int:
     for row in rows:
         db.upsert_track(row.pop("filepath"), **row)
 
+    seed_demo_crates(Path(config.DB_PATH))
+
     with sqlite3.connect(config.DB_PATH) as conn:
         total = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
 
     print(f"Seeded {len(rows)} demo tracks ({total} total rows) at {config.DB_PATH}")
+    print("Seeded 4 local demo crates in logs/manual_crates.db")
     print(f"Genres: {', '.join(GENRE_BPM.keys())}")
     print(
         "Includes 14 fixed 'Compatibility Demo' tracks (Coastal Collective / "

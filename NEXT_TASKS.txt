@@ -39,6 +39,13 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Manual crates / playlists (2026-08-04)
+         Local-first manual crate CRUD, ordered track membership, demo crates,
+         focused API coverage, and the `/crates` frontend workflow are complete.
+         State is scoped to `<library-root>/logs/manual_crates.db`; it never
+         touches files, tags, BPM/key/cues, or Mixed In Key data. This is the
+         foundation for later smart-playlist and export integration.
+
 [x] (P1) Document optional local music-analysis tooling and readiness guidance
          (2026-07-29): added docs/operations/LOCAL_TOOLING.md, explicit blank
          KEYFINDER_BIN/AUBIO_BIN/BEET_BIN PATH-search defaults in .env.example,

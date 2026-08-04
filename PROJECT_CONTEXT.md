@@ -6,6 +6,16 @@
 
 ## Latest Milestone
 
+- 2026-08-04: Manual Crates shipped as a local-first, review-before-apply
+  working-list surface. `GET/POST/PATCH/DELETE /api/crates` plus scoped track
+  add/remove/reorder endpoints persist only `<selected-library-root>/logs/
+  manual_crates.db`; `processed.db` remains read-only and no music files,
+  tags, BPM/key, cues, or Mixed In Key data are modified. The new `/crates`
+  route and sidebar item provide crate creation, notes, delete confirmation,
+  ordered up/down controls, library search/add, and loading/error/empty
+  states. Demo seeding now creates four deterministic example crates. Focused
+  API tests and the supported-route contract cover the feature.
+
 - 2026-08-02 (later same day): SetBuilder and Reconciliation completed
   the visual rollout's deferred JSX-level pass, closing the last two
   bespoke-markup pages. SetBuilder.tsx: both ErrorBanner sites now render
@@ -261,7 +271,7 @@
   and sidebar now expose only supported workflows.
 - Supported frontend routes: `/`, `/quality`, `/issues`, `/enrichment`,
   `/metadata-repair`, `/metadata-sanitation`, `/bpm-review`, `/audit`,
-  `/folders`, `/jobs`, `/set-builder`, `/exports`, `/sync`, and
+  `/folders`, `/jobs`, `/crates`, `/set-builder`, `/exports`, `/sync`, and
   `/reconciliation`.
 - Legacy `Dashboard`, `Collection`, and `Tracks` pages and placeholder
   `Settings` remain in source but redirect to `/`; `/export` and `/ssd-sync`

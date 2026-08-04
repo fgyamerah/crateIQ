@@ -12,6 +12,7 @@ import {
   Wrench,
   Activity,
   ListChecks,
+  ListMusic,
   Music,
   Download,
   HardDrive,
@@ -69,6 +70,7 @@ const NAV: NavSection[] = [
     title: 'Operations',
     items: [
       { to: '/jobs',        label: 'Jobs',        Icon: ListChecks },
+      { to: '/crates',      label: 'Manual Crates', Icon: ListMusic },
       { to: '/set-builder', label: 'Set Builder', Icon: Music },
       { to: '/exports',     label: 'Export',      Icon: Download },
       { to: '/sync',        label: 'SSD Sync',    Icon: HardDrive },

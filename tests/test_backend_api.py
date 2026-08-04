@@ -1217,3 +1217,55 @@ def test_compatible_tracks_real_query_failure_returns_500_without_leaking_intern
     assert sensitive_detail not in response.text
     assert "processed.db" not in response.text
     assert "RuntimeError" not in response.text
+
+
+def test_manual_crates_create_list_and_detail(client):
+    test_client, _root = client
+
+    created = test_client.post("/api/crates", json={"name": "Afro House Warmup", "notes": "Open-air set"})
+    assert created.status_code == 201
+    crate = created.json()
+    assert crate["name"] == "Afro House Warmup"
+    assert crate["track_count"] == 0
+
+    listed = test_client.get("/api/crates")
+    assert listed.status_code == 200
+    assert [item["id"] for item in listed.json()] == [crate["id"]]
+
+    detail = test_client.get(f"/api/crates/{crate['id']}")
+    assert detail.status_code == 200
+    assert detail.json()["notes"] == "Open-air set"
+    assert detail.json()["tracks"] == []
+
+
+def test_manual_crates_add_prevent_duplicate_remove_reorder_and_delete(client):
+    test_client, _root = client
+    crate = test_client.post("/api/crates", json={"name": "Peak Time Amapiano"}).json()
+    first_id = test_client.get("/api/tracks", params={"limit": 4}).json()["items"][0]["id"]
+    second_id = test_client.get("/api/tracks", params={"limit": 4}).json()["items"][1]["id"]
+
+    first_add = test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": first_id})
+    assert first_add.status_code == 201
+    assert first_add.json()["tracks"][0]["track_id"] == first_id
+
+    duplicate = test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": first_id})
+    assert duplicate.status_code == 409
+    assert "already" in duplicate.json()["detail"].lower()
+
+    second_add = test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": second_id})
+    assert second_add.status_code == 201
+    reordered = test_client.patch(
+        f"/api/crates/{crate['id']}/tracks/reorder", json={"track_ids": [second_id, first_id]}
+    )
+    assert reordered.status_code == 200
+    assert [item["track_id"] for item in reordered.json()["tracks"]] == [second_id, first_id]
+    assert [item["position"] for item in reordered.json()["tracks"]] == [1, 2]
+
+    removed = test_client.delete(f"/api/crates/{crate['id']}/tracks/{second_id}")
+    assert removed.status_code == 200
+    assert [item["track_id"] for item in removed.json()["tracks"]] == [first_id]
+    assert removed.json()["tracks"][0]["position"] == 1
+
+    deleted = test_client.delete(f"/api/crates/{crate['id']}")
+    assert deleted.status_code == 204
+    assert test_client.get(f"/api/crates/{crate['id']}").status_code == 404

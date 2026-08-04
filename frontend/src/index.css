@@ -7389,3 +7389,57 @@ tr.row--selected td {
     grid-template-columns: 1fr;
   }
 }
+
+/* -------------------------------------------------------------------------
+   Manual crates — local-first working lists
+   ------------------------------------------------------------------------- */
+
+.manual-crates-page { padding: 24px; display: grid; gap: 16px; }
+.manual-crates-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; }
+.manual-crates-layout { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
+.manual-crates-list, .manual-crate-detail { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; }
+.manual-crates-list { overflow: hidden; }
+.manual-crates-create { padding: 14px; border-bottom: 1px solid var(--border); display: grid; gap: 7px; font-size: 12px; font-weight: 700; }
+.manual-crates-create > div { display: flex; gap: 8px; }
+.manual-crates-create input { min-width: 0; }
+.manual-crate-list-items { display: grid; }
+.manual-crate-list-item { background: transparent; border: 0; border-bottom: 1px solid var(--border); color: var(--text); cursor: pointer; display: flex; gap: 10px; justify-content: space-between; padding: 12px 14px; text-align: left; width: 100%; }
+.manual-crate-list-item:last-child { border-bottom: 0; }
+.manual-crate-list-item:hover, .manual-crate-list-item--selected { background: var(--bg-hover); }
+.manual-crate-list-item--selected { box-shadow: inset 3px 0 var(--brand-teal); }
+.manual-crate-list-item span:first-child, .manual-library-result > span { display: grid; gap: 2px; min-width: 0; }
+.manual-crate-list-item strong, .manual-library-result strong, .manual-crate-track-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-crate-list-item small, .manual-library-result small, .manual-crate-track-main span, .manual-crate-section-head p { color: var(--text-muted); font-size: 12px; }
+.manual-crates-list .ui-empty-state { padding: 28px 16px; }
+.manual-crate-detail { min-height: 460px; padding: 18px; }
+.manual-crate-meta { display: flex; gap: 18px; justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+.manual-crate-meta-fields { display: grid; gap: 10px; flex: 1; max-width: 680px; }
+.manual-crate-meta-fields label { display: grid; gap: 5px; color: var(--text-muted); font-size: 12px; }
+.manual-crate-meta-fields textarea { min-height: 70px; resize: vertical; }
+.manual-crate-actions { display: flex; align-items: flex-start; gap: 8px; flex-wrap: wrap; }
+.manual-crate-section-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 20px 0 10px; }
+.manual-crate-section-head h2 { font-size: 15px; }
+.manual-crate-tracks, .manual-library-results { border-top: 1px solid var(--border); }
+.manual-crate-track, .manual-library-result { display: flex; align-items: center; gap: 10px; border-bottom: 1px solid var(--border); min-height: 54px; padding: 8px 4px; }
+.manual-crate-position { color: var(--text-muted); font-family: var(--font-mono); text-align: center; width: 28px; }
+.manual-crate-track-main { display: grid; gap: 2px; flex: 1; min-width: 0; }
+.manual-crate-track-actions { display: flex; gap: 4px; align-items: center; }
+.manual-library-picker { margin-top: 20px; }
+.manual-library-picker > .form-input { margin-bottom: 8px; max-width: 520px; }
+.manual-library-result { justify-content: space-between; }
+.manual-library-result > span { flex: 1; }
+
+@media (max-width: 860px) {
+  .manual-crates-page { padding: 16px; }
+  .manual-crates-layout { grid-template-columns: 1fr; }
+  .manual-crate-meta { flex-direction: column; }
+  .manual-crate-track { align-items: flex-start; flex-wrap: wrap; }
+  .manual-crate-track-main { min-width: calc(100% - 42px); }
+  .manual-crate-track-actions { margin-left: 38px; }
+}
+
+@media (max-width: 520px) {
+  .manual-crates-kpis { grid-template-columns: 1fr; }
+  .manual-crates-create > div { flex-direction: column; }
+  .manual-crates-create .btn { width: 100%; }
+}

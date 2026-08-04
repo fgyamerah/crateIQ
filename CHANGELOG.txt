@@ -2,6 +2,25 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-04] — feat: local-first manual crates
+
+- Added library-scoped persistent manual crates in
+  `<library-root>/logs/manual_crates.db`, separate from the read-only pipeline
+  database. Crates support names, optional notes, timestamps, ordered track
+  membership, duplicate prevention, removal, and explicit reordering.
+- Added `/api/crates` CRUD endpoints plus safe add/remove/reorder track
+  endpoints. Track metadata is read from `processed.db` only and response
+  shapes do not expose file paths.
+- Added the `/crates` dashboard route and navigation item with create/edit,
+  delete confirmation, library search/add, up/down reorder controls, and
+  loading/error/empty states. Added four deterministic demo crates.
+- Manual crates never scan or modify music files, tags, BPM/key/cues, or
+  Mixed In Key data; they are a foundation for later smart-playlist/export
+  workflows.
+- Files affected: backend crate schema/service/routes, frontend crate API/types/page,
+  sidebar/router/styles, demo seeder, focused API and route-contract tests,
+  and project documentation.
+
 [2026-08-02] — docs: safe local keyfinder-cli source build
 
 - Documented a pinned, upstream-source-only Linux Mint/Ubuntu build path for

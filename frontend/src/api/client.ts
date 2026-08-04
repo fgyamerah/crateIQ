@@ -98,6 +98,10 @@ export const apiFetch = {
     })
   },
 
+  delete<T>(path: string): Promise<T> {
+    return request<T>(path, { method: 'DELETE' })
+  },
+
   /** Fetch plain-text response (used for job logs). */
   async text(path: string): Promise<string> {
     const url = `${BASE_URL}${path}`
