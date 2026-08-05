@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added unified `/metadata-repair` DB-only review queue. It
+  snapshots conservative local-index metadata issues and routes users to safe
+  specialist workflows; it never applies fixes itself.
+
 - 2026-08-05: Genre Taxonomy now supports DB-only preferred genre and mapping
   create/update/disable operations. Only enabled mappings are used for new
   review previews; normalized apply remains explicit and preserves raw genre.

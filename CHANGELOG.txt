@@ -2,6 +2,12 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add DB-only Metadata Repair Queue
+
+- Added a unified local metadata issue queue that routes missing metadata,
+  unknown BPM/key, genre, filename, and duplicate-looking review items to safe workflows.
+- Refresh and review status/note updates never change track metadata, tags, or files.
+
 [2026-08-05] — feat: complete local Genre Taxonomy management
 
 - Added DB-only preferred genre and raw-mapping update/disable endpoints and
