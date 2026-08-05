@@ -7508,6 +7508,11 @@ tr.row--selected td {
 .analysis-job-card-head p, .analysis-job-meta { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .analysis-job-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; }
 .analysis-job-meta strong { color: var(--text); }
+.analysis-job-run-hint { color: var(--text-muted); font-size: 12px; padding: 6px 0; }
+.analysis-bpm-confirm { align-items: end; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; }
+.analysis-bpm-confirm .form-check { flex: 1 1 260px; }
+.analysis-bpm-confirm .settings-note { display: grid; gap: 5px; min-width: 110px; }
+.analysis-bpm-confirm .form-input { min-width: 110px; }
 @media (max-width: 520px) {
   .settings-capability { flex-direction: column; }
   .settings-capability .btn { align-self: flex-start; }

@@ -119,6 +119,7 @@ export interface AnalysisJobDefinition {
 export interface AnalysisJobCandidate {
   track_id: number
   filename: string
+  relative_path: string | null
   artist: string | null
   title: string | null
   genre: string | null
@@ -140,6 +141,17 @@ export interface AnalysisJobPreview {
 export interface AnalysisJobHistory {
   history: Record<string, unknown>[]
   message: string
+}
+
+export interface BpmAnalysisRunResult {
+  job_type: 'bpm_analysis'
+  analyzed: number
+  updated: number
+  skipped: number
+  failed: number
+  remaining_missing_bpm: number
+  warnings: string[]
+  results: AnalysisJobCandidate[]
 }
 
 export const REASON_COLORS: Record<BpmReason, string> = {

@@ -38,6 +38,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     quality_tier TEXT,
     parse_confidence TEXT,
     bpm_source TEXT,
+    bpm_trusted INTEGER NOT NULL DEFAULT 0,
+    bpm_analyzed_at TEXT,
     key_source TEXT,
     cue_source TEXT,
     cue_count INTEGER NOT NULL DEFAULT 0,

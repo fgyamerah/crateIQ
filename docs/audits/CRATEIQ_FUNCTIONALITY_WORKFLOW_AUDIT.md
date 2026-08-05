@@ -4,6 +4,12 @@
 **Mode:** read-only product/code audit; no library, audio, metadata, or DJ-application data was changed  
 **Primary question:** can CrateIQ operate as a useful standalone local-first library, crate, preview, and export app while optional tools remain isolated to the workflows that need them?
 
+> Implementation follow-up (2026-08-05): BPM is now the first actual Analysis
+> Jobs runner. It requires aubio, preview, confirmation, and a small explicit
+> limit; it writes only null-BPM records to the local index with lower-authority
+> provenance. It never writes tags/media or replaces MIK/trusted/existing BPM.
+> Key/Camelot and all other advanced runners remain preview-only.
+
 > Implementation follow-up (2026-08-05): `/jobs` now consumes the capability
 > contract as an optional Analysis Jobs catalog. It provides local-index-only
 > candidate previews for all six workflows, with MIK routed to its explicit
@@ -829,6 +835,6 @@ local-index-only and idempotent by filepath. This resolves the audit’s
 fragmented first-run presentation, while metadata provenance and preview-token
 snapshotting remain future work.
 
-The next task is the first **DB-only, missing-data-only analysis runner** with
-explicit BPM/key confirmation, progress, cancellation, and provenance-aware
-eligibility; the catalog and candidate previews are now in place.
+The next task is a **DB-only, missing-data-only key/Camelot runner** with
+explicit confirmation, a small limit or progress model, and provenance-aware
+eligibility; the BPM pattern and catalog are now in place.

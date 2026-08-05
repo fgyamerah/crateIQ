@@ -6,11 +6,17 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added the first safe Analysis Jobs runner: a preview-first,
+  explicitly confirmed `aubio tempo <file>` BPM pass. It selects only tracks
+  with null BPM, accepts 40–250 BPM, and writes only `bpm`, `bpm_source=aubio`,
+  `bpm_trusted=0`, and `bpm_analyzed_at` to `processed.db`. It never calls a
+  fallback analyzer, writes tags/media, or changes MIK/trusted/existing BPM;
+  all other analysis jobs remain preview-only/pending.
 - 2026-08-05: Reworked `/jobs` into an optional Analysis Jobs catalog. It
   exposes MIK coverage plus BPM, key/Camelot, Beets, duplicate, and quality
-  candidate previews from the local index, with per-tool gating and no
-  subprocess launch. MIK import remains an explicit Settings-only DB write;
-  every other runner is accurately preview-only/pending. Core import, browse,
+  candidate previews from the local index, with per-tool gating. MIK import
+  remains an explicit Settings-only DB write; every non-BPM runner is
+  accurately preview-only/pending. Core import, browse,
   crates, preview, and exports remain available without the optional tools.
 - 2026-08-05: Added an explicit Mixed In Key-compatible metadata coverage and
   import foundation. `GET /api/analysis/mik/coverage` reports the local-index

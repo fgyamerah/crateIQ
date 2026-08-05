@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 from pathlib import Path
 from typing import Any
 
@@ -181,6 +182,15 @@ def get_capabilities(
     def has_tool(name: str) -> bool:
         return tools.get(name, {}).get("status") == "pass"
 
+    def has_aubio() -> bool:
+        """The safe in-app runner accepts only ``aubio tempo``, not a fallback."""
+        if not has_tool("aubio"):
+            return False
+        override = os.environ.get("AUBIO_BIN", "").strip()
+        if override:
+            return bool(shutil.which(override))
+        return bool(shutil.which("aubio"))
+
     def optional_tool_capability(
         *,
         tool: str,
@@ -257,7 +267,7 @@ def get_capabilities(
                 purpose="Analyze only tracks missing trusted BPM.",
                 message="Install or configure aubio to enable optional BPM analysis. Import remains available without it.",
                 enabled=analysis_preferences["analyze_bpm"],
-            ),
+            ) | ({"available": True, "status": "available", "action_state": "ready", "message": "aubio is available for explicit preview-first, DB-only BPM analysis."} if has_aubio() else {"available": False, "status": "missing", "action_state": "setup_required"}),
             "key_analysis": optional_tool_capability(
                 tool="keyfinder-cli",
                 purpose="Analyze only tracks missing trusted key or Camelot values.",

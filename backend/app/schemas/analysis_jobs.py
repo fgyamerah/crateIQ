@@ -34,6 +34,7 @@ class AnalysisJobDefinition(BaseModel):
 class AnalysisJobCandidate(BaseModel):
     track_id: int
     filename: str
+    relative_path: Optional[str] = None
     artist: Optional[str] = None
     title: Optional[str] = None
     genre: Optional[str] = None
@@ -59,3 +60,19 @@ class AnalysisJobPreview(BaseModel):
 class AnalysisJobHistoryResponse(BaseModel):
     history: list[dict] = Field(default_factory=list)
     message: str
+
+
+class BpmAnalysisRunRequest(BaseModel):
+    confirm: bool = False
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class BpmAnalysisRunResult(BaseModel):
+    job_type: Literal["bpm_analysis"]
+    analyzed: int
+    updated: int
+    skipped: int
+    failed: int
+    remaining_missing_bpm: int
+    warnings: list[str] = Field(default_factory=list)
+    results: list[AnalysisJobCandidate] = Field(default_factory=list)

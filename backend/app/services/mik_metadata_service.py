@@ -14,6 +14,7 @@ _SAMPLE_LIMIT = 20
 _TRUSTED_SOURCES = {"mixed_in_key", "mik_compatible_tag"}
 _MIGRATION_COLUMNS = {
     "bpm_source": "TEXT",
+    "bpm_trusted": "INTEGER NOT NULL DEFAULT 0",
     "key_source": "TEXT",
     "cue_source": "TEXT",
     "cue_count": "INTEGER NOT NULL DEFAULT 0",
@@ -188,6 +189,7 @@ def import_metadata() -> dict[str, Any]:
             if bpm is not None and row["bpm"] is None:
                 update["bpm"] = bpm
                 update["bpm_source"] = "mik_compatible_tag"
+                update["bpm_trusted"] = 1
             if camelot is not None and not (row["key_camelot"] or row["key_musical"]):
                 update["key_camelot"] = camelot
                 update["key_musical"] = musical

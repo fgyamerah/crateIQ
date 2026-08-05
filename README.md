@@ -333,12 +333,13 @@ only after confirmation, fill absent values in CrateIQ's local index with
 existing BPM/key value. Cue-tag extraction is not implemented yet, so cue
 coverage is reported as unavailable. MIK remains optional and core workflows
 continue to work when no compatible metadata is found.
-`/jobs` is the optional Analysis Jobs catalog: it previews MIK coverage and
-candidate lists for BPM, key/Camelot, Beets, duplicate, and audio-quality
-workflows without starting external tools. MIK import remains explicit in
-Settings. The remaining runners are honestly marked preview-only/pending until
-their DB-only contracts are implemented. `aubio`, `keyfinder-cli`, `beet`,
-`rmlint`, and `ffprobe`/`ffmpeg` gate only their respective cards.
+`/jobs` is the optional Analysis Jobs catalog. BPM is the first runnable job:
+after a read-only preview and explicit confirmation, it invokes `aubio tempo`
+only for tracks with no BPM and writes the result only to the local index as
+lower-authority `aubio` provenance. It accepts only 40–250 BPM and never
+writes media/tags or replaces MIK/trusted/existing BPM. MIK import remains
+explicit in Settings; key/Camelot, Beets, duplicate, and audio-quality runners
+remain preview-only/pending. Their tools gate only their respective cards.
 See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
 for safe installation, verification, and override guidance. CrateIQ never
 installs optional tools itself.

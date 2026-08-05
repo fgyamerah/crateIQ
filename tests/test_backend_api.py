@@ -3,7 +3,9 @@ from __future__ import annotations
 import contextlib
 import json
 import sqlite3
+import subprocess
 from pathlib import Path
+from types import SimpleNamespace
 from xml.etree import ElementTree as ET
 
 import pytest
@@ -11,7 +13,7 @@ from fastapi.testclient import TestClient
 
 import backend.app.main as backend_main
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import mik_metadata_service, settings_service
+from backend.app.services import analysis_jobs_service, mik_metadata_service, settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1614,6 +1616,7 @@ def test_analysis_jobs_are_preview_only_and_tool_gated(client, monkeypatch):
         ],
     }
     monkeypatch.setattr(settings_service, "run_preflight", lambda: missing_tools_report)
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: None)
 
     listed = test_client.get("/api/analysis/jobs")
     assert listed.status_code == 200
@@ -1642,15 +1645,76 @@ def test_analysis_jobs_are_preview_only_and_tool_gated(client, monkeypatch):
         after = conn.execute("SELECT bpm, key_musical, key_camelot FROM tracks WHERE filename = 'delta.mp3'").fetchone()
     assert after == before == (None, None, None)
 
-    pending = test_client.post("/api/analysis/jobs/bpm_analysis/run")
+    pending = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True})
     assert pending.status_code == 409
-    assert "not implemented" in pending.json()["detail"]
+    assert "aubio is not available" in pending.json()["detail"]
     mik_run = test_client.post("/api/analysis/jobs/mixed_in_key_coverage/run")
     assert mik_run.status_code == 409
     assert "Settings" in mik_run.json()["detail"]
     history = test_client.get("/api/analysis/jobs/history")
     assert history.status_code == 200
     assert history.json()["history"] == []
+
+
+def test_bpm_runner_is_confirmed_aubio_only_and_preserves_existing_values(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    delta_path = root / "library" / "misc" / "delta.mp3"
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    delta_path.write_bytes(b"not-real-audio")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE tracks ADD COLUMN bpm_source TEXT")
+        conn.execute("ALTER TABLE tracks ADD COLUMN bpm_trusted INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE tracks SET bpm_source = 'mixed_in_key', bpm_trusted = 1 WHERE filename = 'alpha.mp3'")
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+
+    def fake_aubio(command, **kwargs):
+        assert command[:2] == ["/fake/aubio", "tempo"]
+        assert kwargs["timeout"] == 20
+        return SimpleNamespace(returncode=0, stdout="0.371 123.26\n1.100 123.26\n", stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_aubio)
+    preview = test_client.get("/api/analysis/jobs/bpm_analysis/preview")
+    assert preview.status_code == 200
+    assert preview.json()["candidate_count"] == 1
+    assert preview.json()["runner_implemented"] is True
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute("SELECT bpm FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    assert before == (None,)
+
+    unconfirmed = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": False, "limit": 1})
+    assert unconfirmed.status_code == 422
+    completed = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 1})
+    assert completed.status_code == 200
+    assert completed.json()["updated"] == 1
+    assert completed.json()["remaining_missing_bpm"] == 0
+    with sqlite3.connect(db_path) as conn:
+        delta = conn.execute("SELECT bpm, bpm_source, bpm_trusted, bpm_analyzed_at FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+        alpha = conn.execute("SELECT bpm, bpm_source, bpm_trusted FROM tracks WHERE filename = 'alpha.mp3'").fetchone()
+    assert delta[:3] == (123.26, "aubio", 0)
+    assert delta[3]
+    assert alpha == (120.0, "mixed_in_key", 1)
+    assert test_client.get("/api/analysis/jobs/bpm_analysis/preview").json()["candidate_count"] == 0
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE tracks SET bpm = NULL WHERE filename = 'delta.mp3'")
+
+    def timeout_aubio(*args, **kwargs):
+        raise subprocess.TimeoutExpired(cmd="aubio", timeout=20)
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", timeout_aubio)
+    timed_out = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 1})
+    assert timed_out.status_code == 200
+    assert timed_out.json()["updated"] == 0
+    assert timed_out.json()["failed"] == 1
+
+
+def test_aubio_bpm_parser_accepts_known_output_and_rejects_implausible_values():
+    assert analysis_jobs_service._parse_aubio_bpm("128.000000\n") == 128.0
+    assert analysis_jobs_service._parse_aubio_bpm("0.371 123.26\n1.100 123.26 bpm\n") == 123.26
+    assert analysis_jobs_service._parse_aubio_bpm("12.0 bpm\n") is None
+    assert analysis_jobs_service._parse_aubio_bpm("300.0 bpm\n") is None
 
 
 def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):

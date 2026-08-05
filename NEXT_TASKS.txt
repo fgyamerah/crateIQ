@@ -39,6 +39,13 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Safe aubio BPM analysis runner (2026-08-05)
+         `/jobs` now supports a preview-first, explicitly confirmed aubio-only
+         BPM pass with a 1–50 track limit. Only null BPM records are eligible;
+         accepted 40–250 BPM values are written to `processed.db` with
+         lower-authority `aubio` provenance. No tags/media are written and
+         MIK/trusted/existing BPM cannot be overwritten.
+
 [x] (P0) Analysis Jobs catalog and candidate-preview foundation (2026-08-05)
          `/jobs` now presents MIK coverage plus BPM/key, Beets, duplicate, and
          quality workflow cards. It reads only local-index candidates; missing
@@ -62,11 +69,10 @@ CURRENT FOCUS
          Import remains analysis-free; unavailable tools disable only their
          named future workflow.
 
-[ ] (P0) Implement the first DB-only, missing-data-only analysis runner
-         Start with an explicit BPM-only or key/Camelot-only preview/confirm
-         flow, progress/cancel support, and no tag/file/quarantine writes.
-         Consume MIK-compatible provenance and target only remaining missing
-         trusted values.
+[ ] (P0) Implement a safe missing-data-only key/Camelot runner
+         Mirror BPM's preview/confirm workflow with keyfinder-cli, progress or
+         a small explicit limit, and DB-only lower-authority provenance. Never
+         write tags/files or replace MIK/trusted/existing key values.
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`

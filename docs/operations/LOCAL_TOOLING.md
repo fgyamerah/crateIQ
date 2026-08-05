@@ -13,7 +13,7 @@ this repository or commit local executable paths.
 | Tool | CrateIQ use | When it runs |
 | --- | --- | --- |
 | `keyfinder-cli` | Fallback musical-key/Camelot analysis | Only for a track without existing Mixed In Key (MIK) key data. |
-| `aubio` | Fallback BPM analysis | Only for a track without existing BPM/MIK data. CrateIQ can also fall back to the existing Python `librosa` dependency when aubio is unavailable or fails. |
+| `aubio` | Preview-first, DB-only BPM analysis | Only after explicit confirmation for a track with null BPM. The in-app runner uses aubio only; it does not fall back to librosa. |
 | `beet` | Beets metadata import/enrichment and the legacy organizer path | Only when the relevant import/organizer workflow is intentionally run; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
 | `rmlint` | Duplicate-detection workflow | Only when the user explicitly starts duplicate detection; no files are deleted automatically. |
 | `ffprobe` + `ffmpeg` | Audio-quality/probing workflows | Only for explicit quality/probing or decode-support workflows. |
@@ -29,9 +29,12 @@ support as unavailable. BPM and key preferences are default-off and never run
 as part of library import.
 
 The optional Analysis Jobs page (`/jobs`) shows a safe local-index candidate
-preview for each tool-specific workflow. It never starts these executables in
-this phase: a missing tool disables only its card, while an installed tool is
-shown as preview-only until its explicit DB-only runner exists.
+preview for each tool-specific workflow. BPM is the exception: after preview
+and explicit confirmation, it runs `aubio tempo <file>` for a small selected
+limit and writes only valid 40–250 BPM plus lower-authority provenance to
+CrateIQ's local index. It never writes audio/tags or replaces MIK/trusted BPM.
+All other installed tools remain preview-only until their explicit DB-only
+runner exists.
 
 ## Linux Mint / Ubuntu installation
 

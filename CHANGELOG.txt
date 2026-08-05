@@ -2,13 +2,25 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: safe preview-first aubio BPM runner
+
+- Added an explicitly confirmed `/api/analysis/jobs/bpm_analysis/run` path.
+  It uses `aubio tempo <file>` with an argument list and per-track timeout,
+  only after the existing read-only candidate preview.
+- Only tracks with null BPM are eligible. Valid 40–250 BPM results are written
+  solely to local `processed.db` with `bpm_source=aubio`, `bpm_trusted=0`, and
+  an analysis timestamp. Existing, trusted, and MIK-compatible BPM remain
+  untouched; no audio/tag/DJ database write or fallback analyzer is used.
+- Added confirmation/limit controls and result summary to Analysis Jobs plus
+  parser, timeout, missing-tool, preservation, and candidate-count tests.
+
 [2026-08-05] — feat: optional Analysis Jobs catalog
 
 - Replaced the generic Jobs launch surface with an Analysis Jobs catalog for
   MIK coverage, missing BPM/key candidates, Beets, duplicates, and audio
   quality. The catalog is preview-first and reads only CrateIQ's local index.
 - Missing executables disable only their own workflow. MIK opens its explicit
-  Settings import path; every other runner is marked preview-only/pending and
+  Settings import path; non-BPM runners are marked preview-only/pending and
   returns a clear error rather than starting a subprocess or faking success.
 - Added per-job candidate previews, Settings/import links, empty history copy,
   route contracts, and focused tool-gating tests. No media, tag, MIK, or DJ
