@@ -2,6 +2,21 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-04] — feat: safe native Audio Preview Player foundation
+
+- Added `GET /api/tracks/{track_id}/preview-audio`, which resolves only an
+  existing, DB-backed audio file below the selected library root and supports
+  HTTP byte ranges for browser seeking. Missing, unsafe, and out-of-root paths
+  return clear non-sensitive errors; no folders are scanned or transcoded.
+- Added reusable native-browser player controls in the Library inspector and
+  selectable Manual/Smart Crate rows: play/pause, seek, elapsed duration,
+  volume, loading, and unavailable states. Normal UI copy never reveals a
+  local path.
+- Preview is read-only: it does not modify audio files, tags, BPM/key/cues,
+  Mixed In Key data, Serato, or Rekordbox. Demo placeholders intentionally
+  show an unavailable state; waveform, cue, beat-grid, and keyboard work is
+  deferred.
+
 [2026-08-04] — feat: staged Rekordbox XML exports for Manual Crates
 
 - Added preview and explicit-write endpoints for a single Manual Crate's

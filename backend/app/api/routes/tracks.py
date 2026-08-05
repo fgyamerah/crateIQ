@@ -12,14 +12,18 @@ does not interpret the literal strings as integer IDs.
 from __future__ import annotations
 
 import logging
+import mimetypes
+from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ...schemas.track import CompatibleTracksResponse, TrackDetail, TrackStats, TrackSummary
 from ...services import read_only as read_only_service
 from ...services import track_service
+from ...core.library_root import assert_path_under_root, selected_library_root
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["tracks"])
@@ -39,6 +43,55 @@ class TrackIssueCountsResponse(BaseModel):
     weak_filename_parse: int
     suspicious_artist: int
     suspicious_title: int
+
+
+def _preview_audio_path(track_id: int) -> Path:
+    """Resolve one DB-backed audio path without allowing arbitrary file reads."""
+    track = track_service.get_track_by_id(track_id)
+    if track is None:
+        raise HTTPException(status_code=404, detail="Track not found")
+    if not track.filepath:
+        raise HTTPException(status_code=404, detail="Preview audio is unavailable for this track")
+    try:
+        path = assert_path_under_root(Path(track.filepath), selected_library_root())
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Preview audio path is outside the selected library") from exc
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail="Preview audio file is unavailable")
+    return path
+
+
+def _parse_byte_range(header: str, size: int) -> tuple[int, int]:
+    """Parse one RFC 7233 byte range; multi-range responses are unnecessary here."""
+    if not header.startswith("bytes=") or "," in header:
+        raise ValueError("invalid range")
+    start_text, _, end_text = header[6:].partition("-")
+    if not _:
+        raise ValueError("invalid range")
+    if not start_text:
+        if not end_text:
+            raise ValueError("invalid range")
+        length = int(end_text)
+        if length <= 0:
+            raise ValueError("invalid range")
+        return max(0, size - length), size - 1
+    start = int(start_text)
+    end = int(end_text) if end_text else size - 1
+    if start < 0 or end < start or start >= size:
+        raise ValueError("invalid range")
+    return start, min(end, size - 1)
+
+
+def _file_bytes(path: Path, start: int, end: int, chunk_size: int = 64 * 1024):
+    with path.open("rb") as stream:
+        stream.seek(start)
+        remaining = end - start + 1
+        while remaining:
+            chunk = stream.read(min(chunk_size, remaining))
+            if not chunk:
+                return
+            remaining -= len(chunk)
+            yield chunk
 
 
 # ---------------------------------------------------------------------------
@@ -108,6 +161,31 @@ async def list_tracks(
         offset=offset,
         total=_total,
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/tracks/{track_id}/preview-audio
+# ---------------------------------------------------------------------------
+
+@router.get("/tracks/{track_id}/preview-audio")
+async def preview_audio(track_id: int, request: Request):
+    """Stream an allowed local audio file for native browser preview only."""
+    path = _preview_audio_path(track_id)
+    size = path.stat().st_size
+    if size <= 0:
+        raise HTTPException(status_code=404, detail="Preview audio file is unavailable")
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    headers = {"Accept-Ranges": "bytes"}
+    range_header = request.headers.get("range")
+    if not range_header:
+        headers["Content-Length"] = str(size)
+        return StreamingResponse(_file_bytes(path, 0, max(0, size - 1)), media_type=media_type, headers=headers)
+    try:
+        start, end = _parse_byte_range(range_header, size)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=416, detail="Requested preview range is invalid", headers={"Content-Range": f"bytes */{size}"})
+    headers.update({"Content-Length": str(end - start + 1), "Content-Range": f"bytes {start}-{end}/{size}"})
+    return StreamingResponse(_file_bytes(path, start, end), status_code=206, media_type=media_type, headers=headers)
 
 
 # ---------------------------------------------------------------------------

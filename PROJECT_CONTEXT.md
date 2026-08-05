@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-08-04: Audio Preview Player foundation adds browser-native, preview-only
+  playback to the Library inspector plus Manual and Smart Crate track rows.
+  `GET /api/tracks/{track_id}/preview-audio` resolves only DB-backed files
+  under the selected root and supports byte ranges for seeking. It neither
+  scans nor transcodes audio, and never changes audio/tags/BPM/key/cues, MIK,
+  Serato, or Rekordbox data. Missing demo placeholder files show unavailable
+  states; waveform/cue/beat-grid/keyboard preview work is deferred.
 - 2026-08-04: Rekordbox XML Export Foundation adds a preview-first Manual Crate
   XML handoff to `/exports`. It stages a unique UTF-8 XML file with ordered
   collection and playlist nodes below `<library-root>/exports/rekordbox/`.

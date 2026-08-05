@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Play } from 'lucide-react'
+import AudioPreviewPlayer from '../player/AudioPreviewPlayer'
 import type { CompatibleTrack, CompatibleTracksResponse, TrackDetail } from '../../types/track'
 import { fetchCompatibleTracks } from '../../api/tracks'
 import { ApiError } from '../../api/client'
@@ -165,7 +166,7 @@ export default function TrackInspector({ track, loading }: Props) {
           type="button"
           className="lib-inspector-art"
           disabled
-          title={track ? 'Playback is not implemented yet' : 'Select a track to preview it'}
+          title={track ? 'Audio preview controls are below' : 'Select a track to preview it'}
           style={track ? camelotHeroStyle(track.key_camelot) : undefined}
         >
           <Play size={20} fill="currentColor" />
@@ -176,6 +177,8 @@ export default function TrackInspector({ track, loading }: Props) {
           {track?.genre && <span className="lib-tag">{track.genre}</span>}
         </div>
       </div>
+
+      <AudioPreviewPlayer track={track} />
 
       <div className="lib-inspector-stats">
         <div className="lib-stat-tile">

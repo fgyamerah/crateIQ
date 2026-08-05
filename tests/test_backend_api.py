@@ -1480,3 +1480,37 @@ def test_rekordbox_staged_export_escapes_metadata_and_handles_edge_cases(client)
         json={"destination_mode": "../../Rekordbox", "dry_run": False},
     )
     assert unsafe.status_code == 422
+
+
+def test_preview_audio_serves_allowed_file_and_byte_ranges(client):
+    test_client, root = client
+    audio_path = root / "library" / "house" / "alpha.mp3"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    audio_path.write_bytes(b"ID3preview-audio-fixture")
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+
+    full = test_client.get(f"/api/tracks/{track_id}/preview-audio")
+    assert full.status_code == 200
+    assert full.content == b"ID3preview-audio-fixture"
+    assert full.headers["accept-ranges"] == "bytes"
+
+    partial = test_client.get(f"/api/tracks/{track_id}/preview-audio", headers={"Range": "bytes=3-9"})
+    assert partial.status_code == 206
+    assert partial.content == b"preview"
+    assert partial.headers["content-range"] == "bytes 3-9/24"
+
+
+def test_preview_audio_rejects_unsafe_and_missing_files(client):
+    test_client, root = client
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute("UPDATE tracks SET filepath = ? WHERE id = ?", ("/tmp/outside-library.mp3", track_id))
+    unsafe = test_client.get(f"/api/tracks/{track_id}/preview-audio")
+    assert unsafe.status_code == 400
+    assert "outside the selected library" in unsafe.json()["detail"]
+
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute("UPDATE tracks SET filepath = ? WHERE id = ?", (str(root / "library" / "missing.mp3"), track_id))
+    missing = test_client.get(f"/api/tracks/{track_id}/preview-audio")
+    assert missing.status_code == 404
+    assert "unavailable" in missing.json()["detail"].lower()

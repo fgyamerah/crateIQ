@@ -39,6 +39,14 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Audio Preview Player foundation (2026-08-04)
+         Browser-native preview is available from Library, Manual Crates, and
+         Smart Crates through a scoped DB-backed endpoint. It only serves
+         existing files below the selected root, supports seek ranges, and
+         does not scan/transcode or alter audio/tags/BPM/key/cues/MIK/DJ data.
+         Missing demo placeholder audio is shown as unavailable; waveform,
+         cue, beat-grid, and keyboard controls remain future work.
+
 [x] (P1) Rekordbox XML Export foundation (2026-08-04)
          Saved Manual Crates now support preview-first, staged XML exports
          under `<library-root>/exports/rekordbox/`, with ordered collection and
