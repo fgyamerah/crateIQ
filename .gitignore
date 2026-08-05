@@ -94,6 +94,7 @@ build/
 # LOCAL SERVICE HELPER RUNTIME
 # =========================
 # PID files + logs written by scripts/crateiq-local-services.sh
+# Includes the Settings-managed pending library root at .run/local/crateiq.env.
 .run/
 *.pid
 

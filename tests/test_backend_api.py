@@ -1526,6 +1526,8 @@ def test_settings_reports_safe_library_tools_and_locked_policies(client):
     assert payload["library"]["processed_db"] == str(root / "logs" / "processed.db")
     assert payload["library"]["manual_crates_db"] == str(root / "logs" / "manual_crates.db")
     assert payload["library"]["exports_root"] == str(root / "exports")
+    assert payload["library"]["pending_library_root"] is None
+    assert payload["library"]["restart_required"] is False
     assert {tool["name"] for tool in payload["tools"]} == {"ffprobe", "ffmpeg", "keyfinder-cli", "aubio", "beet", "rmlint", "rsync"}
     assert payload["safety"]["mixed_in_key_authoritative"] is True
     assert payload["safety"]["no_live_serato_writes"] is True
@@ -1546,3 +1548,42 @@ def test_settings_persists_safe_preference_and_rejects_invalid_updates(client):
 
 def test_settings_recognizes_the_repository_demo_library():
     assert settings_service._is_demo_root(Path(__file__).resolve().parents[1] / ".run" / "demo-library")
+
+
+def test_settings_validates_and_saves_a_pending_library_root(client, monkeypatch, tmp_path):
+    test_client, active_root = client
+    pending_root = tmp_path / "next-library"
+    pending_root.mkdir()
+    local_env = tmp_path / "runtime" / "crateiq.env"
+    monkeypatch.setattr(settings_service, "LOCAL_ENV_PATH", local_env)
+
+    valid = test_client.post("/api/settings/library/validate", json={"library_root": str(pending_root)})
+    assert valid.status_code == 200
+    assert valid.json()["valid"] is True
+    assert valid.json()["library_root"] == str(pending_root)
+
+    saved = test_client.patch("/api/settings/library", json={"library_root": str(pending_root)})
+    assert saved.status_code == 200
+    library = saved.json()["library"]
+    assert library["library_root"] == str(active_root)
+    assert library["pending_library_root"] == str(pending_root)
+    assert library["restart_required"] is True
+    assert library["restart_command"] == "scripts/crateiq-local-services.sh stop && scripts/crateiq-local-services.sh start"
+    assert local_env.read_text(encoding="utf-8").endswith(f"CRATEIQ_LIBRARY_ROOT={pending_root}\n")
+
+
+def test_settings_library_root_validation_rejects_missing_files_and_forbidden_roots(client, tmp_path):
+    test_client, _ = client
+    missing = test_client.post("/api/settings/library/validate", json={"library_root": str(tmp_path / "missing")})
+    assert missing.status_code == 422
+    assert "does not exist" in missing.json()["detail"]
+
+    file_path = tmp_path / "not-a-directory"
+    file_path.write_text("fixture", encoding="utf-8")
+    file_response = test_client.post("/api/settings/library/validate", json={"library_root": str(file_path)})
+    assert file_response.status_code == 422
+    assert "directory" in file_response.json()["detail"]
+
+    forbidden = test_client.post("/api/settings/library/validate", json={"library_root": "/"})
+    assert forbidden.status_code == 422
+    assert "system or CrateIQ runtime" in forbidden.json()["detail"]

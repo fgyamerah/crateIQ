@@ -7,8 +7,16 @@ export interface SettingsLibrary {
   processed_db: string
   manual_crates_db: string
   exports_root: string
+  pending_library_root: string | null
   restart_required: boolean
+  restart_command: string
   readiness_status: RuntimeStatus
+}
+
+export interface LibraryRootValidation {
+  library_root: string
+  valid: boolean
+  message: string
 }
 
 export interface SettingsTool {

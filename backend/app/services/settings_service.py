@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,11 @@ from ..core.preflight import redact_path, run_preflight
 
 _DEFAULT_PREFERENCES = {"default_export_path_mode": "filename"}
 _VALID_PATH_MODES = {"filename", "relative", "absolute"}
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+# This is deliberately repo-scoped rather than library-scoped: saving a new
+# root must not write into the library that has not yet been selected.
+LOCAL_ENV_PATH = _REPO_ROOT / ".run" / "local" / "crateiq.env"
+RESTART_COMMAND = "scripts/crateiq-local-services.sh stop && scripts/crateiq-local-services.sh start"
 
 
 def _settings_path(root: Path) -> Path:
@@ -28,8 +34,81 @@ def _load_preferences(root: Path) -> dict[str, str]:
 
 
 def _is_demo_root(root: Path) -> bool:
-    repo_root = Path(__file__).resolve().parents[3]
-    return root.resolve(strict=False) == (repo_root / ".run" / "demo-library").resolve(strict=False)
+    return root.resolve(strict=False) == (_REPO_ROOT / ".run" / "demo-library").resolve(strict=False)
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def _forbidden_library_roots() -> tuple[Path, ...]:
+    return (
+        Path("/"), Path("/etc"), Path("/usr"), Path("/bin"), Path("/sbin"),
+        Path("/proc"), Path("/sys"), Path("/dev"), Path("/run"),
+        _REPO_ROOT, _REPO_ROOT / ".git", _REPO_ROOT / ".venv",
+        _REPO_ROOT / "node_modules", _REPO_ROOT / ".run",
+    )
+
+
+def _validated_library_root(value: str) -> Path:
+    candidate_text = value.strip()
+    if not candidate_text:
+        raise ValueError("library_root is required")
+    if "\x00" in candidate_text or "\n" in candidate_text or "\r" in candidate_text:
+        raise ValueError("library_root contains an unsafe character")
+    candidate = Path(candidate_text).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("library_root must be an absolute path")
+    resolved = candidate.resolve(strict=False)
+    if any(
+        resolved == forbidden.resolve(strict=False)
+        if forbidden == Path("/")
+        else _is_within(resolved, forbidden.resolve(strict=False))
+        for forbidden in _forbidden_library_roots()
+    ):
+        raise ValueError("library_root cannot be a system or CrateIQ runtime directory")
+    if not resolved.exists():
+        raise ValueError("library_root does not exist")
+    if not resolved.is_dir():
+        raise ValueError("library_root must be a directory")
+    if not os.access(resolved, os.R_OK):
+        raise ValueError("library_root is not readable")
+    return resolved
+
+
+def validate_library_root(value: str) -> dict[str, Any]:
+    root = _validated_library_root(value)
+    return {
+        "library_root": redact_path(root),
+        "valid": True,
+        "message": "Library root is valid. Saving it creates a pending change that requires restart.",
+    }
+
+
+def _pending_library_root() -> Path | None:
+    try:
+        for line in LOCAL_ENV_PATH.read_text(encoding="utf-8").splitlines():
+            if line.startswith("CRATEIQ_LIBRARY_ROOT="):
+                value = line.partition("=")[2]
+                return _validated_library_root(value)
+    except (FileNotFoundError, OSError, ValueError):
+        return None
+    return None
+
+
+def _write_pending_library_root(root: Path) -> None:
+    LOCAL_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    temporary = LOCAL_ENV_PATH.with_suffix(".tmp")
+    temporary.write_text(
+        "# Managed by CrateIQ Settings. This file is local-only and contains no secrets.\n"
+        f"CRATEIQ_LIBRARY_ROOT={root}\n",
+        encoding="utf-8",
+    )
+    temporary.replace(LOCAL_ENV_PATH)
 
 
 def _tool_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
@@ -50,6 +129,7 @@ def _tool_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
 
 def get_settings() -> dict[str, Any]:
     root = selected_library_root()
+    pending_root = _pending_library_root()
     report = run_preflight()
     return {
         "library": {
@@ -58,7 +138,9 @@ def get_settings() -> dict[str, Any]:
             "processed_db": redact_path(library_db_path(root)),
             "manual_crates_db": redact_path(crates_db_path()),
             "exports_root": redact_path(assert_path_under_root(root / "exports", root)),
-            "restart_required": False,
+            "pending_library_root": redact_path(pending_root) if pending_root else None,
+            "restart_required": pending_root is not None and pending_root != root.resolve(strict=False),
+            "restart_command": RESTART_COMMAND,
             "readiness_status": report["status"],
         },
         "tools": _tool_rows(report),
@@ -86,4 +168,9 @@ def update_preferences(default_export_path_mode: str | None) -> dict[str, Any]:
         json.dumps({"default_export_path_mode": default_export_path_mode}, indent=2) + "\n",
         encoding="utf-8",
     )
+    return get_settings()
+
+
+def update_library_root(value: str) -> dict[str, Any]:
+    _write_pending_library_root(_validated_library_root(value))
     return get_settings()

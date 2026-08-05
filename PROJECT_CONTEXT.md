@@ -1,6 +1,6 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-08-02
+**Updated:** 2026-08-05
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
@@ -10,8 +10,11 @@
   library/tool/readiness diagnostics, locked safety policies, and one
   library-scoped preference: the default export path mode. The preference
   persists in ignored `<library-root>/logs/app_settings.json` and initializes
-  export forms on their next load. Library roots and binary overrides remain
-  read-only process-start environment settings with restart guidance; no
+  export forms on their next load. Settings can also validate and save a
+  pending absolute library root in ignored `<repo>/.run/local/crateiq.env`;
+  the helper reads it on the next configured-library start and the running
+  process remains unchanged until then. Binary overrides remain read-only
+  process-start environment settings with restart guidance; no
   folders are scanned and no audio/tag/MIK/DJ database data is changed.
 - 2026-08-04: Audio Preview Player foundation adds browser-native, preview-only
   playback to the Library inspector plus Manual and Smart Crate track rows.

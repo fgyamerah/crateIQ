@@ -18,7 +18,9 @@ class SettingsLibrary(BaseModel):
     processed_db: str
     manual_crates_db: str
     exports_root: str
+    pending_library_root: Optional[str] = None
     restart_required: bool
+    restart_command: str
     readiness_status: Literal["ready", "degraded", "not_ready"]
 
 
@@ -54,6 +56,16 @@ class SettingsUpdateRequest(BaseModel):
     default_export_path_mode: Optional[Literal["filename", "relative", "absolute"]] = Field(default=None)
 
 
+class LibraryRootRequest(BaseModel):
+    library_root: str = Field(min_length=1, max_length=4096)
+
+
+class LibraryRootValidationResponse(BaseModel):
+    library_root: str
+    valid: bool
+    message: str
+
+
 @router.get("/settings", response_model=SettingsResponse)
 async def get_settings() -> SettingsResponse:
     return SettingsResponse(**settings_service.get_settings())
@@ -63,6 +75,22 @@ async def get_settings() -> SettingsResponse:
 async def patch_settings(body: SettingsUpdateRequest) -> SettingsResponse:
     try:
         return SettingsResponse(**settings_service.update_preferences(body.default_export_path_mode))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/settings/library/validate", response_model=LibraryRootValidationResponse)
+async def validate_library_root(body: LibraryRootRequest) -> LibraryRootValidationResponse:
+    try:
+        return LibraryRootValidationResponse(**settings_service.validate_library_root(body.library_root))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.patch("/settings/library", response_model=SettingsResponse)
+async def patch_library_root(body: LibraryRootRequest) -> SettingsResponse:
+    try:
+        return SettingsResponse(**settings_service.update_library_root(body.library_root))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

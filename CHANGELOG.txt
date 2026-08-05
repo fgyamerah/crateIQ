@@ -2,6 +2,19 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: controlled pending library-root configuration
+
+- Settings can now validate an existing readable absolute library directory
+  without scanning it, then atomically save `CRATEIQ_LIBRARY_ROOT` to ignored
+  `.run/local/crateiq.env` as a pending change. Active and pending roots are
+  displayed separately and the running backend is never hot-reconfigured.
+- `scripts/crateiq-local-services.sh` reads only that managed root setting
+  before a configured-library start, while direct environment values still
+  win and demo/LAN/local profiles retain their existing behavior.
+- Added `POST /api/settings/library/validate` and `PATCH /api/settings/library`.
+  One-click restart is deliberately deferred: Settings supplies the scoped
+  CrateIQ stop/start command rather than exposing shell execution.
+
 [2026-08-05] — feat: local-first Settings diagnostics and preferences
 
 - Replaced the hidden Settings placeholder with supported `/settings` route

@@ -33,6 +33,21 @@ CRATEIQ_BACKEND_URL="http://${CRATEIQ_BIND}:${CRATEIQ_BACKEND_PORT}"
 CRATEIQ_FRONTEND_URL="http://${CRATEIQ_BIND}:${CRATEIQ_FRONTEND_PORT}"
 CRATEIQ_HEALTH_URL="${CRATEIQ_BACKEND_URL}/api/health"
 CRATEIQ_READINESS_URL="${CRATEIQ_BACKEND_URL}/api/runtime/readiness"
+CRATEIQ_LOCAL_ENV_FILE="$CRATEIQ_RUN_DIR/local/crateiq.env"
+
+# Read only the managed, non-secret root setting.  Do not source this file:
+# Settings must never turn a local configuration file into executable shell.
+_crateiq_load_local_library_root() {
+    local line configured_root=""
+    [[ -z "${CRATEIQ_LIBRARY_ROOT:-}" && -f "$CRATEIQ_LOCAL_ENV_FILE" ]] || return 0
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        [[ "$line" == CRATEIQ_LIBRARY_ROOT=* ]] || continue
+        configured_root="${line#CRATEIQ_LIBRARY_ROOT=}"
+    done < "$CRATEIQ_LOCAL_ENV_FILE"
+    [[ -n "$configured_root" ]] && CRATEIQ_LIBRARY_ROOT="$configured_root"
+}
+
+_crateiq_load_local_library_root
 
 _crateiq_pid_from_file() {
     local pid_file="$1" pid

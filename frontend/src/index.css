@@ -7448,6 +7448,7 @@ tr.row--selected td {
 .settings-def-list code { overflow-wrap: anywhere; }
 .settings-preference { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; }
 .settings-preference label { color: var(--text-muted); display: grid; font-size: 12px; gap: 5px; min-width: min(100%, 320px); }
+.settings-action-row { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-note { font-size: 12px; line-height: 1.45; }
 .settings-tool-list, .settings-runtime-list { border-top: 1px solid var(--border); }
 .settings-tool, .settings-runtime-check { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 10px; justify-content: space-between; min-width: 0; padding: 10px 2px; }
