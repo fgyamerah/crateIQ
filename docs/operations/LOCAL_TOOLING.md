@@ -28,6 +28,11 @@ Cue-tag extraction is not implemented, so the coverage panel reports cue
 support as unavailable. BPM and key preferences are default-off and never run
 as part of library import.
 
+The optional Analysis Jobs page (`/jobs`) shows a safe local-index candidate
+preview for each tool-specific workflow. It never starts these executables in
+this phase: a missing tool disables only its card, while an installed tool is
+shown as preview-only until its explicit DB-only runner exists.
+
 ## Linux Mint / Ubuntu installation
 
 Run package-management commands yourself after reviewing them for your local

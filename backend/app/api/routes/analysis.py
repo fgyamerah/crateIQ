@@ -33,11 +33,54 @@ from ...schemas.bpm_analysis import (
     UpdateAnomalyRequest,
 )
 from ...schemas.job import JobResponse
+from ...schemas.analysis_jobs import (
+    AnalysisJobHistoryResponse,
+    AnalysisJobListResponse,
+    AnalysisJobPreview,
+)
 from ...schemas.mik_metadata import MikCoverageResponse, MikImportResponse
-from ...services import bpm_analysis, job_service, mik_metadata_service, toolkit_runner
+from ...services import (
+    analysis_jobs_service,
+    bpm_analysis,
+    job_service,
+    mik_metadata_service,
+    toolkit_runner,
+)
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["analysis"])
+
+
+@router.get("/analysis/jobs", response_model=AnalysisJobListResponse)
+async def list_analysis_jobs() -> AnalysisJobListResponse:
+    """List optional workflows and their safe, local candidate counts."""
+    return AnalysisJobListResponse(**analysis_jobs_service.list_jobs())
+
+
+@router.get("/analysis/jobs/history", response_model=AnalysisJobHistoryResponse)
+async def get_analysis_job_history() -> AnalysisJobHistoryResponse:
+    """Return persisted analysis history once a safe runner exists."""
+    return AnalysisJobHistoryResponse(**analysis_jobs_service.history())
+
+
+@router.get("/analysis/jobs/{job_type}/preview", response_model=AnalysisJobPreview)
+async def preview_analysis_job(job_type: str) -> AnalysisJobPreview:
+    """Read candidate records only; this never starts an external tool."""
+    try:
+        return AnalysisJobPreview(**analysis_jobs_service.preview(job_type))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/analysis/jobs/{job_type}/run", status_code=409)
+async def run_analysis_job(job_type: str):
+    """Refuse unimplemented runners explicitly instead of faking a job."""
+    try:
+        analysis_jobs_service.run(job_type)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
 
 
 @router.get("/analysis/mik/coverage", response_model=MikCoverageResponse)

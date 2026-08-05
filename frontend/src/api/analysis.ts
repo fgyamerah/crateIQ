@@ -5,6 +5,10 @@ import type {
   BpmSummary,
   MikCoverageResult,
   MikImportResult,
+  AnalysisJobHistory,
+  AnalysisJobPreview,
+  AnalysisJobType,
+  AnalysisJobDefinition,
   ReanalyzeRequest,
   UpdateAnomalyRequest,
 } from '../types/analysis'
@@ -48,3 +52,6 @@ export function submitReanalyze(body: ReanalyzeRequest): Promise<Job> {
 export const fetchMikCoverage = () => apiFetch.get<MikCoverageResult>('/analysis/mik/coverage')
 export const previewMikMetadata = () => apiFetch.post<MikCoverageResult>('/analysis/mik/preview', {})
 export const importMikMetadata = () => apiFetch.post<MikImportResult>('/analysis/mik/import', {})
+export const fetchAnalysisJobs = () => apiFetch.get<{ jobs: AnalysisJobDefinition[] }>('/analysis/jobs')
+export const previewAnalysisJob = (jobType: AnalysisJobType) => apiFetch.get<AnalysisJobPreview>(`/analysis/jobs/${jobType}/preview`)
+export const fetchAnalysisJobHistory = () => apiFetch.get<AnalysisJobHistory>('/analysis/jobs/history')

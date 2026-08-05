@@ -91,6 +91,57 @@ export interface MikImportResult extends MikCoverageResult {
   skipped_count: number
 }
 
+export type AnalysisJobType =
+  | 'mixed_in_key_coverage'
+  | 'bpm_analysis'
+  | 'key_analysis'
+  | 'beets_enrichment'
+  | 'duplicate_detection'
+  | 'audio_quality_probe'
+
+export type AnalysisJobStatus = 'ready' | 'missing_tool' | 'coming_soon' | 'disabled'
+
+export interface AnalysisJobDefinition {
+  type: AnalysisJobType
+  label: string
+  status: AnalysisJobStatus
+  required_tools: string[]
+  required_source?: string | null
+  candidate_count: number
+  enabled: boolean
+  default_enabled: boolean
+  runner_implemented: boolean
+  write_behavior: string
+  safety: string[]
+  message: string
+}
+
+export interface AnalysisJobCandidate {
+  track_id: number
+  filename: string
+  artist: string | null
+  title: string | null
+  genre: string | null
+  bpm: number | null
+  key_camelot: string | null
+  key_musical: string | null
+}
+
+export interface AnalysisJobPreview {
+  job: AnalysisJobDefinition
+  total_tracks: number
+  candidate_count: number
+  samples: AnalysisJobCandidate[]
+  warnings: string[]
+  expected_write_behavior: string
+  runner_implemented: boolean
+}
+
+export interface AnalysisJobHistory {
+  history: Record<string, unknown>[]
+  message: string
+}
+
 export const REASON_COLORS: Record<BpmReason, string> = {
   missing_bpm:    'reason--missing',
   too_low_10x:    'reason--critical',

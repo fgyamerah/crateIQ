@@ -7496,11 +7496,25 @@ tr.row--selected td {
 .settings-mik-panel { border-top: 1px solid var(--border); display: grid; gap: 10px; padding-top: 14px; }
 .settings-mik-panel h3 { font-size: 14px; margin: 0 0 3px; }
 .settings-mik-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
+.analysis-jobs-kpis { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.analysis-jobs-head { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }
+.analysis-jobs-head .card-title, .analysis-job-card h3 { margin: 0 0 4px; }
+.analysis-jobs-head p, .analysis-job-card p { margin: 0; }
+.analysis-jobs-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.analysis-job-card, .analysis-job-preview, .analysis-job-history { border-top: 1px solid var(--border); display: grid; gap: 10px; padding-top: 14px; }
+.analysis-job-card { background: color-mix(in srgb, var(--bg) 52%, transparent); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.analysis-job-card-head { align-items: flex-start; display: flex; gap: 10px; justify-content: space-between; }
+.analysis-job-card-head > div { min-width: 0; }
+.analysis-job-card-head p, .analysis-job-meta { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
+.analysis-job-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; }
+.analysis-job-meta strong { color: var(--text); }
 @media (max-width: 520px) {
   .settings-capability { flex-direction: column; }
   .settings-capability .btn { align-self: flex-start; }
   .settings-step-content { flex-direction: column; }
   .settings-import-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .analysis-jobs-kpis, .analysis-jobs-grid { grid-template-columns: 1fr; }
+  .analysis-jobs-head, .analysis-job-card-head { flex-direction: column; }
 }
 .manual-library-picker { margin-top: 20px; }
 .manual-library-picker > .form-input { margin-bottom: 8px; max-width: 520px; }

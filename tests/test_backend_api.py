@@ -1599,6 +1599,60 @@ def test_settings_capabilities_only_disable_workflows_missing_their_tools(client
     assert payload["analysis"]["mixed_in_key_coverage"]["locked"] is True
 
 
+def test_analysis_jobs_are_preview_only_and_tool_gated(client, monkeypatch):
+    test_client, root = client
+    missing_tools_report = {
+        "status": "degraded",
+        "checks": [
+            {
+                "name": f"binary_{name.replace('-', '_')}",
+                "status": "warn",
+                "message": f"{name} not found",
+                "metadata": {"source": "PATH"},
+            }
+            for name in ("ffprobe", "ffmpeg", "keyfinder-cli", "aubio", "beet", "rmlint", "rsync")
+        ],
+    }
+    monkeypatch.setattr(settings_service, "run_preflight", lambda: missing_tools_report)
+
+    listed = test_client.get("/api/analysis/jobs")
+    assert listed.status_code == 200
+    jobs = {item["type"]: item for item in listed.json()["jobs"]}
+    assert set(jobs) == {
+        "mixed_in_key_coverage", "bpm_analysis", "key_analysis",
+        "beets_enrichment", "duplicate_detection", "audio_quality_probe",
+    }
+    assert jobs["mixed_in_key_coverage"]["status"] == "ready"
+    assert jobs["bpm_analysis"]["status"] == "missing_tool"
+    assert jobs["key_analysis"]["status"] == "missing_tool"
+    assert jobs["beets_enrichment"]["status"] == "missing_tool"
+    assert jobs["duplicate_detection"]["status"] == "missing_tool"
+    assert jobs["audio_quality_probe"]["status"] == "missing_tool"
+
+    db_path = root / "logs" / "processed.db"
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute("SELECT bpm, key_musical, key_camelot FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    bpm_preview = test_client.get("/api/analysis/jobs/bpm_analysis/preview")
+    key_preview = test_client.get("/api/analysis/jobs/key_analysis/preview")
+    assert bpm_preview.status_code == 200
+    assert bpm_preview.json()["candidate_count"] == 1
+    assert key_preview.status_code == 200
+    assert key_preview.json()["candidate_count"] == 1
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute("SELECT bpm, key_musical, key_camelot FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    assert after == before == (None, None, None)
+
+    pending = test_client.post("/api/analysis/jobs/bpm_analysis/run")
+    assert pending.status_code == 409
+    assert "not implemented" in pending.json()["detail"]
+    mik_run = test_client.post("/api/analysis/jobs/mixed_in_key_coverage/run")
+    assert mik_run.status_code == 409
+    assert "Settings" in mik_run.json()["detail"]
+    history = test_client.get("/api/analysis/jobs/history")
+    assert history.status_code == 200
+    assert history.json()["history"] == []
+
+
 def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"

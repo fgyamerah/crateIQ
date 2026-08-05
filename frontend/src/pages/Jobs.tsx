@@ -1,14 +1,15 @@
 import { Fragment, useState } from 'react'
 import { RefreshCw, Loader2, XCircle, ScrollText } from 'lucide-react'
 import { useJobs } from '../hooks/useJobs'
-import { submitJob, cancelJob } from '../api/jobs'
+import { cancelJob } from '../api/jobs'
 import { ApiError } from '../api/client'
 import StatusBadge from '../components/StatusBadge'
 import PageHeader from '../components/PageHeader'
 import LogModal from '../components/LogModal'
 import EmptyState from '../components/ui/EmptyState'
 import StatusStrip from '../components/ui/StatusStrip'
-import { ALLOWED_COMMANDS, isActive } from '../types/job'
+import AnalysisJobsCatalog from '../components/analysis/AnalysisJobsCatalog'
+import { isActive } from '../types/job'
 import type { Job } from '../types/job'
 
 // ---------------------------------------------------------------------------
@@ -66,83 +67,6 @@ function JobProgress({ job }: { job: Job }) {
 }
 
 // ---------------------------------------------------------------------------
-// Submit form
-// ---------------------------------------------------------------------------
-
-interface SubmitFormProps {
-  onJobSubmitted: () => void
-}
-
-function SubmitForm({ onJobSubmitted }: SubmitFormProps) {
-  const [command,    setCommand]    = useState<string>(ALLOWED_COMMANDS[0])
-  const [dryRun,     setDryRun]     = useState(true)
-  const [verbose,    setVerbose]    = useState(false)
-  const [submitting, setSubmitting] = useState(false)
-  const [submitError, setSubmitError] = useState<string | null>(null)
-
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    setSubmitting(true)
-    setSubmitError(null)
-
-    const args: string[] = []
-    if (dryRun)  args.push('--dry-run')
-    if (verbose) args.push('--verbose')
-
-    try {
-      await submitJob({ command, args })
-      onJobSubmitted()
-    } catch (err) {
-      if (err instanceof ApiError)  setSubmitError(err.displayMessage)
-      else if (err instanceof Error) setSubmitError(err.message)
-      else setSubmitError('Unknown error')
-    } finally {
-      setSubmitting(false)
-    }
-  }
-
-  return (
-    <form className="submit-form" onSubmit={handleSubmit}>
-      <div className="submit-form-row">
-        <label className="form-label" htmlFor="cmd-select">Command</label>
-        <select
-          id="cmd-select"
-          className="form-select"
-          value={command}
-          onChange={(e) => setCommand(e.target.value)}
-          disabled={submitting}
-        >
-          {ALLOWED_COMMANDS.map((cmd) => (
-            <option key={cmd} value={cmd}>{cmd}</option>
-          ))}
-        </select>
-      </div>
-
-      <div className="submit-form-row submit-form-row--flags">
-        <label className="form-checkbox">
-          <input type="checkbox" checked={dryRun}   onChange={(e) => setDryRun(e.target.checked)}   disabled={submitting} />
-          --dry-run
-        </label>
-        <label className="form-checkbox">
-          <input type="checkbox" checked={verbose}  onChange={(e) => setVerbose(e.target.checked)}   disabled={submitting} />
-          --verbose
-        </label>
-      </div>
-
-      <div className="submit-form-row submit-form-row--actions">
-        <button type="submit" className="btn btn--primary" disabled={submitting}>
-          {submitting
-            ? <><Loader2 size={13} className="spin" /> Submitting…</>
-            : 'Run Job'
-          }
-        </button>
-        {submitError && <span className="submit-error">{submitError}</span>}
-      </div>
-    </form>
-  )
-}
-
-// ---------------------------------------------------------------------------
 // Jobs table
 // ---------------------------------------------------------------------------
 
@@ -157,7 +81,7 @@ function JobsTable({ jobs, onViewLogs, onCancelled }: JobsTableProps) {
   const [cancelErrors,  setCancelErrors]  = useState<Record<string, string>>({})
 
   if (jobs.length === 0) {
-    return <EmptyState message="No jobs yet. Submit one above." />
+    return <EmptyState title="No pipeline jobs recorded" message="Analysis previews are intentionally not persisted as pipeline jobs." />
   }
 
   async function handleCancel(jobId: string) {
@@ -280,8 +204,8 @@ export default function Jobs() {
   return (
     <div className="page">
       <PageHeader
-        title="Jobs"
-        subtitle="Submit pipeline commands and monitor running jobs."
+        title="Analysis Jobs"
+        subtitle="Optional advanced workflows. Core CrateIQ works without these tools."
         badge={activeCount > 0
           ? <span className="live-indicator">{activeCount} active</span>
           : undefined
@@ -302,15 +226,14 @@ export default function Jobs() {
 
       <section className="section">
         <div className="card">
-          <h2 className="card-title">Submit Job</h2>
-          <SubmitForm onJobSubmitted={refresh} />
+          <AnalysisJobsCatalog />
         </div>
       </section>
 
       <section className="section">
         <div className="card">
           <h2 className="card-title">
-            Job History
+            Pipeline Job History
             {!loading && <span className="card-title-count">({jobs.length})</span>}
           </h2>
           {loading

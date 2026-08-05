@@ -61,7 +61,7 @@ function capabilityRequirement(capability: WorkflowCapability) {
   return capability.required_tool ?? 'No optional tool'
 }
 
-function CapabilityCard({ label, capability }: { label: string; capability: WorkflowCapability }) {
+function CapabilityCard({ label, capability, jobRoute }: { label: string; capability: WorkflowCapability; jobRoute?: string }) {
   const actionLabel = capability.action_state === 'setup_required'
     ? 'Missing tool'
     : capability.action_state === 'coming_soon'
@@ -79,9 +79,7 @@ function CapabilityCard({ label, capability }: { label: string; capability: Work
         <small>Requires: {capabilityRequirement(capability)}</small>
         <small>{capability.message}</small>
       </div>
-      <button className="btn btn--ghost btn--xs" type="button" disabled>
-        {actionLabel}
-      </button>
+      {jobRoute ? <Link className="btn btn--ghost btn--xs" to={jobRoute}>{capability.action_state === 'setup_required' ? 'Tool setup' : 'Open jobs'}</Link> : <button className="btn btn--ghost btn--xs" type="button" disabled>{actionLabel}</button>}
     </div>
   )
 }
@@ -487,14 +485,14 @@ export default function Settings() {
                   <button className="btn btn--primary btn--sm" disabled={mikBusy || !mikPreview?.samples.length} onClick={() => void runMikImport()} title={!mikPreview?.samples.length ? 'Preview detected MIK-compatible tags before importing them.' : undefined}>{mikBusy ? 'Importing…' : 'Import trusted metadata'}</button>
                 </div>
                 {mikImport && <StatusStrip tone="good" icon={<CheckCircle2 size={15} />}>Imported {mikImport.imported_count} track{mikImport.imported_count === 1 ? '' : 's'} into the local index; {mikImport.unchanged_count} existing track{mikImport.unchanged_count === 1 ? '' : 's'} stayed unchanged.</StatusStrip>}
-                <div className="settings-next-actions"><Link className="btn btn--ghost btn--xs" to="/settings#analysis-tools">Analyze missing BPM later <ArrowRight size={13} /></Link><Link className="btn btn--ghost btn--xs" to="/settings#analysis-tools">Analyze missing key/Camelot later <ArrowRight size={13} /></Link><Link className="btn btn--ghost btn--xs" to="/smart-crates">Build Smart Crates <ArrowRight size={13} /></Link></div>
+                <div className="settings-next-actions"><Link className="btn btn--ghost btn--xs" to="/jobs#mixed-in-key-coverage">Open Analysis Jobs <ArrowRight size={13} /></Link><Link className="btn btn--ghost btn--xs" to="/smart-crates">Build Smart Crates <ArrowRight size={13} /></Link></div>
               </div>
               <div className="settings-capability-list">
-                <CapabilityCard label="BPM analysis" capability={settings.capabilities.analysis.bpm_analysis} />
-                <CapabilityCard label="Key/Camelot analysis" capability={settings.capabilities.analysis.key_analysis} />
-                <CapabilityCard label="Beets enrichment" capability={settings.capabilities.analysis.beets_enrichment} />
-                <CapabilityCard label="Duplicate detection" capability={settings.capabilities.analysis.duplicate_detection} />
-                <CapabilityCard label="Audio quality/probing" capability={settings.capabilities.analysis.audio_quality_probe} />
+                <CapabilityCard label="BPM analysis" capability={settings.capabilities.analysis.bpm_analysis} jobRoute="/jobs#bpm-analysis" />
+                <CapabilityCard label="Key/Camelot analysis" capability={settings.capabilities.analysis.key_analysis} jobRoute="/jobs#key-analysis" />
+                <CapabilityCard label="Beets enrichment" capability={settings.capabilities.analysis.beets_enrichment} jobRoute="/jobs#beets-enrichment" />
+                <CapabilityCard label="Duplicate detection" capability={settings.capabilities.analysis.duplicate_detection} jobRoute="/jobs#duplicate-detection" />
+                <CapabilityCard label="Audio quality/probing" capability={settings.capabilities.analysis.audio_quality_probe} jobRoute="/jobs#audio-quality-probe" />
               </div>
             </div>
           </section>

@@ -128,10 +128,12 @@ ROUTE_CONTRACTS: list[dict] = [
     },
     {
         "route": "/jobs",
-        "purpose": "Job monitoring",
-        "access": "read-only list; job submission/cancel deferred",
+        "purpose": "Optional Analysis Jobs catalog and pipeline job history",
+        "access": "read-only candidate previews and job list; runners deferred",
         "endpoints": [
             ("/api/jobs", "list", ()),
+            ("/api/analysis/jobs", "dict", ("jobs",)),
+            ("/api/analysis/jobs/history", "dict", ("history", "message")),
         ],
     },
     {
@@ -211,7 +213,10 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/crates (POST)", "/api/crates/{id} (PATCH, DELETE)",
         "/api/crates/{id}/tracks (POST, DELETE, PATCH reorder)",
     ],
-    "/jobs": ["/api/jobs (POST)", "/api/jobs/{id}/cancel (POST)"],
+    "/jobs": [
+        "/api/jobs (POST)", "/api/jobs/{id}/cancel (POST)",
+        "/api/analysis/jobs/{job_type}/run (POST, runner pending)",
+    ],
     "/set-builder": ["/api/playlists/set-builder (POST)"],
     "/exports": ["/api/exports/validate (POST)", "/api/exports/run (POST)"],
     "/sync": ["/api/sync/preview (POST, spawns rsync)", "/api/sync/run (POST)"],

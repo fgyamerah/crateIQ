@@ -219,9 +219,10 @@ def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
     scan["importable"] = bool(scan["supported_audio_files"])
     scan["next_actions"] = [
         {"label": "Open Library", "route": "/"},
-        {"label": "Review Issues", "route": "/issues"},
+        {"label": "Review MIK coverage", "route": "/jobs#mixed-in-key-coverage"},
+        {"label": "Analyze missing BPM", "route": "/jobs#bpm-analysis"},
+        {"label": "Analyze missing key/Camelot", "route": "/jobs#key-analysis"},
         {"label": "Build Manual Crates", "route": "/crates"},
-        {"label": "Configure Optional Analysis", "route": "/settings#analysis-tools"},
     ]
     scan["message"] = "Imported filenames into CrateIQ's local index only. Audio files and tags were not changed."
     return scan

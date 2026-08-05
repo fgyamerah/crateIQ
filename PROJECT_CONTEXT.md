@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Reworked `/jobs` into an optional Analysis Jobs catalog. It
+  exposes MIK coverage plus BPM, key/Camelot, Beets, duplicate, and quality
+  candidate previews from the local index, with per-tool gating and no
+  subprocess launch. MIK import remains an explicit Settings-only DB write;
+  every other runner is accurately preview-only/pending. Core import, browse,
+  crates, preview, and exports remain available without the optional tools.
 - 2026-08-05: Added an explicit Mixed In Key-compatible metadata coverage and
   import foundation. `GET /api/analysis/mik/coverage` reports the local-index
   state without reading files; explicit preview reads existing compatible BPM/

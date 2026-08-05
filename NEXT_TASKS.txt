@@ -39,6 +39,13 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Analysis Jobs catalog and candidate-preview foundation (2026-08-05)
+         `/jobs` now presents MIK coverage plus BPM/key, Beets, duplicate, and
+         quality workflow cards. It reads only local-index candidates; missing
+         tools gate only their own card; MIK import stays explicit in Settings;
+         all other runners are clearly preview-only/pending with no job/tool
+         launch, tag/file, or DJ database writes.
+
 [x] (P0) Mixed In Key-compatible coverage and DB-only import foundation
          (2026-08-05). Settings can now run explicit read-only tag previews
          and import only missing BPM/key values into CrateIQ's local index with
@@ -55,11 +62,11 @@ CURRENT FOCUS
          Import remains analysis-free; unavailable tools disable only their
          named future workflow.
 
-[ ] (P0) Add a DB-only, missing-data-only analysis jobs workflow
-         Consume the capability contract with explicit BPM-only and
-         key/Camelot-only eligibility previews, progress, cancellation, and
-         no tag/file/quarantine writes. Consume the new MIK-compatible
-         provenance and target only remaining missing trusted values.
+[ ] (P0) Implement the first DB-only, missing-data-only analysis runner
+         Start with an explicit BPM-only or key/Camelot-only preview/confirm
+         flow, progress/cancel support, and no tag/file/quarantine writes.
+         Consume MIK-compatible provenance and target only remaining missing
+         trusted values.
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`

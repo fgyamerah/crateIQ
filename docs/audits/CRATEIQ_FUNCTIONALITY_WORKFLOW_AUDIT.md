@@ -4,6 +4,13 @@
 **Mode:** read-only product/code audit; no library, audio, metadata, or DJ-application data was changed  
 **Primary question:** can CrateIQ operate as a useful standalone local-first library, crate, preview, and export app while optional tools remain isolated to the workflows that need them?
 
+> Implementation follow-up (2026-08-05): `/jobs` now consumes the capability
+> contract as an optional Analysis Jobs catalog. It provides local-index-only
+> candidate previews for all six workflows, with MIK routed to its explicit
+> Settings import step and all remaining runners marked pending rather than
+> launching a generic pipeline command. Missing tools disable only their own
+> job card; no preview starts a tool or writes a file/tag.
+
 > Implementation follow-up (2026-08-05): the MIK-compatible metadata coverage
 > foundation is now implemented. Settings exposes DB-only coverage plus
 > explicit read-only tag preview and local-index import of only missing BPM/key
@@ -822,6 +829,6 @@ local-index-only and idempotent by filepath. This resolves the audit’s
 fragmented first-run presentation, while metadata provenance and preview-token
 snapshotting remain future work.
 
-The next task is a **DB-only, missing-data-only analysis jobs workflow** with
-explicit BPM/key eligibility previews and source-aware MIK-compatible metadata
-coverage before any fallback analysis is expanded.
+The next task is the first **DB-only, missing-data-only analysis runner** with
+explicit BPM/key confirmation, progress, cancellation, and provenance-aware
+eligibility; the catalog and candidate previews are now in place.
