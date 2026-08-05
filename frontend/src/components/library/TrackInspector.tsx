@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Play } from 'lucide-react'
-import AudioPreviewPlayer from '../player/AudioPreviewPlayer'
+import { Pause, Play } from 'lucide-react'
 import ThreeBandWaveform from '../player/ThreeBandWaveform'
 import type { CompatibleTrack, CompatibleTracksResponse, TrackDetail } from '../../types/track'
 import { fetchCompatibleTracks } from '../../api/tracks'
@@ -12,6 +11,9 @@ import { camelotHeroStyle, camelotStyle, displayValue } from './libraryUtils'
 interface Props {
   track: TrackDetail | null
   loading: boolean
+  isCurrentTrack: boolean
+  isPlaying: boolean
+  onPlay: () => void
 }
 
 function compatInitials(item: CompatibleTrack): string {
@@ -132,7 +134,7 @@ function CompatibleTracksSection({
  * layout rather than swapping in a bare "select a track" box, so the right
  * rail never collapses to an empty panel.
  */
-export default function TrackInspector({ track, loading }: Props) {
+export default function TrackInspector({ track, loading, isCurrentTrack, isPlaying, onPlay }: Props) {
   const heroTitle = loading ? 'Loading…' : (track ? (track.title || track.filename) : 'Select a track')
   const heroSubtitle = loading ? '' : (track ? (track.artist || '(no artist)') : 'Nothing selected yet')
   const placeholder = !track
@@ -152,11 +154,13 @@ export default function TrackInspector({ track, loading }: Props) {
         <button
           type="button"
           className="lib-inspector-art"
-          disabled
-          title={track ? 'Audio preview controls are below' : 'Select a track to preview it'}
+          disabled={!track || loading}
+          onClick={onPlay}
+          aria-label={isPlaying ? 'Pause persistent player' : 'Play selected track in persistent player'}
+          title={track ? (isPlaying ? 'Pause persistent player' : 'Play in persistent player') : 'Select a track to preview it'}
           style={track ? camelotHeroStyle(track.key_camelot) : undefined}
         >
-          <Play size={20} fill="currentColor" />
+          {isPlaying ? <Pause size={20} fill="currentColor" /> : <Play size={20} fill="currentColor" />}
         </button>
         <div className="lib-inspector-hero-copy">
           <strong>{heroTitle}</strong>
@@ -166,7 +170,16 @@ export default function TrackInspector({ track, loading }: Props) {
       </div>
 
       <div className="lib-inspector-player">
-        <AudioPreviewPlayer track={track} />
+        <button
+          type="button"
+          className="lib-btn lib-btn--primary lib-btn--sm lib-inspector-player-action"
+          disabled={!track || loading}
+          onClick={onPlay}
+        >
+          {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+          {!track ? 'Select a track to play' : isPlaying ? 'Pause player' : isCurrentTrack ? 'Play current track' : 'Play in bottom player'}
+        </button>
+        <span>Browser preview only · no tags or audio files are changed</span>
       </div>
 
       <div className="lib-inspector-stats">

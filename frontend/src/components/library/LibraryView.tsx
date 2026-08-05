@@ -18,6 +18,8 @@ import LibraryOverviewCards from './LibraryOverview'
 import LibraryFilters from './LibraryFilters'
 import TrackTable from './TrackTable'
 import TrackInspector from './TrackInspector'
+import { usePersistentPlayer } from '../player/usePersistentPlayer'
+import type { PersistentPlayerTrack } from '../player/usePersistentPlayer'
 import type { LibraryUiState, SortKey, SortOrder } from './libraryUtils'
 import { LIMIT, loadUiState, persistUiState } from './libraryUtils'
 
@@ -87,6 +89,7 @@ function LibraryStatusStrip({
 
 export default function LibraryView() {
   const navigate = useNavigate()
+  const persistentPlayer = usePersistentPlayer()
   const [ui, setUi] = useState<LibraryUiState>(() => loadUiState())
   const searchRef = useRef<HTMLInputElement>(null)
   const moreMenuRef = useRef<HTMLDivElement>(null)
@@ -222,6 +225,18 @@ export default function LibraryView() {
   }
 
   const items = trackPage?.items ?? []
+  const playerQueue = useMemo<PersistentPlayerTrack[]>(() => items.map((track) => ({
+    id: track.id,
+    artist: track.artist,
+    title: track.title,
+    filename: track.filename,
+    genre: track.genre,
+    bpm: track.bpm,
+    key_camelot: track.key_camelot,
+    duration_sec: track.duration_sec,
+    relativePath: track.filepath,
+    sourceLabel: 'Library',
+  })), [items])
   const total = trackPage?.total ?? 0
   const issueTotal = issues ? Object.values(issues).reduce((sum, n) => sum + (n || 0), 0) : 0
   const activeFilterCount = [ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter].filter(Boolean).length
@@ -237,6 +252,22 @@ export default function LibraryView() {
       })
     return () => { cancelled = true }
   }, [trackPage])
+
+  const selectTrack = (id: number) => {
+    setUi((current) => ({ ...current, selectedId: id }))
+    const track = playerQueue.find((item) => item.id === id)
+    if (track) persistentPlayer.loadTrack(track, playerQueue)
+  }
+
+  const playTrack = (id: number) => {
+    const track = playerQueue.find((item) => item.id === id)
+    if (!track) return
+    if (persistentPlayer.currentTrack?.id === id) {
+      void persistentPlayer.togglePlayback()
+      return
+    }
+    persistentPlayer.loadTrack(track, playerQueue, { autoplay: true })
+  }
 
   return (
     <div className="lib-workspace">
@@ -295,14 +326,22 @@ export default function LibraryView() {
             order={ui.order}
             density={ui.density}
             reviews={reviewSummary}
+            playingTrackId={persistentPlayer.playing ? persistentPlayer.currentTrack?.id ?? null : null}
             onSort={(key) => handleSort(key)}
-            onSelect={(id) => setUi((current) => ({ ...current, selectedId: id }))}
+            onSelect={selectTrack}
+            onPlay={playTrack}
             onPrevPage={() => setUi((current) => ({ ...current, offset: Math.max(0, current.offset - LIMIT) }))}
             onNextPage={() => setUi((current) => ({ ...current, offset: current.offset + LIMIT }))}
             onOpenImportWizard={() => navigate('/settings#library-setup-import')}
           />
 
-          <TrackInspector track={selectedDetail} loading={detailLoading} />
+          <TrackInspector
+            track={selectedDetail}
+            loading={detailLoading}
+            isCurrentTrack={Boolean(selectedDetail && persistentPlayer.currentTrack?.id === selectedDetail.id)}
+            isPlaying={persistentPlayer.playing && persistentPlayer.currentTrack?.id === selectedDetail?.id}
+            onPlay={() => selectedDetail && playTrack(selectedDetail.id)}
+          />
         </div>
       </div>
     </div>

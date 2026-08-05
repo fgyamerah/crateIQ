@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { CheckCircle2, AlertTriangle } from 'lucide-react'
+import { CheckCircle2, AlertTriangle, Pause, Play } from 'lucide-react'
 import type { TrackSummary } from '../../types/track'
 import type { ReviewSummary } from '../../api/reviews'
 import ReviewStatusBadge from '../reviews/ReviewStatusBadge'
@@ -24,8 +24,10 @@ interface Props {
   order: SortOrder
   density: Density
   reviews: ReviewSummary
+  playingTrackId: number | null
   onSort: (key: SortKey) => void
   onSelect: (id: number) => void
+  onPlay: (id: number) => void
   onPrevPage: () => void
   onNextPage: () => void
   onOpenImportWizard: () => void
@@ -71,8 +73,10 @@ export default function TrackTable({
   order,
   density,
   reviews,
+  playingTrackId,
   onSort,
   onSelect,
+  onPlay,
   onPrevPage,
   onNextPage,
   onOpenImportWizard,
@@ -143,7 +147,22 @@ export default function TrackTable({
                 aria-selected={selectedId === track.id}
                 tabIndex={0}
               >
-                <td className="lib-col-num">{offset + virtualStart + rowIdx + 1}</td>
+                <td className="lib-col-num">
+                  <button
+                    type="button"
+                    className={`lib-row-play${playingTrackId === track.id ? ' is-playing' : ''}`}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      onSelect(track.id)
+                      onPlay(track.id)
+                    }}
+                    aria-label={playingTrackId === track.id ? `Pause ${displayValue(track.title, track.filename)}` : `Play ${displayValue(track.title, track.filename)} in persistent player`}
+                    title={playingTrackId === track.id ? 'Pause persistent player' : 'Play in persistent player'}
+                  >
+                    {playingTrackId === track.id ? <Pause size={11} fill="currentColor" /> : <Play size={11} fill="currentColor" />}
+                  </button>
+                  <span className="lib-row-number">{offset + virtualStart + rowIdx + 1}</span>
+                </td>
                 <td className="lib-col-title">
                   <strong>{displayValue(track.title, track.filename)}</strong>
                   {track.title && track.title !== track.filename && <span>{track.filename}</span>}
