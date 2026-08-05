@@ -2211,6 +2211,26 @@ def test_multisource_enrichment_review_is_local_only_and_rejects_forbidden_field
         assert forbidden.status_code == 422
 
 
+def test_listening_review_is_db_only_and_validates_review_fields(client):
+    test_client, root = client
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        track_id = conn.execute("SELECT id FROM tracks LIMIT 1").fetchone()[0]
+        before = conn.execute("SELECT bpm, key_camelot FROM tracks WHERE id=?", (track_id,)).fetchone()
+    initial = test_client.get("/api/reviews/tracks").json()
+    item = next(row for row in initial["items"] if row["track_id"] == track_id)
+    assert item["review_status"] == "unreviewed" and item["rating"] is None
+    saved = test_client.patch(f"/api/reviews/tracks/{track_id}", json={"review_status": "favorite", "rating": 5, "notes": "Warmup"})
+    assert saved.status_code == 200 and saved.json()["review_status"] == "favorite"
+    assert test_client.get("/api/reviews/tracks", params={"status": "favorite"}).json()["summary"]["favorite"] >= 1
+    assert test_client.patch(f"/api/reviews/tracks/{track_id}", json={"review_status": "invalid"}).status_code == 422
+    assert test_client.patch(f"/api/reviews/tracks/{track_id}", json={"rating": 6}).status_code == 422
+    played = test_client.post(f"/api/reviews/tracks/{track_id}/played").json()
+    assert played["play_count"] == 1 and played["last_played_at"]
+    assert test_client.get("/api/reviews/tracks/999999").status_code == 404
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        assert conn.execute("SELECT bpm, key_camelot FROM tracks WHERE id=?", (track_id,)).fetchone() == before
+
+
 def test_settings_validates_and_saves_a_pending_library_root(client, monkeypatch, tmp_path):
     test_client, active_root = client
     pending_root = tmp_path / "next-library"

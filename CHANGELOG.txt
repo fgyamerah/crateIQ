@@ -2,6 +2,11 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: complete DB-only Listening Review
+
+- Added local review statuses, ratings, notes, play count, and keyboard review
+  shortcuts. Listening review never writes tags or music files.
+
 [2026-08-05] — feat: add DB-only Metadata Repair Queue
 
 - Added a unified local metadata issue queue that routes missing metadata,

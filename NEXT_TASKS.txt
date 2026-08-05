@@ -39,6 +39,8 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Complete DB-only Listening Review with local status/rating/notes state.
+
 [x] Add unified DB-only Metadata Repair Queue with safe workflow routing.
 
 [x] Complete DB-only Genre Taxonomy preferred-genre and mapping management.

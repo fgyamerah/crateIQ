@@ -97,6 +97,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/listening",
+        "purpose": "DB-only DJ listening and review queue",
+        "access": "review status, rating, notes, and play history only",
+        "endpoints": [
+            ("/api/reviews/tracks", "dict", ("items", "summary", "safety")),
+        ],
+    },
+    {
         "route": "/audit",
         "purpose": "Latest path/library audit report",
         "access": "read-only",
@@ -290,6 +298,10 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
     "/genres": [
         "/api/genres/review/preview-refresh (POST, local genre values only)",
         "/api/genres/review/apply (POST, explicit DB-only normalized genre apply)",
+    ],
+    "/listening": [
+        "/api/reviews/tracks/{track_id} (PATCH, DB-only review state)",
+        "/api/reviews/tracks/{track_id}/played (POST, DB-only play count)",
     ],
     "/metadata-repair": [
         "/api/metadata-repair/{id}/* (POST)",

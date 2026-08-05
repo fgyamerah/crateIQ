@@ -36,6 +36,7 @@ from .api.routes import playlists as playlists_router
 from .api.routes import quality_review as quality_review_router
 from .api.routes import reconciliation as reconciliation_router
 from .api.routes import runtime as runtime_router
+from .api.routes import reviews as reviews_router
 from .api.routes import settings as settings_router
 from .api.routes import sync as sync_router
 from .api.routes import smart_crates as smart_crates_router
@@ -129,6 +130,7 @@ API_PREFIX = "/api"
 app.include_router(health_router.router,     prefix=API_PREFIX)
 app.include_router(genres_router.router,     prefix=API_PREFIX)
 app.include_router(runtime_router.router,    prefix=API_PREFIX)
+app.include_router(reviews_router.router,    prefix=API_PREFIX)
 app.include_router(settings_router.router,   prefix=API_PREFIX)
 app.include_router(jobs_router.router,       prefix=API_PREFIX)
 app.include_router(library_router.router,    prefix=API_PREFIX)

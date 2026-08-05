@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added `/listening`, a DB-only DJ listening review queue with
+  status, rating, notes, and keyboard shortcuts. No track tags or media files
+  are changed.
+
 - 2026-08-05: Added unified `/metadata-repair` DB-only review queue. It
   snapshots conservative local-index metadata issues and routes users to safe
   specialist workflows; it never applies fixes itself.
