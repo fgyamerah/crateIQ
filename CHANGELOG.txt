@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — docs: document CrateIQ DJ visual direction
+
+- Documented `docs/mockups/library.webp` as the visual reference for CrateIQ's
+  full-width dark DJ dashboard with cyan, teal, and violet accents.
+- Recorded the completed Library and Music Review alignment, track-specific
+  review badges across Library/Manual Crates/Smart Crates, the visual-only
+  three-band waveform, and the preserved accessible Camelot wheel.
+- Planned a safe browser-only persistent bottom player as the next phase. The
+  completed visual work performs no tag, music-file, or audio writes.
+
 [2026-08-05] — feat: show Music Review badges in crates
 
 - Added read-only Music Review status/rating badges and track-specific links

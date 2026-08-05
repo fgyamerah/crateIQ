@@ -39,6 +39,17 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[ ] (P1) Persistent Spotify-style bottom player
+    Add a global bottom mini-player visible across pages, with playback that
+    continues while switching routes through app-shell audio state/context.
+    Integrate Library and Music Review, reuse the three-band waveform visual,
+    and provide compact Spotify-style browser playback controls. Keep state
+    browser-only: no tag/file/audio writes and no analysis tools.
+
+[ ] (P2) Gradually apply the Library mockup style to remaining secondary pages
+    Reuse the full-width dark DJ dashboard, cyan/teal/violet tokens, and dense
+    workflow patterns without breaking or obscuring existing safety behavior.
+
 [x] Show Music Review status/rating context in Manual Crate order/finder rows
     and Smart Crate preview rows without changing order, eligibility, or rules.
 

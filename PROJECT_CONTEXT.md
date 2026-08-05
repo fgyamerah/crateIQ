@@ -6,6 +6,21 @@
 
 ## Latest Milestone
 
+- 2026-08-05: CrateIQ's app-wide visual direction is anchored to
+  `docs/mockups/library.webp`: a full-width dark DJ operations dashboard with
+  cyan/teal action and selection accents plus violet harmonic context. Library
+  and the user-facing Music Review workflow now share dense table/queue and
+  selected-track player/inspector patterns. Read-only Music Review badges link
+  exact tracks from Library, Manual Crates, and Smart Crate previews; Smart
+  Crate rules stay unchanged. The accessible Camelot wheel is preserved, and
+  the deterministic low/mid/high waveform is explicitly visual-only. These
+  UI changes perform no tag, audio, or music-file writes.
+- Next visual phase: a global browser-only Spotify-style bottom mini-player
+  owned by app-shell audio state so playback can continue across routes. It
+  will reuse the three-band visual and integrate Library/Music Review without
+  analysis tools or metadata/file writes. Secondary pages should converge on
+  the same mockup direction gradually, without breaking working workflows.
+
 - 2026-08-05: Manual Crate order/finder rows and Smart Crate preview rows now
   show bounded read-only Music Review status/rating badges linking to the exact
   track. Summary requests batch at 200 IDs. Manual order and Smart Crate rules,
