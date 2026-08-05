@@ -39,6 +39,12 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P2) Full-workspace application layout (2026-08-05)
+         The shared document page shell no longer caps content at a narrow
+         desktop width. Primary routes now use the full sidebar-adjacent
+         workspace while preserving route-specific responsive cards, tables,
+         inspectors, and scroll behavior.
+
 [x] (P2) Analysis Jobs visual polish (2026-08-05)
          `/jobs` now matches the compact Settings dashboard language with
          workflow filters, safety chips, status summaries, clearer

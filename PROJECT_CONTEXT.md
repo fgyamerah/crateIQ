@@ -6,6 +6,11 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Standardized the shared document-style `.page` shell to use the
+  full workspace after the sidebar rather than a narrow capped column. This
+  aligns Settings, Jobs, Exports, Set Builder, BPM Review, Reconciliation,
+  sync, and related pages with the existing full-width Library/Quality and
+  workspace routes while preserving their internal responsive grids/tables.
 - 2026-08-05: Polished `/jobs` into the same compact dark dashboard language
   as Settings. It now exposes safe workflow modes, candidate/status summaries,
   filters, policy chips, clearer preview contracts, and confirmation/result

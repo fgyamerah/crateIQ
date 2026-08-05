@@ -2,6 +2,15 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — ui: unify full-workspace app layouts
+
+- Removed the shared narrow page cap so document-style routes now use the full
+  workspace beside the sidebar, matching Library, Quality, CrateMind, Crates,
+  and metadata workspaces. Cards, grids, and wide tables retain their own
+  responsive layouts and scroll behavior.
+- Settings and Jobs now inherit the same full-width shell; no route behavior,
+  API, safety copy, or data workflow changed.
+
 [2026-08-05] — ui: polish the Analysis Jobs dashboard
 
 - Aligned `/jobs` with the Settings dashboard through compact action links,
