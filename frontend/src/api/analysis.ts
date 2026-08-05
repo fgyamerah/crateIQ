@@ -3,6 +3,8 @@ import type {
   BpmAnomaly,
   BpmCheckResult,
   BpmSummary,
+  MikCoverageResult,
+  MikImportResult,
   ReanalyzeRequest,
   UpdateAnomalyRequest,
 } from '../types/analysis'
@@ -42,3 +44,7 @@ export function updateAnomaly(
 export function submitReanalyze(body: ReanalyzeRequest): Promise<Job> {
   return apiFetch.post<Job>('/analysis/reanalyze', body)
 }
+
+export const fetchMikCoverage = () => apiFetch.get<MikCoverageResult>('/analysis/mik/coverage')
+export const previewMikMetadata = () => apiFetch.post<MikCoverageResult>('/analysis/mik/preview', {})
+export const importMikMetadata = () => apiFetch.post<MikImportResult>('/analysis/mik/import', {})

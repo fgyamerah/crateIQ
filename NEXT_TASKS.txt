@@ -39,6 +39,14 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Mixed In Key-compatible coverage and DB-only import foundation
+         (2026-08-05). Settings can now run explicit read-only tag previews
+         and import only missing BPM/key values into CrateIQ's local index with
+         `mik_compatible_tag` provenance. Existing values are never
+         overwritten, no external analyzer runs, and cue-tag support is
+         honestly reported as unavailable. MIK remains optional for every core
+         workflow.
+
 [x] (P0) Optional analysis settings and per-workflow capability gating
          (2026-08-05). Settings now separates always-ready core workflows from
          tool/source-specific advanced capability cards, persists default-off
@@ -50,8 +58,8 @@ CURRENT FOCUS
 [ ] (P0) Add a DB-only, missing-data-only analysis jobs workflow
          Consume the capability contract with explicit BPM-only and
          key/Camelot-only eligibility previews, progress, cancellation, and
-         no tag/file/quarantine writes. Add source-aware MIK-compatible
-         metadata provenance before any fallback analysis is expanded.
+         no tag/file/quarantine writes. Consume the new MIK-compatible
+         provenance and target only remaining missing trusted values.
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`

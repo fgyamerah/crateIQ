@@ -4,6 +4,13 @@
 **Mode:** read-only product/code audit; no library, audio, metadata, or DJ-application data was changed  
 **Primary question:** can CrateIQ operate as a useful standalone local-first library, crate, preview, and export app while optional tools remain isolated to the workflows that need them?
 
+> Implementation follow-up (2026-08-05): the MIK-compatible metadata coverage
+> foundation is now implemented. Settings exposes DB-only coverage plus
+> explicit read-only tag preview and local-index import of only missing BPM/key
+> values with `mik_compatible_tag` provenance. Existing values are preserved;
+> core workflows remain independent of MIK; cue-tag extraction remains
+> deliberately unavailable.
+
 ## Executive summary
 
 CrateIQ already has a credible standalone core. A DJ can select and initialize a library root, explicitly preview and import filenames into CrateIQ's index, browse and filter tracks, review DB-only metadata proposals, build Manual Crates, generate Smart Crate suggestions from existing metadata, preview playable local audio, and stage portable, Serato, and Rekordbox exports. None of those core operations inherently requires Mixed In Key, `ffprobe`, `ffmpeg`, `keyfinder-cli`, `aubio`, `beet`, or `rmlint`.

@@ -12,6 +12,7 @@ import {
   Wrench,
 } from 'lucide-react'
 import { ApiError } from '../api/client'
+import { fetchMikCoverage, importMikMetadata, previewMikMetadata } from '../api/analysis'
 import {
   fetchSettings,
   fetchSettingsRuntime,
@@ -31,6 +32,7 @@ import type {
   SettingsResponse,
   WorkflowCapability,
 } from '../types/settings'
+import type { MikCoverageResult, MikImportResult } from '../types/analysis'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import KpiCard from '../components/ui/KpiCard'
@@ -110,6 +112,10 @@ export default function Settings() {
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupResult, setSetupResult] = useState<LibrarySetupResult | null>(null)
   const [previewedAt, setPreviewedAt] = useState<Date | null>(null)
+  const [mikCoverage, setMikCoverage] = useState<MikCoverageResult | null>(null)
+  const [mikPreview, setMikPreview] = useState<MikCoverageResult | null>(null)
+  const [mikImport, setMikImport] = useState<MikImportResult | null>(null)
+  const [mikBusy, setMikBusy] = useState(false)
 
   const applySettings = (next: SettingsResponse) => {
     setSettings(next)
@@ -121,9 +127,14 @@ export default function Settings() {
     setLoading(true)
     setError(null)
     try {
-      const [nextSettings, nextRuntime] = await Promise.all([fetchSettings(), fetchSettingsRuntime()])
+      const [nextSettings, nextRuntime, nextMikCoverage] = await Promise.all([
+        fetchSettings(),
+        fetchSettingsRuntime(),
+        fetchMikCoverage().catch(() => null),
+      ])
       applySettings(nextSettings)
       setRuntime(nextRuntime)
+      setMikCoverage(nextMikCoverage)
     } catch (err) {
       setError(errorMessage(err, 'Could not load local settings.'))
     } finally {
@@ -169,6 +180,35 @@ export default function Settings() {
       setError(errorMessage(err, 'Could not save optional analysis preferences.'))
     } finally {
       setAnalysisBusy(false)
+    }
+  }
+
+  const runMikPreview = async () => {
+    setMikBusy(true)
+    setError(null)
+    try {
+      const result = await previewMikMetadata()
+      setMikPreview(result)
+      setMikImport(null)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not preview MIK-compatible metadata.'))
+    } finally {
+      setMikBusy(false)
+    }
+  }
+
+  const runMikImport = async () => {
+    setMikBusy(true)
+    setError(null)
+    try {
+      const result = await importMikMetadata()
+      setMikImport(result)
+      setMikCoverage(result)
+      setMikPreview(null)
+    } catch (err) {
+      setError(errorMessage(err, 'Could not import MIK-compatible metadata into the local index.'))
+    } finally {
+      setMikBusy(false)
     }
   }
 
@@ -267,6 +307,7 @@ export default function Settings() {
   const canInitialize = Boolean(settings && !setupInitialized && !settings.library.restart_required)
   const canPreview = Boolean(settings && setupInitialized && !settings.library.restart_required)
   const canImport = Boolean(previewResult?.importable)
+  const mikResult = mikImport ?? mikPreview ?? mikCoverage
 
   return (
     <div className="page settings-page">
@@ -426,8 +467,29 @@ export default function Settings() {
                 <button className="btn btn--primary" disabled={analysisBusy || !analysisChanged} onClick={() => void saveAnalysis()}>{analysisBusy ? 'Saving…' : 'Save analysis preferences'}</button>
               </div>
               <StatusStrip tone="info" icon={<ShieldCheck size={15} />}>BPM/key analysis is default-off. Current in-app runners are intentionally not exposed here until a dedicated DB-only, missing-data-only analysis workflow is complete.</StatusStrip>
+              <div className="settings-mik-panel">
+                <div className="settings-import-result-head"><div><h3>Mixed In Key coverage</h3><p className="muted">Mixed In Key is a trusted metadata input source, not a required executable.</p></div><Badge tone={settings.capabilities.analysis.mixed_in_key_coverage.available ? 'succeeded' : 'pending'}>{settings.capabilities.analysis.mixed_in_key_coverage.status}</Badge></div>
+                <StatusStrip tone="info">Mixed In Key-compatible values are treated as trusted when present. Preview reads existing tags; import writes only CrateIQ’s local index. Music files and tags are not changed.</StatusStrip>
+                {mikResult && <>
+                  <div className="settings-import-summary settings-mik-summary">
+                    <span><strong>{mikResult.summary.with_bpm}</strong> with BPM</span>
+                    <span><strong>{mikResult.summary.with_key}</strong> with key</span>
+                    <span><strong>{mikResult.summary.with_camelot}</strong> with Camelot</span>
+                    <span><strong>{mikResult.summary.fallback_bpm_candidates}</strong> BPM fallback candidates</span>
+                    <span><strong>{mikResult.summary.fallback_key_candidates}</strong> key fallback candidates</span>
+                  </div>
+                  <p className="muted settings-note">Cue support: <strong>{mikResult.cue_support}</strong>. {mikResult.summary.with_cues} tracks with detectable cues.</p>
+                  {mikResult.samples.length > 0 && <div className="settings-import-samples"><strong>Detected tag samples</strong><ul>{mikResult.samples.map((sample) => <li key={sample.track_id}><code>{sample.filename}</code> · {sample.bpm ?? '—'} BPM · {sample.key_camelot ?? sample.key_musical ?? '—'} · trusted {sample.source}</li>)}</ul></div>}
+                  {mikResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}
+                </>}
+                <div className="settings-action-row">
+                  <button className="btn btn--ghost btn--sm" disabled={mikBusy} onClick={() => void runMikPreview()}>{mikBusy ? 'Reading tags…' : 'Preview MIK metadata'}</button>
+                  <button className="btn btn--primary btn--sm" disabled={mikBusy || !mikPreview?.samples.length} onClick={() => void runMikImport()} title={!mikPreview?.samples.length ? 'Preview detected MIK-compatible tags before importing them.' : undefined}>{mikBusy ? 'Importing…' : 'Import trusted metadata'}</button>
+                </div>
+                {mikImport && <StatusStrip tone="good" icon={<CheckCircle2 size={15} />}>Imported {mikImport.imported_count} track{mikImport.imported_count === 1 ? '' : 's'} into the local index; {mikImport.unchanged_count} existing track{mikImport.unchanged_count === 1 ? '' : 's'} stayed unchanged.</StatusStrip>}
+                <div className="settings-next-actions"><Link className="btn btn--ghost btn--xs" to="/settings#analysis-tools">Analyze missing BPM later <ArrowRight size={13} /></Link><Link className="btn btn--ghost btn--xs" to="/settings#analysis-tools">Analyze missing key/Camelot later <ArrowRight size={13} /></Link><Link className="btn btn--ghost btn--xs" to="/smart-crates">Build Smart Crates <ArrowRight size={13} /></Link></div>
+              </div>
               <div className="settings-capability-list">
-                <CapabilityCard label="Mixed In Key metadata coverage" capability={settings.capabilities.analysis.mixed_in_key_coverage} />
                 <CapabilityCard label="BPM analysis" capability={settings.capabilities.analysis.bpm_analysis} />
                 <CapabilityCard label="Key/Camelot analysis" capability={settings.capabilities.analysis.key_analysis} />
                 <CapabilityCard label="Beets enrichment" capability={settings.capabilities.analysis.beets_enrichment} />

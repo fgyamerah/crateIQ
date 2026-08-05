@@ -243,14 +243,14 @@ def get_capabilities(
         },
         "analysis": {
             "mixed_in_key_coverage": {
-                "available": False,
-                "status": "unknown",
+                "available": True,
+                "status": "available",
                 "required_source": "Existing Mixed In Key or compatible metadata",
                 "purpose": "Review source-aware BPM, key, Camelot, and cue coverage.",
-                "message": "MIK-compatible values are preserved when present. Coverage review is not implemented yet.",
+                "message": "Explicit read-only tag preview and DB-only import are available; cue tag parsing remains unavailable.",
                 "enabled": True,
                 "locked": True,
-                "action_state": "coming_soon",
+                "action_state": "ready",
             },
             "bpm_analysis": optional_tool_capability(
                 tool="aubio",

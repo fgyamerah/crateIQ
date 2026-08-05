@@ -6,6 +6,15 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added an explicit Mixed In Key-compatible metadata coverage and
+  import foundation. `GET /api/analysis/mik/coverage` reports the local-index
+  state without reading files; explicit preview reads existing compatible BPM/
+  key tags; explicit import fills only absent `processed.db` values with
+  `mik_compatible_tag` provenance and trusted status. It never invokes MIK,
+  aubio, or keyfinder, never writes audio/tags, and never overwrites existing
+  BPM/key data. Cue-tag extraction is intentionally unavailable rather than
+  inferred. Settings now exposes this optional input-source workflow and its
+  fallback BPM/key candidate counts without blocking core use.
 - 2026-08-05: Polished the Settings Library Setup & Import flow into a
   numbered, review-first wizard: select root, initialize the local index,
   explicitly scan, review counts/samples/warnings, then import. Scan previews

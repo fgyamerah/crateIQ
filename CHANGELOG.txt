@@ -2,6 +2,19 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: explicit Mixed In Key-compatible metadata coverage
+
+- Added DB-only MIK-compatible metadata coverage, explicit read-only tag
+  preview, and explicit local-index import endpoints. Coverage reports BPM,
+  key, Camelot, trusted/missing values, and later fallback candidates without
+  requiring a Mixed In Key executable or blocking core workflows.
+- Import fills only missing `processed.db` BPM/key values with conservative
+  `mik_compatible_tag` provenance and trusted status. It never invokes an
+  analyzer, writes media/tags, or overwrites existing values. Cue-tag parsing
+  is explicitly unavailable rather than guessed.
+- Added a Settings coverage panel with preview-before-import controls, safety
+  copy, warnings, and focused backend/route-contract tests.
+
 [2026-08-05] — feat: guided Library Setup & Import review flow
 
 - Refined Settings into a numbered select → initialize → scan → review →

@@ -191,6 +191,7 @@ ROUTE_CONTRACTS: list[dict] = [
             ("/api/settings", "dict", ("library", "tools", "safety", "preferences", "capabilities")),
             ("/api/settings/capabilities", "dict", ("core", "analysis", "policies")),
             ("/api/settings/runtime", "dict", ("status", "checks")),
+            ("/api/analysis/mik/coverage", "dict", ("summary", "cue_support", "write_behavior")),
         ],
     },
 ]
@@ -231,7 +232,11 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/metadata-sanitation/apply-approved/* (POST)",
     ],
     "/reconciliation": ["/api/reconciliation/validate-plan (POST)"],
-    "/settings": ["/api/settings (PATCH, local preference update)"],
+    "/settings": [
+        "/api/settings (PATCH, local preference update)",
+        "/api/analysis/mik/preview (POST, explicit read-only tag scan)",
+        "/api/analysis/mik/import (POST, local-index-only import)",
+    ],
 }
 
 

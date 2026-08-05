@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 import backend.app.main as backend_main
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import settings_service
+from backend.app.services import mik_metadata_service, settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1595,8 +1595,64 @@ def test_settings_capabilities_only_disable_workflows_missing_their_tools(client
     assert payload["analysis"]["beets_enrichment"]["status"] == "missing"
     assert payload["analysis"]["duplicate_detection"]["status"] == "missing"
     assert payload["analysis"]["audio_quality_probe"]["status"] == "missing"
-    assert payload["analysis"]["mixed_in_key_coverage"]["status"] == "unknown"
+    assert payload["analysis"]["mixed_in_key_coverage"]["status"] == "available"
     assert payload["analysis"]["mixed_in_key_coverage"]["locked"] is True
+
+
+def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    with sqlite3.connect(db_path) as conn:
+        rows = conn.execute("SELECT id, filepath FROM tracks ORDER BY id LIMIT 3").fetchall()
+        conn.execute("UPDATE tracks SET bpm = NULL, key_musical = NULL, key_camelot = NULL WHERE id IN (?, ?)", (rows[0][0], rows[1][0]))
+        conn.execute(
+            "UPDATE tracks SET bpm = 128.0, key_musical = 'F minor', key_camelot = '4A' WHERE id = ?",
+            (rows[2][0],),
+        )
+
+    for _, filepath in rows:
+        path = Path(filepath)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"tag-fixture")
+
+    def fake_tag_reader(path: Path):
+        if path.name == Path(rows[0][1]).name:
+            return 122.0, "8A", "A minor"
+        if path.name == Path(rows[1][1]).name:
+            return None, "3B", "Db major"
+        return 110.0, "9B", "G major"
+
+    monkeypatch.setattr(mik_metadata_service, "_safe_tag_values", fake_tag_reader)
+
+    coverage = test_client.get("/api/analysis/mik/coverage")
+    assert coverage.status_code == 200
+    assert coverage.json()["cue_support"] == "unavailable"
+    assert coverage.json()["summary"]["fallback_bpm_candidates"] >= 2
+
+    preview = test_client.post("/api/analysis/mik/preview")
+    assert preview.status_code == 200
+    assert preview.json()["summary"]["with_bpm"] >= 1
+    assert preview.json()["summary"]["with_camelot"] >= 2
+    assert len(preview.json()["samples"]) == 3
+    with sqlite3.connect(db_path) as conn:
+        unchanged = conn.execute("SELECT bpm, key_camelot FROM tracks WHERE id = ?", (rows[0][0],)).fetchone()
+    assert unchanged == (None, None)
+
+    imported = test_client.post("/api/analysis/mik/import")
+    assert imported.status_code == 200
+    assert imported.json()["imported_count"] == 2
+    with sqlite3.connect(db_path) as conn:
+        first = conn.execute("SELECT bpm, key_camelot, bpm_source, key_source, metadata_trusted FROM tracks WHERE id = ?", (rows[0][0],)).fetchone()
+        second = conn.execute("SELECT bpm, key_camelot, bpm_source, key_source, metadata_trusted FROM tracks WHERE id = ?", (rows[1][0],)).fetchone()
+        preserved = conn.execute("SELECT bpm, key_camelot FROM tracks WHERE id = ?", (rows[2][0],)).fetchone()
+    assert first == (122.0, "8A", "mik_compatible_tag", "mik_compatible_tag", 1)
+    assert second == (None, "3B", None, "mik_compatible_tag", 1)
+    assert preserved == (128.0, "4A")
+
+    repeated = test_client.post("/api/analysis/mik/import")
+    assert repeated.status_code == 200
+    assert repeated.json()["imported_count"] == 0
+    assert repeated.json()["unchanged_count"] >= 2
 
 
 def test_settings_recognizes_the_repository_demo_library():

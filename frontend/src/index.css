@@ -7493,6 +7493,9 @@ tr.row--selected td {
 .settings-import-samples li { border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 12px; overflow-wrap: anywhere; padding: 7px 2px; }
 .settings-next-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .settings-next-actions .btn { align-items: center; display: inline-flex; gap: 5px; }
+.settings-mik-panel { border-top: 1px solid var(--border); display: grid; gap: 10px; padding-top: 14px; }
+.settings-mik-panel h3 { font-size: 14px; margin: 0 0 3px; }
+.settings-mik-summary { grid-template-columns: repeat(5, minmax(0, 1fr)); }
 @media (max-width: 520px) {
   .settings-capability { flex-direction: column; }
   .settings-capability .btn { align-self: flex-start; }

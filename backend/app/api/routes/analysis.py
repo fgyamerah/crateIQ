@@ -33,10 +33,32 @@ from ...schemas.bpm_analysis import (
     UpdateAnomalyRequest,
 )
 from ...schemas.job import JobResponse
-from ...services import bpm_analysis, job_service, toolkit_runner
+from ...schemas.mik_metadata import MikCoverageResponse, MikImportResponse
+from ...services import bpm_analysis, job_service, mik_metadata_service, toolkit_runner
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["analysis"])
+
+
+@router.get("/analysis/mik/coverage", response_model=MikCoverageResponse)
+async def get_mik_coverage() -> MikCoverageResponse:
+    """Read current local-index MIK-compatible coverage without scanning files."""
+    return MikCoverageResponse(**mik_metadata_service.coverage())
+
+
+@router.post("/analysis/mik/preview", response_model=MikCoverageResponse)
+async def preview_mik_metadata() -> MikCoverageResponse:
+    """Explicitly read imported file tags; never writes media or the database."""
+    return MikCoverageResponse(**mik_metadata_service.preview())
+
+
+@router.post("/analysis/mik/import", response_model=MikImportResponse)
+async def import_mik_metadata() -> MikImportResponse:
+    """Persist only missing trusted tag values into CrateIQ's local index."""
+    try:
+        return MikImportResponse(**mik_metadata_service.import_metadata())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 # ---------------------------------------------------------------------------

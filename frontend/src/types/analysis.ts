@@ -53,6 +53,44 @@ export interface ReanalyzeRequest {
   dry_run: boolean
 }
 
+export interface MikCoverageSummary {
+  total_tracks: number
+  with_bpm: number
+  with_key: number
+  with_camelot: number
+  with_cues: number
+  trusted_bpm: number
+  trusted_key: number
+  missing_bpm: number
+  missing_key: number
+  fallback_bpm_candidates: number
+  fallback_key_candidates: number
+}
+
+export interface MikFinding {
+  track_id: number
+  filename: string
+  bpm: number | null
+  key_camelot: string | null
+  key_musical: string | null
+  source: 'mixed_in_key' | 'mik_compatible_tag' | 'existing_metadata' | 'filename_hint' | 'unknown'
+  trusted: boolean
+}
+
+export interface MikCoverageResult {
+  summary: MikCoverageSummary
+  samples: MikFinding[]
+  warnings: string[]
+  cue_support: 'available' | 'unavailable' | 'not_implemented'
+  write_behavior: 'crateiq_db_only'
+}
+
+export interface MikImportResult extends MikCoverageResult {
+  imported_count: number
+  unchanged_count: number
+  skipped_count: number
+}
+
 export const REASON_COLORS: Record<BpmReason, string> = {
   missing_bpm:    'reason--missing',
   too_low_10x:    'reason--critical',

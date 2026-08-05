@@ -326,6 +326,13 @@ per-workflow capability status, so a missing tool disables only its own future
 workflow—not the core app. BPM and key/Camelot analysis preferences are
 default-off; import never runs them automatically. MIK-compatible values are
 preserved when present, and fallback analysis is locked to missing data only.
+The explicit MIK coverage workflow is a local metadata-source review, not a
+Mixed In Key executable integration: it can preview existing BPM/key tags and,
+only after confirmation, fill absent values in CrateIQ's local index with
+`mik_compatible_tag` provenance. It never writes audio tags or overwrites an
+existing BPM/key value. Cue-tag extraction is not implemented yet, so cue
+coverage is reported as unavailable. MIK remains optional and core workflows
+continue to work when no compatible metadata is found.
 See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
 for safe installation, verification, and override guidance. CrateIQ never
 installs optional tools itself.
@@ -436,6 +443,7 @@ Core dashboard capabilities:
 - Rekordbox staged XML exports: a saved Manual Crate can be previewed, then explicitly written as a UTF-8 Rekordbox XML file below `<library-root>/exports/rekordbox/`. Import that file manually through Rekordbox's XML import workflow; CrateIQ does not write a live Rekordbox database, device, USB, or application folder. Each output is unique and no-overwrite. Filename is the safe default path mode; relative/filename imports can require path mapping. The export does not modify audio, tags, BPM/key/cues, Mixed In Key data, or Serato state.
 - Audio Preview Player: the Library inspector, Manual Crates, and Smart Crates can request browser-native playback of a selected local track through a scoped preview endpoint. It reads only an existing file beneath the selected library root and supports seeking with HTTP byte ranges; it never scans, transcodes, modifies audio/tags/BPM/key/cues, Mixed In Key data, or DJ databases. Demo tracks can intentionally report preview unavailable because their placeholder paths have no audio files. Waveforms, cue preview, beat grids, and keyboard shortcuts remain future work.
 - Settings (`/settings`): central local diagnostics for the active library, optional tools, readiness checks, locked safety policies, and per-workflow capability gating. It persistently exposes only safe local preferences: default export path mode plus default-off BPM/key analysis and external-tool preference. MIK use, preservation of BPM/key/cues, and missing-data-only behavior are locked policies. Settings can also validate an existing readable absolute library root and save it as a pending `CRATEIQ_LIBRARY_ROOT` in ignored `<repo>/.run/local/crateiq.env`; the service helper reads it on the next configured-library start, so a restart is always required and folder scanning/import remains separate. Binary overrides stay private process-start configuration. No files, tags, MIK values, or DJ databases are changed.
+- Mixed In Key coverage/import: Settings can explicitly review compatible BPM/key metadata already present in imported files and report coverage, missing trusted values, and later fallback-analysis eligibility. An explicit import fills only missing values in CrateIQ's `processed.db` with conservative `mik_compatible_tag` provenance; it never writes tags or changes an existing trusted value. Cue-tag parsing is deliberately deferred and shown as unavailable.
 - Library setup and import: Settings guides a first-use flow of selecting a root, initializing CrateIQ’s local folders/index, running an explicit read-only scan preview, reviewing relative-path samples/warnings, then importing tracks. Preview reports supported/unsupported/skipped file counts, folders scanned, and cheap duplicate-name hints without decoding audio or writing records. Confirmed import writes only filename/path records to the local index, reports newly versus already indexed records, and is idempotent by path. No music files, tags, BPM/key/cues, Mixed In Key data, Serato, or Rekordbox databases are changed; optional analysis is never run automatically.
 - Issue count page with clickable filters.
 - Folder statistics from DB paths only.

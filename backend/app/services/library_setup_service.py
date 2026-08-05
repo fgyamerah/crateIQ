@@ -36,7 +36,13 @@ CREATE TABLE IF NOT EXISTS tracks (
     processed_at TEXT,
     pipeline_ver TEXT,
     quality_tier TEXT,
-    parse_confidence TEXT
+    parse_confidence TEXT,
+    bpm_source TEXT,
+    key_source TEXT,
+    cue_source TEXT,
+    cue_count INTEGER NOT NULL DEFAULT 0,
+    metadata_trusted INTEGER NOT NULL DEFAULT 0,
+    metadata_imported_at TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON tracks(filepath);
 CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);

@@ -20,12 +20,13 @@ this repository or commit local executable paths.
 
 Mixed In Key remains authoritative for existing BPM, key, and cue data.
 These tools fill only missing analysis; they must not be used to overwrite
-trusted MIK values.
-
-The current Settings capability card for Mixed In Key is intentionally marked
-**unknown / coming soon**: CrateIQ preserves compatible existing values, but
-does not yet provide source-aware MIK coverage or cue import. BPM and key
-preferences are default-off and never run as part of library import.
+trusted MIK values. MIK is a metadata input source, not a required executable:
+Settings can explicitly preview compatible existing BPM/key tags and import
+only missing values into CrateIQ's local index as `mik_compatible_tag` values.
+That workflow never writes tags or audio and does not invoke an analyzer.
+Cue-tag extraction is not implemented, so the coverage panel reports cue
+support as unavailable. BPM and key preferences are default-off and never run
+as part of library import.
 
 ## Linux Mint / Ubuntu installation
 
