@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from . import settings_service
-from ..core.library_root import assert_path_under_root
+from ..core.library_root import assert_path_under_root, selected_library_root
 from ..core.preflight import redact_path
 
 _AUDIO_EXTENSIONS = {".mp3", ".wav", ".aiff", ".aif", ".flac", ".m4a", ".aac", ".ogg"}
@@ -49,9 +49,7 @@ def _target_root(library_root: str | None) -> Path:
     if library_root is not None:
         return settings_service._validated_library_root(library_root)
     pending = settings_service._pending_library_root()
-    if pending is None:
-        raise ValueError("Save and validate a pending configured library root before library setup.")
-    return pending
+    return pending if pending is not None else selected_library_root()
 
 
 def _db_path(root: Path) -> Path:

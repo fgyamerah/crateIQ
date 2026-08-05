@@ -19,7 +19,9 @@ class SettingsLibrary(BaseModel):
     processed_db: str
     manual_crates_db: str
     exports_root: str
+    library_initialized: bool
     pending_library_root: Optional[str] = None
+    pending_library_initialized: bool = False
     restart_required: bool
     restart_command: str
     readiness_status: Literal["ready", "degraded", "not_ready"]

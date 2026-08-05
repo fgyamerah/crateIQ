@@ -7,6 +7,7 @@ export interface SettingsLibrary {
   processed_db: string
   manual_crates_db: string
   exports_root: string
+  library_initialized: boolean
   pending_library_root: string | null
   pending_library_initialized: boolean
   restart_required: boolean

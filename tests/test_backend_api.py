@@ -1527,6 +1527,7 @@ def test_settings_reports_safe_library_tools_and_locked_policies(client):
     assert payload["library"]["processed_db"] == str(root / "logs" / "processed.db")
     assert payload["library"]["manual_crates_db"] == str(root / "logs" / "manual_crates.db")
     assert payload["library"]["exports_root"] == str(root / "exports")
+    assert payload["library"]["library_initialized"] is True
     assert payload["library"]["pending_library_root"] is None
     assert payload["library"]["restart_required"] is False
     assert {tool["name"] for tool in payload["tools"]} == {"ffprobe", "ffmpeg", "keyfinder-cli", "aubio", "beet", "rmlint", "rsync"}
