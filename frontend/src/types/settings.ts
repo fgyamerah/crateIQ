@@ -8,6 +8,7 @@ export interface SettingsLibrary {
   manual_crates_db: string
   exports_root: string
   pending_library_root: string | null
+  pending_library_initialized: boolean
   restart_required: boolean
   restart_command: string
   readiness_status: RuntimeStatus
@@ -16,6 +17,19 @@ export interface SettingsLibrary {
 export interface LibraryRootValidation {
   library_root: string
   valid: boolean
+  message: string
+}
+
+export interface LibrarySetupResult {
+  library_root: string
+  initialized?: boolean
+  processed_db?: string
+  track_count?: number
+  imported_count?: number
+  sample_tracks?: string[]
+  skipped_files?: string[]
+  unsupported_files?: string[]
+  warnings?: string[]
   message: string
 }
 

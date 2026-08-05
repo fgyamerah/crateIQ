@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from ...core.preflight import run_preflight
 from ...services import settings_service
+from ...services import library_setup_service
 
 router = APIRouter(tags=["settings"])
 
@@ -66,6 +67,14 @@ class LibraryRootValidationResponse(BaseModel):
     message: str
 
 
+class LibrarySetupRequest(BaseModel):
+    library_root: Optional[str] = Field(default=None, max_length=4096)
+
+
+class LibraryImportRequest(LibrarySetupRequest):
+    confirm: bool = False
+
+
 @router.get("/settings", response_model=SettingsResponse)
 async def get_settings() -> SettingsResponse:
     return SettingsResponse(**settings_service.get_settings())
@@ -91,6 +100,32 @@ async def validate_library_root(body: LibraryRootRequest) -> LibraryRootValidati
 async def patch_library_root(body: LibraryRootRequest) -> SettingsResponse:
     try:
         return SettingsResponse(**settings_service.update_library_root(body.library_root))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/settings/library/initialize")
+async def initialize_library(body: LibrarySetupRequest):
+    try:
+        return library_setup_service.initialize_library(body.library_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/library/scan-preview")
+async def scan_library_preview(body: LibrarySetupRequest):
+    try:
+        return library_setup_service.scan_preview(body.library_root)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/library/import")
+async def import_library(body: LibraryImportRequest):
+    if not body.confirm:
+        raise HTTPException(status_code=422, detail="Import requires confirm=true after reviewing a scan preview.")
+    try:
+        return library_setup_service.import_previewed_library(body.library_root)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

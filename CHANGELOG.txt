@@ -2,6 +2,18 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: explicit Library Initialization and Import foundation
+
+- Settings can initialize a saved configured library root by creating only
+  `logs/`, `exports/`, and the empty `logs/processed.db` track-index schema.
+  Initialization is idempotent and never scans or changes music files.
+- Added explicit scan preview and confirmed import endpoints. Preview reports
+  supported audio filenames without database writes; import writes only safe
+  filename/path records to CrateIQ's local index and leaves BPM, key, cues,
+  tags, MIK, and DJ application databases untouched.
+- Configured-library startup still refuses a missing index, but now explains
+  that the user must initialize the root in Settings before restarting.
+
 [2026-08-05] — feat: controlled pending library-root configuration
 
 - Settings can now validate an existing readable absolute library directory

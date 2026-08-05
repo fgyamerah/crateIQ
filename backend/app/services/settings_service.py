@@ -139,6 +139,7 @@ def get_settings() -> dict[str, Any]:
             "manual_crates_db": redact_path(crates_db_path()),
             "exports_root": redact_path(assert_path_under_root(root / "exports", root)),
             "pending_library_root": redact_path(pending_root) if pending_root else None,
+            "pending_library_initialized": bool(pending_root and (pending_root / "logs" / "processed.db").is_file()),
             "restart_required": pending_root is not None and pending_root != root.resolve(strict=False),
             "restart_command": RESTART_COMMAND,
             "readiness_status": report["status"],

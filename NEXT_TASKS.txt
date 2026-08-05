@@ -39,6 +39,13 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Library Initialization / Import Wizard foundation (2026-08-05)
+         Settings now initializes a pending configured root with CrateIQ's
+         local `logs/processed.db` index only. Explicit preview scans report
+         audio filenames without writes; confirmed import writes local index
+         records only. Metadata analysis and all music/tag/MIK/DJ app changes
+         remain deferred.
+
 [x] (P1) Local-first Settings page (2026-08-05)
          `/settings` now exposes selected-library, optional-tool, runtime, and
          locked safety diagnostics. Its only editable value is the persisted

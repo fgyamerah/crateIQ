@@ -196,6 +196,7 @@ def client(tmp_path, monkeypatch):
     root = tmp_path / "library_root"
     root.mkdir(parents=True)
     monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(settings_service, "LOCAL_ENV_PATH", tmp_path / "local" / "crateiq.env")
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     _create_tracks_db(root)
     _write_audit(root)
@@ -1587,3 +1588,57 @@ def test_settings_library_root_validation_rejects_missing_files_and_forbidden_ro
     forbidden = test_client.post("/api/settings/library/validate", json={"library_root": "/"})
     assert forbidden.status_code == 422
     assert "system or CrateIQ runtime" in forbidden.json()["detail"]
+
+
+def test_library_initialize_is_idempotent_and_does_not_scan(client, tmp_path):
+    test_client, _ = client
+    library_root = tmp_path / "new-library"
+    library_root.mkdir()
+    (library_root / "Artist - Unindexed.mp3").write_bytes(b"not-real-audio")
+
+    first = test_client.post("/api/settings/library/initialize", json={"library_root": str(library_root)})
+    assert first.status_code == 200
+    assert first.json()["initialized"] is True
+    db_path = library_root / "logs" / "processed.db"
+    assert db_path.is_file()
+    assert (library_root / "exports").is_dir()
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 0
+
+    second = test_client.post("/api/settings/library/initialize", json={"library_root": str(library_root)})
+    assert second.status_code == 200
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 0
+
+    unsafe = test_client.post("/api/settings/library/initialize", json={"library_root": "/"})
+    assert unsafe.status_code == 422
+
+
+def test_library_scan_preview_and_explicit_import_only_write_the_local_index(client, tmp_path):
+    test_client, _ = client
+    library_root = tmp_path / "scan-library"
+    library_root.mkdir()
+    audio = library_root / "sets" / "Artist One - First Track.mp3"
+    audio.parent.mkdir()
+    audio.write_bytes(b"fixture-audio")
+    (library_root / "sets" / "notes.txt").write_text("ignore", encoding="utf-8")
+    test_client.post("/api/settings/library/initialize", json={"library_root": str(library_root)}).raise_for_status()
+    db_path = library_root / "logs" / "processed.db"
+
+    preview = test_client.post("/api/library/scan-preview", json={"library_root": str(library_root)})
+    assert preview.status_code == 200
+    assert preview.json()["track_count"] == 1
+    assert preview.json()["sample_tracks"] == ["sets/Artist One - First Track.mp3"]
+    assert "sets/notes.txt" in preview.json()["unsupported_files"]
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 0
+
+    unconfirmed = test_client.post("/api/library/import", json={"library_root": str(library_root)})
+    assert unconfirmed.status_code == 422
+    imported = test_client.post("/api/library/import", json={"library_root": str(library_root), "confirm": True})
+    assert imported.status_code == 200
+    assert imported.json()["imported_count"] == 1
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute("SELECT artist, title, bpm, key_camelot FROM tracks").fetchone()
+    assert row == ("Artist One", "First Track", None, None)
+    assert audio.read_bytes() == b"fixture-audio"

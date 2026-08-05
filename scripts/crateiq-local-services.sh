@@ -338,7 +338,12 @@ _crateiq_detect_lan_ip() {
 _crateiq_start_profile() {
     local profile="$1" mode="$2" host
     _crateiq_profile "$profile" || return 1
-    [[ -f "$CRATEIQ_DB_PATH" ]] || { echo "CrateIQ: selected database not found: $CRATEIQ_DB_PATH" >&2; return 1; }
+    [[ -f "$CRATEIQ_DB_PATH" ]] || {
+        echo "CrateIQ: configured library is not initialized." >&2
+        echo "Open Settings and click Initialize Library, then restart CrateIQ." >&2
+        echo "Expected local index: $CRATEIQ_DB_PATH" >&2
+        return 1
+    }
     case "$mode" in
         local) CRATEIQ_BIND=127.0.0.1; host=127.0.0.1; CRATEIQ_ACCESS_LABEL="Local only" ;;
         lan) CRATEIQ_BIND=0.0.0.0; host="$(_crateiq_detect_lan_ip)"; CRATEIQ_ACCESS_LABEL="LAN" ;;

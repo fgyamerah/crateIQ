@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Library Initialization / Import foundation lets Settings create
+  only `logs/`, `exports/`, and an empty `logs/processed.db` schema for a
+  pending configured root. Scan preview is explicit and read-only; confirmed
+  import adds filename/path records to that local index only. No audio files,
+  tags, BPM/key/cues, MIK values, or Serato/Rekordbox databases are changed.
+  The service helper still refuses to start an uninitialized configured root
+  and directs the user back to Settings.
 - 2026-08-05: Settings is now a supported local-first route with current
   library/tool/readiness diagnostics, locked safety policies, and one
   library-scoped preference: the default export path mode. The preference
