@@ -6,6 +6,20 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Completed browser-driven persistent-player verification against
+  the explicitly selected `crateiq-test-library`. Chrome decoded representative
+  MP3 and FLAC files through `/api/tracks/{track_id}/preview-audio`, including
+  filenames with spaces, parentheses, an apostrophe, and Unicode. Play/pause/
+  resume, forward/back seeking, range requests, non-wrapping first/last queue
+  boundaries, next-track autoplay on `ended`, safe final-track stop, route
+  persistence, both Library/Music Review synchronization directions, rapid
+  switching, and unavailable recovery were verified with one `<audio>` element
+  and no runtime exceptions. The bottom player no longer renders the absolute
+  indexed filepath; Library tracks show a safe source label instead. Browser
+  compatibility remains format/browser-specific, unsupported files keep the
+  recoverable unavailable state, and real waveform extraction remains future
+  work. No audio, tag, metadata, crate, MIK, or DJ-database data changed.
+
 - 2026-08-05: Added a persistent browser-only audio provider above the router
   and a Spotify-style bottom player inside the app shell. Current track, safe
   preview URL, queue/index, play state, timing, seek, volume, errors, and

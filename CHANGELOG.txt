@@ -2,6 +2,29 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — Verify persistent playback with browser-supported audio
+
+- Verified the persistent player end to end in Chrome against the explicitly
+  selected `crateiq-test-library`: representative MP3 and FLAC files decoded
+  through the normal DB-backed preview endpoint, including spaces,
+  parentheses, an apostrophe, and the Unicode filename `Muyè`.
+- Verified play/pause/resume, forward/back seeking, non-wrapping previous/next
+  boundaries, next-track autoplay on a natural `ended` event, safe stop at the
+  final queue item, Library/Music Review synchronization, route persistence,
+  rapid switching, range responses, and unavailable-to-playable recovery.
+- Stopped the persistent bottom player from displaying an absolute local file
+  path. Library-origin tracks now show the safe `Library` source label; player
+  metadata, queue construction, playback URLs, and file-access validation are
+  unchanged.
+- Extended the preview endpoint regression test with a Unicode/special-
+  character filename, MP3 MIME assertion, suffix range, and invalid-range
+  behavior. Real waveform extraction remains explicitly deferred.
+- Files affected: `frontend/src/components/library/LibraryView.tsx`,
+  `tests/test_backend_api.py`, `README.md`, `NEXT_TASKS.txt`,
+  `PROJECT_CONTEXT.md`, and `CHANGELOG.txt`.
+- Migration notes: none. No audio/tag/metadata/crate/DJ-database writes and no
+  audio analysis or conversion tools were used.
+
 [2026-08-05] — Persistent player and secondary-page polish
 
 - Added app-shell persistent browser audio state plus a compact Spotify-style

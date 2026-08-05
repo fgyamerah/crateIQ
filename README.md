@@ -80,6 +80,13 @@ played. The low/mid/high display is a deterministic visual placeholder—not an
 extracted waveform or audio analysis. Player use never writes tags, audio
 files, BPM, key, Camelot, cues, MIK data, crate order, or DJ databases.
 
+The 2026-08-05 playback pass verified MP3 and FLAC in Chrome using the explicit
+`crateiq-test-library`; this is evidence for those files in that browser, not a
+claim that every codec/container works everywhere. Queue boundaries do not
+wrap. A natural track end advances and continues when another queue item exists,
+while the final item stops safely. The player labels the source as Library or
+Music Review and does not display the indexed absolute local filepath.
+
 ## Screenshots
 
 ### Library

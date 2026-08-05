@@ -234,7 +234,6 @@ export default function LibraryView() {
     bpm: track.bpm,
     key_camelot: track.key_camelot,
     duration_sec: track.duration_sec,
-    relativePath: track.filepath,
     sourceLabel: 'Library',
   })), [items])
 

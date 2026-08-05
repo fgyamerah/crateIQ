@@ -53,10 +53,15 @@ CURRENT FOCUS
     controls, cyan/teal/violet accents, and dense panel/table treatment without
     changing workflow logic or safety behavior.
 
-[ ] (P2) Verify full persistent playback with representative browser-playable files
-    Exercise play/pause, seek, end-of-track advance, error recovery, and route
-    persistence with supported real audio in an explicitly selected test/demo
-    library. Do not copy, modify, analyze, or retag source audio for this test.
+[x] (P2) Verify full persistent playback with representative browser-playable files
+    (2026-08-05). Chrome verified MP3 and FLAC through the normal DB-backed
+    endpoint in the explicit `crateiq-test-library`, including seek/ranges,
+    play/pause/resume, non-wrapping boundaries, next-track autoplay on ended,
+    safe final-track stop, route persistence, Library/Music Review queue and
+    selection synchronization, rapid switching, and unavailable recovery.
+    The one exposed defect was fixed: the bottom player no longer displays an
+    absolute local filepath. No source audio was copied, modified, analyzed,
+    moved, renamed, deleted, or retagged.
 
 [ ] (P3) Consider real waveform extraction only as a separately designed safe feature
     The current three-band display is intentionally deterministic and visual-
