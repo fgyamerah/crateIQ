@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Refined the Library route against
+  `docs/mockups/library.webp`: denser status/metric surfaces, a dark DJ-table
+  treatment with keyboard-selectable rows, and a 380px inspector rail that
+  groups native browser preview with the preserved accessible Camelot wheel
+  and compatible-track context. This is frontend presentation only; Music
+  Review links and all library safety boundaries are unchanged.
+
 - 2026-08-05: Library rows now show read-only Music Review status/rating
   badges backed by the bounded review-summary endpoint. Badge links open the
   matching track through `/music-review?track_id=…`; no tags or files change.

@@ -134,6 +134,14 @@ export default function TrackTable({
                 key={track.id}
                 className={selectedId === track.id ? 'lib-row lib-row--selected' : 'lib-row'}
                 onClick={() => onSelect(track.id)}
+                onKeyDown={(event) => {
+                  if (event.key === 'Enter' || event.key === ' ') {
+                    event.preventDefault()
+                    onSelect(track.id)
+                  }
+                }}
+                aria-selected={selectedId === track.id}
+                tabIndex={0}
               >
                 <td className="lib-col-num">{offset + virtualStart + rowIdx + 1}</td>
                 <td className="lib-col-title">

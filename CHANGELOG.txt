@@ -2,6 +2,15 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — style: align Library with DJ dashboard mockup
+
+- Refined the full-width Library workspace against `docs/mockups/library.webp`
+  with denser metrics, a deeper DJ-table treatment, keyboard-selectable rows,
+  a clearer cyan selected state, and a stronger right-side inspector/player.
+- Preserved Music Review badge links, browser audio preview, compatible-track
+  results, and the accessible Camelot wheel; no tags, audio, or library files
+  are written by this presentation-only change.
+
 [2026-08-05] — feat: add Music Review badges and track deep links
 
 - Added read-only Music Review status/rating badges to Library rows and linked

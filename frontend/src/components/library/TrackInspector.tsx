@@ -161,6 +161,10 @@ export default function TrackInspector({ track, loading }: Props) {
 
   return (
     <aside className={`lib-card lib-inspector${placeholder ? ' lib-inspector--placeholder' : ''}`}>
+      <div className="lib-inspector-kicker">
+        <strong>Track inspector</strong>
+        <span>Preview and harmonic context</span>
+      </div>
       <div className="lib-inspector-hero">
         <button
           type="button"
@@ -178,7 +182,9 @@ export default function TrackInspector({ track, loading }: Props) {
         </div>
       </div>
 
-      <AudioPreviewPlayer track={track} />
+      <div className="lib-inspector-player">
+        <AudioPreviewPlayer track={track} />
+      </div>
 
       <div className="lib-inspector-stats">
         <div className="lib-stat-tile">
@@ -195,9 +201,17 @@ export default function TrackInspector({ track, loading }: Props) {
         </div>
       </div>
 
-      <section className="lib-inspector-section lib-inspector-section--wheel">
-        <h3>Camelot Wheel</h3>
-        <CamelotWheel camelot={track?.key_camelot ?? null} compatibleKeys={compatCamelotKeys} />
+      <section className="lib-inspector-section lib-inspector-section--harmonic">
+        <div className="lib-inspector-section-heading">
+          <h3>Harmonic mixing</h3>
+          <span className="lib-harmonic-key">{track?.key_camelot ?? 'No key'}</span>
+        </div>
+        <div className="lib-harmonic-wheel-frame">
+          <CamelotWheel camelot={track?.key_camelot ?? null} compatibleKeys={compatCamelotKeys} />
+        </div>
+        <span className="lib-muted lib-inspector-note">
+          The wheel highlights the selected key and safe adjacent or relative matches.
+        </span>
       </section>
 
       <section className="lib-inspector-section">
@@ -229,10 +243,10 @@ export default function TrackInspector({ track, loading }: Props) {
       </section>
 
       <section className="lib-inspector-section">
-        <h3>Waveform preview</h3>
+        <h3>Signal preview</h3>
         <WaveformPreview seed={track?.id ?? 0} inactive={!track} />
         <span className="lib-muted lib-inspector-note">
-          Visual placeholder only — no audio preview/waveform data source is wired up yet.
+          Visual placeholder only — no waveform analysis is performed.
         </span>
       </section>
 

@@ -39,6 +39,10 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Align the Library workspace to `docs/mockups/library.webp` with compact
+    metrics, polished DJ-style rows, a clear selected state, and an integrated
+    inspector/player/harmonic rail while preserving the Camelot wheel.
+
 [x] Add read-only Music Review badges to Library rows and honor track-specific
     `/music-review?track_id=…` deep links.
 
