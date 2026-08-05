@@ -7,6 +7,7 @@ which advanced workflows are ready to configure versus implemented.
 from __future__ import annotations
 
 import os
+import json
 import re
 import shutil
 import sqlite3
@@ -45,6 +46,8 @@ _KEY_MIGRATION_COLUMNS = {
     "key_trusted": "INTEGER NOT NULL DEFAULT 0",
     "key_analyzed_at": "TEXT",
 }
+_RMLINT_TIMEOUT_SECONDS = 30
+_RMLINT_MAX_FILES = 100
 
 
 def _track_rows() -> list[dict[str, Any]]:
@@ -58,8 +61,10 @@ def _track_rows() -> list[dict[str, Any]]:
         required = {"id", "filename", "artist", "title", "genre", "bpm", "key_musical", "key_camelot"}
         if not required.issubset(columns):
             return []
+        filesize_select = "filesize_bytes" if "filesize_bytes" in columns else "NULL AS filesize_bytes"
         return [dict(row) for row in conn.execute(
-            "SELECT id, filepath, filename, artist, title, genre, bpm, key_musical, key_camelot FROM tracks ORDER BY id"
+            "SELECT id, filepath, filename, artist, title, genre, bpm, key_musical, key_camelot, "
+            f"{filesize_select} FROM tracks ORDER BY id"
         )]
 
 
@@ -81,6 +86,16 @@ def _resolve_keyfinder_binary() -> str | None:
         resolved = shutil.which(override)
         return resolved if resolved and os.access(resolved, os.X_OK) else None
     resolved = shutil.which("keyfinder-cli")
+    return resolved if resolved and os.access(resolved, os.X_OK) else None
+
+
+def _resolve_rmlint_binary() -> str | None:
+    """Resolve only the configured rmlint CLI for the preview-only detector."""
+    override = os.environ.get("RMLINT_BIN", "").strip()
+    if override:
+        resolved = shutil.which(override)
+        return resolved if resolved and os.access(resolved, os.X_OK) else None
+    resolved = shutil.which("rmlint")
     return resolved if resolved and os.access(resolved, os.X_OK) else None
 
 
@@ -189,6 +204,16 @@ def _tool_ready(capability: dict[str, Any]) -> bool:
     return bool(capability.get("available"))
 
 
+def _duplicate_size_estimate(rows: list[dict[str, Any]]) -> int:
+    """Return a cheap, conservative same-size estimate before rmlint hashes files."""
+    counts: dict[int, int] = {}
+    for row in rows:
+        size = row.get("filesize_bytes")
+        if isinstance(size, int) and size > 0:
+            counts[size] = counts.get(size, 0) + 1
+    return sum(count for count in counts.values() if count > 1)
+
+
 def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     rows = _track_rows()
     capabilities = settings_service.get_capabilities()["analysis"]
@@ -206,6 +231,8 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 
     aubio_binary = _resolve_aubio_binary()
     keyfinder_binary = _resolve_keyfinder_binary()
+    rmlint_binary = _resolve_rmlint_binary()
+    rmlint_ready = bool(rmlint_binary and _tool_ready(capabilities["duplicate_detection"]))
     bpm_status = "ready" if aubio_binary and missing_bpm else "disabled" if aubio_binary else "missing_tool"
     definitions = [
         {
@@ -267,15 +294,18 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         {
             "type": "duplicate_detection",
             "label": "Duplicate detection",
-            "status": pending_or_missing("duplicate_detection"),
+            "status": "ready" if rmlint_ready and total else "disabled" if rmlint_ready else "missing_tool",
             "required_tools": ["rmlint"],
-            "candidate_count": total,
+            "candidate_count": _duplicate_size_estimate(rows),
             "enabled": False,
             "default_enabled": False,
             "runner_implemented": False,
-            "write_behavior": "preview_only; no delete or move actions",
-            "safety": _SAFETY,
-            "message": "Candidate preview is safe; rmlint execution and any file action are not exposed here.",
+            "write_behavior": "preview_only; no file or database writes",
+            "safety": ["preview_only", "no_delete", "no_move", "no_rename", "no_quarantine", "no_tag_writes", "no_file_writes"],
+            "message": (
+                "Preview up to 100 validated imported paths with rmlint. The count is a same-size estimate until a read-only scan runs."
+                if rmlint_ready else "rmlint is required for this optional, preview-only duplicate detector. Import remains available without it."
+            ),
         },
         {
             "type": "audio_quality_probe",
@@ -297,6 +327,117 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
 def list_jobs() -> dict[str, Any]:
     definitions, _ = _definitions()
     return {"jobs": definitions}
+
+
+def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Run rmlint's JSON formatter only; never create/execute an action script."""
+    warnings: list[str] = []
+    root = selected_library_root()
+    binary = _resolve_rmlint_binary() if job["status"] != "missing_tool" else None
+    track_by_path: dict[str, dict[str, Any]] = {}
+    paths: list[Path] = []
+    for row in rows:
+        try:
+            path = assert_path_under_root(row["filepath"], root)
+        except (KeyError, TypeError, ValueError):
+            warnings.append(f"Skipped {row.get('filename', 'a track')}: its path is outside the selected library root.")
+            continue
+        if not path.is_file():
+            warnings.append(f"Skipped {row.get('filename', 'a track')}: its file is missing or unreadable.")
+            continue
+        track_by_path[str(path)] = row
+        paths.append(path)
+    paths = paths[:_RMLINT_MAX_FILES]
+    if len(track_by_path) > len(paths):
+        warnings.append(f"Preview is limited to {_RMLINT_MAX_FILES} readable imported tracks; rescope the library before scanning more.")
+    if not binary:
+        warnings.append("Required tool unavailable: rmlint. No duplicate scan was started.")
+        return {
+            "job": job, "total_tracks": len(rows), "candidate_count": 0,
+            "samples": [], "warnings": warnings,
+            "expected_write_behavior": job["write_behavior"], "runner_implemented": False,
+            "preview_only": True,
+            "summary": {"total_tracks_checked": 0, "duplicate_groups": 0, "duplicate_candidates": 0},
+            "groups": [],
+            "next_step": "Duplicate review and resolution actions are not implemented yet.",
+        }
+    if not paths:
+        warnings.append("No readable imported tracks are available for a duplicate preview.")
+        return {
+            "job": job, "total_tracks": len(rows), "candidate_count": 0,
+            "samples": [], "warnings": warnings,
+            "expected_write_behavior": job["write_behavior"], "runner_implemented": False,
+            "preview_only": True,
+            "summary": {"total_tracks_checked": 0, "duplicate_groups": 0, "duplicate_candidates": 0},
+            "groups": [],
+            "next_step": "Duplicate review and resolution actions are not implemented yet.",
+        }
+    try:
+        completed = subprocess.run(
+            [binary, "-T", "df", "-o", "json", "--no-followlinks", "--no-with-color", "--no-crossdev", *map(str, paths)],
+            capture_output=True,
+            text=True,
+            timeout=_RMLINT_TIMEOUT_SECONDS,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        warnings.append("rmlint preview timed out. No files, tags, or database decisions were changed.")
+        completed = None
+    except OSError:
+        warnings.append("rmlint could not start. Check its local setup; no files, tags, or database decisions were changed.")
+        completed = None
+    groups: list[dict[str, Any]] = []
+    if completed is not None:
+        if completed.returncode != 0:
+            warnings.append("rmlint did not complete the preview. No files, tags, or database decisions were changed.")
+        else:
+            try:
+                reports = json.loads(completed.stdout)
+            except json.JSONDecodeError:
+                warnings.append("rmlint returned an unreadable preview. No files, tags, or database decisions were changed.")
+            else:
+                by_checksum: dict[str, list[dict[str, Any]]] = {}
+                for report in reports if isinstance(reports, list) else []:
+                    if not isinstance(report, dict) or report.get("type") != "duplicate_file":
+                        continue
+                    row = track_by_path.get(str(report.get("path", "")))
+                    checksum = report.get("checksum")
+                    if row is not None and isinstance(checksum, str) and checksum:
+                        by_checksum.setdefault(checksum, []).append(row)
+                for index, group_rows in enumerate(by_checksum.values(), start=1):
+                    if len(group_rows) < 2:
+                        continue
+                    items = []
+                    for row in sorted(group_rows, key=lambda item: (str(item.get("filepath", "")).casefold(), item["id"])):
+                        item = _as_candidate(row)
+                        items.append({
+                            "track_id": item["track_id"], "filename": item["filename"],
+                            "title": item["title"], "artist": item["artist"],
+                            "relative_path": item["relative_path"], "size_bytes": row.get("filesize_bytes"),
+                        })
+                    groups.append({"group_id": f"dup-{index}", "reason": "rmlint duplicate", "confidence": "high", "items": items})
+    duplicate_candidates = sum(len(group["items"]) for group in groups)
+    samples = [
+        {
+            "track_id": item["track_id"], "filename": item["filename"], "relative_path": item["relative_path"],
+            "artist": item["artist"], "title": item["title"], "genre": None,
+            "bpm": None, "key_camelot": None, "key_musical": None,
+        }
+        for group in groups for item in group["items"]
+    ][:_SAMPLE_LIMIT]
+    warnings.append("Preview only: rmlint JSON output is read and discarded. No delete, move, rename, quarantine, tag, file, or database action exists.")
+    return {
+        "job": job, "total_tracks": len(rows), "candidate_count": duplicate_candidates,
+        "samples": samples, "warnings": warnings,
+        "expected_write_behavior": job["write_behavior"], "runner_implemented": False,
+        "preview_only": True,
+        "summary": {
+            "total_tracks_checked": len(paths), "duplicate_groups": len(groups),
+            "duplicate_candidates": duplicate_candidates,
+        },
+        "groups": groups,
+        "next_step": "Duplicate review and resolution actions are not implemented yet.",
+    }
 
 
 def preview(job_type: str) -> dict[str, Any]:
@@ -321,6 +462,9 @@ def preview(job_type: str) -> dict[str, Any]:
             "warnings": result["warnings"], "expected_write_behavior": job["write_behavior"],
             "runner_implemented": False,
         }
+
+    if job_type == "duplicate_detection":
+        return _preview_duplicate_detection(job, rows)
 
     if job_type == "bpm_analysis":
         candidates = [row for row in rows if row.get("bpm") is None]
@@ -363,6 +507,8 @@ def run(job_type: str, *, confirm: bool = False, limit: int = 10) -> dict[str, A
         if not confirm:
             raise ValueError("Key/Camelot analysis requires confirm=true after previewing candidates.")
         return _run_key_analysis(limit)
+    if job_type == "duplicate_detection":
+        raise RuntimeError("Duplicate detection is preview-only. Resolution actions are not implemented; no files, tags, or database decisions were changed.")
     raise RuntimeError("This analysis runner is not implemented yet. Preview candidates and configure the required tool; no job was started.")
 
 

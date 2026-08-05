@@ -2,6 +2,17 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: safe rmlint duplicate preview
+
+- Added a bounded, preview-only rmlint JSON scan for validated imported track
+  paths. `/jobs` returns grouped, high-confidence duplicate candidates with
+  safe relative paths and a clear resolution-pending state.
+- The command has no script formatter or action flags, and no delete, move,
+  rename, quarantine, tag, file, or local-DB decision path exists. Missing
+  rmlint disables only duplicate detection.
+- Added subprocess safety, timeout, path-redaction, no-write, and preview-only
+  endpoint coverage. No migration is required.
+
 [2026-08-05] — feat: safe Beets enrichment preview
 
 - Added a preview-limited Beets card that identifies missing non-critical

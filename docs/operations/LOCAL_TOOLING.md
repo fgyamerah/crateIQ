@@ -15,7 +15,7 @@ this repository or commit local executable paths.
 | `keyfinder-cli` | Preview-first, DB-only key/Camelot analysis | Only after explicit confirmation for a track with both key fields empty; it never replaces MIK/existing key data. |
 | `aubio` | Preview-first, DB-only BPM analysis | Only after explicit confirmation for a track with null BPM. The in-app runner uses aubio only; it does not fall back to librosa. |
 | `beet` | Preview-limited Beets enrichment planning; legacy organizer/import paths | The safe `/jobs` preview never launches it. Legacy paths must remain explicit; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
-| `rmlint` | Duplicate-detection workflow | Only when the user explicitly starts duplicate detection; no files are deleted automatically. |
+| `rmlint` | Preview-only duplicate candidate detection | Only from the explicit `/jobs` preview. It uses bounded JSON output and has no delete, move, rename, quarantine, tag-write, file-write, or DB-decision action. |
 | `ffprobe` + `ffmpeg` | Audio-quality/probing workflows | Only for explicit quality/probing or decode-support workflows. |
 
 Mixed In Key remains authoritative for existing BPM, key, and cue data.
@@ -39,6 +39,13 @@ runner exists.
 Beets is preview-limited in this phase. Its card shows local-index records with
 missing artist, title, or genre but never invokes `beet`, a user Beets config,
 or a Beets library database. There is no tag write, file move, or apply action.
+
+Duplicate detection is also preview-only. When available, CrateIQ invokes
+`rmlint -T df -o json --no-followlinks --no-with-color --no-crossdev` with at
+most 100 validated imported audio paths. The JSON is read directly and
+discarded; CrateIQ never requests rmlint's script formatter, executes a
+generated script, or exposes a file-resolution action. A future dedicated
+review workflow is required before any duplicate decision can be persisted.
 
 ## Linux Mint / Ubuntu installation
 

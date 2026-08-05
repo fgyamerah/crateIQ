@@ -348,6 +348,11 @@ Beets enrichment is optional and preview/review-first: its current card only
 identifies local-index rows missing artist, title, or genre. It does not invoke
 `beet`, write tags, move files, or apply suggestions; any future accepted
 enrichment will require selected fields and remain DB-only.
+Duplicate detection is likewise optional and preview-only. When `rmlint` is
+available, CrateIQ scans a bounded set of validated imported paths using its
+JSON formatter and returns grouped, relative-path candidates only. It has no
+delete, move, rename, quarantine, tag-write, file-write, or DB-decision action;
+duplicate resolution requires a future review workflow.
 See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
 for safe installation, verification, and override guidance. CrateIQ never
 installs optional tools itself.

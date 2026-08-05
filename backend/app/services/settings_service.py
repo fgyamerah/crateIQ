@@ -281,9 +281,9 @@ def get_capabilities(
             ) | ({"action_state": "ready", "message": "beet is available for preview-limited, review-first enrichment planning."} if has_tool("beet") else {}),
             "duplicate_detection": optional_tool_capability(
                 tool="rmlint",
-                purpose="Run the explicit duplicate detection workflow.",
-                message="Install or configure rmlint to scan for duplicates. No files are removed automatically.",
-            ),
+                purpose="Preview duplicate candidates without any file action.",
+                message="Install or configure rmlint to run the optional preview-only duplicate detector.",
+            ) | ({"action_state": "ready", "message": "rmlint is available for a constrained, preview-only duplicate scan. No file actions exist."} if has_tool("rmlint") else {}),
             "audio_quality_probe": {
                 "available": quality_available,
                 "status": "available" if quality_available else "missing",

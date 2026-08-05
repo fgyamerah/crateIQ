@@ -1788,6 +1788,59 @@ def test_beets_preview_is_local_db_only_and_never_targets_analysis_fields(client
     assert "not implemented" in run.json()["detail"]
 
 
+def test_duplicate_preview_uses_rmlint_json_only_and_never_writes(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    alpha_path = root / "library" / "house" / "alpha.mp3"
+    beta_path = root / "library" / "house" / "beta.mp3"
+    alpha_path.parent.mkdir(parents=True, exist_ok=True)
+    alpha_path.write_bytes(b"same-safe-test-audio-bytes")
+    beta_path.write_bytes(b"same-safe-test-audio-bytes")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE tracks SET filesize_bytes = ? WHERE filename IN ('alpha.mp3', 'beta.mp3')", (alpha_path.stat().st_size,))
+        before = conn.execute("SELECT id, filepath, filesize_bytes FROM tracks ORDER BY id").fetchall()
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_rmlint_binary", lambda: "/fake/rmlint")
+
+    def fake_rmlint(command, **kwargs):
+        assert command[:6] == ["/fake/rmlint", "-T", "df", "-o", "json", "--no-followlinks"]
+        assert "--no-with-color" in command and "--no-crossdev" in command
+        assert not {"--dedupe", "--followlinks", "--xattr"}.intersection(command)
+        assert kwargs.get("shell", False) is False
+        assert kwargs["timeout"] == 30
+        return SimpleNamespace(returncode=0, stdout=json.dumps([
+            {"description": "rmlint json-dump"},
+            {"type": "duplicate_file", "checksum": "same-content", "path": str(alpha_path), "size": alpha_path.stat().st_size},
+            {"type": "duplicate_file", "checksum": "same-content", "path": str(beta_path), "size": beta_path.stat().st_size},
+            {"duplicates": 1},
+        ]), stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_rmlint)
+    listed = {job["type"]: job for job in test_client.get("/api/analysis/jobs").json()["jobs"]}
+    assert listed["duplicate_detection"]["status"] == "ready"
+    assert listed["duplicate_detection"]["candidate_count"] == 2
+    preview = test_client.get("/api/analysis/jobs/duplicate_detection/preview")
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["preview_only"] is True and payload["runner_implemented"] is False
+    assert payload["summary"] == {"total_tracks_checked": 2, "duplicate_groups": 1, "duplicate_candidates": 2}
+    assert payload["groups"][0]["reason"] == "rmlint duplicate"
+    assert [item["relative_path"] for item in payload["groups"][0]["items"]] == ["library/house/alpha.mp3", "library/house/beta.mp3"]
+    assert all(not item["relative_path"].startswith(str(root)) for item in payload["groups"][0]["items"])
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute("SELECT id, filepath, filesize_bytes FROM tracks ORDER BY id").fetchall()
+    assert after == before
+
+    pending = test_client.post("/api/analysis/jobs/duplicate_detection/run", json={"confirm": True})
+    assert pending.status_code == 409
+    assert "preview-only" in pending.json()["detail"]
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("rmlint", 30)))
+    timed_out = test_client.get("/api/analysis/jobs/duplicate_detection/preview")
+    assert timed_out.status_code == 200
+    assert any("timed out" in warning for warning in timed_out.json()["warnings"])
+
+
 def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"

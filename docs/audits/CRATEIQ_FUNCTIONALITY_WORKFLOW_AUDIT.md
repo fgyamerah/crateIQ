@@ -9,6 +9,11 @@
 > stores only recognized mapped values with lower authority in the local index.
 > It never writes tags/media or overwrites MIK/trusted/existing key data.
 
+> Implementation follow-up (2026-08-05): duplicate detection is now a bounded,
+> preview-only rmlint workflow. It receives only validated imported paths,
+> requests JSON stdout without a script formatter, and returns review groups
+> with relative paths. There is no file/tag/DB decision or resolution action.
+
 > Implementation follow-up (2026-08-05): Beets is now represented as a
 > preview-limited enrichment workflow. It identifies missing non-critical
 > `artist`, `title`, and `genre` index fields without invoking `beet` or

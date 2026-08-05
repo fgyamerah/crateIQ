@@ -17,6 +17,16 @@ function label(status: AnalysisJobStatus) {
   return status === 'missing_tool' ? 'Missing tool' : status === 'coming_soon' ? 'Preview only' : status === 'disabled' ? 'No tracks yet' : 'Ready to preview'
 }
 
+function jobLabel(job: AnalysisJobDefinition) {
+  return job.type === 'duplicate_detection' ? 'Preview only' : label(job.status)
+}
+
+function formatBytes(size: number | null) {
+  if (size == null) return 'size unavailable'
+  if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
+  return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function errorMessage(error: unknown) {
   return error instanceof ApiError ? error.displayMessage : 'Could not load Analysis Jobs.'
 }
@@ -110,19 +120,23 @@ export default function AnalysisJobsCatalog() {
       {error && <StatusStrip tone="danger">{error}</StatusStrip>}
       {loading ? <p className="muted">Loading optional workflows…</p> : <div className="analysis-jobs-grid">
         {jobs.map((job) => <article className="analysis-job-card" id={job.type.replace(/_/g, '-')} key={job.type}>
-          <div className="analysis-job-card-head"><div><h3>{job.label}</h3><p>{job.message}</p></div><Badge tone={tone(job.status)}>{label(job.status)}</Badge></div>
+          <div className="analysis-job-card-head"><div><h3>{job.label}</h3><p>{job.message}</p></div><Badge tone={tone(job.status)}>{jobLabel(job)}</Badge></div>
           <div className="analysis-job-meta"><span><strong>{job.candidate_count}</strong> candidate{job.candidate_count === 1 ? '' : 's'}</span><span>{job.required_source ?? job.required_tools.join(' + ')}</span></div>
           <p className="settings-note">Writes: {job.write_behavior}. {job.safety.join(' · ').replace(/_/g, ' ')}.</p>
           <div className="settings-action-row">
             <button className="btn btn--ghost btn--sm" disabled={previewing === job.type || job.status === 'disabled'} onClick={() => void showPreview(job.type)}><Eye size={13} /> {previewing === job.type ? 'Loading…' : 'Preview'}</button>
-            {job.type === 'mixed_in_key_coverage' ? <Link className="btn btn--primary btn--sm" to="/settings#analysis-tools">Open MIK import</Link> : (job.type === 'bpm_analysis' || job.type === 'key_analysis') && job.runner_implemented ? <span className="analysis-job-run-hint">Preview, then confirm below</span> : <Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools"><Wrench size={13} /> {job.status === 'missing_tool' ? 'Tool setup' : job.type === 'beets_enrichment' ? 'Review required' : 'Runner pending'}</Link>}
+            {job.type === 'mixed_in_key_coverage' ? <Link className="btn btn--primary btn--sm" to="/settings#analysis-tools">Open MIK import</Link> : (job.type === 'bpm_analysis' || job.type === 'key_analysis') && job.runner_implemented ? <span className="analysis-job-run-hint">Preview, then confirm below</span> : <Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools"><Wrench size={13} /> {job.status === 'missing_tool' ? 'Tool setup' : job.type === 'beets_enrichment' ? 'Review required' : job.type === 'duplicate_detection' ? 'Resolution pending' : 'Runner pending'}</Link>}
           </div>
         </article>)}
       </div>}
       {preview && <section className="analysis-job-preview" aria-live="polite">
-        <div className="settings-import-result-head"><div><h2 className="card-title">{preview.job.label} preview</h2><p className="muted">{preview.candidate_count} candidates from {preview.total_tracks} indexed tracks.</p></div><Badge tone={tone(preview.job.status)}>{label(preview.job.status)}</Badge></div>
+        <div className="settings-import-result-head"><div><h2 className="card-title">{preview.job.label} preview</h2><p className="muted">{preview.candidate_count} candidates from {preview.total_tracks} indexed tracks.</p></div><Badge tone={tone(preview.job.status)}>{jobLabel(preview.job)}</Badge></div>
         <StatusStrip tone="info">Expected behavior: {preview.expected_write_behavior}. {preview.runner_implemented ? 'A safe runner is available.' : 'No runner was started.'}</StatusStrip>
-        {preview.samples.length > 0 ? <div className="settings-import-samples"><strong>Sample candidates</strong><ul>{preview.samples.map((item) => <li key={item.track_id}><code>{item.relative_path ?? item.filename}</code>{item.artist || item.title ? ` · ${[item.artist, item.title].filter(Boolean).join(' — ')}` : ''}{item.missing_fields.length ? ` · missing ${item.missing_fields.join(', ')}` : ''}{item.bpm ? ` · ${item.bpm} BPM` : ''}{item.key_camelot || item.key_musical ? ` · ${item.key_camelot ?? item.key_musical}` : ''}</li>)}</ul></div> : <EmptyState title="No candidates" message="This workflow has no eligible indexed tracks yet." />}
+        {preview.job.type === 'duplicate_detection' ? <>
+          <div className="settings-import-summary"><span><strong>{preview.summary?.total_tracks_checked ?? 0}</strong> checked</span><span><strong>{preview.summary?.duplicate_groups ?? 0}</strong> groups</span><span><strong>{preview.summary?.duplicate_candidates ?? 0}</strong> candidates</span></div>
+          {preview.groups.length > 0 ? <div className="settings-import-samples"><strong>Duplicate groups</strong><ul>{preview.groups.map((group) => <li key={group.group_id}><strong>{group.group_id}</strong> · {group.reason} · {group.confidence} confidence<ul>{group.items.map((item) => <li key={item.track_id}><code>{item.relative_path ?? item.filename}</code>{item.artist || item.title ? ` · ${[item.artist, item.title].filter(Boolean).join(' — ')}` : ''} · {formatBytes(item.size_bytes)}</li>)}</ul></li>)}</ul></div> : <EmptyState title="No duplicate groups found" message="This preview found no duplicate groups in the bounded readable track set." />}
+          {preview.next_step && <StatusStrip tone="warn">{preview.next_step}</StatusStrip>}
+        </> : preview.samples.length > 0 ? <div className="settings-import-samples"><strong>Sample candidates</strong><ul>{preview.samples.map((item) => <li key={item.track_id}><code>{item.relative_path ?? item.filename}</code>{item.artist || item.title ? ` · ${[item.artist, item.title].filter(Boolean).join(' — ')}` : ''}{item.missing_fields.length ? ` · missing ${item.missing_fields.join(', ')}` : ''}{item.bpm ? ` · ${item.bpm} BPM` : ''}{item.key_camelot || item.key_musical ? ` · ${item.key_camelot ?? item.key_musical}` : ''}</li>)}</ul></div> : <EmptyState title="No candidates" message="This workflow has no eligible indexed tracks yet." />}
         {preview.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}
         {preview.job.type === 'bpm_analysis' && preview.runner_implemented && preview.candidate_count > 0 && <div className="analysis-bpm-confirm">
           <label className="form-check"><input type="checkbox" checked={bpmConfirmed} onChange={(event) => setBpmConfirmed(event.target.checked)} disabled={bpmRunning} /> I understand this writes BPM only to CrateIQ’s local index.</label>

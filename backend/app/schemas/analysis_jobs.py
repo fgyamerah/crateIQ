@@ -44,6 +44,22 @@ class AnalysisJobCandidate(BaseModel):
     missing_fields: list[str] = Field(default_factory=list)
 
 
+class DuplicateCandidateItem(BaseModel):
+    track_id: int
+    filename: str
+    title: Optional[str] = None
+    artist: Optional[str] = None
+    relative_path: Optional[str] = None
+    size_bytes: Optional[int] = None
+
+
+class DuplicateCandidateGroup(BaseModel):
+    group_id: str
+    reason: str
+    confidence: Literal["high", "medium", "low"]
+    items: list[DuplicateCandidateItem] = Field(default_factory=list)
+
+
 class AnalysisJobListResponse(BaseModel):
     jobs: list[AnalysisJobDefinition]
 
@@ -56,6 +72,10 @@ class AnalysisJobPreview(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     expected_write_behavior: str
     runner_implemented: bool
+    preview_only: bool = False
+    summary: dict[str, int] | None = None
+    groups: list[DuplicateCandidateGroup] = Field(default_factory=list)
+    next_step: Optional[str] = None
 
 
 class AnalysisJobHistoryResponse(BaseModel):

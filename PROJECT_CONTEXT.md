@@ -6,6 +6,11 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added optional, preview-only rmlint duplicate detection to
+  `/jobs`. It scans at most 100 validated imported paths using JSON stdout,
+  returns grouped relative-path candidates only, and has no resolution action.
+  It never creates/executes rmlint scripts or writes files, tags, or DB
+  decisions; missing rmlint disables only this workflow.
 - 2026-08-05: Added a safe Beets enrichment preview. It uses only the local
   index to identify missing artist/title/genre fields and never invokes beet,
   writes tags, moves files, or writes suggestions. The card is review-required

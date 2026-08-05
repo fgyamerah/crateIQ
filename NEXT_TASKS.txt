@@ -39,6 +39,12 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Safe rmlint duplicate detection preview (2026-08-05)
+         `/jobs` scans a bounded set of validated imported paths only through
+         rmlint JSON output. It returns duplicate groups for review with no
+         delete/move/rename/quarantine/tag/file/DB action; resolution remains
+         a future review workflow.
+
 [x] (P1) Safe Beets enrichment preview (2026-08-05)
          `/jobs` now reviews only local-index rows missing artist/title/genre.
          It never invokes beet, modifies tags/files, or applies suggestions;

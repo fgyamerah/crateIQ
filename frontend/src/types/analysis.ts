@@ -129,6 +129,22 @@ export interface AnalysisJobCandidate {
   missing_fields: string[]
 }
 
+export interface DuplicateCandidateItem {
+  track_id: number
+  filename: string
+  title: string | null
+  artist: string | null
+  relative_path: string | null
+  size_bytes: number | null
+}
+
+export interface DuplicateCandidateGroup {
+  group_id: string
+  reason: string
+  confidence: 'high' | 'medium' | 'low'
+  items: DuplicateCandidateItem[]
+}
+
 export interface AnalysisJobPreview {
   job: AnalysisJobDefinition
   total_tracks: number
@@ -137,6 +153,10 @@ export interface AnalysisJobPreview {
   warnings: string[]
   expected_write_behavior: string
   runner_implemented: boolean
+  preview_only: boolean
+  summary: Record<string, number> | null
+  groups: DuplicateCandidateGroup[]
+  next_step: string | null
 }
 
 export interface AnalysisJobHistory {
