@@ -39,6 +39,12 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P2) Settings visual alignment (2026-08-05)
+         `/settings` now follows the compact dark dashboard direction with
+         section navigation, status/metric cards, locked policy chips, tool
+         rows, and an honest planned-maintenance panel. Existing setup/import,
+         analysis preference, and diagnostics behavior remains unchanged.
+
 [x] (P1) Safe ffprobe audio-quality preview (2026-08-05)
          `/jobs` now runs a bounded, read-only JSON metadata probe on at most
          ten validated imported tracks when ffprobe is available. It returns

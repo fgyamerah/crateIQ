@@ -2,13 +2,19 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import {
   ArrowRight,
+  ArchiveRestore,
+  ChartNoAxesColumnIncreasing,
   CheckCircle2,
   CircleAlert,
+  Database,
   FolderCog,
+  HardDrive,
+  ListChecks,
   RefreshCw,
   ScanSearch,
   Settings2,
   ShieldCheck,
+  SlidersHorizontal,
   Wrench,
 } from 'lucide-react'
 import { ApiError } from '../api/client'
@@ -82,6 +88,10 @@ function CapabilityCard({ label, capability, jobRoute }: { label: string; capabi
       {jobRoute ? <Link className="btn btn--ghost btn--xs" to={jobRoute}>{capability.action_state === 'setup_required' ? 'Tool setup' : 'Open jobs'}</Link> : <button className="btn btn--ghost btn--xs" type="button" disabled>{actionLabel}</button>}
     </div>
   )
+}
+
+function SettingsMetric({ label, value, detail }: { label: string; value: string | number; detail: string }) {
+  return <div className="settings-metric"><span>{label}</span><strong>{value}</strong><small>{detail}</small></div>
 }
 
 export default function Settings() {
@@ -313,9 +323,14 @@ export default function Settings() {
         title="Settings"
         subtitle="Set up the local library, then choose optional analysis only when you need it."
         actions={(
-          <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void recheck()}>
-            <RefreshCw size={13} className={busy ? 'spin' : ''} /> Recheck readiness
-          </button>
+          <div className="settings-header-actions">
+            <Link className="btn btn--ghost btn--sm" to="/">Open Library</Link>
+            <Link className="btn btn--ghost btn--sm" to="/jobs">Analysis Jobs</Link>
+            <Link className="btn btn--ghost btn--sm" to="/exports">Exports</Link>
+            <button className="btn btn--ghost btn--sm" disabled={busy} onClick={() => void recheck()}>
+              <RefreshCw size={13} className={busy ? 'spin' : ''} /> Recheck
+            </button>
+          </div>
         )}
       />
       <StatusStrip tone="info" icon={<Settings2 size={15} />} footnote="Local-first diagnostics · no folders are scanned and no music or DJ application data is changed.">
@@ -328,16 +343,24 @@ export default function Settings() {
 
       {loading ? <EmptyState title="Loading settings" message="Reading local runtime diagnostics…" /> : !settings ? <EmptyState title="Settings unavailable" message="Check that the local backend is running, then recheck readiness." /> : (
         <>
+          <nav className="settings-tabs" aria-label="Settings sections">
+            <a href="#library-paths">Library &amp; Paths</a>
+            <a href="#analysis-tools">Analysis &amp; Tools</a>
+            <a href="#safety-behavior">Safety &amp; Behavior</a>
+            <a href="#job-defaults">Job Defaults</a>
+            <a href="#backup-restore">Backup &amp; Restore</a>
+            <a href="#diagnostics">Diagnostics</a>
+          </nav>
           <div className="settings-kpis">
             <KpiCard tone="cyan" icon={<FolderCog size={18} />} label="Library mode" value={settings.library.mode === 'demo' ? 'Demo' : 'Configured'} sub={settings.library.readiness_status.replace('_', ' ')} />
             <KpiCard tone="emerald" icon={<Wrench size={18} />} label="Optional tools" value={`${readyToolCount}/${settings.tools.length}`} sub="Only advanced workflows need them" />
             <KpiCard tone="violet" icon={<ShieldCheck size={18} />} label="Analysis safety" value="Locked" sub="MIK and existing values stay protected" />
           </div>
 
-          <section className="section">
+          <section className="section" id="library-paths">
             <div className="card settings-card">
               <div className="card-title-row">
-                <div><h2 className="card-title">1. Select library folder</h2><p className="muted">Set a safe, existing library folder for the next CrateIQ start. Validation does not scan or import it.</p></div>
+                <div><h2 className="card-title"><FolderCog size={16} /> Library &amp; paths</h2><p className="muted">Step 1: set a safe, existing library folder for the next CrateIQ start. Validation does not scan or import it.</p></div>
                 <Badge tone={readiness === 'ready' ? 'succeeded' : 'pending'}>{readiness?.replace('_', ' ')}</Badge>
               </div>
               <dl className="def-list settings-def-list">
@@ -348,6 +371,11 @@ export default function Settings() {
                 <dt>Manual Crates database</dt><dd><code>{settings.library.manual_crates_db}</code></dd>
                 <dt>Exports root</dt><dd><code>{settings.library.exports_root}</code></dd>
               </dl>
+              <div className="settings-library-metrics">
+                <SettingsMetric label="Index state" value={setupInitialized ? 'Ready' : 'Setup'} detail={setupInitialized ? 'Local index is available' : 'Initialize before scanning'} />
+                <SettingsMetric label="Indexed tracks" value={mikCoverage?.summary.total_tracks ?? '—'} detail="Current local-index coverage" />
+                <SettingsMetric label="Export path" value={pathMode} detail="Safe local preference" />
+              </div>
               <div className="settings-preference">
                 <label>Configured library root
                   <input className="form-input" value={libraryRootInput} onChange={(event) => { setLibraryRootInput(event.target.value); setLibraryValidation(null); setLibrarySaved(false) }} placeholder="/absolute/path/to/library" disabled={libraryBusy} />
@@ -363,7 +391,7 @@ export default function Settings() {
             </div>
           </section>
 
-          <section className="section" id="library-setup-import">
+          <section className="section settings-anchor-section" id="library-setup-import">
             <div className="card settings-card settings-import-wizard">
               <div className="card-title-row">
                 <div><h2 className="card-title">Library setup &amp; import</h2><p className="muted">Follow the steps in order. Optional BPM/key analysis always happens later, never during import.</p></div>
@@ -442,7 +470,7 @@ export default function Settings() {
             </div>
           </section>
 
-          <section className="section" id="analysis-tools">
+          <section className="section settings-anchor-section" id="analysis-tools">
             <div className="card settings-card">
               <div className="card-title-row">
                 <div><h2 className="card-title">Analysis &amp; tools</h2><p className="muted">Optional workflows stay separate from library setup. Saving these toggles never starts a job.</p></div>
@@ -464,7 +492,7 @@ export default function Settings() {
               <div className="settings-action-row">
                 <button className="btn btn--primary" disabled={analysisBusy || !analysisChanged} onClick={() => void saveAnalysis()}>{analysisBusy ? 'Saving…' : 'Save analysis preferences'}</button>
               </div>
-              <StatusStrip tone="info" icon={<ShieldCheck size={15} />}>BPM/key analysis is default-off. Current in-app runners are intentionally not exposed here until a dedicated DB-only, missing-data-only analysis workflow is complete.</StatusStrip>
+              <StatusStrip tone="info" icon={<ShieldCheck size={15} />}>BPM/key analysis is default-off. Open Analysis Jobs to preview and explicitly confirm supported DB-only workflows.</StatusStrip>
               <div className="settings-mik-panel">
                 <div className="settings-import-result-head"><div><h3>Mixed In Key coverage</h3><p className="muted">Mixed In Key is a trusted metadata input source, not a required executable.</p></div><Badge tone={settings.capabilities.analysis.mixed_in_key_coverage.available ? 'succeeded' : 'pending'}>{settings.capabilities.analysis.mixed_in_key_coverage.status}</Badge></div>
                 <StatusStrip tone="info">Mixed In Key-compatible values are treated as trusted when present. Preview reads existing tags; import writes only CrateIQ’s local index. Music files and tags are not changed.</StatusStrip>
@@ -497,9 +525,14 @@ export default function Settings() {
             </div>
           </section>
 
-          <section className="section">
+          <section className="section settings-anchor-section" id="job-defaults">
             <div className="card settings-card">
-              <div className="card-title-row"><div><h2 className="card-title">Preferences</h2><p className="muted">This export preference is independent of optional analysis tools.</p></div><Badge tone="info">Local preference</Badge></div>
+              <div className="card-title-row"><div><h2 className="card-title"><SlidersHorizontal size={16} /> Job defaults</h2><p className="muted">Safe preferences only. They never start analysis or change music files.</p></div><Badge tone="info">Local preference</Badge></div>
+              <div className="settings-job-defaults">
+                <SettingsMetric label="BPM analysis" value={analysis.analyze_bpm ? 'Enabled' : 'Off'} detail="Explicit job only" />
+                <SettingsMetric label="Key/Camelot" value={analysis.analyze_key ? 'Enabled' : 'Off'} detail="Explicit job only" />
+                <SettingsMetric label="Missing data only" value="Locked" detail="Never overwrites trusted values" />
+              </div>
               <div className="settings-preference">
                 <label>Default export path mode
                   <select className="form-input" value={pathMode} onChange={(event) => setPathMode(event.target.value as typeof pathMode)} disabled={busy}>
@@ -512,17 +545,31 @@ export default function Settings() {
             </div>
           </section>
 
-          <section className="section">
+          <section className="section settings-anchor-section" id="safety-behavior">
             <div className="card settings-card">
-              <div className="card-title-row"><div><h2 className="card-title">Detected tools</h2><p className="muted">Availability is checked without invoking analysis or scanning tracks.</p></div><Badge tone="info">Runtime diagnostics</Badge></div>
-              <div className="settings-tool-list">{settings.tools.map((tool) => <div className="settings-tool" key={tool.name}><div><strong>{tool.name}</strong><span>{tool.message}</span>{tool.resolved && <small>Source: {tool.source} · {tool.resolved}</small>}{!tool.resolved && <small>Configure with {tool.source} in a private environment if this optional workflow is needed.</small>}</div><Badge tone={badgeTone(tool.status)}>{tool.status}</Badge></div>)}</div>
+              <div className="card-title-row"><div><h2 className="card-title"><ShieldCheck size={16} /> Safety &amp; behavior</h2><p className="muted">These are deliberate product rules, not editable toggles.</p></div><Badge tone="succeeded">Locked</Badge></div>
+              <div className="settings-policy-grid">
+                <span><ShieldCheck size={14} /> No tag writes</span><span><ShieldCheck size={14} /> No music-file modifications</span><span><ShieldCheck size={14} /> Preserve MIK metadata</span><span><ShieldCheck size={14} /> Missing data only</span><span><ShieldCheck size={14} /> No live Serato writes</span><span><ShieldCheck size={14} /> No live Rekordbox writes</span>
+              </div>
+              <ul className="settings-safety-list"><li><CheckCircle2 size={15} /> Mixed In Key remains authoritative for BPM, key, and cues.</li><li><CheckCircle2 size={15} /> Analysis fills missing data only; files and tags are never automatically modified.</li><li><CheckCircle2 size={15} /> Serato and Rekordbox live databases are never written by CrateIQ.</li><li><CheckCircle2 size={15} /> Export and apply workflows remain preview-first.</li></ul>
             </div>
           </section>
 
-          <section className="section">
+          <section className="section settings-anchor-section" id="backup-restore">
+            <div className="card settings-card settings-maintenance-card">
+              <div className="card-title-row"><div><h2 className="card-title"><ArchiveRestore size={16} /> Backup &amp; restore</h2><p className="muted">Local index maintenance is planned as a separate, review-first workflow.</p></div><Badge tone="pending">Planned</Badge></div>
+              <div className="settings-maintenance-grid">
+                <div><Database size={17} /><strong>Local index</strong><span>CrateIQ stores imported track records in the selected local index.</span></div>
+                <div><HardDrive size={17} /><strong>Export workspace</strong><span>Exports remain in the configured local exports folder.</span></div>
+                <div><ListChecks size={17} /><strong>No restore action yet</strong><span>Backup, restore, and cleanup controls are intentionally not exposed until their safety contract is complete.</span></div>
+              </div>
+            </div>
+          </section>
+
+          <section className="section settings-anchor-section" id="diagnostics">
             <div className="card settings-card">
-              <div className="card-title-row"><div><h2 className="card-title">Safety policies</h2><p className="muted">These are deliberate product rules, not editable toggles.</p></div><Badge tone="succeeded">Locked</Badge></div>
-              <ul className="settings-safety-list"><li><CheckCircle2 size={15} /> Mixed In Key remains authoritative for BPM, key, and cues.</li><li><CheckCircle2 size={15} /> Analysis fills missing data only; files and tags are never automatically modified.</li><li><CheckCircle2 size={15} /> Serato and Rekordbox live databases are never written by CrateIQ.</li><li><CheckCircle2 size={15} /> Export and apply workflows remain preview-first.</li></ul>
+              <div className="card-title-row"><div><h2 className="card-title"><ChartNoAxesColumnIncreasing size={16} /> Diagnostics &amp; tool detection</h2><p className="muted">Availability is checked without invoking analysis or scanning tracks.</p></div><Badge tone="info">Runtime diagnostics</Badge></div>
+              <div className="settings-tool-list">{settings.tools.map((tool) => <div className="settings-tool" key={tool.name}><div><strong>{tool.name}</strong><span>{tool.message}</span>{tool.resolved && <small>Source: {tool.source} · {tool.resolved}</small>}{!tool.resolved && <small>Configure with {tool.source} in a private environment if this optional workflow is needed.</small>}</div><Badge tone={badgeTone(tool.status)}>{tool.status}</Badge></div>)}</div>
             </div>
           </section>
 

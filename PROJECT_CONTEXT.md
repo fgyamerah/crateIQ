@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Aligned `/settings` with the dark local-first dashboard visual
+  system. It now uses compact anchor navigation, visible Library & Paths,
+  Analysis & Tools, Safety & Behavior, Job Defaults, planned Backup & Restore,
+  and Diagnostics sections, while retaining every library setup/import action,
+  capability link, and locked policy. This is frontend-only: no backend or
+  safety behavior changed.
 - 2026-08-05: Added a bounded, preview-only ffprobe Audio Quality Probe to
   `/jobs`. It calls `ffprobe -v error -show_format -show_streams -of json`
   for at most ten validated imported tracks, returns only safe relative paths

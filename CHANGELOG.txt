@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — ui: align Settings with the local-first dashboard
+
+- Refined `/settings` into compact Library & Paths, Analysis & Tools, Safety
+  & Behavior, Job Defaults, Backup & Restore, and Diagnostics sections with
+  anchored section navigation, stronger status hierarchy, and responsive dark
+  cards aligned to the Settings visual reference.
+- Preserved the full setup/import wizard, existing capability links, locked
+  safety policies, and all API/data behavior. Backup/restore remains honestly
+  planned with no action controls added.
+
 [2026-08-05] — feat: safe ffprobe audio-quality preview
 
 - Added a bounded, preview-only ffprobe JSON probe for up to ten validated
