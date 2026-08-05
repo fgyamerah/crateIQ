@@ -17,8 +17,8 @@ file-writing workflow.
 - Reviews library quality, issues, folders, and existing metadata.
 - Builds ordered Manual Crates and saves Smart Crate suggestions as editable
   Manual Crates.
-- Uses browser-native playback to preview files that are safely available under
-  the selected library root.
+- Uses a persistent browser-native bottom player to preview safely available
+  files across Library, Music Review, and route changes.
 - Creates portable CSV, JSON, M3U, and UTF-8 M3U8 crate exports.
 - Stages Serato handoffs and Rekordbox-importable XML; it does not write either
   application's live database.
@@ -50,7 +50,7 @@ file-writing workflow.
 | Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
 | Manual Crates | Implemented | Create, edit, reorder, and save local DJ working lists. |
 | Smart Crates | Implemented | Deterministic suggestions from existing local metadata; save as Manual Crates. |
-| Audio preview | Implemented | Browser-native playback for safely resolvable local files. |
+| Persistent audio preview | Implemented | App-shell bottom player with Library/Music Review queues, route persistence, seek, volume, and safe unavailable states. |
 | Portable exports | Implemented | CSV, JSON, M3U, and M3U8, with safe staged output paths. |
 | Staged Serato export | Implemented | M3U8 plus manifest handoff; exact binary `.crate` writing is deferred. |
 | Staged Rekordbox XML export | Implemented | Importable XML file only; no live Rekordbox database writer. |
@@ -64,6 +64,21 @@ file-writing workflow.
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
+
+### Browser playback notes
+
+The persistent player streams only through the existing DB-backed
+`/api/tracks/{track_id}/preview-audio` endpoint. Playback availability depends
+on the selected file existing under the configured library root and on the
+browser supporting its audio format. Missing, out-of-root, or unsupported
+files show an unavailable state; crateIQ does not transcode them.
+
+Library queues the currently visible filtered page. Music Review queues its
+current review list, keeps next/previous selection synchronized with the bottom
+player, and does not save a review merely because a track was selected or
+played. The low/mid/high display is a deterministic visual placeholder—not an
+extracted waveform or audio analysis. Player use never writes tags, audio
+files, BPM, key, Camelot, cues, MIK data, crate order, or DJ databases.
 
 ## Screenshots
 

@@ -2,6 +2,26 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — Persistent player and secondary-page polish
+
+- Added app-shell persistent browser audio state plus a compact Spotify-style
+  bottom player with queue position, previous/next, play/pause, seek, volume,
+  loading/error/unavailable states, minimize, close, and route persistence.
+- Connected Library visible/filtered tracks and the Music Review queue to the
+  same player. Music Review deep links remain read-only on selection, page and
+  player navigation stay synchronized, and review shortcuts remain disabled
+  while a form/editable control is focused.
+- Reused the deterministic three-band visual in the bottom player. It remains
+  presentation-only and performs no waveform extraction or audio analysis.
+- Aligned Metadata Repair and Genre Taxonomy tables/forms plus Manual/Smart
+  Crate panels with the established full-width dark DJ dashboard treatment.
+- Files affected: `frontend/src/App.tsx`, `frontend/src/components/Layout.tsx`,
+  `frontend/src/components/player/`, Library components, Music Review,
+  Metadata Repair, Genre Taxonomy, `frontend/src/index.css`, and project docs.
+- Migration notes: none. Playback still depends on browser support and a safely
+  resolvable DB-backed file; no tags, music/audio files, crate order, Smart
+  Crate rules, BPM/key/Camelot/cues/MIK data, or DJ databases are changed.
+
 [2026-08-05] — docs: document CrateIQ DJ visual direction
 
 - Documented `docs/mockups/library.webp` as the visual reference for CrateIQ's

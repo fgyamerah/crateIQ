@@ -39,16 +39,33 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
-[ ] (P1) Persistent Spotify-style bottom player
-    Add a global bottom mini-player visible across pages, with playback that
-    continues while switching routes through app-shell audio state/context.
-    Integrate Library and Music Review, reuse the three-band waveform visual,
-    and provide compact Spotify-style browser playback controls. Keep state
-    browser-only: no tag/file/audio writes and no analysis tools.
+[x] (P1) Persistent Spotify-style bottom player (2026-08-05)
+    App-shell audio state now persists the selected browser-preview track and
+    queue across routes. The bottom player provides play/pause, previous/next,
+    progress/seek, volume, loading/error/unavailable states, minimize/close,
+    and the visual-only three-band signal. Library uses its visible filtered
+    page as the queue; Music Review keeps page and player navigation synced.
+    No tag, music/audio file, metadata, crate, or DJ-database writes were added.
 
-[ ] (P2) Gradually apply the Library mockup style to remaining secondary pages
-    Reuse the full-width dark DJ dashboard, cyan/teal/violet tokens, and dense
-    workflow patterns without breaking or obscuring existing safety behavior.
+[x] (P2) Apply the Library mockup style to priority secondary pages (2026-08-05)
+    Settings, Jobs, Quality Review, Beets Review, Manual/Smart Crates, Metadata
+    Repair, and Genre Taxonomy now share the full-width dark dashboard, compact
+    controls, cyan/teal/violet accents, and dense panel/table treatment without
+    changing workflow logic or safety behavior.
+
+[ ] (P2) Verify full persistent playback with representative browser-playable files
+    Exercise play/pause, seek, end-of-track advance, error recovery, and route
+    persistence with supported real audio in an explicitly selected test/demo
+    library. Do not copy, modify, analyze, or retag source audio for this test.
+
+[ ] (P3) Consider real waveform extraction only as a separately designed safe feature
+    The current three-band display is intentionally deterministic and visual-
+    only. Any future extraction needs an explicit privacy/performance/cache and
+    read-only tool contract; do not infer or fabricate analyzed waveform data.
+
+[ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
+    Prioritize observed usability defects and responsive behavior; preserve the
+    incumbent Night Deck system and avoid business-logic or write-boundary drift.
 
 [x] Show Music Review status/rating context in Manual Crate order/finder rows
     and Smart Crate preview rows without changing order, eligibility, or rules.
@@ -227,8 +244,9 @@ CURRENT FOCUS
          Smart Crates through a scoped DB-backed endpoint. It only serves
          existing files below the selected root, supports seek ranges, and
          does not scan/transcode or alter audio/tags/BPM/key/cues/MIK/DJ data.
-         Missing demo placeholder audio is shown as unavailable; waveform,
-         cue, beat-grid, and keyboard controls remain future work.
+         Missing demo placeholder audio is shown as unavailable. The global
+         player and visual-only three-band display are now complete; real
+         waveform extraction, cue, and beat-grid controls remain future work.
 
 [x] (P1) Rekordbox XML Export foundation (2026-08-04)
          Saved Manual Crates now support preview-first, staged XML exports
