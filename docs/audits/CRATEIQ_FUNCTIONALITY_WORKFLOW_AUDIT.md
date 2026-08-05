@@ -4,6 +4,11 @@
 **Mode:** read-only product/code audit; no library, audio, metadata, or DJ-application data was changed  
 **Primary question:** can CrateIQ operate as a useful standalone local-first library, crate, preview, and export app while optional tools remain isolated to the workflows that need them?
 
+> Implementation follow-up (2026-08-05): key/Camelot now mirrors the safe BPM
+> runner: keyfinder-cli requires preview, confirmation, and a small limit; it
+> stores only recognized mapped values with lower authority in the local index.
+> It never writes tags/media or overwrites MIK/trusted/existing key data.
+
 > Implementation follow-up (2026-08-05): BPM is now the first actual Analysis
 > Jobs runner. It requires aubio, preview, confirmation, and a small explicit
 > limit; it writes only null-BPM records to the local index with lower-authority

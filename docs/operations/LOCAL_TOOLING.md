@@ -12,7 +12,7 @@ this repository or commit local executable paths.
 
 | Tool | CrateIQ use | When it runs |
 | --- | --- | --- |
-| `keyfinder-cli` | Fallback musical-key/Camelot analysis | Only for a track without existing Mixed In Key (MIK) key data. |
+| `keyfinder-cli` | Preview-first, DB-only key/Camelot analysis | Only after explicit confirmation for a track with both key fields empty; it never replaces MIK/existing key data. |
 | `aubio` | Preview-first, DB-only BPM analysis | Only after explicit confirmation for a track with null BPM. The in-app runner uses aubio only; it does not fall back to librosa. |
 | `beet` | Beets metadata import/enrichment and the legacy organizer path | Only when the relevant import/organizer workflow is intentionally run; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
 | `rmlint` | Duplicate-detection workflow | Only when the user explicitly starts duplicate detection; no files are deleted automatically. |

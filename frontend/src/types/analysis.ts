@@ -154,6 +154,17 @@ export interface BpmAnalysisRunResult {
   results: AnalysisJobCandidate[]
 }
 
+export interface KeyAnalysisRunResult {
+  job_type: 'key_analysis'
+  analyzed: number
+  updated: number
+  skipped: number
+  failed: number
+  remaining_missing_key: number
+  warnings: string[]
+  results: AnalysisJobCandidate[]
+}
+
 export const REASON_COLORS: Record<BpmReason, string> = {
   missing_bpm:    'reason--missing',
   too_low_10x:    'reason--critical',

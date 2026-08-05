@@ -273,7 +273,7 @@ def get_capabilities(
                 purpose="Analyze only tracks missing trusted key or Camelot values.",
                 message="Install or configure keyfinder-cli to enable optional key analysis. Import remains available without it.",
                 enabled=analysis_preferences["analyze_key"],
-            ),
+            ) | ({"action_state": "ready", "message": "keyfinder-cli is available for explicit preview-first, DB-only key/Camelot analysis."} if has_tool("keyfinder-cli") else {}),
             "beets_enrichment": optional_tool_capability(
                 tool="beet",
                 purpose="Run the explicit Beets import/enrichment workflow.",

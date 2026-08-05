@@ -41,6 +41,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     bpm_trusted INTEGER NOT NULL DEFAULT 0,
     bpm_analyzed_at TEXT,
     key_source TEXT,
+    key_trusted INTEGER NOT NULL DEFAULT 0,
+    key_analyzed_at TEXT,
     cue_source TEXT,
     cue_count INTEGER NOT NULL DEFAULT 0,
     metadata_trusted INTEGER NOT NULL DEFAULT 0,

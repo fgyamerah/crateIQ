@@ -6,6 +6,11 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added the safe key/Camelot Analysis Jobs runner. After preview
+  and explicit confirmation, it invokes `keyfinder-cli <file>` only for rows
+  with both key fields null, maps only recognized musical/Camelot values using
+  the existing harmonic map, and writes lower-authority local provenance. It
+  never writes tags/media or changes MIK/trusted/existing key values.
 - 2026-08-05: Added the first safe Analysis Jobs runner: a preview-first,
   explicitly confirmed `aubio tempo <file>` BPM pass. It selects only tracks
   with null BPM, accepts 40–250 BPM, and writes only `bpm`, `bpm_source=aubio`,

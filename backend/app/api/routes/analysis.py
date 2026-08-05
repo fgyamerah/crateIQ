@@ -36,6 +36,8 @@ from ...schemas.job import JobResponse
 from ...schemas.analysis_jobs import (
     BpmAnalysisRunRequest,
     BpmAnalysisRunResult,
+    KeyAnalysisRunRequest,
+    KeyAnalysisRunResult,
     AnalysisJobHistoryResponse,
     AnalysisJobListResponse,
     AnalysisJobPreview,
@@ -74,12 +76,12 @@ async def preview_analysis_job(job_type: str) -> AnalysisJobPreview:
         raise HTTPException(status_code=404, detail=str(exc))
 
 
-@router.post("/analysis/jobs/{job_type}/run", response_model=BpmAnalysisRunResult)
-async def run_analysis_job(job_type: str, body: BpmAnalysisRunRequest = BpmAnalysisRunRequest()):
-    """Run only the explicitly confirmed safe BPM DB-only workflow."""
+@router.post("/analysis/jobs/{job_type}/run", response_model=BpmAnalysisRunResult | KeyAnalysisRunResult)
+async def run_analysis_job(job_type: str, body: BpmAnalysisRunRequest | KeyAnalysisRunRequest = BpmAnalysisRunRequest()):
+    """Run only explicitly confirmed safe DB-only analysis workflows."""
     try:
         result = analysis_jobs_service.run(job_type, confirm=body.confirm, limit=body.limit)
-        return BpmAnalysisRunResult(**result)
+        return BpmAnalysisRunResult(**result) if job_type == "bpm_analysis" else KeyAnalysisRunResult(**result)
     except ValueError as exc:
         status_code = 404 if "Unknown" in str(exc) else 422
         raise HTTPException(status_code=status_code, detail=str(exc))

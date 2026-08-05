@@ -340,6 +340,10 @@ lower-authority `aubio` provenance. It accepts only 40–250 BPM and never
 writes media/tags or replaces MIK/trusted/existing BPM. MIK import remains
 explicit in Settings; key/Camelot, Beets, duplicate, and audio-quality runners
 remain preview-only/pending. Their tools gate only their respective cards.
+Key/Camelot follows the same explicit preview/confirmation pattern with
+`keyfinder-cli <file>`. Recognized musical keys and Camelot values use the
+existing mapping; results are local-index-only `keyfinder-cli` provenance with
+lower authority than MIK, and no existing key value is replaced.
 See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
 for safe installation, verification, and override guidance. CrateIQ never
 installs optional tools itself.

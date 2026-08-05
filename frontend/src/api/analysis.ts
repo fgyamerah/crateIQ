@@ -10,6 +10,7 @@ import type {
   AnalysisJobType,
   AnalysisJobDefinition,
   BpmAnalysisRunResult,
+  KeyAnalysisRunResult,
   ReanalyzeRequest,
   UpdateAnomalyRequest,
 } from '../types/analysis'
@@ -57,3 +58,4 @@ export const fetchAnalysisJobs = () => apiFetch.get<{ jobs: AnalysisJobDefinitio
 export const previewAnalysisJob = (jobType: AnalysisJobType) => apiFetch.get<AnalysisJobPreview>(`/analysis/jobs/${jobType}/preview`)
 export const fetchAnalysisJobHistory = () => apiFetch.get<AnalysisJobHistory>('/analysis/jobs/history')
 export const runBpmAnalysis = (limit: number) => apiFetch.post<BpmAnalysisRunResult>('/analysis/jobs/bpm_analysis/run', { confirm: true, limit })
+export const runKeyAnalysis = (limit: number) => apiFetch.post<KeyAnalysisRunResult>('/analysis/jobs/key_analysis/run', { confirm: true, limit })

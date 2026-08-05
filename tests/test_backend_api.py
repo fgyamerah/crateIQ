@@ -1617,6 +1617,7 @@ def test_analysis_jobs_are_preview_only_and_tool_gated(client, monkeypatch):
     }
     monkeypatch.setattr(settings_service, "run_preflight", lambda: missing_tools_report)
     monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: None)
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: None)
 
     listed = test_client.get("/api/analysis/jobs")
     assert listed.status_code == 200
@@ -1715,6 +1716,50 @@ def test_aubio_bpm_parser_accepts_known_output_and_rejects_implausible_values():
     assert analysis_jobs_service._parse_aubio_bpm("0.371 123.26\n1.100 123.26 bpm\n") == 123.26
     assert analysis_jobs_service._parse_aubio_bpm("12.0 bpm\n") is None
     assert analysis_jobs_service._parse_aubio_bpm("300.0 bpm\n") is None
+
+
+def test_key_runner_is_confirmed_and_preserves_existing_keys(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    delta_path = root / "library" / "misc" / "delta.mp3"
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    delta_path.write_bytes(b"not-real-audio")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("ALTER TABLE tracks ADD COLUMN key_source TEXT")
+        conn.execute("ALTER TABLE tracks ADD COLUMN key_trusted INTEGER NOT NULL DEFAULT 0")
+        conn.execute("UPDATE tracks SET key_musical = 'A minor', key_camelot = '8A', key_source = 'mixed_in_key', key_trusted = 1 WHERE filename = 'alpha.mp3'")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: "/fake/keyfinder-cli")
+
+    def fake_keyfinder(command, **kwargs):
+        assert command[0] == "/fake/keyfinder-cli" and len(command) == 2
+        assert kwargs["timeout"] == 20
+        return SimpleNamespace(returncode=0, stdout="Key: Am\n", stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_keyfinder)
+    preview = test_client.get("/api/analysis/jobs/key_analysis/preview")
+    assert preview.status_code == 200 and preview.json()["candidate_count"] == 1
+    assert preview.json()["runner_implemented"] is True
+    assert test_client.post("/api/analysis/jobs/key_analysis/run", json={"confirm": False}).status_code == 422
+    completed = test_client.post("/api/analysis/jobs/key_analysis/run", json={"confirm": True, "limit": 1})
+    assert completed.status_code == 200 and completed.json()["updated"] == 1
+    with sqlite3.connect(db_path) as conn:
+        delta = conn.execute("SELECT key_musical, key_camelot, key_source, key_trusted, key_analyzed_at FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+        alpha = conn.execute("SELECT key_musical, key_camelot, key_source, key_trusted FROM tracks WHERE filename = 'alpha.mp3'").fetchone()
+    assert delta[:4] == ("Am", "8A", "keyfinder-cli", 0) and delta[4]
+    assert alpha == ("A minor", "8A", "mixed_in_key", 1)
+    assert test_client.get("/api/analysis/jobs/key_analysis/preview").json()["candidate_count"] == 0
+
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE tracks SET key_musical = NULL, key_camelot = NULL WHERE filename = 'delta.mp3'")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: None)
+    missing = test_client.post("/api/analysis/jobs/key_analysis/run", json={"confirm": True})
+    assert missing.status_code == 409 and "keyfinder-cli is not available" in missing.json()["detail"]
+
+
+def test_keyfinder_parser_accepts_known_keys_and_rejects_unknown_values():
+    assert analysis_jobs_service._parse_keyfinder_output("Am\n") == ("Am", "8A")
+    assert analysis_jobs_service._parse_keyfinder_output("Detected key: 9B\n") == ("G major", "9B")
+    assert analysis_jobs_service._parse_keyfinder_output("not a key\n") == (None, None)
 
 
 def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):

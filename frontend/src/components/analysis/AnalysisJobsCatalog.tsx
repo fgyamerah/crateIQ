@@ -2,8 +2,8 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Eye, RefreshCw, Wrench } from 'lucide-react'
 import { ApiError } from '../../api/client'
-import { fetchAnalysisJobHistory, fetchAnalysisJobs, previewAnalysisJob, runBpmAnalysis } from '../../api/analysis'
-import type { AnalysisJobDefinition, AnalysisJobPreview, AnalysisJobStatus, AnalysisJobType, BpmAnalysisRunResult } from '../../types/analysis'
+import { fetchAnalysisJobHistory, fetchAnalysisJobs, previewAnalysisJob, runBpmAnalysis, runKeyAnalysis } from '../../api/analysis'
+import type { AnalysisJobDefinition, AnalysisJobPreview, AnalysisJobStatus, AnalysisJobType, BpmAnalysisRunResult, KeyAnalysisRunResult } from '../../types/analysis'
 import Badge from '../ui/Badge'
 import EmptyState from '../ui/EmptyState'
 import KpiCard from '../ui/KpiCard'
@@ -31,6 +31,9 @@ export default function AnalysisJobsCatalog() {
   const [bpmLimit, setBpmLimit] = useState(10)
   const [bpmRunning, setBpmRunning] = useState(false)
   const [bpmResult, setBpmResult] = useState<BpmAnalysisRunResult | null>(null)
+  const [keyConfirmed, setKeyConfirmed] = useState(false)
+  const [keyRunning, setKeyRunning] = useState(false)
+  const [keyResult, setKeyResult] = useState<KeyAnalysisRunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
 
   const load = useCallback(async () => {
@@ -59,11 +62,18 @@ export default function AnalysisJobsCatalog() {
         setBpmConfirmed(false)
         setBpmResult(null)
       }
+      if (jobType === 'key_analysis') { setKeyConfirmed(false); setKeyResult(null) }
     } catch (err) {
       setError(errorMessage(err))
     } finally {
       setPreviewing(null)
     }
+  }
+
+  const runKey = async () => {
+    setKeyRunning(true); setError(null)
+    try { const result = await runKeyAnalysis(bpmLimit); setKeyResult(result); setKeyConfirmed(false); setPreview(null); await load() }
+    catch (err) { setError(errorMessage(err)) } finally { setKeyRunning(false) }
   }
 
   const runBpm = async () => {
@@ -105,7 +115,7 @@ export default function AnalysisJobsCatalog() {
           <p className="settings-note">Writes: {job.write_behavior}. {job.safety.join(' · ').replace(/_/g, ' ')}.</p>
           <div className="settings-action-row">
             <button className="btn btn--ghost btn--sm" disabled={previewing === job.type || job.status === 'disabled'} onClick={() => void showPreview(job.type)}><Eye size={13} /> {previewing === job.type ? 'Loading…' : 'Preview'}</button>
-            {job.type === 'mixed_in_key_coverage' ? <Link className="btn btn--primary btn--sm" to="/settings#analysis-tools">Open MIK import</Link> : job.type === 'bpm_analysis' && job.runner_implemented ? <span className="analysis-job-run-hint">Preview, then confirm below</span> : <Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools"><Wrench size={13} /> {job.status === 'missing_tool' ? 'Tool setup' : 'Runner pending'}</Link>}
+            {job.type === 'mixed_in_key_coverage' ? <Link className="btn btn--primary btn--sm" to="/settings#analysis-tools">Open MIK import</Link> : (job.type === 'bpm_analysis' || job.type === 'key_analysis') && job.runner_implemented ? <span className="analysis-job-run-hint">Preview, then confirm below</span> : <Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools"><Wrench size={13} /> {job.status === 'missing_tool' ? 'Tool setup' : 'Runner pending'}</Link>}
           </div>
         </article>)}
       </div>}
@@ -119,8 +129,14 @@ export default function AnalysisJobsCatalog() {
           <label className="settings-note">Track limit<select className="form-input" value={bpmLimit} onChange={(event) => setBpmLimit(Number(event.target.value))} disabled={bpmRunning}><option value={1}>1 track</option><option value={3}>3 tracks</option><option value={10}>10 tracks</option><option value={25}>25 tracks</option><option value={50}>50 tracks</option></select></label>
           <button className="btn btn--primary btn--sm" disabled={!bpmConfirmed || bpmRunning} onClick={() => void runBpm()}>{bpmRunning ? 'Analyzing BPM…' : `Run aubio for up to ${bpmLimit}`}</button>
         </div>}
+        {preview.job.type === 'key_analysis' && preview.runner_implemented && preview.candidate_count > 0 && <div className="analysis-bpm-confirm">
+          <label className="form-check"><input type="checkbox" checked={keyConfirmed} onChange={(event) => setKeyConfirmed(event.target.checked)} disabled={keyRunning} /> I understand this writes key/Camelot only to CrateIQ’s local index.</label>
+          <label className="settings-note">Track limit<select className="form-input" value={bpmLimit} onChange={(event) => setBpmLimit(Number(event.target.value))} disabled={keyRunning}><option value={1}>1 track</option><option value={3}>3 tracks</option><option value={10}>10 tracks</option><option value={25}>25 tracks</option><option value={50}>50 tracks</option></select></label>
+          <button className="btn btn--primary btn--sm" disabled={!keyConfirmed || keyRunning} onClick={() => void runKey()}>{keyRunning ? 'Analyzing key…' : `Run keyfinder for up to ${bpmLimit}`}</button>
+        </div>}
       </section>}
       {bpmResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">BPM analysis result</h2><p className="muted">Aubio wrote only eligible BPM values to CrateIQ’s local index.</p></div><Badge tone="succeeded">Complete</Badge></div><div className="settings-import-summary"><span><strong>{bpmResult.updated}</strong> updated</span><span><strong>{bpmResult.skipped}</strong> skipped</span><span><strong>{bpmResult.failed}</strong> failed</span><span><strong>{bpmResult.remaining_missing_bpm}</strong> remaining missing</span></div>{bpmResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
+      {keyResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">Key/Camelot analysis result</h2><p className="muted">Keyfinder wrote only eligible keys to CrateIQ’s local index.</p></div><Badge tone="succeeded">Complete</Badge></div><div className="settings-import-summary"><span><strong>{keyResult.updated}</strong> updated</span><span><strong>{keyResult.skipped}</strong> skipped</span><span><strong>{keyResult.failed}</strong> failed</span><span><strong>{keyResult.remaining_missing_key}</strong> remaining missing</span></div>{keyResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
       <section className="analysis-job-history">
         <h2 className="card-title">Analysis history</h2>
         <EmptyState title="No analysis runs yet" message={historyMessage || 'History starts when an explicit safe runner is implemented.'} />

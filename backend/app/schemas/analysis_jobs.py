@@ -76,3 +76,18 @@ class BpmAnalysisRunResult(BaseModel):
     remaining_missing_bpm: int
     warnings: list[str] = Field(default_factory=list)
     results: list[AnalysisJobCandidate] = Field(default_factory=list)
+
+
+class KeyAnalysisRunRequest(BpmAnalysisRunRequest):
+    pass
+
+
+class KeyAnalysisRunResult(BaseModel):
+    job_type: Literal["key_analysis"]
+    analyzed: int
+    updated: int
+    skipped: int
+    failed: int
+    remaining_missing_key: int
+    warnings: list[str] = Field(default_factory=list)
+    results: list[AnalysisJobCandidate] = Field(default_factory=list)

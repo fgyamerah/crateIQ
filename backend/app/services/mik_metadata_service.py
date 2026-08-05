@@ -16,6 +16,7 @@ _MIGRATION_COLUMNS = {
     "bpm_source": "TEXT",
     "bpm_trusted": "INTEGER NOT NULL DEFAULT 0",
     "key_source": "TEXT",
+    "key_trusted": "INTEGER NOT NULL DEFAULT 0",
     "cue_source": "TEXT",
     "cue_count": "INTEGER NOT NULL DEFAULT 0",
     "metadata_trusted": "INTEGER NOT NULL DEFAULT 0",
@@ -194,6 +195,7 @@ def import_metadata() -> dict[str, Any]:
                 update["key_camelot"] = camelot
                 update["key_musical"] = musical
                 update["key_source"] = "mik_compatible_tag"
+                update["key_trusted"] = 1
             if update:
                 update["metadata_trusted"] = 1
                 update["metadata_imported_at"] = now

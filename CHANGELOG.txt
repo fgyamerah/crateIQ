@@ -2,6 +2,15 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: safe preview-first key/Camelot runner
+
+- Added an explicitly confirmed keyfinder-cli runner for rows missing both
+  local key fields. It calls `keyfinder-cli <file>` with a list argument and
+  timeout, then accepts only recognized musical or Camelot output.
+- Reused the existing Camelot maps to persist `key_musical`, `key_camelot`,
+  `key_source=keyfinder-cli`, `key_trusted=0`, and a timestamp in local DB.
+  Existing/MIK/trusted keys, tags, media, and DJ databases remain untouched.
+
 [2026-08-05] — feat: safe preview-first aubio BPM runner
 
 - Added an explicitly confirmed `/api/analysis/jobs/bpm_analysis/run` path.
