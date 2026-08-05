@@ -39,6 +39,9 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Add DB-only Genre Taxonomy review with conservative mappings and raw genre
+    preservation. Future work: richer mapping editing and local review notes.
+
 [x] Add Metadata Sources settings foundation with local-only masked credential
     storage and disabled-by-default external source registry.
 [ ] Design multi-source enrichment comparison/review after safe, explicit

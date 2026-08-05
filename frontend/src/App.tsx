@@ -19,6 +19,7 @@ import QualityReview from './pages/QualityReview'
 import SetBuilder from './pages/SetBuilder'
 import SsdSync from './pages/SsdSync'
 import Settings from './pages/Settings'
+import Genres from './pages/Genres'
 
 export default function App() {
   return (
@@ -46,6 +47,7 @@ export default function App() {
           <Route path="sync" element={<ErrorBoundary><SsdSync /></ErrorBoundary>} />
           <Route path="reconciliation" element={<ErrorBoundary><Reconciliation /></ErrorBoundary>} />
           <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
+          <Route path="genres" element={<ErrorBoundary><Genres /></ErrorBoundary>} />
 
           <Route path="dashboard" element={<Navigate to="/" replace />} />
           <Route path="collection" element={<Navigate to="/" replace />} />

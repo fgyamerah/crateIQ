@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added `/genres`, a review-first local genre taxonomy workflow.
+  Default Ghana/Africa and DJ-friendly genres are seeded safely; raw genre is
+  retained while selected normalized values are stored separately in the index.
+
 - 2026-08-05: Added `/enrichment-review`, a multi-source comparison foundation.
   It generates only conservative local filename-hint suggestions today and
   displays source state; no external API or Beets subprocess runs. Selected

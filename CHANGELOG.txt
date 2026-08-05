@@ -2,6 +2,13 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add DB-only Genre Taxonomy review
+
+- Added `/genres` with Ghana/Africa and DJ-friendly preferred genres, editable
+  conservative raw-to-normalized mappings, and explicit local-index review.
+- Raw genre is preserved; selected applies write only `normalized_genre` and
+  provenance. Ambiguous values stay Needs Review and never change files/tags.
+
 [2026-08-05] — feat: add multi-source enrichment review foundation
 
 - Added `/enrichment-review` for conservative local filename-hint suggestions

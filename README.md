@@ -60,6 +60,7 @@ file-writing workflow.
 | Beets enrichment | Selected-field DB-only review | Local missing-field candidates; explicit saved/confirmed artist/title/genre apply, no `beet` invocation or tag/file writes. |
 | Metadata Sources | Settings foundation | Local tags, MIK, Beets, and future APIs are modeled; external APIs are disabled by default and do not yet perform lookup. |
 | Multi-source enrichment review | Implemented foundation | Compares conservative local suggestions and source status; selected empty local-index fields only. No provider API calls. |
+| Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |

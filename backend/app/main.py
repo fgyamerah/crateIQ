@@ -25,6 +25,7 @@ from .api.routes import crates as crates_router
 from .api.routes import duplicates as duplicates_router
 from .api.routes import exports as exports_router
 from .api.routes import health as health_router
+from .api.routes import genres as genres_router
 from .api.routes import insights as insights_router
 from .api.routes import jobs as jobs_router
 from .api.routes import library as library_router
@@ -125,6 +126,7 @@ async def log_request_timing(request, call_next):
 API_PREFIX = "/api"
 
 app.include_router(health_router.router,     prefix=API_PREFIX)
+app.include_router(genres_router.router,     prefix=API_PREFIX)
 app.include_router(runtime_router.router,    prefix=API_PREFIX)
 app.include_router(settings_router.router,   prefix=API_PREFIX)
 app.include_router(jobs_router.router,       prefix=API_PREFIX)

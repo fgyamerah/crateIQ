@@ -88,6 +88,15 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/genres",
+        "purpose": "DB-only genre taxonomy and normalization review",
+        "access": "review-first local-index-only normalization",
+        "endpoints": [
+            ("/api/genres/taxonomy", "dict", ("genres",)),
+            ("/api/genres/review", "dict", ("summary", "items", "safety")),
+        ],
+    },
+    {
         "route": "/audit",
         "purpose": "Latest path/library audit report",
         "access": "read-only",
@@ -277,6 +286,10 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/enrichment/review/preview-refresh (POST, local suggestions only)",
         "/api/enrichment/review/tracks/{track_id}/suggestions/{suggestion_id} (PATCH, DB-only selection)",
         "/api/enrichment/review/apply (POST, explicit selected-field DB-only apply)",
+    ],
+    "/genres": [
+        "/api/genres/review/preview-refresh (POST, local genre values only)",
+        "/api/genres/review/apply (POST, explicit DB-only normalized genre apply)",
     ],
     "/metadata-repair": [
         "/api/metadata-repair/{id}/* (POST)",

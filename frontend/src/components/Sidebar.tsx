@@ -67,6 +67,7 @@ const NAV: NavSection[] = [
       { to: '/enrichment-review', label: 'Enrichment Review', Icon: Sparkles },
       { to: '/metadata-repair', label: 'Metadata Repair', Icon: Wrench,      badgeKey: 'repair' },
       { to: '/metadata-sanitation', label: 'Metadata Sanitation', Icon: Eraser },
+      { to: '/genres', label: 'Genre Taxonomy', Icon: ListChecks },
       { to: '/bpm-review',   label: 'BPM Review',       Icon: Activity,      badgeKey: 'bpm' },
       { to: '/audit',        label: 'Audit',            Icon: ClipboardList },
       { to: '/folders',      label: 'Folders',          Icon: FolderTree },
