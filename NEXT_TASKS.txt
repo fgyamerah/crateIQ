@@ -39,6 +39,17 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Safe Duplicate Review workspace (2026-08-05)
+         `/duplicates` now saves keep/ignore/review-later/unresolved decisions
+         and optional notes only in the selected library's local index, scoped
+         to a safe rmlint preview snapshot. No destructive cleanup action
+         exists; file-resolution design remains intentionally deferred.
+
+[ ] (P1) Duplicate resolution plan and explicit review/backup design
+         Define any future cleanup workflow separately with per-file actions,
+         backups, confirmations, and zero destructive defaults. Do not attach
+         file actions to the current Duplicate Review page.
+
 [x] (P2) Full-workspace application layout (2026-08-05)
          The shared document page shell no longer caps content at a narrow
          desktop width. Primary routes now use the full sidebar-adjacent

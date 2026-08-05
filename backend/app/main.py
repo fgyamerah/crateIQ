@@ -20,6 +20,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.routes import analysis as analysis_router
 from .api.routes import crates as crates_router
+from .api.routes import duplicates as duplicates_router
 from .api.routes import exports as exports_router
 from .api.routes import health as health_router
 from .api.routes import insights as insights_router
@@ -129,6 +130,7 @@ app.include_router(tracks_router.router,     prefix=API_PREFIX)
 app.include_router(insights_router.router,    prefix=API_PREFIX)
 app.include_router(analysis_router.router,   prefix=API_PREFIX)
 app.include_router(crates_router.router,     prefix=API_PREFIX)
+app.include_router(duplicates_router.router, prefix=API_PREFIX)
 app.include_router(smart_crates_router.router, prefix=API_PREFIX)
 app.include_router(playlists_router.router,  prefix=API_PREFIX)
 app.include_router(metadata_repair_router.router, prefix=API_PREFIX)

@@ -137,6 +137,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/duplicates",
+        "purpose": "Database-only duplicate candidate review",
+        "access": "read-only saved preview; refresh and decisions deferred",
+        "endpoints": [
+            ("/api/duplicates/review", "dict", ("summary", "groups", "safety")),
+        ],
+    },
+    {
         "route": "/crates",
         "purpose": "Manual local crate review",
         "access": "read-only list; crate editing deferred",
@@ -216,6 +224,10 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
     "/jobs": [
         "/api/jobs (POST)", "/api/jobs/{id}/cancel (POST)",
         "/api/analysis/jobs/{job_type}/run (POST, runner pending)",
+    ],
+    "/duplicates": [
+        "/api/duplicates/review/preview-refresh (POST, bounded preview snapshot)",
+        "/api/duplicates/review/groups/{group_id}/items/{track_id} (PATCH, DB-only review decision)",
     ],
     "/set-builder": ["/api/playlists/set-builder (POST)"],
     "/exports": ["/api/exports/validate (POST)", "/api/exports/run (POST)"],

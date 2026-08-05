@@ -1841,6 +1841,69 @@ def test_duplicate_preview_uses_rmlint_json_only_and_never_writes(client, monkey
     assert any("timed out" in warning for warning in timed_out.json()["warnings"])
 
 
+def test_duplicate_review_persists_db_only_decisions(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    alpha_path = root / "library" / "house" / "alpha.mp3"
+    beta_path = root / "library" / "house" / "beta.mp3"
+    alpha_path.parent.mkdir(parents=True, exist_ok=True)
+    alpha_path.write_bytes(b"same-review-safe-bytes")
+    beta_path.write_bytes(b"same-review-safe-bytes")
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute("SELECT id, filepath, filename FROM tracks ORDER BY id").fetchall()
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_rmlint_binary", lambda: "/fake/rmlint")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([
+                {"type": "duplicate_file", "checksum": "review-content", "path": str(alpha_path)},
+                {"type": "duplicate_file", "checksum": "review-content", "path": str(beta_path)},
+            ]),
+            stderr="",
+        ),
+    )
+
+    empty = test_client.get("/api/duplicates/review")
+    assert empty.status_code == 200
+    assert empty.json()["groups"] == []
+    assert "Refresh" in empty.json()["message"]
+
+    refreshed = test_client.post("/api/duplicates/review/preview-refresh")
+    assert refreshed.status_code == 200
+    payload = refreshed.json()
+    assert payload["safety"] == ["db_only_review", "no_delete", "no_move", "no_rename", "no_quarantine", "no_tag_writes"]
+    assert payload["summary"] == {"groups": 1, "candidates": 2, "unresolved": 2, "keep": 0, "ignore": 0, "review_later": 0}
+    item = payload["groups"][0]["items"][0]
+    assert not item["relative_path"].startswith(str(root))
+
+    saved = test_client.patch(
+        f"/api/duplicates/review/groups/dup-1/items/{item['track_id']}",
+        json={"decision": "keep", "note": "Use this local copy"},
+    )
+    assert saved.status_code == 200
+    assert saved.json()["summary"]["keep"] == 1
+    assert saved.json()["groups"][0]["items"][0]["note"] == "Use this local copy"
+    reread = test_client.get("/api/duplicates/review")
+    assert reread.json()["groups"][0]["items"][0]["decision"] == "keep"
+
+    invalid = test_client.patch(
+        f"/api/duplicates/review/groups/dup-1/items/{item['track_id']}",
+        json={"decision": "delete", "note": "No"},
+    )
+    assert invalid.status_code == 422
+    missing = test_client.patch("/api/duplicates/review/groups/not-a-group/items/1", json={"decision": "ignore"})
+    assert missing.status_code == 404
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute("SELECT id, filepath, filename FROM tracks ORDER BY id").fetchall()
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert after == before
+    assert {"duplicate_review_snapshots", "duplicate_review_decisions"}.issubset(tables)
+    assert alpha_path.read_bytes() == beta_path.read_bytes() == b"same-review-safe-bytes"
+
+
 def test_audio_quality_preview_uses_ffprobe_json_only_and_never_writes(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"

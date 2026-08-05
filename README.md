@@ -58,7 +58,7 @@ file-writing workflow.
 | BPM analysis with `aubio` | Implemented safe runner | Preview and confirmation required; only missing BPM is eligible. |
 | Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
 | Beets enrichment | Preview/review foundation | Shows incomplete non-critical metadata; no `beet` invocation or apply flow. |
-| Duplicate detection with `rmlint` | Preview-only foundation | Bounded JSON scan; no delete, move, rename, quarantine, or DB decision action. |
+| Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Preview-only foundation | Bounded JSON metadata checks; no transcode, file, tag, or DB writes. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 

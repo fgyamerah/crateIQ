@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added `/duplicates`, a safe Duplicate Review workspace layered
+  over the bounded rmlint preview. Refresh stores only a safe relative-path
+  preview snapshot in the selected library's `processed.db`; keep, ignore,
+  review-later, and unresolved decisions with optional notes are DB-only and
+  scoped to that snapshot. No delete/move/rename/quarantine/tag/file action or
+  automatic resolution exists, and `/jobs` links to the review page.
 - 2026-08-05: Standardized the shared document-style `.page` shell to use the
   full workspace after the sidebar rather than a narrow capped column. This
   aligns Settings, Jobs, Exports, Set Builder, BPM Review, Reconciliation,
@@ -33,7 +39,8 @@
   `/jobs`. It scans at most 100 validated imported paths using JSON stdout,
   returns grouped relative-path candidates only, and has no resolution action.
   It never creates/executes rmlint scripts or writes files, tags, or DB
-  decisions; missing rmlint disables only this workflow.
+  decisions. Duplicate Review can separately store DB-only human review
+  choices; missing rmlint disables only preview refresh, not existing reviews.
 - 2026-08-05: Added a safe Beets enrichment preview. It uses only the local
   index to identify missing artist/title/genre fields and never invokes beet,
   writes tags, moves files, or writes suggestions. The card is review-required

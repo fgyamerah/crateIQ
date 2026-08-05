@@ -21,6 +21,7 @@ import {
   Disc3,
   Heart,
   Settings,
+  CopyCheck,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { fetchReviewSummary } from '../api/insights'
@@ -71,6 +72,7 @@ const NAV: NavSection[] = [
     title: 'Operations',
     items: [
       { to: '/jobs',        label: 'Jobs',        Icon: ListChecks },
+      { to: '/duplicates',  label: 'Duplicates',  Icon: CopyCheck },
       { to: '/crates',      label: 'Manual Crates', Icon: ListMusic },
       { to: '/smart-crates', label: 'Smart Crates', Icon: Sparkles },
       { to: '/set-builder', label: 'Set Builder', Icon: Music },

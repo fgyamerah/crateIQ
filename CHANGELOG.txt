@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add safe Duplicate Review
+
+- Added `/duplicates` and a local-index-only review layer over the bounded
+  rmlint preview. Users can save keep, ignore, review-later, or unresolved
+  decisions with optional notes against a saved preview snapshot.
+- Review state lives only in the selected library's `processed.db`; it never
+  deletes, moves, renames, quarantines, or tags files, and no cleanup action
+  is exposed. `/jobs` now links to this review workspace while remaining
+  explicitly preview-only.
+
 [2026-08-05] — ui: unify full-workspace app layouts
 
 - Removed the shared narrow page cap so document-style routes now use the full

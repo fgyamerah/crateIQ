@@ -417,7 +417,7 @@ def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]
             "preview_only": True,
             "summary": {"total_tracks_checked": 0, "duplicate_groups": 0, "duplicate_candidates": 0},
             "groups": [],
-            "next_step": "Duplicate review and resolution actions are not implemented yet.",
+            "next_step": "Open Duplicate Review to record DB-only keep, ignore, or review-later decisions. No file action exists.",
         }
     if not paths:
         warnings.append("No readable imported tracks are available for a duplicate preview.")
@@ -428,7 +428,7 @@ def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]
             "preview_only": True,
             "summary": {"total_tracks_checked": 0, "duplicate_groups": 0, "duplicate_candidates": 0},
             "groups": [],
-            "next_step": "Duplicate review and resolution actions are not implemented yet.",
+            "next_step": "Open Duplicate Review to record DB-only keep, ignore, or review-later decisions. No file action exists.",
         }
     try:
         completed = subprocess.run(
@@ -494,7 +494,7 @@ def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]
             "duplicate_candidates": duplicate_candidates,
         },
         "groups": groups,
-        "next_step": "Duplicate review and resolution actions are not implemented yet.",
+        "next_step": "Open Duplicate Review to record DB-only keep, ignore, or review-later decisions. No file action exists.",
     }
 
 
