@@ -2,6 +2,13 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: rename Listening Review to Music Review
+
+- Added `/music-review` as the supported user-facing review route and renamed
+  the sidebar/page copy while keeping `/api/reviews/*` unchanged.
+- `/listening` remains a compatibility redirect and preserves query strings,
+  including existing `track_id` deep links. No library data behavior changed.
+
 [2026-08-05] — feat: complete DB-only Listening Review
 
 - Added local review statuses, ratings, notes, play count, and keyboard review

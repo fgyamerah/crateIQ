@@ -1,4 +1,4 @@
-import { BrowserRouter, Navigate, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-router-dom'
 import Layout from './components/Layout'
 import CrateMind from './pages/CrateMind'
 import Crates from './pages/Crates'
@@ -20,7 +20,17 @@ import SetBuilder from './pages/SetBuilder'
 import SsdSync from './pages/SsdSync'
 import Settings from './pages/Settings'
 import Genres from './pages/Genres'
-import Listening from './pages/Listening'
+import MusicReview from './pages/Listening'
+
+function LegacyListeningRedirect() {
+  const location = useLocation()
+  return (
+    <Navigate
+      to={{ pathname: '/music-review', search: location.search, hash: location.hash }}
+      replace
+    />
+  )
+}
 
 export default function App() {
   return (
@@ -49,7 +59,8 @@ export default function App() {
           <Route path="reconciliation" element={<ErrorBoundary><Reconciliation /></ErrorBoundary>} />
           <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
           <Route path="genres" element={<ErrorBoundary><Genres /></ErrorBoundary>} />
-          <Route path="listening" element={<ErrorBoundary><Listening /></ErrorBoundary>} />
+          <Route path="music-review" element={<ErrorBoundary><MusicReview /></ErrorBoundary>} />
+          <Route path="listening" element={<LegacyListeningRedirect />} />
 
           <Route path="dashboard" element={<Navigate to="/" replace />} />
           <Route path="collection" element={<Navigate to="/" replace />} />

@@ -97,8 +97,8 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
-        "route": "/listening",
-        "purpose": "DB-only DJ listening and review queue",
+        "route": "/music-review",
+        "purpose": "DB-only DJ music review queue",
         "access": "review status, rating, notes, and play history only",
         "endpoints": [
             ("/api/reviews/tracks", "dict", ("items", "summary", "safety")),
@@ -299,7 +299,7 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/genres/review/preview-refresh (POST, local genre values only)",
         "/api/genres/review/apply (POST, explicit DB-only normalized genre apply)",
     ],
-    "/listening": [
+    "/music-review": [
         "/api/reviews/tracks/{track_id} (PATCH, DB-only review state)",
         "/api/reviews/tracks/{track_id}/played (POST, DB-only play count)",
     ],
@@ -431,7 +431,7 @@ def test_contract_table_matches_frontend_router():
     source = APP_TSX.read_text(encoding="utf-8")
     supported = set()
     for line in source.splitlines():
-        if "<Route" not in line or "Navigate" in line:
+        if "<Route" not in line or "Navigate" in line or "Redirect" in line:
             continue
         if "index" in line and 'path="' not in line:
             supported.add("/")

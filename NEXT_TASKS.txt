@@ -39,7 +39,8 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
-[x] Complete DB-only Listening Review with local status/rating/notes state.
+[x] Complete DB-only Music Review with local status/rating/notes state and a
+    query-preserving `/listening` compatibility redirect.
 
 [x] Add unified DB-only Metadata Repair Queue with safe workflow routing.
 

@@ -6,9 +6,10 @@
 
 ## Latest Milestone
 
-- 2026-08-05: Added `/listening`, a DB-only DJ listening review queue with
-  status, rating, notes, and keyboard shortcuts. No track tags or media files
-  are changed.
+- 2026-08-05: Renamed the user-facing DB-only workflow to Music Review at
+  `/music-review`. `/listening` redirects compatibly and preserves its query
+  string; the `/api/reviews/*` backend contract remains unchanged. Review
+  status, rating, notes, and keyboard shortcuts never change tags or files.
 
 - 2026-08-05: Added unified `/metadata-repair` DB-only review queue. It
   snapshots conservative local-index metadata issues and routes users to safe
@@ -460,11 +461,12 @@
   and sidebar now expose only supported workflows.
 - Supported frontend routes: `/`, `/quality`, `/issues`, `/enrichment`,
   `/metadata-repair`, `/metadata-sanitation`, `/bpm-review`, `/audit`,
-  `/folders`, `/jobs`, `/crates`, `/smart-crates`, `/set-builder`, `/exports`, `/sync`, and
-  `/reconciliation`.
+  `/folders`, `/jobs`, `/crates`, `/smart-crates`, `/music-review`,
+  `/set-builder`, `/exports`, `/sync`, and `/reconciliation`.
 - Legacy `Dashboard`, `Collection`, and `Tracks` pages and placeholder
   `Settings` remain in source but redirect to `/`; `/export` and `/ssd-sync`
-  are compatibility redirects.
+  are compatibility redirects. `/listening` redirects to `/music-review` and
+  preserves the query string for legacy review links.
 - Frontend install, typecheck, and production build pass. Production npm
   dependencies audit clean after non-breaking updates; clearing the remaining
   development-tool advisories requires a separately tested Vite major upgrade.
