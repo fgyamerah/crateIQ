@@ -2,6 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertOctagon, CheckCircle2, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { fetchLibraryOverview } from '../../api/library'
+import { fetchReviewSummary } from '../../api/reviews'
+import type { ReviewSummary } from '../../api/reviews'
 import type { LibraryOverview } from '../../api/library'
 import { fetchTrack, fetchTrackIssues, fetchTrackPage } from '../../api/tracks'
 import type {
@@ -93,6 +95,7 @@ export default function LibraryView() {
   const [issues, setIssues] = useState<TrackIssueCounts | null>(null)
   const [trackPage, setTrackPage] = useState<TrackPage | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<TrackDetail | null>(null)
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({})
   const [detailLoading, setDetailLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -223,6 +226,18 @@ export default function LibraryView() {
   const issueTotal = issues ? Object.values(issues).reduce((sum, n) => sum + (n || 0), 0) : 0
   const activeFilterCount = [ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter].filter(Boolean).length
 
+  useEffect(() => {
+    let cancelled = false
+    fetchReviewSummary(items.map((track) => track.id))
+      .then((response) => {
+        if (!cancelled) setReviewSummary(response.reviews)
+      })
+      .catch(() => {
+        if (!cancelled) setReviewSummary({})
+      })
+    return () => { cancelled = true }
+  }, [trackPage])
+
   return (
     <div className="lib-workspace">
       <LibraryToolbar
@@ -279,6 +294,7 @@ export default function LibraryView() {
             sort={ui.sort}
             order={ui.order}
             density={ui.density}
+            reviews={reviewSummary}
             onSort={(key) => handleSort(key)}
             onSelect={(id) => setUi((current) => ({ ...current, selectedId: id }))}
             onPrevPage={() => setUi((current) => ({ ...current, offset: Math.max(0, current.offset - LIMIT) }))}

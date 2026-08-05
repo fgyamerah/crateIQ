@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import AudioPreviewPlayer from '../components/player/AudioPreviewPlayer'
 import { apiFetch } from '../api/client'
 import PageHeader from '../components/PageHeader'
@@ -20,17 +21,24 @@ type Track = {
 }
 
 export default function MusicReview() {
+  const [searchParams] = useSearchParams()
   const [tracks, setTracks] = useState<Track[]>([])
   const [selected, setSelected] = useState<Track | null>(null)
   const [notes, setNotes] = useState('')
 
-  const load = async () => {
+  const requestedTrackId = useMemo(() => {
+    const value = Number(searchParams.get('track_id'))
+    return Number.isInteger(value) && value > 0 ? value : null
+  }, [searchParams])
+
+  const load = useCallback(async () => {
     const response = await apiFetch.get<{ items: Track[] }>('/reviews/tracks')
     setTracks(response.items)
-    setSelected(response.items[0] || null)
-  }
+    setSelected(response.items.find((track) => track.track_id === requestedTrackId) ?? response.items[0] ?? null)
+  }, [requestedTrackId])
 
-  useEffect(() => { void load() }, [])
+  useEffect(() => { void load() }, [load])
+  useEffect(() => { setNotes(selected?.notes ?? '') }, [selected?.track_id])
 
   const save = async (status: string) => {
     if (!selected) return

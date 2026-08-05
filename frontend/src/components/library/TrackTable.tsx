@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { CheckCircle2, AlertTriangle } from 'lucide-react'
 import type { TrackSummary } from '../../types/track'
+import type { ReviewSummary } from '../../api/reviews'
+import ReviewStatusBadge from '../reviews/ReviewStatusBadge'
 import type { Density, QualityTierValue, SortKey, SortOrder } from './libraryUtils'
 import {
   ROW_HEIGHT,
@@ -21,6 +23,7 @@ interface Props {
   sort: SortKey
   order: SortOrder
   density: Density
+  reviews: ReviewSummary
   onSort: (key: SortKey) => void
   onSelect: (id: number) => void
   onPrevPage: () => void
@@ -48,7 +51,7 @@ function QualityMeter({ tier }: { tier: QualityTierValue }) {
             className="lib-quality-meter-bar"
             style={{
               height: `${40 + step * 12}%`,
-              background: step <= rank ? color : 'rgba(255,255,255,0.08)',
+              background: step <= rank ? color : 'var(--border)',
             }}
           />
         ))}
@@ -67,6 +70,7 @@ export default function TrackTable({
   sort,
   order,
   density,
+  reviews,
   onSort,
   onSelect,
   onPrevPage,
@@ -110,6 +114,7 @@ export default function TrackTable({
               <th>Camelot</th>
               <th>Genre</th>
               <th>Quality</th>
+              <th>Review</th>
               <th>Status</th>
             </tr>
           </thead>
@@ -117,12 +122,12 @@ export default function TrackTable({
             {loading && items.length === 0 && (
               Array.from({ length: 8 }).map((_, idx) => (
                 <tr key={`lib-skeleton-${idx}`} className="lib-row-skeleton">
-                  <td colSpan={9}><span /></td>
+                  <td colSpan={10}><span /></td>
                 </tr>
               ))
             )}
             {virtualTopPad > 0 && (
-              <tr aria-hidden="true"><td colSpan={9} style={{ height: virtualTopPad, padding: 0, border: 0 }} /></tr>
+              <tr aria-hidden="true"><td colSpan={10} style={{ height: virtualTopPad, padding: 0, border: 0 }} /></tr>
             )}
             {virtualRows.map((track, rowIdx) => (
               <tr
@@ -146,6 +151,13 @@ export default function TrackTable({
                 <td>{displayValue(track.genre)}</td>
                 <td><QualityMeter tier={track.quality_tier} /></td>
                 <td>
+                  <ReviewStatusBadge
+                    trackId={track.id}
+                    status={reviews[String(track.id)]?.review_status}
+                    rating={reviews[String(track.id)]?.rating}
+                  />
+                </td>
+                <td>
                   <div className="lib-status-cell">
                     {track.issues.length === 0
                       ? <CheckCircle2 size={14} className="lib-status-ok" />
@@ -156,11 +168,11 @@ export default function TrackTable({
               </tr>
             ))}
             {virtualBottomPad > 0 && (
-              <tr aria-hidden="true"><td colSpan={9} style={{ height: virtualBottomPad, padding: 0, border: 0 }} /></tr>
+              <tr aria-hidden="true"><td colSpan={10} style={{ height: virtualBottomPad, padding: 0, border: 0 }} /></tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={9} className="lib-empty">
+                <td colSpan={10} className="lib-empty">
                   {total === 0 ? <div className="lib-empty-import"><strong>No tracks imported yet</strong><span>Set up the library, run a read-only scan preview, then import tracks into CrateIQ’s local index.</span><button className="lib-btn lib-btn--primary lib-btn--sm" type="button" onClick={onOpenImportWizard}>Open Library Setup &amp; Import</button></div> : 'No tracks match the current filters.'}
                 </td>
               </tr>

@@ -51,6 +51,7 @@ ROUTE_CONTRACTS: list[dict] = [
             ("/api/stats", "dict", ("tracks_count", "canonical_source")),
             ("/api/library/overview", "dict",
              ("total_tracks", "parse_confidence_breakdown", "genre_top_counts")),
+            ("/api/reviews/summary?track_ids=1", "dict", ("reviews", "safety")),
         ],
     },
     {

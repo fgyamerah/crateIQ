@@ -2,6 +2,13 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add Music Review badges and track deep links
+
+- Added read-only Music Review status/rating badges to Library rows and linked
+  each badge directly to the matching track in `/music-review`.
+- Music Review now honors `track_id` query parameters; legacy `/listening`
+  links continue to preserve the query while redirecting to the supported route.
+
 [2026-08-05] — feat: rename Listening Review to Music Review
 
 - Added `/music-review` as the supported user-facing review route and renamed

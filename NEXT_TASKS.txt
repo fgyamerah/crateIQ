@@ -39,6 +39,9 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Add read-only Music Review badges to Library rows and honor track-specific
+    `/music-review?track_id=…` deep links.
+
 [x] Complete DB-only Music Review with local status/rating/notes state and a
     query-preserving `/listening` compatibility redirect.
 

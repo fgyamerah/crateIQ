@@ -6781,6 +6781,22 @@ tr.row--selected td {
 .lib-status-ok { color: #34d399; flex-shrink: 0; }
 .lib-status-warn { color: var(--brand-coral); flex-shrink: 0; }
 
+.review-status-link {
+  display: inline-flex;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 999px;
+}
+
+.review-status-link:hover .badge {
+  filter: brightness(1.12);
+}
+
+.review-status-link:focus-visible {
+  outline: 2px solid var(--brand-cyan);
+  outline-offset: 2px;
+}
+
 .lib-empty {
   padding: 20px 12px;
   text-align: center;

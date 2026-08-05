@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Library rows now show read-only Music Review status/rating
+  badges backed by the bounded review-summary endpoint. Badge links open the
+  matching track through `/music-review?track_id=…`; no tags or files change.
+
 - 2026-08-05: Renamed the user-facing DB-only workflow to Music Review at
   `/music-review`. `/listening` redirects compatibly and preserves its query
   string; the `/api/reviews/*` backend contract remains unchanged. Review
