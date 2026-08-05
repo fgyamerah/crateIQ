@@ -6,6 +6,11 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Polished `/jobs` into the same compact dark dashboard language
+  as Settings. It now exposes safe workflow modes, candidate/status summaries,
+  filters, policy chips, clearer preview contracts, and confirmation/result
+  summaries without changing any backend runner, preview-only boundary, or
+  data behavior.
 - 2026-08-05: Aligned `/settings` with the dark local-first dashboard visual
   system. It now uses compact anchor navigation, visible Library & Paths,
   Analysis & Tools, Safety & Behavior, Job Defaults, planned Backup & Restore,

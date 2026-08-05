@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — ui: polish the Analysis Jobs dashboard
+
+- Aligned `/jobs` with the Settings dashboard through compact action links,
+  workflow mode/status cards, safety chips, filters, and richer preview/result
+  panels. BPM/key confirmation remains explicit and bounded; preview-only
+  workflows have no run or remediation controls.
+- This is a frontend-only presentation change. Existing tool gating, DB-only
+  runners, preview-only boundaries, and library/data safety behavior are
+  unchanged.
+
 [2026-08-05] — ui: align Settings with the local-first dashboard
 
 - Refined `/settings` into compact Library & Paths, Analysis & Tools, Safety

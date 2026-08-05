@@ -1,5 +1,6 @@
 import { Fragment, useState } from 'react'
 import { RefreshCw, Loader2, XCircle, ScrollText } from 'lucide-react'
+import { Link } from 'react-router-dom'
 import { useJobs } from '../hooks/useJobs'
 import { cancelJob } from '../api/jobs'
 import { ApiError } from '../api/client'
@@ -202,7 +203,7 @@ export default function Jobs() {
   const activeCount = jobs.filter(isActive).length
 
   return (
-    <div className="page">
+    <div className="page jobs-page">
       <PageHeader
         title="Analysis Jobs"
         subtitle="Optional advanced workflows. Core CrateIQ works without these tools."
@@ -210,12 +211,7 @@ export default function Jobs() {
           ? <span className="live-indicator">{activeCount} active</span>
           : undefined
         }
-        actions={
-          <button className="btn btn--ghost btn--sm" onClick={refresh}>
-            <RefreshCw size={13} />
-            Refresh
-          </button>
-        }
+        actions={<div className="jobs-header-actions"><Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools">Settings</Link><Link className="btn btn--ghost btn--sm" to="/">Library</Link><Link className="btn btn--ghost btn--sm" to="/exports">Exports</Link><button className="btn btn--ghost btn--sm" onClick={refresh}><RefreshCw size={13} /> Refresh</button></div>}
       />
 
       {error && (
@@ -225,13 +221,11 @@ export default function Jobs() {
       )}
 
       <section className="section">
-        <div className="card">
-          <AnalysisJobsCatalog />
-        </div>
+        <AnalysisJobsCatalog />
       </section>
 
       <section className="section">
-        <div className="card">
+        <div className="card jobs-history-card">
           <h2 className="card-title">
             Pipeline Job History
             {!loading && <span className="card-title-count">({jobs.length})</span>}

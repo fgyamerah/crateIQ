@@ -7517,19 +7517,40 @@ tr.row--selected td {
 .settings-maintenance-grid svg { color: var(--brand-violet); }
 .settings-maintenance-grid span { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
 .analysis-jobs-kpis { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.analysis-jobs-head { align-items: flex-start; display: flex; gap: 12px; justify-content: space-between; }
+.jobs-page { max-width: 1280px; padding-bottom: 44px; }
+.jobs-header-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+.jobs-history-card { background: linear-gradient(145deg, rgba(22,27,39,.98), rgba(14,18,27,.98)); border-radius: 14px; }
+.analysis-jobs-kpis { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+.analysis-jobs-policy-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.analysis-jobs-policy-chips span, .analysis-job-safety span { align-items: center; background: rgba(20,184,166,.08); border: 1px solid rgba(20,184,166,.23); border-radius: 999px; color: #a5f3e8; display: inline-flex; font-size: 11px; gap: 5px; line-height: 1.2; padding: 5px 7px; }
+.analysis-jobs-policy-chips svg { color: var(--brand-teal); }
+.analysis-jobs-head { align-items: flex-start; border-top: 1px solid var(--border); display: flex; gap: 12px; justify-content: space-between; padding-top: 14px; }
 .analysis-jobs-head .card-title, .analysis-job-card h3 { margin: 0 0 4px; }
 .analysis-jobs-head p, .analysis-job-card p { margin: 0; }
-.analysis-jobs-grid { display: grid; gap: 10px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
-.analysis-job-card, .analysis-job-preview, .analysis-job-history { border-top: 1px solid var(--border); display: grid; gap: 10px; padding-top: 14px; }
-.analysis-job-card { background: color-mix(in srgb, var(--bg) 52%, transparent); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.analysis-job-filters { align-items: center; display: flex; flex-wrap: wrap; gap: 6px; }
+.analysis-job-filters > svg { color: var(--brand-cyan); flex: 0 0 auto; }
+.analysis-job-filters button { align-items: center; background: rgba(8,12,19,.52); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); cursor: pointer; display: inline-flex; font: inherit; font-size: 12px; gap: 6px; padding: 6px 9px; transition: background .12s ease, border-color .12s ease, color .12s ease; }
+.analysis-job-filters button:hover { border-color: rgba(20,184,166,.46); color: var(--text); }
+.analysis-job-filters button.is-active { background: rgba(20,184,166,.13); border-color: rgba(20,184,166,.45); color: #c9fff7; }
+.analysis-job-filters button span { background: rgba(255,255,255,.07); border-radius: 999px; color: inherit; font-size: 10px; min-width: 17px; padding: 1px 5px; text-align: center; }
+.analysis-jobs-grid { display: grid; gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.analysis-job-card, .analysis-job-preview, .analysis-job-history { display: grid; gap: 10px; }
+.analysis-job-card { background: linear-gradient(150deg, rgba(22,27,39,.98), rgba(12,16,24,.98)); border: 1px solid var(--border); border-radius: 14px; padding: 14px; }
 .analysis-job-card-head { align-items: flex-start; display: flex; gap: 10px; justify-content: space-between; }
 .analysis-job-card-head > div { min-width: 0; }
 .analysis-job-card-head p, .analysis-job-meta { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .analysis-job-meta { display: flex; flex-wrap: wrap; gap: 7px 12px; }
 .analysis-job-meta strong { color: var(--text); }
+.analysis-job-safety { display: flex; flex-wrap: wrap; gap: 5px; }
+.analysis-job-safety span { background: rgba(34,211,238,.07); border-color: rgba(34,211,238,.2); color: #b9f5ff; font-size: 10px; }
 .analysis-job-run-hint { color: var(--text-muted); font-size: 12px; padding: 6px 0; }
-.analysis-bpm-confirm { align-items: end; border-top: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 10px; padding-top: 12px; }
+.analysis-job-preview { background: linear-gradient(145deg, rgba(22,27,39,.98), rgba(14,18,27,.98)); border: 1px solid var(--border); border-radius: 14px; margin-top: 4px; padding: 18px; }
+.analysis-job-preview .settings-import-samples ul { max-height: 250px; }
+.analysis-preview-contract { background: rgba(8,12,19,.48); border: 1px solid rgba(67,77,108,.58); border-radius: 9px; color: var(--text-muted); font-size: 12px; line-height: 1.4; padding: 8px 10px; }
+.analysis-bpm-confirm { align-items: end; background: rgba(8,12,19,.48); border: 1px solid rgba(20,184,166,.3); border-radius: 10px; display: flex; flex-wrap: wrap; gap: 10px; padding: 12px; }
+.analysis-run-contract { display: grid; flex: 1 1 100%; gap: 2px; }
+.analysis-run-contract strong { color: var(--text); font-size: 12px; }
+.analysis-run-contract span { color: var(--text-muted); font-size: 11px; }
 .analysis-bpm-confirm .form-check { flex: 1 1 260px; }
 .analysis-bpm-confirm .settings-note { display: grid; gap: 5px; min-width: 110px; }
 .analysis-bpm-confirm .form-input { min-width: 110px; }
@@ -7541,6 +7562,7 @@ tr.row--selected td {
   .settings-import-summary, .settings-library-metrics, .settings-job-defaults, .settings-maintenance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .analysis-jobs-kpis, .analysis-jobs-grid { grid-template-columns: 1fr; }
   .analysis-jobs-head, .analysis-job-card-head { flex-direction: column; }
+  .jobs-header-actions { justify-content: flex-start; }
 }
 .manual-library-picker { margin-top: 20px; }
 .manual-library-picker > .form-input { margin-bottom: 8px; max-width: 520px; }
@@ -7587,10 +7609,12 @@ tr.row--selected td {
   .manual-crate-track-actions { margin-left: 38px; }
   .audio-preview-controls { flex-wrap: wrap; }
   .settings-kpis, .settings-capability-list { grid-template-columns: 1fr; }
+  .analysis-jobs-kpis, .analysis-jobs-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
   .manual-crates-kpis { grid-template-columns: 1fr; }
+  .analysis-jobs-kpis, .analysis-jobs-grid { grid-template-columns: 1fr; }
   .smart-criteria { grid-template-columns: 1fr; }
   .crate-export-controls { grid-template-columns: 1fr; }
   .serato-export-controls { grid-template-columns: 1fr; }
