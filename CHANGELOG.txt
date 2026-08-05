@@ -2,6 +2,13 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: complete local Genre Taxonomy management
+
+- Added DB-only preferred genre and raw-mapping update/disable endpoints and
+  management controls. Enabled mappings alone drive preview suggestions.
+- Raw genre remains preserved; ambiguous labels require Needs Review rather
+  than an aggressive genre guess. No tag or media-file writes are involved.
+
 [2026-08-05] — feat: add DB-only Genre Taxonomy review
 
 - Added `/genres` with Ghana/Africa and DJ-friendly preferred genres, editable

@@ -39,6 +39,8 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Complete DB-only Genre Taxonomy preferred-genre and mapping management.
+
 [x] Add DB-only Genre Taxonomy review with conservative mappings and raw genre
     preservation. Future work: richer mapping editing and local review notes.
 

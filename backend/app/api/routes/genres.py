@@ -44,6 +44,21 @@ def add_taxonomy(body:GenreIn):
   try:c.execute('INSERT INTO genre_taxonomy(name,parent_name,description,enabled,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(body.name.strip(),body.parent_name,body.description,int(body.enabled),body.sort_order,now(),now()))
   except sqlite3.IntegrityError:raise HTTPException(422,'Preferred genre already exists.')
  return get_taxonomy()
+@router.patch('/genres/taxonomy/{genre_id}')
+def patch_taxonomy(body:GenreIn,genre_id:int=Path(ge=1)):
+ with sqlite3.connect(db()) as c:
+  c.row_factory=sqlite3.Row;ensure(c); existing=c.execute('SELECT * FROM genre_taxonomy WHERE id=?',(genre_id,)).fetchone()
+  if not existing:raise HTTPException(404,'Preferred genre not found.')
+  duplicate=c.execute('SELECT id FROM genre_taxonomy WHERE LOWER(name)=LOWER(?) AND id<>?',(body.name.strip(),genre_id)).fetchone()
+  if duplicate:raise HTTPException(422,'Preferred genre already exists.')
+  c.execute('UPDATE genre_taxonomy SET name=?,parent_name=?,description=?,enabled=?,sort_order=?,updated_at=? WHERE id=?',(body.name.strip(),body.parent_name,body.description,int(body.enabled),body.sort_order,now(),genre_id))
+ return get_taxonomy()
+@router.delete('/genres/taxonomy/{genre_id}')
+def disable_taxonomy(genre_id:int=Path(ge=1)):
+ with sqlite3.connect(db()) as c:
+  ensure(c); changed=c.execute('UPDATE genre_taxonomy SET enabled=0,updated_at=? WHERE id=?',(now(),genre_id)).rowcount
+  if not changed:raise HTTPException(404,'Preferred genre not found.')
+ return get_taxonomy()
 @router.get('/genres/mappings')
 def get_mappings():
  try:
@@ -55,10 +70,29 @@ def get_mappings():
 @router.post('/genres/mappings')
 def add_mapping(body:MappingIn):
  with sqlite3.connect(db()) as c:
-  ensure(c); valid={x['name'] for x in taxonomy(c)}
+  ensure(c); valid={x['name'] for x in taxonomy(c) if x['enabled']}
   if body.normalized_genre not in valid:raise HTTPException(422,'Normalized genre must be in the preferred taxonomy.')
+  if body.confidence not in {'high','medium','low','manual'} or body.source not in {'default_taxonomy','user_mapping','imported_metadata','filename_hint'}:raise HTTPException(422,'Invalid mapping confidence or source.')
+  if body.raw_genre.strip().casefold() in {'afro','dance'} and body.normalized_genre != 'Needs Review':raise HTTPException(422,'Ambiguous raw genres must map to Needs Review.')
   try:c.execute('INSERT INTO genre_mappings(raw_genre,normalized_genre,confidence,source,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(body.raw_genre.strip().casefold(),body.normalized_genre,body.confidence,body.source,int(body.enabled),now(),now()))
   except sqlite3.IntegrityError:raise HTTPException(422,'Raw genre mapping already exists.')
+ return get_mappings()
+@router.patch('/genres/mappings/{mapping_id}')
+def patch_mapping(body:MappingIn,mapping_id:int=Path(ge=1)):
+ with sqlite3.connect(db()) as c:
+  c.row_factory=sqlite3.Row;ensure(c)
+  if not c.execute('SELECT id FROM genre_mappings WHERE id=?',(mapping_id,)).fetchone():raise HTTPException(404,'Genre mapping not found.')
+  valid={x['name'] for x in taxonomy(c) if x['enabled']}
+  if body.normalized_genre not in valid or body.confidence not in {'high','medium','low','manual'} or body.source not in {'default_taxonomy','user_mapping','imported_metadata','filename_hint'}:raise HTTPException(422,'Invalid normalized genre, confidence, or source.')
+  duplicate=c.execute('SELECT id FROM genre_mappings WHERE LOWER(raw_genre)=LOWER(?) AND id<>?',(body.raw_genre.strip(),mapping_id)).fetchone()
+  if duplicate:raise HTTPException(422,'Raw genre mapping already exists.')
+  c.execute('UPDATE genre_mappings SET raw_genre=?,normalized_genre=?,confidence=?,source=?,enabled=?,updated_at=? WHERE id=?',(body.raw_genre.strip().casefold(),body.normalized_genre,body.confidence,body.source,int(body.enabled),now(),mapping_id))
+ return get_mappings()
+@router.delete('/genres/mappings/{mapping_id}')
+def disable_mapping(mapping_id:int=Path(ge=1)):
+ with sqlite3.connect(db()) as c:
+  ensure(c); changed=c.execute('UPDATE genre_mappings SET enabled=0,updated_at=? WHERE id=?',(now(),mapping_id)).rowcount
+  if not changed:raise HTTPException(404,'Genre mapping not found.')
  return get_mappings()
 @router.get('/genres/review')
 def review():
@@ -73,7 +107,7 @@ def review():
 @router.post('/genres/review/preview-refresh')
 def refresh():
  with sqlite3.connect(db()) as c:
-  c.row_factory=sqlite3.Row;ensure(c); maps={x['raw_genre']:x for x in mapping(c)};items=[]
+  c.row_factory=sqlite3.Row;ensure(c); maps={x['raw_genre']:x for x in mapping(c) if x['enabled']};items=[]
   for row in c.execute('SELECT id,title,artist,genre FROM tracks'):
    raw=(row['genre'] or '').strip(); key=raw.casefold(); hit=maps.get(key); suggested=hit['normalized_genre'] if hit else ('Needs Review' if raw else None)
    if suggested:items.append({'track_id':row['id'],'title':row['title'],'artist':row['artist'],'raw_genre':raw,'current_genre':raw,'suggested_genre':suggested,'confidence':hit['confidence'] if hit else 'low','reason':'matched mapping' if hit else 'ambiguous or missing genre; no automatic guess','decision':'pending','note':''})

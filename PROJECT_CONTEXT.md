@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Genre Taxonomy now supports DB-only preferred genre and mapping
+  create/update/disable operations. Only enabled mappings are used for new
+  review previews; normalized apply remains explicit and preserves raw genre.
+
 - 2026-08-05: Added `/genres`, a review-first local genre taxonomy workflow.
   Default Ghana/Africa and DJ-friendly genres are seeded safely; raw genre is
   retained while selected normalized values are stored separately in the index.
