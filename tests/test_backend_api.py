@@ -2231,6 +2231,19 @@ def test_listening_review_is_db_only_and_validates_review_fields(client):
         assert conn.execute("SELECT bpm, key_camelot FROM tracks WHERE id=?", (track_id,)).fetchone() == before
 
 
+def test_review_summary_is_read_only_and_returns_requested_ids(client):
+    test_client, root = client
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        ids = [row[0] for row in conn.execute("SELECT id FROM tracks LIMIT 2")]
+        before = conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='track_reviews'").fetchone()[0]
+    response = test_client.get("/api/reviews/summary", params={"track_ids": f"{ids[0]},bad,{ids[1]},999999"})
+    assert response.status_code == 200
+    assert set(response.json()["reviews"]) == {str(value) for value in ids}
+    assert response.json()["reviews"][str(ids[0])]["review_status"] == "unreviewed"
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        assert conn.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name='track_reviews'").fetchone()[0] == before
+
+
 def test_settings_validates_and_saves_a_pending_library_root(client, monkeypatch, tmp_path):
     test_client, active_root = client
     pending_root = tmp_path / "next-library"

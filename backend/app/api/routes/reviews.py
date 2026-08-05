@@ -31,6 +31,14 @@ def get_review(track_id:int=Path(ge=1)):
    ensure(c);result=item(c,track_id);result['safety']=['db_only','no_tag_writes','no_file_writes'];return result
  except LookupError as e:raise HTTPException(404,str(e))
  except ValueError as e:raise HTTPException(422,str(e))
+@router.get('/reviews/summary')
+def summaries(track_ids:str=''):
+ ids=[int(value) for value in track_ids.split(',') if value.strip().isdigit()][:200]
+ if not ids:return {'reviews':{},'safety':['db_only','read_only','no_tag_writes','no_file_writes']}
+ try:
+  with sqlite3.connect(db()) as c:
+   c.row_factory=sqlite3.Row; placeholders=','.join('?' for _ in ids); has=c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='track_reviews'").fetchone(); sql=f"SELECT t.id track_id," + ("COALESCE(r.review_status,'unreviewed') review_status,r.rating FROM tracks t LEFT JOIN track_reviews r ON r.track_id=t.id" if has else "'unreviewed' review_status,NULL rating FROM tracks t") + f" WHERE t.id IN ({placeholders})";rows=c.execute(sql,ids);return {'reviews':{str(row['track_id']):{'review_status':row['review_status'],'rating':row['rating']} for row in rows},'safety':['db_only','read_only','no_tag_writes','no_file_writes']}
+ except ValueError:return {'reviews':{},'safety':['db_only','read_only','no_tag_writes','no_file_writes']}
 @router.patch('/reviews/tracks/{track_id}')
 def update(body:Update,track_id:int=Path(ge=1)):
  if body.review_status is not None and body.review_status not in STATUSES:raise HTTPException(422,'Invalid review status.')
