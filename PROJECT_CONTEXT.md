@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Music Review now uses the Library's dense dark DJ-dashboard
+  direction: real review metrics, a full-width track queue, a sticky selected-
+  track player/review rail, the three-band visual, and explicit previous/next
+  controls. `/music-review?track_id=…` selection and the query-preserving
+  `/listening` redirect remain intact; selecting alone performs no DB write.
+  Shortcuts ignore inputs, textareas, selects, buttons, and editable elements.
+
 - 2026-08-05: Added reusable `ThreeBandWaveform.tsx` to the Library inspector
   and Music Review. Its low/mid/high bars are deterministic presentation from
   a track id, not analyzed waveform data; it reads and writes no audio or tags.

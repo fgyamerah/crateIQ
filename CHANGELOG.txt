@@ -2,6 +2,15 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — style: align Music Review with Library dashboard
+
+- Rebuilt Music Review as a full-width dark DJ workspace with compact review
+  metrics, a dense selectable track queue, a selected-track player/review rail,
+  the three-band visual, and visible previous/next controls.
+- Preserved `/music-review` deep links, the query-preserving `/listening`
+  redirect, DB-only status/rating/notes, and all keyboard shortcuts; shortcut
+  handling now ignores form fields and editable elements.
+
 [2026-08-05] — feat: add three-band waveform visual
 
 - Added a reusable deterministic low/mid/high equalizer-style visual to the

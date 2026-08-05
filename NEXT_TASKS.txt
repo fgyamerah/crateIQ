@@ -39,6 +39,9 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Align Music Review with the Library DJ dashboard while preserving deep
+    links, DB-only review controls, audio preview, and form-safe shortcuts.
+
 [x] Add a reusable visual-only low/mid/high equalizer-style waveform to the
     Library inspector and Music Review; no audio analysis or file access.
 

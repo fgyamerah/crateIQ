@@ -6,6 +6,7 @@ import { apiFetch } from '../api/client'
 import PageHeader from '../components/PageHeader'
 import StatusStrip from '../components/ui/StatusStrip'
 import Badge from '../components/ui/Badge'
+import type { BadgeTone } from '../components/ui/Badge'
 
 type Track = {
   track_id: number
@@ -21,11 +22,37 @@ type Track = {
   notes: string
 }
 
+const REVIEW_STATUSES = [
+  { value: 'reviewed', label: 'Reviewed', shortcut: 'R' },
+  { value: 'favorite', label: 'Favorite', shortcut: 'F' },
+  { value: 'maybe', label: 'Maybe', shortcut: 'M' },
+  { value: 'rejected', label: 'Rejected', shortcut: 'X' },
+  { value: 'needs_work', label: 'Needs Work', shortcut: 'W' },
+  { value: 'unreviewed', label: 'Unreviewed', shortcut: '—' },
+] as const
+
+function reviewLabel(status: string): string {
+  return REVIEW_STATUSES.find((item) => item.value === status)?.label ?? 'Unreviewed'
+}
+
+function reviewTone(status: string): BadgeTone {
+  if (status === 'favorite' || status === 'reviewed') return 'succeeded'
+  if (status === 'rejected') return 'failed'
+  if (status === 'maybe' || status === 'needs_work') return 'pending'
+  return 'info'
+}
+
+function displayTitle(track: Track): string {
+  return track.title || track.filename || 'Untitled track'
+}
+
 export default function MusicReview() {
   const [searchParams] = useSearchParams()
   const [tracks, setTracks] = useState<Track[]>([])
   const [selected, setSelected] = useState<Track | null>(null)
   const [notes, setNotes] = useState('')
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
 
   const requestedTrackId = useMemo(() => {
     const value = Number(searchParams.get('track_id'))
@@ -33,9 +60,17 @@ export default function MusicReview() {
   }, [searchParams])
 
   const load = useCallback(async () => {
-    const response = await apiFetch.get<{ items: Track[] }>('/reviews/tracks')
-    setTracks(response.items)
-    setSelected(response.items.find((track) => track.track_id === requestedTrackId) ?? response.items[0] ?? null)
+    setLoading(true)
+    try {
+      const response = await apiFetch.get<{ items: Track[] }>('/reviews/tracks')
+      setTracks(response.items)
+      setSelected(response.items.find((track) => track.track_id === requestedTrackId) ?? response.items[0] ?? null)
+      setError(null)
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : 'Music Review could not be loaded.')
+    } finally {
+      setLoading(false)
+    }
   }, [requestedTrackId])
 
   useEffect(() => { void load() }, [load])
@@ -51,10 +86,32 @@ export default function MusicReview() {
     setSelected(next)
   }
 
+  const saveRating = async (rating: number) => {
+    if (!selected) return
+    const next = await apiFetch.patch<Track>(`/reviews/tracks/${selected.track_id}`, { rating, notes })
+    setTracks((current) => current.map((track) => track.track_id === next.track_id ? next : track))
+    setSelected(next)
+  }
+
+  const selectedIndex = tracks.findIndex((track) => track.track_id === selected?.track_id)
+  const selectRelative = (delta: number) => {
+    if (!tracks.length) return
+    const nextIndex = (selectedIndex + delta + tracks.length) % tracks.length
+    setSelected(tracks[nextIndex])
+  }
+
+  const reviewCounts = useMemo(() => ({
+    reviewed: tracks.filter((track) => track.review_status !== 'unreviewed').length,
+    favorite: tracks.filter((track) => track.review_status === 'favorite').length,
+    needsWork: tracks.filter((track) => track.review_status === 'needs_work').length,
+    unreviewed: tracks.filter((track) => track.review_status === 'unreviewed').length,
+  }), [tracks])
+
   useEffect(() => {
     const handler = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement
-      if (target.matches('input,textarea,select,button')) return
+      const target = event.target as Element | null
+      if (event.metaKey || event.ctrlKey || event.altKey || event.repeat) return
+      if (target?.closest('input, textarea, select, button, [contenteditable="true"], [role="textbox"]')) return
       const index = tracks.findIndex((track) => track.track_id === selected?.track_id)
       const key = event.key.toLowerCase()
       const status: Record<string, string> = {
@@ -82,28 +139,67 @@ export default function MusicReview() {
   }, [tracks, selected, notes])
 
   return (
-    <main className="page">
-      <PageHeader title="Music Review" subtitle="Listen, rate, and mark tracks without changing files or tags." />
-      <StatusStrip tone="info">
+    <main className="page music-review-page">
+      <PageHeader
+        title="Music Review"
+        subtitle="Listen, rate, and triage your local library without changing files or tags."
+        badge={<Badge tone="info">DB only</Badge>}
+      />
+      <StatusStrip tone="info" className="music-review-safety">
         DB-only review flags, rating, and notes. No tag writes or file changes. Shortcuts: F favorite · M maybe · R reviewed · X reject · W needs work · N/P next/previous.
       </StatusStrip>
-      <div className="beets-review-layout">
-        <aside className="beets-review-candidates">
-          {tracks.map((track) => (
-            <button
-              className="beets-review-option"
-              key={track.track_id}
-              onClick={() => { setSelected(track); setNotes(track.notes) }}
-            >
-              <span>
-                <strong>{track.title || track.filename}</strong>
-                <small>{track.artist || 'Unknown artist'} · {track.genre || 'Unknown genre'}</small>
-              </span>
-              <Badge tone="info">{track.review_status}</Badge>
-            </button>
-          ))}
-        </aside>
-        <section className="beets-review-detail">
+
+      {error && <StatusStrip tone="danger">{error}</StatusStrip>}
+
+      <section className="music-review-kpis" aria-label="Music Review status summary">
+        <div><span>Total queue</span><strong>{tracks.length}</strong><small>Local tracks</small></div>
+        <div><span>Reviewed</span><strong>{reviewCounts.reviewed}</strong><small>Any saved decision</small></div>
+        <div><span>Favorites</span><strong>{reviewCounts.favorite}</strong><small>Marked for recall</small></div>
+        <div><span>Needs work</span><strong>{reviewCounts.needsWork}</strong><small>Follow-up queue</small></div>
+        <div><span>Unreviewed</span><strong>{reviewCounts.unreviewed}</strong><small>Still to hear</small></div>
+      </section>
+
+      <div className="music-review-layout">
+        <section className="music-review-queue" aria-label="Tracks awaiting music review">
+          <div className="music-review-panel-head">
+            <div><h2>Review queue</h2><p>Selecting a track loads it without saving a review.</p></div>
+            <span>{loading ? 'Loading…' : `${tracks.length} tracks`}</span>
+          </div>
+          <div className="music-review-list-head" aria-hidden="true">
+            <span>#</span><span>Track</span><span>Artist</span><span>BPM</span><span>Key</span><span>Review</span>
+          </div>
+          <div className="music-review-list">
+            {tracks.map((track, index) => (
+              <button
+                className={`music-review-row${selected?.track_id === track.track_id ? ' is-selected' : ''}`}
+                key={track.track_id}
+                onClick={() => setSelected(track)}
+                aria-pressed={selected?.track_id === track.track_id}
+              >
+                <span className="music-review-row-index">{index + 1}</span>
+                <span className="music-review-row-track">
+                  <strong>{displayTitle(track)}</strong>
+                  <small>{track.genre || 'Unknown genre'}</small>
+                </span>
+                <span>{track.artist || 'Unknown artist'}</span>
+                <span className="music-review-mono">{track.bpm?.toFixed(1) ?? '—'}</span>
+                <span className="music-review-key">{track.key_camelot || '—'}</span>
+                <Badge tone={reviewTone(track.review_status)}>{reviewLabel(track.review_status)}{track.rating ? ` · ${track.rating}/5` : ''}</Badge>
+              </button>
+            ))}
+            {!loading && tracks.length === 0 && <p className="music-review-empty">No tracks are available for Music Review.</p>}
+          </div>
+        </section>
+
+        <aside className="music-review-detail">
+          <div className="music-review-panel-head">
+            <div>
+              <span className="music-review-kicker">Selected track</span>
+              <h2>{selected ? displayTitle(selected) : 'Nothing selected'}</h2>
+              <p>{selected?.artist || 'Choose a track from the queue.'}</p>
+            </div>
+            {selected && <Badge tone={reviewTone(selected.review_status)}>{reviewLabel(selected.review_status)}{selected.rating ? ` · ${selected.rating}/5` : ''}</Badge>}
+          </div>
           <AudioPreviewPlayer
             track={selected ? {
               id: selected.track_id,
@@ -119,32 +215,63 @@ export default function MusicReview() {
           <ThreeBandWaveform seed={selected?.track_id ?? 0} inactive={!selected} />
           {selected && (
             <>
-              <div className="settings-action-row">
-                {['reviewed', 'favorite', 'maybe', 'rejected', 'needs_work', 'unreviewed'].map((status) => (
-                  <button className="btn btn--ghost btn--sm" key={status} onClick={() => void save(status)}>
-                    {status.replace(/_/g, ' ')}
-                  </button>
-                ))}
+              <div className="music-review-status-section">
+                <div className="music-review-section-head">
+                  <strong>Review status</strong>
+                  <span>Keyboard shortcuts stay off while typing.</span>
+                </div>
+                <div className="music-review-status-actions">
+                  {REVIEW_STATUSES.map((status) => (
+                    <button
+                      className={`music-review-status-btn music-review-status-btn--${status.value}${selected.review_status === status.value ? ' is-active' : ''}`}
+                      key={status.value}
+                      onClick={() => void save(status.value)}
+                      aria-pressed={selected.review_status === status.value}
+                    >
+                      {status.label}<kbd>{status.shortcut}</kbd>
+                    </button>
+                  ))}
+                </div>
               </div>
-              <label>
-                Rating
-                <select
-                  className="form-input"
-                  value={selected.rating ?? 0}
-                  onChange={(event) => void apiFetch.patch(`/reviews/tracks/${selected.track_id}`, { rating: Number(event.target.value), notes })}
-                >
-                  <option value="0">No rating</option>
-                  {[1, 2, 3, 4, 5].map((rating) => <option key={rating}>{rating}</option>)}
-                </select>
-              </label>
-              <label>
+
+              <div className="music-review-fields">
+                <label>
+                  Rating 0–5
+                  <select
+                    className="form-input"
+                    value={selected.rating ?? 0}
+                    onChange={(event) => void saveRating(Number(event.target.value))}
+                  >
+                    <option value="0">0 — No rating</option>
+                    {[1, 2, 3, 4, 5].map((rating) => <option key={rating} value={rating}>{rating}</option>)}
+                  </select>
+                </label>
+                <div className="music-review-position">
+                  <span>Queue position</span>
+                  <strong>{selectedIndex + 1} / {tracks.length}</strong>
+                </div>
+              </div>
+
+              <label className="music-review-notes">
                 Notes
-                <textarea className="form-input" value={notes} onChange={(event) => setNotes(event.target.value)} />
+                <textarea
+                  className="form-input"
+                  value={notes}
+                  onChange={(event) => setNotes(event.target.value)}
+                  placeholder="Mix context, energy, crowd response, or follow-up notes…"
+                />
               </label>
-              <button className="btn btn--primary" onClick={() => void save(selected.review_status)}>Save notes</button>
+
+              <div className="music-review-footer-actions">
+                <div>
+                  <button className="btn btn--ghost btn--sm" onClick={() => selectRelative(-1)} disabled={!tracks.length}>← Previous</button>
+                  <button className="btn btn--ghost btn--sm" onClick={() => selectRelative(1)} disabled={!tracks.length}>Next →</button>
+                </div>
+                <button className="btn btn--primary" onClick={() => void save(selected.review_status)}>Save notes</button>
+              </div>
             </>
           )}
-        </section>
+        </aside>
       </div>
     </main>
   )
