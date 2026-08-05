@@ -1,1014 +1,196 @@
-# CrateIQ
+# crateIQ
 
-[![Status](https://img.shields.io/badge/status-active-green)](#current-platform-status)
-[![Backend](https://img.shields.io/badge/backend-FastAPI-009688)](#backend-api)
-[![Frontend](https://img.shields.io/badge/frontend-React%20%2B%20Vite-646cff)](#frontend-dashboard)
-[![Safety](https://img.shields.io/badge/safety-dry--run%20first-blue)](#safety-model)
-[![Mode](https://img.shields.io/badge/mode-review--first-informational)](#core-philosophy)
+**Local-first DJ music library intelligence for safer crates, metadata review, harmonic planning, and export prep.**
 
-CrateIQ is a local-first DJ library operations platform for building and maintaining a clean, auditable, Rekordbox-ready music library.
+crateIQ is a local app for DJs who want to inspect a music library, make
+deliberate crates, review existing metadata, and prepare portable exports
+without handing control of their collection to a cloud service or automatic
+file-writing workflow.
 
-It is built around deterministic automation, explicit review queues, and conservative metadata ownership. It helps inspect, normalize, reconcile, and enrich a DJ library without handing control of musical analysis or performance-critical data to unstable automation.
+![crateIQ Library workspace](docs/screenshots/crateiq-library.webp)
 
-CrateIQ is not a Rekordbox replacement. It is an operational layer around a DJ library: it prepares, audits, reviews, and organizes metadata so Rekordbox and Mixed In Key can remain the source of truth for DJ performance workflows.
+*The Library workspace: local index health, filtering, track review, harmonic context, and browser-native preview.*
 
-## Overview
+## What crateIQ does
 
-CrateIQ started as a pipeline for cleaning messy downloaded audio files and evolved into a broader library control system:
+- Initializes and imports a local music folder into CrateIQ's own SQLite index.
+- Reviews library quality, issues, folders, and existing metadata.
+- Builds ordered Manual Crates and saves Smart Crate suggestions as editable
+  Manual Crates.
+- Uses browser-native playback to preview files that are safely available under
+  the selected library root.
+- Creates portable CSV, JSON, M3U, and UTF-8 M3U8 crate exports.
+- Stages Serato handoffs and Rekordbox-importable XML; it does not write either
+  application's live database.
+- Reviews and imports Mixed In Key-compatible BPM/key metadata into CrateIQ's
+  local index only.
+- Offers optional, explicitly requested BPM and key/Camelot analysis for tracks
+  still missing trusted values.
 
-- A canonical SQLite `tracks` table representing the current library state.
-- A historical `processed_state` table used for stage tracking, audit, and provenance.
-- Deterministic local metadata extraction from existing audio tags.
-- Conservative filename parsing with confidence scoring.
-- Online enrichment candidate scoring without automatic metadata application.
-- Human review state for enrichment decisions.
-- A root-aware read-first backend API.
-- A dense operational frontend dashboard for browsing tracks, issues, folders, audit reports, and enrichment queues.
+## Local-first safety model
 
-The platform is designed for large libraries where accidental writes, metadata churn, and path drift are more dangerous than missing a single enrichment opportunity.
+- **Your source music files and tags are not modified** by library setup,
+  import, crate building, preview, or the portable/staged export workflows.
+- **Import does not run BPM or key analysis.** Analysis is optional,
+  preview-first, and only starts after explicit confirmation.
+- **Mixed In Key-compatible values are trusted and preserved.** crateIQ fills
+  only missing local-index values and never overwrites trusted BPM, key, or cue
+  information.
+- **Optional tools are scoped to their own jobs.** Their absence does not block
+  import, browsing, crates, preview, or portable exports.
+- **Serato and Rekordbox live databases are never written.** Exports are staged
+  artifacts for review or manual import.
+- **No cloud account is required.** crateIQ is intended for trusted local use;
+  it currently has no authentication for remote or multi-user deployment.
 
-## Core Philosophy
+## Feature status
 
-CrateIQ follows a review-first operating model:
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
+| Manual Crates | Implemented | Create, edit, reorder, and save local DJ working lists. |
+| Smart Crates | Implemented | Deterministic suggestions from existing local metadata; save as Manual Crates. |
+| Audio preview | Implemented | Browser-native playback for safely resolvable local files. |
+| Portable exports | Implemented | CSV, JSON, M3U, and M3U8, with safe staged output paths. |
+| Staged Serato export | Implemented | M3U8 plus manifest handoff; exact binary `.crate` writing is deferred. |
+| Staged Rekordbox XML export | Implemented | Importable XML file only; no live Rekordbox database writer. |
+| MIK coverage/import | Implemented foundation | Explicit read-only metadata preview and DB-only import; cue-tag parsing is deferred. |
+| BPM analysis with `aubio` | Implemented safe runner | Preview and confirmation required; only missing BPM is eligible. |
+| Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
+| Beets enrichment | Preview/review foundation | Shows incomplete non-critical metadata; no `beet` invocation or apply flow. |
+| Duplicate detection with `rmlint` | Preview-only foundation | Bounded JSON scan; no delete, move, rename, quarantine, or DB decision action. |
+| Audio quality probe | Pending | Tool-gated; no runner is exposed yet. |
+| Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
-- Deterministic operations before AI or online lookup.
-- Local data before external providers.
-- Dry-run by default for write-capable commands.
-- Apply mode requires explicit confirmation with `--apply --yes`.
-- No silent tag writes.
-- No silent file moves.
-- No silent database mutation.
-- Current-state data and historical/audit data are separated.
-- Human review is required before applying enrichment metadata.
+## Screenshots
 
-Metadata ownership is explicit:
+### Library
 
-- `tracks` owns CrateIQ's canonical current-state library record.
-- `processed_state` owns historical processing and incremental stage audit.
-- Mixed In Key and Rekordbox own BPM, key, beatgrid, cue, and performance preparation data.
-- CrateIQ must not overwrite BPM, key, cues, beatgrids, or other performance-critical DJ data.
+![crateIQ Library](docs/screenshots/crateiq-library.webp)
 
-The project prefers a safe skip over a confident-looking wrong update.
+### Analysis Jobs
 
-## Architecture
+![crateIQ Analysis Jobs](docs/screenshots/crateiq-jobs.webp)
 
-CrateIQ is organized as a local pipeline plus an operational app.
+### Manual Crates
 
-```text
-Audio files / DJ library root
-        |
-        v
-pipeline.py commands
-        |
-        +-- path audit and path planning
-        +-- tracks table build/update helpers
-        +-- local metadata extraction
-        +-- deterministic filename parsing
-        +-- metadata scoring and enrichment review
-        |
-        v
-logs/processed.db
-        |
-        +-- tracks           canonical current-state table
-        +-- processed_state  stage history and audit trail
-        |
-        v
-FastAPI backend
-        |
-        v
-React/Vite dashboard
-```
+![crateIQ Manual Crates](docs/screenshots/crateiq-crates.webp)
 
-The backend reads from the selected library root. The frontend uses the backend API and does not directly mutate files or databases.
+### Exports
 
-Important roots and artifacts:
+![crateIQ Exports](docs/screenshots/crateiq-exports.webp)
 
-- `<root>/logs/processed.db`
-- `<root>/logs/path_audit/`
-- `<root>/logs/path_reconcile/`
-- `<root>/logs/metadata_extract/`
-- `<root>/logs/enrichment/`
-- `<root>/data/intelligence/enrichment_review_queue.jsonl`
-- `<root>/data/intelligence/enrichment_review_state.json`
+The live Settings screenshot is deliberately not published because it displays
+the active local library location. The existing
+[`settings.webp`](docs/mockups/settings.webp) remains a visual mockup/reference,
+not a product screenshot.
 
-## Current Platform Status
+## Quick start
 
-| Phase | Status |
-|---|---|
-| Phase 1 | Complete |
-| Phase 2 | Complete |
-| Phase 3 | Stable with legacy organizer caveat |
-| Phase 4 | Complete |
-| Phase 5 | Complete |
-| Phase 6 | Complete |
-| Phase 7 | Not started |
-| Phase 8 | Complete |
+Requirements:
 
-Phase 3 is stable for the current canonical path/database work, with one caveat: `modules/organizer.py` is legacy/deprecated and should not be treated as the forward path for new organization behavior.
-
-## Major Features
-
-- Root-aware pipeline and backend operation.
-- Canonical `tracks` table for current library state.
-- `processed_state` history for incremental stage tracking and audit.
-- Read-only path audit reports.
-- Dry-run path reconciliation planning.
-- Local metadata extraction from existing audio tags.
-- Deterministic filename fallback parsing with confidence levels.
-- Enrichment candidate queue and review state.
-- Controlled DB-only enrichment apply for approved high-confidence rows.
-- FastAPI backend over safe library data.
-- React/Vite operational dashboard.
-- Track filtering, issue grouping, folder stats, audit viewer, enrichment moderation.
-- Large-library performance hardening with API caps, DB indexes, request timing, queue caching, debounced search, persisted UI state, and virtualized table rendering.
-
-## Path Audit System
-
-The path audit system checks whether the database and filesystem still agree.
-
-It is read-only. It does not move files, delete rows, write tags, or reconcile paths automatically.
-
-Typical output lives under:
-
-```text
-<root>/logs/path_audit/
-```
-
-The audit system can identify:
-
-- Files referenced by `tracks` that are missing on disk.
-- Audio files present on disk but not tracked.
-- Stale `processed_state` records.
-- Candidate path mismatches.
-- Canonical-source summary data used by the backend stats endpoint.
-
-The backend exposes the latest audit through:
-
-```text
-GET /api/audit/latest
-GET /api/stats
-```
-
-## Path Reconciliation
-
-Path reconciliation is intentionally separate from path audit.
-
-Audit answers: what is inconsistent?
-
-Reconciliation answers: what would be safe to fix?
-
-Current reconciliation behavior is planning-first. It should not be treated as a blind repair tool. Any write-capable reconciliation path must be explicit and narrowly scoped.
-
-CrateIQ does not currently perform broad automatic path reconciliation in the frontend.
-
-## Canonical Tracks Database
-
-The `tracks` table is the canonical current-state table.
-
-It represents what CrateIQ currently believes is in the active library. Backend track browsing, issue counts, folder stats, overview stats, metadata extraction, and enrichment apply all operate against `tracks`.
-
-`processed_state` is not the canonical current-state table. It is history and audit:
-
-- Which pipeline stages saw which paths.
-- File size and mtime fingerprints.
-- Stage-level processing status.
-- Incremental-run skip tracking.
-
-This distinction matters. Current UI and API views should prefer `tracks`; historical diagnosis should inspect `processed_state`.
-
-## Metadata Extraction
-
-Local metadata extraction populates missing `tracks` fields from metadata already present in audio files.
-
-Command:
+- Python 3.10 or newer
+- Node.js and npm
+- SQLite (normally provided by Python)
 
 ```bash
-python3 pipeline.py extract-track-metadata --root <root>
-```
+cd ~/code/gewcc/crateIQ
 
-Dry-run is the default. Apply mode requires:
-
-```bash
-python3 pipeline.py extract-track-metadata --root <root> --apply --yes
-```
-
-Extraction is local and deterministic:
-
-- No online providers.
-- No AI.
-- No tag writes.
-- No audio file changes.
-- DB-only updates when applied.
-
-Fields considered when available:
-
-- `artist`
-- `title`
-- `album`
-- `genre`
-- `bpm`
-- `key_musical`
-- `duration_sec`
-- `bitrate_kbps`
-
-Existing non-empty fields are preserved. BPM and key fields are especially conservative because Mixed In Key and Rekordbox own musical analysis data.
-
-Logs are written under:
-
-```text
-<root>/logs/metadata_extract/
-```
-
-## Deterministic Filename Parsing
-
-Filename parsing is a fallback only. Embedded tags win when valid.
-
-The parser handles common DJ-library filename patterns such as:
-
-- `Artist - Title`
-- featured artist text such as `feat.`
-- remix/version suffixes like `(Original Mix)`
-- malformed but recoverable separators
-- suffix junk such as trailing `-Gold`
-
-The parser assigns:
-
-- `HIGH`
-- `MEDIUM`
-- `LOW`
-
-Fallback extraction applies only when confidence is at least `MEDIUM`. Weak parses are rejected safely rather than inventing metadata.
-
-Examples:
-
-```text
-C Minor - Kunapendeza feat. Alai K.mp3
-artist: C Minor
-title:  Kunapendeza feat. Alai K
-```
-
-```text
-Javier Mio - Ampreiah (Original Mix).aif
-artist: Javier Mio
-title:  Ampreiah (Original Mix)
-```
-
-Malformed examples such as long descriptive strings without a reliable artist/title separator are intentionally rejected.
-
-## Metadata Scoring And Review Workflow
-
-CrateIQ can score enrichment candidates and place them into a review workflow.
-
-The key principle: candidate scoring is not the same as metadata application.
-
-Review artifacts:
-
-```text
-<root>/data/intelligence/enrichment_review_queue.jsonl
-<root>/data/intelligence/enrichment_review_state.json
-```
-
-Review states:
-
-- `pending`
-- `approved`
-- `rejected`
-- `deferred`
-
-Approved review rows can later be applied in a controlled DB-only step:
-
-```bash
-python3 pipeline.py enrichment-apply-approved --root <root>
-```
-
-Dry-run is the default. Apply mode requires:
-
-```bash
-python3 pipeline.py enrichment-apply-approved --root <root> --apply --yes
-```
-
-Controlled apply rules:
-
-- Only approved review-state items.
-- Only `HIGH` confidence.
-- Only update `tracks`.
-- Only allowed fields: `artist`, `title`, `album`, and optional `label` / `isrc` when columns exist.
-- Never update BPM.
-- Never update key.
-- Never update cues.
-- Never write tags.
-- Never modify audio files.
-- Never rename files.
-
-Apply logs are written under:
-
-```text
-<root>/logs/enrichment/
-```
-
-## Backend API
-
-The backend is a FastAPI app exposing the selected library root through controlled endpoints.
-
-The selected root can be configured with the preferred CrateIQ variable:
-
-```bash
-export CRATEIQ_LIBRARY_ROOT=/path/to/library
-```
-
-### Optional local analysis and metadata tools
-
-Python packages in `requirements.txt` are separate from the optional external
-executables used by particular workflows. Import, browsing, Manual and Smart
-Crates, native preview, and portable/staged exports do not need `keyfinder-cli`,
-`aubio`, `beet`, `rmlint`, `ffprobe`, or `ffmpeg`. Settings exposes a
-per-workflow capability status, so a missing tool disables only its own future
-workflow—not the core app. BPM and key/Camelot analysis preferences are
-default-off; import never runs them automatically. MIK-compatible values are
-preserved when present, and fallback analysis is locked to missing data only.
-The explicit MIK coverage workflow is a local metadata-source review, not a
-Mixed In Key executable integration: it can preview existing BPM/key tags and,
-only after confirmation, fill absent values in CrateIQ's local index with
-`mik_compatible_tag` provenance. It never writes audio tags or overwrites an
-existing BPM/key value. Cue-tag extraction is not implemented yet, so cue
-coverage is reported as unavailable. MIK remains optional and core workflows
-continue to work when no compatible metadata is found.
-`/jobs` is the optional Analysis Jobs catalog. BPM is the first runnable job:
-after a read-only preview and explicit confirmation, it invokes `aubio tempo`
-only for tracks with no BPM and writes the result only to the local index as
-lower-authority `aubio` provenance. It accepts only 40–250 BPM and never
-writes media/tags or replaces MIK/trusted/existing BPM. MIK import remains
-explicit in Settings; key/Camelot, Beets, duplicate, and audio-quality runners
-remain preview-only/pending. Their tools gate only their respective cards.
-Key/Camelot follows the same explicit preview/confirmation pattern with
-`keyfinder-cli <file>`. Recognized musical keys and Camelot values use the
-existing mapping; results are local-index-only `keyfinder-cli` provenance with
-lower authority than MIK, and no existing key value is replaced.
-Beets enrichment is optional and preview/review-first: its current card only
-identifies local-index rows missing artist, title, or genre. It does not invoke
-`beet`, write tags, move files, or apply suggestions; any future accepted
-enrichment will require selected fields and remain DB-only.
-Duplicate detection is likewise optional and preview-only. When `rmlint` is
-available, CrateIQ scans a bounded set of validated imported paths using its
-JSON formatter and returns grouped, relative-path candidates only. It has no
-delete, move, rename, quarantine, tag-write, file-write, or DB-decision action;
-duplicate resolution requires a future review workflow.
-See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
-for safe installation, verification, and override guidance. CrateIQ never
-installs optional tools itself.
-
-`CRATEMINDAI_LIBRARY_ROOT` remains a deprecated fallback for existing local
-setups when `CRATEIQ_LIBRARY_ROOT` is not set. Database paths, API paths,
-pipeline command names, and serialized queue formats are intentionally not
-renamed for compatibility. See [.env.example](.env.example).
-
-Representative endpoints:
-
-```text
-GET  /api/health
-GET  /api/stats
-GET  /api/tracks
-GET  /api/tracks/{id}
-GET  /api/tracks/{id}/compatible
-GET  /api/tracks/issues
-GET  /api/library/folders
-GET  /api/library/overview
-GET  /api/enrichment/queue
-GET  /api/enrichment/review/state
-GET  /api/enrichment/review/export
-GET  /api/enrichment/review/summary
-POST /api/enrichment/review/{track_id}/approve
-POST /api/enrichment/review/{track_id}/reject
-POST /api/enrichment/review/{track_id}/defer
-POST /api/enrichment/apply-approved/dry-run
-POST /api/enrichment/apply-approved/apply?confirm=true
-GET  /api/audit/latest
-```
-
-Backend safety rules:
-
-- Root containment is enforced.
-- Track browsing is read-only.
-- Audit and overview endpoints do not perform expensive automatic filesystem scans.
-- Enrichment review endpoints write only queue review state.
-- Apply-approved endpoint writes only approved metadata fields to `tracks`.
-- Apply endpoint requires explicit `confirm=true`.
-
-### Compatible tracks (harmonic/Camelot matching)
-
-`GET /api/tracks/{id}/compatible` returns read-only, ranked harmonic matches
-for one track, reusing `modules/harmonic.py`'s existing Camelot/BPM/genre
-scoring rather than a separate algorithm.
-
-Query parameters:
-
-| Param | Default | Meaning |
-|---|---|---|
-| `limit` | 8 (max 25) | Max results returned |
-| `bpm_tolerance` | 6 | Max BPM delta to include a candidate (hard cutoff when both tracks have a BPM) |
-| `include_same_key` | true | Include exact Camelot key matches |
-| `include_adjacent` | true | Include ±1 Camelot wheel position matches |
-| `genre` | — | Optional case-insensitive genre filter |
-
-Matching is restricted to the three standard Camelot mixing relations —
-same key, adjacent wheel position, and relative major/minor — relative-key
-matches are always included; `include_same_key`/`include_adjacent` gate the
-other two. BPM closeness and genre only affect ranking/inclusion tolerance
-inside that candidate set, they are not separate match routes. A track
-without a Camelot key returns `status: "missing_key"` and an empty list
-instead of a guess; an empty match set returns `status: "ok"` with a
-`reason` string. The endpoint never scans audio and never writes.
-
-## Frontend Dashboard
-
-The frontend is a React/Vite operational dashboard for CrateIQ.
-
-It is intentionally dense and work-focused, not a marketing UI.
-
-Supported routes:
-
-| Route | Workflow |
-|---|---|
-| `/` | Library workspace and track browsing |
-| `/quality` | Library quality summary |
-| `/issues` | Track issue review |
-| `/enrichment` | Enrichment queue review |
-| `/metadata-repair` | Deterministic metadata repair review |
-| `/metadata-sanitation` | Metadata sanitation review |
-| `/bpm-review` | BPM anomaly scan and review |
-| `/audit` | Latest path/library audit |
-| `/folders` | Folder-level library view |
-| `/jobs` | Allowlisted pipeline job submission and monitoring |
-| `/crates` | Manual local crate creation, ordering, and review |
-| `/smart-crates` | Deterministic local crate suggestions and preview-before-save |
-| `/set-builder` | Set generation and saved set review |
-| `/exports` | Export validation and Rekordbox export jobs |
-| `/sync` | SSD sync preview and controlled execution |
-| `/reconciliation` | Read-only reconciliation ledger and plan validation |
-
-Legacy or incomplete page implementations remain in `frontend/src/pages/` for
-reference but are intentionally hidden. `/dashboard`, `/collection`, and
-`/tracks` redirect to `/`; the singular `/export` and `/ssd-sync` aliases
-redirect to their supported routes. `/settings` is a supported local-only
-diagnostics, setup, import, and optional-capability route.
-
-Core dashboard capabilities:
-
-- Track table with pagination, sorting, issue badges, search, and selection.
-- Selected track inspector.
-- Manual crates: create named, ordered local track lists before later smart-playlist or export workflows. Crates are stored in `<library-root>/logs/manual_crates.db`; they never scan or modify music files, tags, BPM, key, or cue data, and never overwrite Mixed In Key data.
-- Smart Crates: deterministic, local-only suggestions from existing BPM, Camelot key, genre, and issue-state data. A preview is never persisted; saving creates a normal editable Manual Crate with the preview order. Current filters are BPM range, exact/compatible/directional Camelot matching, genre, issue-free-only, and maximum count. Energy/vibe and date-added are unavailable until trusted fields exist. Smart Crates never modify files, tags, or Mixed In Key data.
-- Manual Crate exports: CSV, JSON, M3U, and UTF-8 M3U8 exports are generated only on explicit request under `<library-root>/exports/`. The Export page previews content first; filename path mode is the safe default, relative paths are root-relative when possible, and absolute paths require explicit selection. These portable exports never write to music folders, tags, or DJ application databases.
-- Serato staged exports: a saved Manual Crate can be previewed, then explicitly written as an M3U8 plus `manifest.json` below `<library-root>/exports/serato/<safe-crate-and-timestamp>/`. This is a staged, import/review handoff only: CrateIQ never writes to a live `_Serato_` folder, does not replace existing files, and does not currently generate Serato's binary `.crate` format. It never modifies music files, tags, BPM/key/cues, Mixed In Key data, or DJ app databases.
-- Rekordbox staged XML exports: a saved Manual Crate can be previewed, then explicitly written as a UTF-8 Rekordbox XML file below `<library-root>/exports/rekordbox/`. Import that file manually through Rekordbox's XML import workflow; CrateIQ does not write a live Rekordbox database, device, USB, or application folder. Each output is unique and no-overwrite. Filename is the safe default path mode; relative/filename imports can require path mapping. The export does not modify audio, tags, BPM/key/cues, Mixed In Key data, or Serato state.
-- Audio Preview Player: the Library inspector, Manual Crates, and Smart Crates can request browser-native playback of a selected local track through a scoped preview endpoint. It reads only an existing file beneath the selected library root and supports seeking with HTTP byte ranges; it never scans, transcodes, modifies audio/tags/BPM/key/cues, Mixed In Key data, or DJ databases. Demo tracks can intentionally report preview unavailable because their placeholder paths have no audio files. Waveforms, cue preview, beat grids, and keyboard shortcuts remain future work.
-- Settings (`/settings`): central local diagnostics for the active library, optional tools, readiness checks, locked safety policies, and per-workflow capability gating. It persistently exposes only safe local preferences: default export path mode plus default-off BPM/key analysis and external-tool preference. MIK use, preservation of BPM/key/cues, and missing-data-only behavior are locked policies. Settings can also validate an existing readable absolute library root and save it as a pending `CRATEIQ_LIBRARY_ROOT` in ignored `<repo>/.run/local/crateiq.env`; the service helper reads it on the next configured-library start, so a restart is always required and folder scanning/import remains separate. Binary overrides stay private process-start configuration. No files, tags, MIK values, or DJ databases are changed.
-- Mixed In Key coverage/import: Settings can explicitly review compatible BPM/key metadata already present in imported files and report coverage, missing trusted values, and later fallback-analysis eligibility. An explicit import fills only missing values in CrateIQ's `processed.db` with conservative `mik_compatible_tag` provenance; it never writes tags or changes an existing trusted value. Cue-tag parsing is deliberately deferred and shown as unavailable.
-- Library setup and import: Settings guides a first-use flow of selecting a root, initializing CrateIQ’s local folders/index, running an explicit read-only scan preview, reviewing relative-path samples/warnings, then importing tracks. Preview reports supported/unsupported/skipped file counts, folders scanned, and cheap duplicate-name hints without decoding audio or writing records. Confirmed import writes only filename/path records to the local index, reports newly versus already indexed records, and is idempotent by path. No music files, tags, BPM/key/cues, Mixed In Key data, Serato, or Rekordbox databases are changed; optional analysis is never run automatically.
-- Issue count page with clickable filters.
-- Folder statistics from DB paths only.
-- Overview cards for totals, BPM coverage, key coverage, missing metadata, parse confidence, and genre counts.
-- Enrichment queue moderation with approve/reject/defer.
-- Review summary and export.
-- Apply-approved dry-run preview and controlled apply button.
-
-### Library view (`/`)
-
-The Library route (`frontend/src/pages/CrateMind.tsx`, `section === 'library'`)
-was redesigned around a dark emerald/teal/cyan/violet palette (design tokens
-in `frontend/src/index.css`, e.g. `--brand-teal`, `--brand-cyan`,
-`--brand-violet`, `--brand-coral`):
-
-- A data-quality **Library status strip** (distinct from the runtime
-  `ReadinessBanner`) that appears only when open track issues exist, with a
-  "Review issues" link and a "Re-scan" button that re-runs the existing
-  read-only refresh (no pipeline scan is dispatched).
-- A **filter chip row** for genre, BPM range, and has-key/missing-key — each
-  chip maps 1:1 to a query parameter `GET /api/tracks` already accepts.
-  Camelot-range, energy, mood, and source filters from early design mockups
-  have no backing field on `TrackSummary` yet and are intentionally omitted
-  rather than wired to a non-functional control.
-- Restyled **overview cards** (Total Tracks, BPM Coverage, Key Coverage,
-  Missing Key, Missing Artist/Title, Parse Confidence) plus a **Duplicates**
-  card that reads "Not available" — library-wide dedupe is a CLI-only
-  pipeline scan, not exposed via a read API.
-- The **tracks table** gained a row number column, a separate musical Key
-  column alongside Camelot, and a Quality-tier badge column.
-- The **track inspector** has BPM/Key/Camelot stat tiles, a disabled
-  play-button placeholder, a deterministic decorative waveform placeholder,
-  a real SVG **Camelot wheel** (`frontend/src/components/library/
-  CamelotWheel.tsx`), and a real **Compatible tracks** panel backed by
-  `GET /api/tracks/{id}/compatible` (see "Compatible tracks" above) — added
-  2026-07-26, superseding the earlier "coming soon" placeholder.
-- The sidebar (`frontend/src/components/Sidebar.tsx`) gained a teal
-  glow active state, real nav badges (Issues / Enrichment Queue / Metadata
-  Repair / BPM Review pending counts, from existing endpoints), and a
-  Library Health mini-card sourced from `GET /api/library/quality`.
-- Layout collapses to a single column below 860px, with the inspector
-  stacking below the table instead of disappearing.
-
-No backend endpoint, pipeline behavior, or route was changed for this
-redesign — see `CHANGELOG.txt` for the full functionality classification
-(implemented / read-only placeholder / deferred).
-
-### App-wide visual system
-
-The Library view above is the visual system's source of truth. Every other
-route shares the same `frontend/src/index.css` stylesheet, so the base
-tokens/primitives (`--accent`, `--brand-*`, `.card`, `.badge--*`, `.btn`,
-`.table`) and a small set of reusable components apply everywhere rather than
-per page:
-
-- `frontend/src/components/ui/StatusStrip.tsx` — the shared good/warn/danger/
-  info compact strip (full 1px border + tinted background, never a colored
-  side border). Used by `ReadinessBanner.tsx`, by `Export.tsx`/
-  `SsdSync.tsx`'s validation/mount warnings, and by the page/form-level
-  error states on `Jobs.tsx`, `SetBuilder.tsx`, and `Reconciliation.tsx`.
-- `frontend/src/components/ui/KpiCard.tsx` — the shared overview/stat card,
-  reusing the Library's own `.lib-overview-card` styling and `RingProgress`.
-  Used by `Quality.tsx`'s top metric row.
-- `frontend/src/components/ui/EmptyState.tsx` — shared "nothing here" state.
-  Used by `Quality.tsx` ("Recommended Next Actions"), `BpmReview.tsx`
-  (the anomaly summary/table empty states), `Jobs.tsx` (the no-jobs
-  state), `SetBuilder.tsx` (no saved sets), and `Reconciliation.tsx`
-  (empty ledger, unselected detail, unrun validation).
-- `frontend/src/components/ui/Badge.tsx` — shared semantic badge. Used by
-  `Quality.tsx`'s HIGH/MEDIUM/LOW confidence chips, `SetBuilder.tsx`'s
-  job-status/Camelot-key/vibe chips, and `Reconciliation.tsx`'s ledger
-  status badges. `Jobs.tsx` job status keeps `StatusBadge`, which Badge's
-  own guidance prefers for job status; semantic taxonomies richer than
-  Badge's six tones (SetBuilder's phase colors, BpmReview's anomaly
-  labels) intentionally stay bespoke.
-- `.app-main` (the shared page container in `Layout.tsx`) carries the same
-  subtle radial-gradient wash as the Library/CrateMind workspaces, so every
-  other page (Quality, Metadata Repair, Metadata Sanitation, BPM Review,
-  Jobs, Set Builder, Export, SSD Sync, Reconciliation) shares that atmosphere
-  instead of a flat background.
-
-No backend/pipeline/route/API behavior changed for this rollout — it is a
-CSS/component-level pass over the existing pages, not a per-page redesign.
-
-The frontend is not allowed to write audio tags or modify files.
-
-## Performance Features
-
-Phase 8 added large-library hardening:
-
-- DB indexes for `artist`, `title`, `genre`, `bpm`, and `parse_confidence`.
-- `/api/tracks` SQL paging with `LIMIT` and `OFFSET`.
-- Limit cap protection for track listing.
-- SQL-backed filtering for common issue filters.
-- Lightweight request timing logs and `X-Process-Time-Ms`.
-- Safe mtime/size-based cache for enrichment queue JSONL reads.
-- Debounced frontend search.
-- Persisted UI state for filters, selected section, pagination, sort, queue filters, and selected track.
-- Virtualized track table rendering.
-- Loading skeletons/spinners and API error banners.
-
-The goal is not to hide large-library complexity. The goal is to keep browsing and review responsive while preserving explicit operational control.
-
-## Safety Model
-
-CrateIQ's safety model is built around explicit intent.
-
-Default behavior:
-
-```bash
-python3 pipeline.py some-command --root <root>
-```
-
-Write behavior:
-
-```bash
-python3 pipeline.py some-command --root <root> --apply --yes
-```
-
-Safety guarantees by design:
-
-- Dry-run by default for write-capable commands.
-- Write operations require `--apply --yes`.
-- Backend write endpoints are narrow and explicit.
-- No metadata/tag/file writes from read-only pages.
-- No online lookup in local extraction.
-- No AI in deterministic parsing.
-- No automatic BPM/key/cue overwrite.
-- No broad reconciliation from the dashboard.
-
-BPM, key, beatgrid, and cues are performance data. They should be owned by Mixed In Key and Rekordbox, not overwritten by CrateIQ automation.
-
-## Repository Structure
-
-Representative structure:
-
-```text
-.
-├── backend/
-│   └── app/
-│       ├── api/routes/
-│       ├── core/
-│       ├── models/
-│       ├── schemas/
-│       └── services/
-├── frontend/
-│   ├── src/
-│   │   ├── api/
-│   │   ├── components/
-│   │   ├── pages/
-│   │   └── types/
-│   └── package.json
-├── modules/
-│   ├── filename_parse.py
-│   ├── enrichment_apply.py
-│   ├── metadata_enrich_online.py
-│   └── organizer.py
-├── tests/
-├── db.py
-├── pipeline.py
-└── README.md
-```
-
-Notes:
-
-- `pipeline.py` is the CLI entrypoint.
-- [COMMANDS.md](COMMANDS.md) is the canonical CrateIQ CLI command reference.
-- [Legacy DJ Toolkit commands](docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md)
-  are preserved for historical context only.
-- `db.py` owns the core SQLite schema helpers.
-- `backend/app/` owns the FastAPI backend.
-- `frontend/src/pages/CrateMind.tsx` owns the current dashboard workspace.
-- `modules/organizer.py` is legacy/deprecated and should not be used as the foundation for new canonical organization behavior.
-
-## Installation
-
-Requirements vary by workflow, but the common local setup is:
-
-- Python 3.10+
-- Node.js and npm for the frontend
-- SQLite
-- Audio tooling as needed for analysis/extraction workflows
-- Optional local AI tooling only for AI-specific phases
-
-Python setup:
-
-```bash
-python3 --version  # must be Python 3.10 or newer
 python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements.txt
-python -m pip install -r backend/requirements.txt
-```
-
-Frontend setup:
-
-```bash
+.venv/bin/pip install -r requirements-dev.txt
 npm --prefix frontend install
+
+# Starts only crateIQ on backend :8020 and frontend :5175.
+scripts/crateiq-local-services.sh start
+```
+
+The `start` command asks you to choose a library profile and access mode. For
+the safest first run, choose **Demo library** and **Local only**. Then open
+<http://127.0.0.1:5175>.
+
+For a non-interactive demo launch:
+
+```bash
+.venv/bin/python scripts/seed_demo_library.py --reset
+scripts/crateiq-local-services.sh start-demo-local
+```
+
+For a configured library, first open **Settings** to choose a folder,
+initialize CrateIQ's local `logs/processed.db`, scan it explicitly, and import
+the previewed audio paths. Restart with the configured profile after saving the
+root:
+
+```bash
+scripts/crateiq-local-services.sh start-library-local
+```
+
+The configured root is stored locally in ignored `.run/local/crateiq.env`.
+Initialization creates CrateIQ's `logs/` and `exports/` folders only; it does
+not scan or alter music files. Scanning is always an explicit later action.
+
+### Service commands
+
+```bash
+scripts/crateiq-local-services.sh status --short
+scripts/crateiq-local-services.sh stop
+scripts/crateiq-local-services.sh start
+scripts/crateiq-local-services.sh logs
+```
+
+The helper manages only crateIQ's ports (`8020` and `5175`). It does not stop
+or alter LedgerIQ or opsIQ.
+
+## Optional analysis tools
+
+Core crateIQ workflows do not require external analysis tools. Settings and
+Analysis Jobs show each capability independently:
+
+| Optional tool/input | Current workflow |
+| --- | --- |
+| Mixed In Key-compatible metadata | Explicit coverage preview and local-index-only import. |
+| `aubio` | Preview-first, confirmed missing-BPM analysis. |
+| `keyfinder-cli` | Preview-first, confirmed missing key/Camelot analysis. |
+| `beet` | Preview-limited enrichment planning only. |
+| `rmlint` | Preview-only duplicate candidates only. |
+| `ffprobe` / `ffmpeg` | Future audio-quality/probing workflow. |
+
+See [local tooling guidance](docs/operations/LOCAL_TOOLING.md) for setup notes
+and exact safety boundaries.
+
+## Development
+
+```bash
+# Focused backend coverage for the current safe analysis workflows
+.venv/bin/python -m pytest -q tests/test_backend_api.py -k "analysis or jobs"
+.venv/bin/python -m pytest -q tests/test_supported_route_contracts.py
+
+# Frontend checks
 npm --prefix frontend run typecheck
 npm --prefix frontend run build
+
+# Repository hygiene
+git diff --check
+git status --short
 ```
 
-Configure the active library root:
-
-```bash
-export CRATEIQ_LIBRARY_ROOT=/path/to/library
-```
-
-## Running Backend/Frontend
-
-### Interactive launcher
-
-Source `scripts/crateiq-local-services.sh --aliases` (add the same source line once to `~/.bashrc`, then run `source ~/.bashrc`) and use `crateiq_start`. It offers the safe `.run/demo-library` database and the explicitly configured `CRATEIQ_LIBRARY_ROOT` database, then LAN (default) or local-only access. Direct commands are `crateiq_start_demo_local|lan` and `crateiq_start_library_local|lan`; management commands are `crateiq_stop`, `crateiq_status [--short|--verbose]`, `crateiq_logs`, `crateiq_logs_backend`, and `crateiq_logs_frontend`. Runtime PID files and logs are under `.run/` (ignored). Ports are backend 8020 and frontend 5175; LAN listens on `0.0.0.0`, local on `127.0.0.1`. If LAN IP detection fails, use `ip -4 addr show scope global`; permit 5175/8020 in your firewall before opening the displayed URL from a phone or tablet on the same trusted network.
-
-Run the backend from the repository root:
-
-```bash
-source .venv/bin/activate
-python -m uvicorn backend.app.main:app --reload --port 8000 --app-dir .
-```
-
-Run the frontend:
-
-```bash
-npm --prefix frontend run dev
-```
-
-Typical local URLs:
-
-```text
-Backend:  http://127.0.0.1:8000
-Frontend: http://127.0.0.1:5173
-```
-
-Health check:
-
-```bash
-curl http://127.0.0.1:8000/api/health
-```
-
-## Local Service Helper (crate_start / crate_stop)
-
-`scripts/crateiq-local-services.sh` starts and stops the backend/frontend
-pair on dedicated local ports so CrateIQ can run alongside LedgerIQ
-(5173/8000, untouched) and OpsIQ (5174/8010):
-
-| Service  | Port | URL |
-|---|---|---|
-| Backend  | 8020 | http://127.0.0.1:8020 |
-| Frontend | 5175 | http://127.0.0.1:5175 |
-| Health   | —    | http://127.0.0.1:8020/api/health |
-| Readiness | —   | http://127.0.0.1:8020/api/runtime/readiness |
-
-Install the shell functions (add the `source` line to `~/.bashrc` or
-`~/.zshrc` yourself if you want them permanently):
-
-```bash
-source ~/code/gewcc/crateIQ/scripts/crateiq-local-services.sh --aliases
-```
-
-Commands:
-
-```text
-crate_start       start backend (:8020) + frontend (:5175)
-crate_stop        stop CrateIQ services only
-crate_restart     stop, start, then show status
-crate_status      process/port/URL/health/log overview
-crate_logs        tail backend + frontend logs
-crate_back_logs   tail backend log only
-crate_front_logs  tail frontend log only
-```
-
-The same subcommands work without aliases:
-`scripts/crateiq-local-services.sh start|stop|restart|status|logs|back-logs|front-logs`.
-
-PID files and logs live under `.run/` (gitignored). No sudo is required.
-The frontend dev proxy is pointed at the 8020 backend via the
-`CRATEIQ_API_PROXY_TARGET` environment variable, which the Vite config reads
-(default remains `http://localhost:8000` when unset).
-
-Troubleshooting:
-
-- "port ... is already in use" on start: run `crate_status`; if the port is
-  held by a process the helper does not recognize as CrateIQ, it will never
-  kill it — stop that process yourself or change
-  `CRATEIQ_BACKEND_PORT`/`CRATEIQ_FRONTEND_PORT` before sourcing.
-- Stop only affects processes verified as this repo's uvicorn/vite on ports
-  8020/5175; LedgerIQ (5173/8000) is never touched.
-- To remove the aliases from the current shell:
-  `unset -f crate_start crate_stop crate_restart crate_status crate_logs crate_back_logs crate_front_logs`
-  (and delete the `source` line from your shell rc if you added it).
-
-## Demo Data (for local UI work / screenshots)
-
-`scripts/seed_demo_library.py` seeds a small, clearly-fake SQLite library so
-the frontend (Library view, Quality, etc.) can be exercised and screenshotted
-with populated data. It never touches real music, never scans real audio
-files, and always writes to `<repo>/.run/demo-library/` (gitignored) — the
-path is hardcoded, not a CLI flag, specifically so it can't be pointed at a
-real `DJ_MUSIC_ROOT` by accident.
-
-```bash
-.venv/bin/python scripts/seed_demo_library.py            # seed/update (idempotent)
-.venv/bin/python scripts/seed_demo_library.py --reset     # wipe + reseed
-.venv/bin/python scripts/seed_demo_library.py --count 60  # more demo tracks (1-500)
-```
-
-On top of the random `--count` rows, the seed always adds 14 fixed
-"Compatibility Demo" tracks (`Coastal Collective` / `Motherland Sound`) so
-`GET /api/tracks/{id}/compatible` and the Library inspector's Camelot wheel
-always have real same-key, adjacent-key, relative-major/minor, close-BPM,
-and mixed-genre clusters to show — search "Coastal Anchor" or "Motherland
-Anchor" in the Library view to see them.
-
-Then point a local run at it (or use `crateiq_start_demo_local` after sourcing the launcher):
-
-```bash
-export DJ_MUSIC_ROOT="$(pwd)/.run/demo-library"
-bash scripts/crateiq-local-services.sh restart
-```
-
-Unset `DJ_MUSIC_ROOT` (or start a fresh shell) to go back to your real
-library configuration.
-
-## Runtime Readiness
-
-CrateIQ ships a read-only local-runtime preflight that reports whether the
-environment is ready before you run library, metadata, export, or sync
-workflows. It never mutates library data, never runs pipeline commands or
-jobs, and never returns secret values.
-
-```bash
-curl http://127.0.0.1:8000/api/runtime/readiness
-```
-
-Response shape:
-
-```json
-{
-  "status": "ready",
-  "checks": [
-    {"name": "library_root", "status": "pass", "required": true,
-     "message": "...", "metadata": {"root": "~/music/library"}}
-  ]
-}
-```
-
-Status meanings:
-
-| Status | Meaning |
-|---|---|
-| `ready` | All checks pass. |
-| `degraded` | Required checks pass, but optional/workflow-specific checks warn (e.g. a missing external binary, or a pipeline DB that has not been created yet). Affected workflows will be limited. |
-| `not_ready` | A required check fails: the library root is missing, unreadable, or an unsafe broad root, or `pipeline.py` cannot be found. Fix configuration before operating on a library. |
-
-Checks performed (all read-only): library root resolution/existence/
-readability, rejection of unsafe broad roots (`/`, `/home`, `/Users`,
-`/System`, the home directory, and the repository itself — override
-deliberately with `CRATEIQ_ALLOW_UNSAFE_ROOT=1`), pipeline DB presence and
-containment under the root, `pipeline.py` entrypoint, backend data
-directory, and availability of `ffprobe`, `ffmpeg`, `keyfinder-cli`,
-`aubio`, `beet`, `rmlint`, and `rsync`. Missing binaries warn; they never
-fail startup.
-
-For the optional fallback analysis/import tools specifically, see [Local
-tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md). The
-readiness check reports the affected workflow without exposing configured
-override values.
-
-Environment configuration is documented in [.env.example](.env.example) —
-copy the values you need into your shell or a local env file. Never commit
-real secrets. Reminder: CrateIQ has no authentication; run it only on a
-trusted local machine.
-
-### Frontend readiness banner
-
-The frontend shell (`frontend/src/components/Layout.tsx`) fetches
-`GET /api/runtime/readiness` once on load
-(`frontend/src/hooks/useReadiness.ts` — no polling) and shows a small
-banner (`frontend/src/components/ReadinessBanner.tsx`) above the page
-content:
-
-- `ready` — no banner.
-- `degraded` — a warning-styled banner with up to 3 failing/warning checks.
-- `not_ready` — an error-styled banner with up to 3 failing checks.
-- readiness check itself failed to load — a small neutral notice.
-
-The banner is diagnostic only: it never blocks navigation, never dumps raw
-JSON or check `metadata` (which can include local paths), and is
-dismissible for the current browser session. The `degraded`/`not_ready`
-banner always carries a fixed "local diagnostic only — no authentication
-added" note, since readiness is not a security or auth signal.
-
-## Example Workflows
-
-Audit current path state:
-
-```bash
-python3 pipeline.py path-audit --root /path/to/library
-```
-
-Build or refresh canonical tracks:
-
-```bash
-python3 pipeline.py build-tracks --root /path/to/library
-```
-
-Extract local metadata in dry-run mode:
-
-```bash
-python3 pipeline.py extract-track-metadata --root /path/to/library
-```
-
-Apply local metadata extraction:
-
-```bash
-python3 pipeline.py extract-track-metadata --root /path/to/library --apply --yes
-```
-
-Inspect enrichment review queue:
-
-```bash
-python3 pipeline.py enrichment-review --root /path/to/library
-```
-
-Dry-run approved enrichment apply:
-
-```bash
-python3 pipeline.py enrichment-apply-approved --root /path/to/library
-```
-
-Apply approved enrichment metadata to `tracks` only:
-
-```bash
-python3 pipeline.py enrichment-apply-approved --root /path/to/library --apply --yes
-```
-
-Open operational dashboard:
-
-```bash
-export CRATEIQ_LIBRARY_ROOT=/path/to/library
-source .venv/bin/activate
-python -m uvicorn backend.app.main:app --reload --port 8000 --app-dir .
-npm --prefix frontend run dev
-```
-
-## Testing
-
-Install Python test dependencies in an activated virtual environment:
-
-```bash
-python3 --version  # must be Python 3.10 or newer
-python3 -m venv .venv
-source .venv/bin/activate
-python -m pip install -r requirements-dev.txt
-```
-
-Run the backend/pipeline test suite:
-
-```bash
-python -m pytest -q
-```
-
-`requirements-dev.txt` includes pipeline dependencies, backend dependencies,
-pytest, FastAPI TestClient support, and a binary-wheel compatibility constraint
-for librosa's numba/llvmlite chain. The test suite automatically assigns both
-`DJ_MUSIC_ROOT` and `CRATEIQ_LIBRARY_ROOT` to a temporary directory; the
-deprecated `CRATEMINDAI_LIBRARY_ROOT` alias remains supported. No local
-music-library path is required and tests do not write under `/music`.
-
-Run frontend verification:
-
-```bash
-npm --prefix frontend install
-npm --prefix frontend run typecheck
-npm --prefix frontend run build
-```
-
-Common combined check:
-
-```bash
-python -m pytest -q
-npm --prefix frontend run typecheck
-npm --prefix frontend run build
-```
-
-There is currently no frontend unit-test script; TypeScript and the production
-Vite build are the frontend checks.
-
-Route-contract smoke tests guard against drift between the supported frontend
-routes and the backend APIs they depend on:
-
-```bash
-python -m pytest -q tests/test_supported_route_contracts.py
-```
-
-The contract maps each supported route (parsed from `frontend/src/App.tsx`)
-to its primary read-only backend endpoints and asserts status codes and
-minimal response shapes against temporary fixture roots. The smoke surface is
-GET-only: it never runs pipeline jobs, spawns subprocesses, or triggers
-sync/export/reconciliation/apply workflows. Mutating endpoints are listed as
-deferred in the test file's `DEFERRED_ENDPOINTS` table.
-
-In a restricted execution sandbox that blocks cross-thread asyncio wakeups,
-Starlette `TestClient` can stall before entering its context. This is an
-environment limitation, not a CrateIQ startup or health-route requirement. Run
-the suite in the activated virtual environment on the normal host or CI runner;
-the current suite passes 860 tests there. The installed stack may also emit a
-Starlette deprecation warning recommending the future `httpx2` client; this is
-tracked separately and does not block the suite.
-
-## Known Limitations
-
-- CrateIQ is not a Rekordbox replacement.
-- CrateIQ does not own BPM, key, beatgrid, or cue authoring.
-- Phase 7 apply implementation has not started; a planning specification exists.
-- Path reconciliation is not a broad automatic repair system.
-- Online enrichment is candidate scoring plus review workflow, not blind metadata overwrite.
-- Some legacy modules remain in the repository for compatibility and historical context.
-- `modules/organizer.py` is legacy/deprecated.
-- Legacy frontend pages are retained but hidden as described in the supported route table.
-- There is no authentication; run the app only in a trusted local environment.
-- Runtime paths and external tool availability still depend heavily on environment configuration.
-- The generic Jobs page is constrained by backend allowlists but does not explain every command's individual safety semantics.
-- Production frontend dependencies audit clean; development tooling still has advisories whose npm-proposed fix requires a Vite major upgrade.
-- The historical restricted-sandbox baseline collected 857 tests but stalled at
-  the first FastAPI health test; the current normal-host suite collects 860 and
-  passes twice.
-- The frontend dashboard is operational but is not intended to replace CLI control for every pipeline operation.
-- External provider data may be incomplete or wrong, which is why review state exists.
-
-The recommended next task is to review the roadmap, then implement the CrateIQ
-Phase 1 runtime/readiness contract only after approval.
-
-## Long-Term Vision
-
-CrateIQ's long-term direction is a full DJ library operations console:
-
-- Canonical current-state tracking.
-- Auditable history and change plans.
-- Safe reconciliation workflows.
-- Human-approved metadata enrichment.
-- Library health dashboards.
-- Provider-independent metadata scoring.
-- Rekordbox/Mixed In Key respecting workflows.
-- Repeatable operations for large, evolving DJ collections.
-
-The destination is not autonomous metadata control. The destination is reliable operational confidence: every file, path, metadata field, and enrichment decision should be explainable, reviewable, and reversible where possible.
+Useful local endpoints:
+
+- Frontend: <http://127.0.0.1:5175>
+- Backend health: <http://127.0.0.1:8020/api/health>
+- Runtime readiness: <http://127.0.0.1:8020/api/runtime/readiness>
+
+## Project map
+
+- `backend/app/` — FastAPI API, safe local services, schemas, and route logic.
+- `frontend/` — React/Vite interface.
+- `scripts/` — local service helper and demo-library seeding.
+- `docs/operations/LOCAL_TOOLING.md` — optional-tool setup and workflow scope.
+- `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md` — current product,
+  workflow, and dependency audit.
+
+## Contributing
+
+Keep changes local-first and reviewable. Do not introduce automatic file/tag
+writes, overwrite Mixed In Key values, or write live Serato/Rekordbox
+databases. Run focused checks for the surface you change, avoid committing local
+databases and `.run/` data, and document any behavior change.
