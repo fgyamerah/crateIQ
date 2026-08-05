@@ -39,6 +39,7 @@ last-prompts/
 # =========================
 data/intelligence/
 *.jsonl
+app_settings.json
 ai/review_dataset.py
 
 # =========================

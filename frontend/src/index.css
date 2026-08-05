@@ -7442,6 +7442,21 @@ tr.row--selected td {
 .audio-preview-track span, .audio-preview-time { color: var(--text-muted); font-size: 12px; }
 .audio-preview-seek { accent-color: var(--accent); flex: 1; min-width: 70px; }
 .audio-preview-volume input { accent-color: var(--accent); max-width: 86px; }
+.settings-page { display: grid; gap: 14px; }
+.settings-kpis { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.settings-card { display: grid; gap: 12px; }
+.settings-def-list code { overflow-wrap: anywhere; }
+.settings-preference { align-items: end; display: flex; flex-wrap: wrap; gap: 10px; }
+.settings-preference label { color: var(--text-muted); display: grid; font-size: 12px; gap: 5px; min-width: min(100%, 320px); }
+.settings-note { font-size: 12px; line-height: 1.45; }
+.settings-tool-list, .settings-runtime-list { border-top: 1px solid var(--border); }
+.settings-tool, .settings-runtime-check { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 10px; justify-content: space-between; min-width: 0; padding: 10px 2px; }
+.settings-tool > div, .settings-runtime-check > div { display: grid; gap: 3px; min-width: 0; }
+.settings-tool span, .settings-runtime-check span, .settings-tool small { color: var(--text-muted); font-size: 12px; line-height: 1.4; }
+.settings-tool small { overflow-wrap: anywhere; }
+.settings-safety-list { display: grid; gap: 9px; list-style: none; margin: 0; padding: 0; }
+.settings-safety-list li { align-items: flex-start; display: flex; gap: 8px; line-height: 1.45; }
+.settings-safety-list svg { color: var(--accent); flex: 0 0 auto; margin-top: 2px; }
 .manual-library-picker { margin-top: 20px; }
 .manual-library-picker > .form-input { margin-bottom: 8px; max-width: 520px; }
 .manual-library-result { justify-content: space-between; }
@@ -7486,6 +7501,7 @@ tr.row--selected td {
   .manual-crate-track-main { min-width: calc(100% - 42px); }
   .manual-crate-track-actions { margin-left: 38px; }
   .audio-preview-controls { flex-wrap: wrap; }
+  .settings-kpis { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {
@@ -7500,4 +7516,5 @@ tr.row--selected td {
   .audio-preview-main { align-items: flex-start; flex-wrap: wrap; }
   .audio-preview-toggle { flex: 0 0 auto; }
   .audio-preview-volume { margin-left: auto; }
+  .settings-tool, .settings-runtime-check { align-items: flex-start; }
 }

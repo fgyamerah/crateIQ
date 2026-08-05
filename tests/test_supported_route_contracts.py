@@ -183,6 +183,15 @@ ROUTE_CONTRACTS: list[dict] = [
             ("/api/reconciliation/ledger", "list", ()),
         ],
     },
+    {
+        "route": "/settings",
+        "purpose": "Local settings diagnostics and safe preferences",
+        "access": "read-only diagnostics; preference update deferred",
+        "endpoints": [
+            ("/api/settings", "dict", ("library", "tools", "safety", "preferences")),
+            ("/api/settings/runtime", "dict", ("status", "checks")),
+        ],
+    },
 ]
 
 # Infrastructure endpoints every supported page relies on indirectly.
@@ -221,6 +230,7 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/metadata-sanitation/apply-approved/* (POST)",
     ],
     "/reconciliation": ["/api/reconciliation/validate-plan (POST)"],
+    "/settings": ["/api/settings (PATCH, local preference update)"],
 }
 
 

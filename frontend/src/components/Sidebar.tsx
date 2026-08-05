@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Disc3,
   Heart,
+  Settings,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { fetchReviewSummary } from '../api/insights'
@@ -75,6 +76,7 @@ const NAV: NavSection[] = [
       { to: '/set-builder', label: 'Set Builder', Icon: Music },
       { to: '/exports',     label: 'Export',      Icon: Download },
       { to: '/sync',        label: 'SSD Sync',    Icon: HardDrive },
+      { to: '/settings',    label: 'Settings',    Icon: Settings },
     ],
   },
   {

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, Loader2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { fetchJobLogs, fetchJob } from '../api/jobs'
+import { fetchSettings } from '../api/settings'
 import { validateExport, runExport, fetchExports, exportCrate, exportRekordbox, exportSerato, fetchExportableCrates, previewCrateExport, previewRekordboxExport, previewSeratoExport } from '../api/exports'
 import type {
   ExcludedTrack,
@@ -490,7 +491,10 @@ function CrateExportPanel() {
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const load = () => fetchExportableCrates().then((items) => { setCrates(items); setSelected((value) => value ?? items[0]?.id ?? null) }).catch((e) => setError(e instanceof ApiError ? e.displayMessage : 'Could not load Manual Crates.'))
-  useEffect(() => { load() }, [])
+  useEffect(() => {
+    load()
+    fetchSettings().then((settings) => setRequest((current) => ({ ...current, path_mode: settings.preferences.default_export_path_mode }))).catch(() => undefined)
+  }, [])
   const makePreview = async () => { if (!selected) return; setBusy(true); setError(null); setResult(null); try { setPreview(await previewCrateExport(selected, request)) } catch (e) { setError(e instanceof ApiError ? e.displayMessage : 'Could not preview crate export.') } finally { setBusy(false) } }
   const write = async () => { if (!selected) return; setBusy(true); setError(null); try { const output = await exportCrate(selected, request); setResult(output.output_path); setPreview(output) } catch (e) { setError(e instanceof ApiError ? e.displayMessage : 'Could not create crate export.') } finally { setBusy(false) } }
   return <section className="section"><div className="card crate-export-panel"><div className="card-title-row"><div><h2 className="card-title">Manual Crate Exports</h2><p className="muted">Portable files only — never writes music files, tags, or DJ app databases.</p></div><Badge tone="info">Safe local export</Badge></div>{error && <StatusStrip tone="danger" role="alert" onDismiss={() => setError(null)}>{error}</StatusStrip>}{result && <StatusStrip tone="good">Created export: <code>{result}</code></StatusStrip>}{crates.length === 0 ? <EmptyState title="No Manual Crates" message="Create or save a crate before exporting a portable playlist." /> : <><div className="crate-export-controls"><label>Crate<select className="form-input" value={selected ?? ''} onChange={(e) => { setSelected(Number(e.target.value)); setPreview(null); setResult(null) }}>{crates.map((crate) => <option key={crate.id} value={crate.id}>{crate.name} ({crate.track_count})</option>)}</select></label><label>Format<select className="form-input" value={request.format} onChange={(e) => setRequest({ ...request, format: e.target.value as CrateExportFormat })}><option value="csv">CSV</option><option value="json">JSON</option><option value="m3u">M3U</option><option value="m3u8">M3U8 (UTF-8)</option></select></label><label>Path mode<select className="form-input" value={request.path_mode} onChange={(e) => setRequest({ ...request, path_mode: e.target.value as CratePathMode })}><option value="filename">Filename (safe default)</option><option value="relative">Relative to library root</option><option value="absolute">Absolute path</option></select></label><label>Line endings<select className="form-input" value={request.line_endings} onChange={(e) => setRequest({ ...request, line_endings: e.target.value as 'lf' | 'crlf' })}><option value="lf">LF</option><option value="crlf">CRLF</option></select></label></div><div className="form-checkboxes"><label className="form-check"><input type="checkbox" checked={request.include_metadata} onChange={(e) => setRequest({ ...request, include_metadata: e.target.checked })} /> Include metadata</label></div><div className="crate-export-actions"><button className="btn btn--ghost" disabled={busy} onClick={() => void makePreview()}>{busy ? 'Working…' : 'Preview content'}</button><button className="btn btn--primary" disabled={busy} onClick={() => void write()}>{busy ? 'Writing…' : 'Create export file'}</button></div>{preview && <><div className="crate-export-summary"><Badge tone="info">{preview.track_count} tracks</Badge><span>{preview.format.toUpperCase()} · {preview.path_mode} paths</span></div>{preview.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}<pre className="crate-export-preview">{preview.content}</pre></>}</>}</div></section>
@@ -513,6 +517,7 @@ function SeratoExportPanel() {
         setSelected((value) => value ?? items[0]?.id ?? null)
       })
       .catch((e) => setError(e instanceof ApiError ? e.displayMessage : 'Could not load Manual Crates.'))
+    fetchSettings().then((settings) => setPathMode(settings.preferences.default_export_path_mode)).catch(() => undefined)
   }, [])
 
   const makePreview = async () => {
@@ -581,6 +586,7 @@ function RekordboxExportPanel() {
         setSelected((value) => value ?? items[0]?.id ?? null)
       })
       .catch((e) => setError(e instanceof ApiError ? e.displayMessage : 'Could not load Manual Crates.'))
+    fetchSettings().then((settings) => setPathMode(settings.preferences.default_export_path_mode)).catch(() => undefined)
   }, [])
 
   const makePreview = async () => {

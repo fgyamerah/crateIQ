@@ -14,6 +14,7 @@ import MetadataSanitation from './pages/MetadataSanitation'
 import Quality from './pages/Quality'
 import SetBuilder from './pages/SetBuilder'
 import SsdSync from './pages/SsdSync'
+import Settings from './pages/Settings'
 
 export default function App() {
   return (
@@ -36,11 +37,11 @@ export default function App() {
           <Route path="exports" element={<ErrorBoundary><Export /></ErrorBoundary>} />
           <Route path="sync" element={<ErrorBoundary><SsdSync /></ErrorBoundary>} />
           <Route path="reconciliation" element={<ErrorBoundary><Reconciliation /></ErrorBoundary>} />
+          <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
 
           <Route path="dashboard" element={<Navigate to="/" replace />} />
           <Route path="collection" element={<Navigate to="/" replace />} />
           <Route path="tracks" element={<Navigate to="/" replace />} />
-          <Route path="settings" element={<Navigate to="/" replace />} />
           <Route path="export" element={<Navigate to="/exports" replace />} />
           <Route path="ssd-sync" element={<Navigate to="/sync" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />

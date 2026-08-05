@@ -39,6 +39,13 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Local-first Settings page (2026-08-05)
+         `/settings` now exposes selected-library, optional-tool, runtime, and
+         locked safety diagnostics. Its only editable value is the persisted
+         default export path mode in ignored `logs/app_settings.json`; library
+         roots/binary overrides remain restart-required environment settings.
+         No scanning or library/DJ application mutation is introduced.
+
 [x] (P1) Audio Preview Player foundation (2026-08-04)
          Browser-native preview is available from Library, Manual Crates, and
          Smart Crates through a scoped DB-backed endpoint. It only serves

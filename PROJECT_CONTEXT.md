@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Settings is now a supported local-first route with current
+  library/tool/readiness diagnostics, locked safety policies, and one
+  library-scoped preference: the default export path mode. The preference
+  persists in ignored `<library-root>/logs/app_settings.json` and initializes
+  export forms on their next load. Library roots and binary overrides remain
+  read-only process-start environment settings with restart guidance; no
+  folders are scanned and no audio/tag/MIK/DJ database data is changed.
 - 2026-08-04: Audio Preview Player foundation adds browser-native, preview-only
   playback to the Library inspector plus Manual and Smart Crate track rows.
   `GET /api/tracks/{track_id}/preview-audio` resolves only DB-backed files

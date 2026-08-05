@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 
 import backend.app.main as backend_main
 from backend.app.core.library_root import assert_path_under_root
+from backend.app.services import settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1514,3 +1515,34 @@ def test_preview_audio_rejects_unsafe_and_missing_files(client):
     missing = test_client.get(f"/api/tracks/{track_id}/preview-audio")
     assert missing.status_code == 404
     assert "unavailable" in missing.json()["detail"].lower()
+
+
+def test_settings_reports_safe_library_tools_and_locked_policies(client):
+    test_client, root = client
+    response = test_client.get("/api/settings")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["library"]["mode"] == "configured"
+    assert payload["library"]["processed_db"] == str(root / "logs" / "processed.db")
+    assert payload["library"]["manual_crates_db"] == str(root / "logs" / "manual_crates.db")
+    assert payload["library"]["exports_root"] == str(root / "exports")
+    assert {tool["name"] for tool in payload["tools"]} == {"ffprobe", "ffmpeg", "keyfinder-cli", "aubio", "beet", "rmlint", "rsync"}
+    assert payload["safety"]["mixed_in_key_authoritative"] is True
+    assert payload["safety"]["no_live_serato_writes"] is True
+    assert payload["preferences"]["default_export_path_mode"] == "filename"
+
+
+def test_settings_persists_safe_preference_and_rejects_invalid_updates(client):
+    test_client, root = client
+    updated = test_client.patch("/api/settings", json={"default_export_path_mode": "relative"})
+    assert updated.status_code == 200
+    assert updated.json()["preferences"]["default_export_path_mode"] == "relative"
+    settings_path = root / "logs" / "app_settings.json"
+    assert json.loads(settings_path.read_text(encoding="utf-8")) == {"default_export_path_mode": "relative"}
+    assert test_client.get("/api/settings").json()["preferences"]["default_export_path_mode"] == "relative"
+    invalid = test_client.patch("/api/settings", json={"default_export_path_mode": "../../unsafe"})
+    assert invalid.status_code == 422
+
+
+def test_settings_recognizes_the_repository_demo_library():
+    assert settings_service._is_demo_root(Path(__file__).resolve().parents[1] / ".run" / "demo-library")

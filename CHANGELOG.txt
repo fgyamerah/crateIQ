@@ -2,6 +2,19 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: local-first Settings diagnostics and preferences
+
+- Replaced the hidden Settings placeholder with supported `/settings` route
+  and sidebar navigation. The page shows redacted selected-library paths,
+  readiness, optional tool detection/source, locked safety policies, and
+  clear private-environment/restart guidance for roots and tool overrides.
+- Added `GET /api/settings`, `GET /api/settings/runtime`, and a narrowly
+  scoped `PATCH /api/settings`. Only `default_export_path_mode` is editable;
+  it is validated, stored in ignored `<library-root>/logs/app_settings.json`,
+  and initializes all export forms on their next load.
+- Settings remains non-destructive: no folder scan, audio/tag/MIK change,
+  Serato/Rekordbox database write, or live configuration reload is performed.
+
 [2026-08-04] — feat: safe native Audio Preview Player foundation
 
 - Added `GET /api/tracks/{track_id}/preview-audio`, which resolves only an
