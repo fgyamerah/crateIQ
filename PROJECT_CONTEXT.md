@@ -6,6 +6,19 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Accepted the design-only real waveform architecture in
+  `docs/architecture/WAVEFORM_ARCHITECTURE.md`. The selected architecture uses
+  explicit demand-driven backend extraction with FFmpeg/ffprobe strictly as a
+  read-only decoder/probe toolchain, a CrateIQ min/max peak accumulator, a
+  versioned content-addressed cache under backend-owned storage, and frontend
+  canvas rendering driven by the existing persistent player's time/seek state.
+  Generation is never started by ordinary GET, Library open, import, or scan;
+  default concurrency is one and peak count is capped for long DJ sets. The
+  current deterministic three-band display remains the graceful fallback.
+  This milestone changed documentation only: no extractor, API, DB schema,
+  cache, dependency, or runtime behavior was implemented, and no audio or
+  trusted metadata was read by an analysis tool or modified.
+
 - 2026-08-05: Completed browser-driven persistent-player verification against
   the explicitly selected `crateiq-test-library`. Chrome decoded representative
   MP3 and FLAC files through `/api/tracks/{track_id}/preview-audio`, including

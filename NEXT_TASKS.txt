@@ -63,10 +63,18 @@ CURRENT FOCUS
     absolute local filepath. No source audio was copied, modified, analyzed,
     moved, renamed, deleted, or retagged.
 
-[ ] (P3) Consider real waveform extraction only as a separately designed safe feature
-    The current three-band display is intentionally deterministic and visual-
-    only. Any future extraction needs an explicit privacy/performance/cache and
-    read-only tool contract; do not infer or fabricate analyzed waveform data.
+[x] (P3) Design real waveform extraction as a separately safe feature (2026-08-05)
+    `docs/architecture/WAVEFORM_ARCHITECTURE.md` defines the accepted backend-
+    extraction/frontend-rendering architecture, decoder-only FFmpeg primary,
+    disposable app-owned cache, explicit generation API, bounded job/resource
+    model, privacy contract, failure fallback, tests, and W1-W8 rollout. This is
+    architecture only; no waveform extraction or cache exists yet.
+
+[ ] (P2) Implement Waveform Phase W1 — backend state and capability foundation
+    Add only the backend-owned jobs/cache state schema, cache-root validation,
+    configuration, and optional readiness/capability contract from the accepted
+    ADR. Do not decode audio in W1 and do not write waveform state to the trusted
+    pipeline `processed.db`.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

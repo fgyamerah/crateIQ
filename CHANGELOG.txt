@@ -2,6 +2,26 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — Design safe real waveform architecture
+
+- Added `docs/architecture/WAVEFORM_ARCHITECTURE.md`, an implementation-ready
+  ADR for explicit, demand-driven backend waveform extraction and frontend
+  rendering. It selects decoder-only FFmpeg/ffprobe plus a bounded CrateIQ
+  min/max accumulator, with `audiowaveform` as the measured fallback.
+- Defined the disposable backend-owned cache format/location/key/invalidation,
+  jobs DB schema, API/status contracts, one-worker resource defaults, long-file
+  limits, privacy/security/process rules, graceful visual fallback, seeking and
+  accessibility boundaries, cleanup, tests, performance gates, and W1-W8
+  implementation sequence.
+- Recorded Waveform Phase W1 as the next task without marking extraction
+  implemented. The established persistent-player/audio ownership remains
+  unchanged.
+- Files affected: `docs/architecture/WAVEFORM_ARCHITECTURE.md`,
+  `NEXT_TASKS.txt`, `PROJECT_CONTEXT.md`, and `CHANGELOG.txt`.
+- Migration notes: none. Documentation only; no runtime code, DB schema, cache,
+  dependencies, source audio, metadata, crates, exports, or DJ databases were
+  changed.
+
 [2026-08-05] — Verify persistent playback with browser-supported audio
 
 - Verified the persistent player end to end in Chrome against the explicitly
