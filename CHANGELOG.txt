@@ -2,6 +2,15 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add safe Metadata Sources settings foundation
+
+- Added a local-only registry for local tags, filename hints, Mixed In Key,
+  Beets, MusicBrainz, Discogs, Spotify, Deezer, Beatport, and Last.fm.
+  External APIs remain disabled by default and do not perform lookup/testing.
+- Credentials are saved only in ignored `.run/local/metadata_sources.json`,
+  are never returned by the API, and can be cleared from Settings. All future
+  enrichment remains review-first, DB-only, and cannot write tags or files.
+
 [2026-08-05] — feat: add selected-field Beets enrichment review
 
 - Added `/beets-review`, a review-before-apply workspace for missing local

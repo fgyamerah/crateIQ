@@ -7489,6 +7489,21 @@ tr.row--selected td {
 .settings-capability span, .settings-capability small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .settings-capability small { overflow-wrap: anywhere; }
 .settings-capability .btn { flex: 0 0 auto; }
+.metadata-sources-card { gap: 18px; }
+.metadata-source-group { display: grid; gap: 9px; }
+.metadata-source-group h3 { font-size: 13px; margin: 0; }
+.metadata-source-list { border-top: 1px solid var(--border); }
+.metadata-source { border-bottom: 1px solid var(--border); display: grid; gap: 10px; padding: 12px 2px; }
+.metadata-source-main, .metadata-source-actions, .metadata-source-title, .metadata-source-credentials, .metadata-source-credentials label { align-items: center; display: flex; gap: 8px; }
+.metadata-source-main { align-items: flex-start; justify-content: space-between; }
+.metadata-source-main > div { display: grid; gap: 4px; min-width: 0; }
+.metadata-source-main p, .metadata-source-main small, .metadata-source-credentials p { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin: 0; }
+.metadata-source-title, .metadata-source-actions { flex-wrap: wrap; }
+.metadata-source-actions label { align-items: center; color: var(--text-muted); display: flex; font-size: 12px; gap: 6px; }
+.metadata-source-actions .form-input { min-height: 30px; padding: 4px 6px; width: 72px; }
+.metadata-source-credentials { align-items: stretch; background: rgba(8,12,19,.45); border: 1px solid rgba(67,77,108,.58); border-radius: 10px; flex-direction: column; padding: 12px; }
+.metadata-source-credentials label { align-items: stretch; flex-direction: column; font-size: 12px; text-transform: capitalize; }
+@media (max-width: 720px) { .metadata-source-main { flex-direction: column; } .metadata-source-actions { align-items: stretch; } }
 .settings-import-wizard { gap: 14px; }
 .settings-import-steps { border-top: 1px solid var(--border); display: grid; list-style: none; margin: 0; padding: 0; }
 .settings-import-steps li { align-items: flex-start; border-bottom: 1px solid var(--border); display: flex; gap: 10px; padding: 13px 2px; }

@@ -2153,6 +2153,48 @@ def test_settings_recognizes_the_repository_demo_library():
     assert settings_service._is_demo_root(Path(__file__).resolve().parents[1] / ".run" / "demo-library")
 
 
+def test_metadata_sources_are_safe_local_settings_and_never_echo_credentials(client, monkeypatch, tmp_path):
+    test_client, _ = client
+    monkeypatch.setattr(settings_service, "METADATA_SOURCES_PATH", tmp_path / "metadata_sources.json")
+
+    initial = test_client.get("/api/settings/metadata-sources")
+    assert initial.status_code == 200
+    sources = {source["id"]: source for source in initial.json()["sources"]}
+    assert {"local_tags", "filename_hints", "mixed_in_key", "beets", "musicbrainz", "discogs", "spotify", "deezer", "beatport", "lastfm"} == set(sources)
+    assert sources["spotify"]["enabled"] is False
+    assert sources["mixed_in_key"]["credentials_status"] == "not_required"
+
+    saved = test_client.patch("/api/settings/metadata-sources", json={"sources": [{
+        "id": "spotify", "enabled": True, "priority": 33,
+        "credentials": {"client_id": "safe-client-id", "client_secret": "safe-client-secret"},
+    }]})
+    assert saved.status_code == 200
+    payload = saved.json()
+    assert "safe-client-id" not in json.dumps(payload)
+    assert "safe-client-secret" not in json.dumps(payload)
+    spotify = next(source for source in payload["sources"] if source["id"] == "spotify")
+    assert spotify["enabled"] is True
+    assert spotify["priority"] == 33
+    assert spotify["credentials_status"] == "saved"
+    assert set(spotify["saved_credential_fields"]) == {"client_id", "client_secret"}
+
+    invalid_field = test_client.patch("/api/settings/metadata-sources", json={"sources": [{"id": "spotify", "credentials": {"token": "nope"}}]})
+    assert invalid_field.status_code == 422
+    unknown = test_client.patch("/api/settings/metadata-sources", json={"sources": [{"id": "unknown", "enabled": True}]})
+    assert unknown.status_code == 422
+
+    tested = test_client.post("/api/settings/metadata-sources/spotify/test")
+    assert tested.status_code == 200
+    assert tested.json()["connection_status"] == "not_implemented"
+    assert tested.json()["network_used"] is False
+
+    cleared = test_client.post("/api/settings/metadata-sources/spotify/clear-credentials")
+    assert cleared.status_code == 200
+    assert cleared.json()["cleared"] is True
+    after_clear = test_client.get("/api/settings/metadata-sources").json()
+    assert next(source for source in after_clear["sources"] if source["id"] == "spotify")["credentials_status"] == "missing"
+
+
 def test_settings_validates_and_saves_a_pending_library_root(client, monkeypatch, tmp_path):
     test_client, active_root = client
     pending_root = tmp_path / "next-library"

@@ -39,6 +39,11 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Add Metadata Sources settings foundation with local-only masked credential
+    storage and disabled-by-default external source registry.
+[ ] Design multi-source enrichment comparison/review after safe, explicit
+    provider matching contracts are defined; do not add automatic lookup.
+
 [x] (P1) Selected-field Beets enrichment review (2026-08-05)
          `/beets-review` now records review state and applies only explicitly
          entered/saved/confirmed artist, title, or genre fields to the local

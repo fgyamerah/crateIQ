@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import os
 import shutil
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -34,7 +35,131 @@ _REPO_ROOT = Path(__file__).resolve().parents[3]
 # This is deliberately repo-scoped rather than library-scoped: saving a new
 # root must not write into the library that has not yet been selected.
 LOCAL_ENV_PATH = _REPO_ROOT / ".run" / "local" / "crateiq.env"
+METADATA_SOURCES_PATH = _REPO_ROOT / ".run" / "local" / "metadata_sources.json"
 RESTART_COMMAND = "scripts/crateiq-local-services.sh stop && scripts/crateiq-local-services.sh start"
+
+_METADATA_SOURCE_DEFINITIONS: tuple[dict[str, Any], ...] = (
+    {"id": "local_tags", "label": "Local tags", "category": "local", "requires_credentials": False, "default_enabled": True, "priority": 10, "best_for": ["Existing title, artist, album, genre metadata"], "current_behavior": "implemented"},
+    {"id": "mixed_in_key", "label": "Mixed In Key", "category": "external_input", "requires_credentials": False, "default_enabled": True, "priority": 20, "best_for": ["Trusted BPM, key, Camelot, and cue metadata"], "current_behavior": "implemented"},
+    {"id": "filename_hints", "label": "Filename hints", "category": "local", "requires_credentials": False, "default_enabled": True, "priority": 90, "best_for": ["Low-confidence fallback hints"], "current_behavior": "implemented"},
+    {"id": "beets", "label": "Beets", "category": "installed_tool", "requires_credentials": False, "default_enabled": True, "priority": 60, "best_for": ["Missing non-critical local-index metadata review"], "current_behavior": "preview_only"},
+    {"id": "musicbrainz", "label": "MusicBrainz", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 40, "best_for": ["Official releases and albums"], "current_behavior": "settings_only", "credential_fields": ("user_agent", "contact_email")},
+    {"id": "discogs", "label": "Discogs", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 50, "best_for": ["Electronic, vinyl, remix, and release metadata"], "current_behavior": "settings_only", "credential_fields": ("personal_access_token",)},
+    {"id": "spotify", "label": "Spotify", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 70, "best_for": ["Mainstream track, artist, and album matching"], "current_behavior": "settings_only", "credential_fields": ("client_id", "client_secret")},
+    {"id": "deezer", "label": "Deezer", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 80, "best_for": ["Alternate track, artist, and album matching"], "current_behavior": "settings_only", "credential_fields": ("app_id", "app_secret")},
+    {"id": "beatport", "label": "Beatport", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 55, "best_for": ["DJ, electronic, genre, and style metadata"], "current_behavior": "planned", "configuration_note": "A supported API path has not been implemented."},
+    {"id": "lastfm", "label": "Last.fm", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 85, "best_for": ["Genre and tag hints"], "current_behavior": "settings_only", "credential_fields": ("api_key",)},
+)
+_METADATA_SOURCE_BY_ID = {source["id"]: source for source in _METADATA_SOURCE_DEFINITIONS}
+
+
+def _load_metadata_source_settings() -> dict[str, Any]:
+    try:
+        raw = json.loads(METADATA_SOURCES_PATH.read_text(encoding="utf-8"))
+    except (FileNotFoundError, OSError, json.JSONDecodeError):
+        return {"sources": {}}
+    return raw if isinstance(raw, dict) and isinstance(raw.get("sources"), dict) else {"sources": {}}
+
+
+def _save_metadata_source_settings(settings: dict[str, Any]) -> None:
+    METADATA_SOURCES_PATH.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=METADATA_SOURCES_PATH.parent, delete=False) as handle:
+        handle.write(json.dumps(settings, indent=2) + "\n")
+        temporary = Path(handle.name)
+    temporary.replace(METADATA_SOURCES_PATH)
+
+
+def _metadata_source_tool_available(source_id: str) -> bool:
+    if source_id != "beets":
+        return True
+    report = run_preflight()
+    return any(check["name"] == "binary_beet" and check["status"] == "pass" for check in report["checks"])
+
+
+def get_metadata_sources() -> dict[str, Any]:
+    stored = _load_metadata_source_settings()["sources"]
+    sources: list[dict[str, Any]] = []
+    for definition in _METADATA_SOURCE_DEFINITIONS:
+        source_id = definition["id"]
+        state = stored.get(source_id, {}) if isinstance(stored.get(source_id), dict) else {}
+        credentials = state.get("credentials", {}) if isinstance(state.get("credentials"), dict) else {}
+        credential_fields = tuple(definition.get("credential_fields", ()))
+        saved_fields = sorted(field for field in credential_fields if isinstance(credentials.get(field), str) and credentials[field].strip())
+        requires_credentials = bool(definition["requires_credentials"])
+        configured = bool(saved_fields) if credential_fields else (source_id != "beets" or _metadata_source_tool_available(source_id))
+        if requires_credentials:
+            credential_status = "saved" if set(credential_fields).issubset(saved_fields) else "missing"
+        else:
+            credential_status = "not_required"
+        if source_id == "beets":
+            connection_status = "ready" if _metadata_source_tool_available(source_id) else "unavailable"
+        elif definition["category"] == "external_api":
+            connection_status = "not_implemented"
+        else:
+            connection_status = "ready"
+        sources.append({
+            "id": source_id, "label": definition["label"], "category": definition["category"],
+            "enabled": bool(state.get("enabled", definition["default_enabled"])), "configured": configured,
+            "requires_credentials": requires_credentials, "credentials_status": credential_status,
+            "credential_fields": list(credential_fields), "saved_credential_fields": saved_fields,
+            "connection_status": connection_status, "priority": state.get("priority", definition["priority"]),
+            "best_for": definition["best_for"], "current_behavior": definition["current_behavior"],
+            "configuration_note": definition.get("configuration_note"),
+            "safety": ["review_first", "db_only", "no_tag_writes", "no_file_writes"],
+        })
+    return {"sources": sorted(sources, key=lambda source: (source["priority"], source["label"]))}
+
+
+def update_metadata_sources(updates: list[dict[str, Any]]) -> dict[str, Any]:
+    settings = _load_metadata_source_settings()
+    sources = settings["sources"]
+    for update in updates:
+        source_id = update["id"]
+        definition = _METADATA_SOURCE_BY_ID.get(source_id)
+        if definition is None:
+            raise ValueError("Unknown metadata source")
+        state = sources.setdefault(source_id, {})
+        if update.get("enabled") is not None:
+            state["enabled"] = bool(update["enabled"])
+        if update.get("priority") is not None:
+            state["priority"] = int(update["priority"])
+        if update.get("credentials") is not None:
+            allowed = set(definition.get("credential_fields", ()))
+            invalid = set(update["credentials"]) - allowed
+            if invalid:
+                raise ValueError("Unsupported credential field for metadata source")
+            credentials = state.setdefault("credentials", {})
+            for field, value in update["credentials"].items():
+                if value is None or not value.strip():
+                    credentials.pop(field, None)
+                else:
+                    credentials[field] = value.strip()
+    _save_metadata_source_settings(settings)
+    return get_metadata_sources()
+
+
+def clear_metadata_source_credentials(source_id: str) -> dict[str, Any]:
+    if source_id not in _METADATA_SOURCE_BY_ID:
+        raise ValueError("Unknown metadata source")
+    settings = _load_metadata_source_settings()
+    state = settings["sources"].setdefault(source_id, {})
+    state.pop("credentials", None)
+    _save_metadata_source_settings(settings)
+    return {"source_id": source_id, "cleared": True, "message": "Saved local credentials were cleared."}
+
+
+def test_metadata_source(source_id: str) -> dict[str, Any]:
+    if source_id not in _METADATA_SOURCE_BY_ID:
+        raise ValueError("Unknown metadata source")
+    source = next(item for item in get_metadata_sources()["sources"] if item["id"] == source_id)
+    if source_id == "beets":
+        ready = source["connection_status"] == "ready"
+        return {"source_id": source_id, "connection_status": "ready" if ready else "unavailable", "message": "Beets executable detection only; no Beets command was run.", "network_used": False}
+    if source_id in {"local_tags", "filename_hints", "mixed_in_key"}:
+        return {"source_id": source_id, "connection_status": "ready", "message": "Local metadata source is available; no scan or tag write was performed.", "network_used": False}
+    if source_id == "musicbrainz" and source["configured"]:
+        return {"source_id": source_id, "connection_status": "not_implemented", "message": "Local configuration is saved. Network connection testing is not implemented.", "network_used": False}
+    return {"source_id": source_id, "connection_status": "not_implemented", "message": "External connection testing and track lookup are not implemented in this local-only foundation.", "network_used": False}
 
 
 def _settings_path(root: Path) -> Path:

@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added Settings → Metadata Sources: a safe local-only registry
+  for local tags, filename hints, MIK, Beets, and future external sources.
+  External APIs are disabled by default; credentials live only in ignored
+  `.run/local/metadata_sources.json`, are masked by omission in all API/UI
+  responses, and are not used for lookup in this foundation.
+
 - 2026-08-05: Added `/beets-review`, a selected-field local enrichment
   workspace. It snapshots only candidates missing artist/title/genre, then
   requires each user-entered value to be explicitly selected, saved, and

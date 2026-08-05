@@ -248,3 +248,13 @@ that the executable is discoverable; it does not run key analysis.
   intended workflow are deliberately configured.
 - Protect MIK BPM, key, and cue values: CrateIQ analysis is missing-data-only.
 - Do not commit binaries, downloaded releases, or user-specific local paths.
+## Metadata source settings
+
+Settings → **Metadata Sources** is a local-only registry for local tags,
+filename hints, Mixed In Key, Beets, MusicBrainz, Discogs, Spotify, Deezer,
+Beatport, and Last.fm. External sources are disabled by default. Any entered
+credential is saved only in ignored `.run/local/metadata_sources.json`, is
+never returned by the API/UI, and can be cleared from Settings. This is a
+configuration foundation only: CrateIQ performs no external matching or broad
+lookup from these settings yet. Future enrichment must remain review-first and
+DB-only; MIK remains authoritative for BPM, key, Camelot, and cues when present.

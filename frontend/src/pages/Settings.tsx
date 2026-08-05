@@ -44,6 +44,7 @@ import EmptyState from '../components/ui/EmptyState'
 import KpiCard from '../components/ui/KpiCard'
 import PageHeader from '../components/PageHeader'
 import StatusStrip from '../components/ui/StatusStrip'
+import MetadataSourcesPanel from '../components/settings/MetadataSourcesPanel'
 
 function badgeTone(status: CheckStatus) {
   return status === 'pass' ? 'succeeded' : status === 'warn' ? 'pending' : 'failed'
@@ -346,6 +347,7 @@ export default function Settings() {
           <nav className="settings-tabs" aria-label="Settings sections">
             <a href="#library-paths">Library &amp; Paths</a>
             <a href="#analysis-tools">Analysis &amp; Tools</a>
+            <a href="#metadata-sources">Metadata Sources</a>
             <a href="#safety-behavior">Safety &amp; Behavior</a>
             <a href="#job-defaults">Job Defaults</a>
             <a href="#backup-restore">Backup &amp; Restore</a>
@@ -524,6 +526,8 @@ export default function Settings() {
               </div>
             </div>
           </section>
+
+          <MetadataSourcesPanel />
 
           <section className="section settings-anchor-section" id="job-defaults">
             <div className="card settings-card">

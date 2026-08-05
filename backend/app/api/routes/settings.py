@@ -9,6 +9,7 @@ from pydantic import BaseModel, Field
 from ...core.preflight import run_preflight
 from ...services import settings_service
 from ...services import library_setup_service
+from ...schemas.metadata_sources import MetadataSourceClearResponse, MetadataSourceTestResponse, MetadataSourcesResponse, MetadataSourcesUpdateRequest
 
 router = APIRouter(tags=["settings"])
 
@@ -137,6 +138,35 @@ async def patch_settings(body: SettingsUpdateRequest) -> SettingsResponse:
 async def get_settings_capabilities() -> SettingsCapabilities:
     """Read-only, action-level availability for optional local workflows."""
     return SettingsCapabilities(**settings_service.get_capabilities())
+
+
+@router.get("/settings/metadata-sources", response_model=MetadataSourcesResponse)
+async def get_metadata_sources() -> MetadataSourcesResponse:
+    return MetadataSourcesResponse(**settings_service.get_metadata_sources())
+
+
+@router.patch("/settings/metadata-sources", response_model=MetadataSourcesResponse)
+async def patch_metadata_sources(body: MetadataSourcesUpdateRequest) -> MetadataSourcesResponse:
+    try:
+        return MetadataSourcesResponse(**settings_service.update_metadata_sources([item.model_dump(exclude_none=True) for item in body.sources]))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/settings/metadata-sources/{source_id}/test", response_model=MetadataSourceTestResponse)
+async def test_metadata_source(source_id: str) -> MetadataSourceTestResponse:
+    try:
+        return MetadataSourceTestResponse(**settings_service.test_metadata_source(source_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/settings/metadata-sources/{source_id}/clear-credentials", response_model=MetadataSourceClearResponse)
+async def clear_metadata_source_credentials(source_id: str) -> MetadataSourceClearResponse:
+    try:
+        return MetadataSourceClearResponse(**settings_service.clear_metadata_source_credentials(source_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.post("/settings/library/validate", response_model=LibraryRootValidationResponse)

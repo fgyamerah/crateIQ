@@ -58,6 +58,7 @@ file-writing workflow.
 | BPM analysis with `aubio` | Implemented safe runner | Preview and confirmation required; only missing BPM is eligible. |
 | Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
 | Beets enrichment | Selected-field DB-only review | Local missing-field candidates; explicit saved/confirmed artist/title/genre apply, no `beet` invocation or tag/file writes. |
+| Metadata Sources | Settings foundation | Local tags, MIK, Beets, and future APIs are modeled; external APIs are disabled by default and do not yet perform lookup. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
