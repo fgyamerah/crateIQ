@@ -1002,6 +1002,8 @@ textarea {
   border: 1px solid transparent;
   transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
   line-height: 1;
+  text-decoration: none;
+  white-space: nowrap;
 }
 
 .btn:disabled {
@@ -7855,7 +7857,7 @@ tr.row--selected td {
 }
 .manual-crates-kpis { display: grid; grid-template-columns: repeat(2, minmax(0, 220px)); gap: 12px; }
 .manual-crates-layout { display: grid; grid-template-columns: minmax(250px, 320px) minmax(0, 1fr); gap: 16px; align-items: start; }
-.manual-crates-list, .manual-crate-detail { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; }
+.manual-crates-list, .manual-crate-detail { background: var(--panel-gradient); border: 1px solid var(--border); border-radius: 14px; box-shadow: var(--panel-shadow-soft); }
 .manual-crates-list { overflow: hidden; }
 .manual-crates-create { padding: 14px; border-bottom: 1px solid var(--border); display: grid; gap: 7px; font-size: 12px; font-weight: 700; }
 .manual-crates-create > div { display: flex; gap: 8px; }
@@ -7864,7 +7866,7 @@ tr.row--selected td {
 .manual-crate-list-item { background: transparent; border: 0; border-bottom: 1px solid var(--border); color: var(--text); cursor: pointer; display: flex; gap: 10px; justify-content: space-between; padding: 12px 14px; text-align: left; width: 100%; }
 .manual-crate-list-item:last-child { border-bottom: 0; }
 .manual-crate-list-item:hover, .manual-crate-list-item--selected { background: var(--bg-hover); }
-.manual-crate-list-item--selected { box-shadow: inset 3px 0 var(--brand-teal); }
+.manual-crate-list-item--selected { box-shadow: inset 1px 0 var(--brand-teal); }
 .manual-crate-list-item span:first-child, .manual-library-result > span { display: grid; gap: 2px; min-width: 0; }
 .manual-crate-list-item strong, .manual-library-result strong, .manual-crate-track-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .manual-crate-list-item small, .manual-library-result small, .manual-crate-track-main span, .manual-crate-section-head p { color: var(--text-muted); font-size: 12px; }
@@ -8323,6 +8325,87 @@ tr.row--selected td {
 .beets-review-apply { background: rgba(139,92,246,.07); border: 1px solid rgba(139,92,246,.26); border-radius: 10px; display: grid; gap: 9px; padding: 12px; }
 .beets-review-apply .form-check { color: var(--text); font-size: 12px; }
 .beets-review-apply small { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
+
+/* Secondary operational routes share the Library's compact panel and table
+   rhythm without changing any review or apply behavior. */
+.secondary-deck-page {
+  display: grid;
+  align-content: start;
+  gap: 14px;
+  padding-bottom: 44px;
+}
+
+.secondary-deck-page .page-header { margin-bottom: 0; }
+.secondary-deck-page > .ui-status-strip { margin-bottom: 0; }
+.secondary-deck-page > .beets-review-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+
+.table-scroll {
+  width: 100%;
+  min-width: 0;
+  overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.card.table-scroll { padding: 0; }
+
+.table-scroll table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.table-scroll th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 9px 11px;
+  border-bottom: 1px solid var(--border);
+  background: rgba(8,13,20,.97);
+  color: var(--text-muted);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-align: left;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.table-scroll td {
+  padding: 8px 11px;
+  border-bottom: 1px solid rgba(44,48,71,.7);
+  line-height: 1.35;
+  vertical-align: middle;
+}
+
+.table-scroll tbody tr:last-child td { border-bottom: 0; }
+.table-scroll tbody tr:hover td { background: rgba(32,212,216,.035); }
+.table-scroll td small { display: block; margin-top: 2px; color: var(--text-muted); font-size: 10.5px; }
+.table-scroll td:last-child { white-space: nowrap; }
+.table-scroll td:last-child .btn + .btn { margin-left: 4px; }
+
+.metadata-repair-page .table-scroll { max-height: min(64vh, 680px); }
+.metadata-repair-page .table-scroll td:first-child { min-width: 230px; }
+.metadata-repair-page .table-scroll td:nth-child(2) { min-width: 120px; }
+
+.genre-taxonomy-page .settings-action-row .form-input {
+  width: auto;
+  min-width: min(100%, 220px);
+  flex: 1 1 220px;
+}
+
+.genre-taxonomy-page .settings-action-row .btn { flex: 0 0 auto; }
+.genre-taxonomy-page .settings-policy-grid { gap: 6px; }
+.genre-taxonomy-page .settings-policy-grid > span { border-radius: 8px; }
+
+@media (max-width: 760px) {
+  .secondary-deck-page { padding: 16px; }
+  .secondary-deck-page > .beets-review-kpis { grid-template-columns: 1fr; }
+  .genre-taxonomy-page .settings-action-row { align-items: stretch; flex-direction: column; }
+  .genre-taxonomy-page .settings-action-row .form-input { flex-basis: auto; width: 100%; }
+  .genre-taxonomy-page .settings-action-row .btn { align-self: flex-start; }
+}
+
 @media (max-width: 520px) {
   .settings-header-actions { justify-content: flex-start; }
   .settings-capability { flex-direction: column; }
@@ -8353,7 +8436,7 @@ tr.row--selected td {
 .manual-library-result { justify-content: space-between; }
 .manual-library-result > span { flex: 1; }
 .smart-crates-layout { display: grid; grid-template-columns: minmax(230px, 300px) minmax(0, 1fr); gap: 16px; align-items: start; }
-.smart-crates-controls, .smart-crates-work { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
+.smart-crates-controls, .smart-crates-work { background: var(--panel-gradient); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--panel-shadow-soft); }
 .smart-crates-controls { display: grid; gap: 8px; }
 .smart-crates-controls h2 { font-size: 15px; margin-bottom: 3px; }
 .smart-review-context { margin: -2px 0 10px; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
