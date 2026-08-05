@@ -21,6 +21,7 @@ import SsdSync from './pages/SsdSync'
 import Settings from './pages/Settings'
 import Genres from './pages/Genres'
 import MusicReview from './pages/Listening'
+import PersistentPlayerProvider from './components/player/PersistentPlayerProvider'
 
 function LegacyListeningRedirect() {
   const location = useLocation()
@@ -34,9 +35,10 @@ function LegacyListeningRedirect() {
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <Routes>
-        <Route element={<Layout />}>
+    <PersistentPlayerProvider>
+      <BrowserRouter>
+        <Routes>
+          <Route element={<Layout />}>
           <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
           <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
@@ -68,8 +70,9 @@ export default function App() {
           <Route path="export" element={<Navigate to="/exports" replace />} />
           <Route path="ssd-sync" element={<Navigate to="/sync" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
-        </Route>
-      </Routes>
-    </BrowserRouter>
+          </Route>
+        </Routes>
+      </BrowserRouter>
+    </PersistentPlayerProvider>
   )
 }
