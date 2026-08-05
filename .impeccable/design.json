@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-05T00:00:00Z",
+  "title": "Design System: CrateIQ",
+  "extensions": {
+    "colorMeta": {
+      "deck-black": { "role": "neutral", "displayName": "Deck Black", "canonical": "#080d14", "tonalRamp": ["#030609", "#080d14", "#111d2a", "#263b50", "#526b82", "#8fa3b6", "#cbd6df", "#eef4f7"] },
+      "cyan-signal": { "role": "primary", "displayName": "Cyan Signal", "canonical": "#20d4d8", "tonalRamp": ["#04292b", "#075054", "#0a767b", "#109da2", "#20d4d8", "#67e4e7", "#aaf1f2", "#e7fbfb"] },
+      "teal-action": { "role": "secondary", "displayName": "Teal Action", "canonical": "#14b8a6", "tonalRamp": ["#042824", "#075147", "#0a7468", "#0e998a", "#14b8a6", "#5dd4c7", "#a7ebe4", "#e6faf8"] },
+      "violet-harmonic": { "role": "tertiary", "displayName": "Violet Harmonic", "canonical": "#a78bfa", "tonalRamp": ["#20163f", "#382565", "#51368d", "#7454c4", "#a78bfa", "#c5b5fc", "#ded5fe", "#f4f1ff"] }
+    },
+    "typographyMeta": {
+      "title": { "displayName": "Workspace Title", "purpose": "Compact route and panel titles." },
+      "body": { "displayName": "Interface Body", "purpose": "Operational copy and controls." },
+      "label": { "displayName": "Data Label", "purpose": "Table headers, status labels, and compact metadata." }
+    },
+    "shadows": [
+      { "name": "panel-soft", "value": "0 8px 24px rgba(0,0,0,0.16)", "purpose": "Separates operational panels from the workspace canvas." },
+      { "name": "panel", "value": "0 14px 34px rgba(0,0,0,0.24)", "purpose": "Reserved for primary inspectors and elevated menus." }
+    ],
+    "motion": [
+      { "name": "control-state", "value": "140ms ease", "purpose": "Fast hover and focus feedback for dense controls." }
+    ],
+    "breakpoints": [
+      { "name": "tablet", "value": "860px" },
+      { "name": "mobile", "value": "520px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Compact high-confidence action control.",
+      "html": "<button class=\"ds-btn-primary\">Open review</button>",
+      "css": ".ds-btn-primary{background:linear-gradient(135deg,#14b8a6,#22d3ee);border:1px solid rgba(103,232,249,.7);border-radius:6px;color:#031416;font:700 13px Inter,system-ui,sans-serif;padding:7px 14px;box-shadow:0 6px 18px rgba(20,184,166,.2);transition:filter .14s ease,box-shadow .14s ease}.ds-btn-primary:hover{filter:brightness(1.08);box-shadow:0 8px 22px rgba(20,184,166,.28)}.ds-btn-primary:focus-visible{outline:none;box-shadow:0 0 0 3px rgba(32,212,216,.16)}"
+    },
+    {
+      "name": "Search Input",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Dark compact field with cyan focus state.",
+      "html": "<input class=\"ds-input\" placeholder=\"Search tracks, artists, labels…\" />",
+      "css": ".ds-input{background:#080d14;border:1px solid #243244;border-radius:6px;color:#eef6fb;font:400 13px Inter,system-ui,sans-serif;padding:7px 10px;width:300px}.ds-input::placeholder{color:#91a2b6}.ds-input:focus-visible{border-color:#20d4d8;box-shadow:0 0 0 3px rgba(32,212,216,.16);outline:none}"
+    },
+    {
+      "name": "Dashboard Panel",
+      "kind": "card",
+      "refersTo": "card",
+      "description": "Primary navy operational surface.",
+      "html": "<section class=\"ds-panel\"><strong>Library status</strong><p>Ready for local review.</p></section>",
+      "css": ".ds-panel{background:linear-gradient(145deg,rgba(23,33,46,.98),rgba(11,17,26,.98));border:1px solid #243244;border-radius:14px;box-shadow:0 8px 24px rgba(0,0,0,.16);color:#eef6fb;font:400 14px/1.5 Inter,system-ui,sans-serif;padding:20px 24px}.ds-panel p{color:#91a2b6;margin:4px 0 0}"
+    }
+  ],
+  "narrative": {
+    "northStar": "The Night Deck",
+    "overview": "CrateIQ feels like a precise DJ control surface used in a dim room: dense, focused, and alive with only the color needed to find state and action quickly.",
+    "keyCharacteristics": ["Full-width compact workspaces", "Near-black navy layers", "Controlled cyan, teal, violet, and coral signals", "Honest music-player details"],
+    "rules": [
+      { "name": "The Signal Color Rule", "body": "Accent color communicates selection, action, musical context, or status; it is not ambient decoration.", "section": "colors" },
+      { "name": "The Measurement Rule", "body": "Monospace belongs to values and code-like data, never to ordinary interface copy.", "section": "typography" },
+      { "name": "The Deck Layer Rule", "body": "Every elevation must clarify workspace hierarchy: shell, panel, selected row, or active control.", "section": "elevation" }
+    ],
+    "dos": ["Preserve dense operational layouts and full-width workspaces.", "Keep safety and degraded states explicit in text as well as color."],
+    "donts": ["Do not imply that a decorative waveform is analyzed audio data.", "Do not obscure write boundaries behind friendly labels or visual polish."]
+  }
+}

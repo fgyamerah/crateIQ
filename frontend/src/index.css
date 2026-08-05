@@ -1,6 +1,6 @@
 /* =========================================================================
-   CrateIQ — base styles
-   Clean functional dark UI. No decorative chrome.
+   CrateIQ — Night Deck design foundation
+   Dense, local-first DJ operations UI derived from docs/mockups/library.webp.
    ========================================================================= */
 
 /* -------------------------------------------------------------------------
@@ -20,20 +20,26 @@ textarea {
 }
 
 :root {
-  --bg:          #0b0e14;
-  --bg-surface:  #161a24;
-  --bg-hover:    #202536;
-  --border:      #262c40;
-  --text:        #e7ebf5;
-  --text-muted:  #6d7796;
+  --bg:          #080d14;
+  --bg-deep:     #050910;
+  --bg-surface:  #111924;
+  --bg-elevated: #17212e;
+  --bg-hover:    #1c2938;
+  --border:      #243244;
+  --border-soft: rgba(105, 130, 156, 0.16);
+  --border-strong: rgba(69, 213, 224, 0.32);
+  --text:        #eef6fb;
+  --text-strong: #ffffff;
+  --text-muted:  #91a2b6;
+  --text-subtle: #687b91;
   --text-code:   #67e8f9;
 
   /* Primary interactive color — emerald/teal (was blue). Purely a palette
      swap; every consumer of --accent / --accent-dim gets the new hue for
      free, which is what makes this a one-place theme change. */
-  --accent:      #14b8a6;
-  --accent-dim:  #0f2e2b;
-  --accent-glow: rgba(20, 184, 166, 0.35);
+  --accent:      #20d4d8;
+  --accent-dim:  #0b3136;
+  --accent-glow: rgba(32, 212, 216, 0.28);
 
   /* CrateIQ mockup palette — secondary/accent hues used by newer
      Library-view components (status strip, filter chips, stat tiles). */
@@ -42,6 +48,14 @@ textarea {
   --brand-cyan:    #22d3ee;
   --brand-violet:  #a78bfa;
   --brand-coral:   #fb7185;
+
+  --panel-gradient: linear-gradient(145deg, rgba(23,33,46,0.98), rgba(11,17,26,0.98));
+  --panel-shadow: 0 14px 34px rgba(0,0,0,0.24);
+  --panel-shadow-soft: 0 8px 24px rgba(0,0,0,0.16);
+  --focus-ring: 0 0 0 3px rgba(32,212,216,0.16);
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
 
   --status-pending:    #b08d2a;
   --status-running:    #3b82f6;
@@ -68,6 +82,40 @@ textarea {
 
 body {
   min-height: 100vh;
+  background: var(--bg);
+  color: var(--text);
+  accent-color: var(--accent);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  outline: none;
+}
+
+:where(button, a, input, select, textarea):focus-visible {
+  box-shadow: var(--focus-ring);
+}
+
+::selection {
+  color: var(--text-strong);
+  background: rgba(32,212,216,0.28);
+}
+
+* {
+  scrollbar-color: rgba(91,122,151,0.58) rgba(4,9,15,0.55);
+  scrollbar-width: thin;
 }
 
 /* -------------------------------------------------------------------------
@@ -106,8 +154,8 @@ body {
      it sits behind dense card grids on every other route. Library/CrateMind
      paint their own opaque full-height background over this one. */
   background:
-    radial-gradient(circle at 12% 0%, rgba(20,184,166,0.08), transparent 30%),
-    radial-gradient(circle at 88% 6%, rgba(167,139,250,0.06), transparent 26%),
+    radial-gradient(circle at 10% -4%, rgba(32,212,216,0.09), transparent 28%),
+    radial-gradient(circle at 92% 0%, rgba(167,139,250,0.07), transparent 24%),
     var(--bg);
 }
 
@@ -118,7 +166,7 @@ body {
 .sidebar {
   width: var(--sidebar-width);
   flex-shrink: 0;
-  background: var(--bg-surface);
+  background: linear-gradient(180deg, rgba(9,16,24,0.99), rgba(7,12,19,0.99));
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -166,7 +214,7 @@ body {
   align-items: center;
   gap: 9px;
   padding: 8px 10px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   color: var(--text-muted);
   text-decoration: none;
   font-size: 13px;
@@ -188,17 +236,17 @@ body {
 }
 
 .sidebar-link:hover {
-  background: var(--bg-hover);
+  background: rgba(41,61,79,0.5);
   color: var(--text);
 }
 
 .sidebar-link--active {
-  background: linear-gradient(90deg, rgba(20,184,166,0.24), rgba(34,211,238,0.06));
+  background: linear-gradient(90deg, rgba(32,212,216,0.2), rgba(34,211,238,0.05));
   color: #e5fffa;
   font-weight: 600;
-  border-left: 2px solid var(--accent);
-  padding-left: 8px;
-  box-shadow: inset 0 0 0 1px rgba(20,184,166,0.2), 0 0 14px rgba(20,184,166,0.12);
+  border-left: 1px solid var(--accent);
+  padding-left: 9px;
+  box-shadow: inset 0 0 0 1px rgba(32,212,216,0.16), 0 7px 18px rgba(0,0,0,0.16);
 }
 
 .sidebar-footer {
@@ -338,8 +386,13 @@ body {
 
 .sidebar-brand-name {
   flex: 1;
-  color: var(--text);
+  color: var(--text-strong);
+  font-size: 17px;
+  font-weight: 750;
+  letter-spacing: -0.025em;
 }
+
+.sidebar-brand-name::first-letter { color: var(--text-strong); }
 
 .sidebar-brand-icon {
   width: 26px;
@@ -411,7 +464,7 @@ body {
   width: 100%;
   max-width: none;
   min-width: 0;
-  padding: 28px 32px;
+  padding: 24px 28px 36px;
 }
 
 .page-header {
@@ -437,9 +490,10 @@ body {
 }
 
 .page-title {
-  font-size: 20px;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  color: var(--text-strong);
+  font-size: 21px;
+  font-weight: 680;
+  letter-spacing: -0.025em;
 }
 
 .page-header-badge {
@@ -471,10 +525,11 @@ body {
    ------------------------------------------------------------------------- */
 
 .card {
-  background: rgba(17, 21, 31, 0.96);
+  background: var(--panel-gradient);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-lg);
   padding: 20px 24px;
+  box-shadow: var(--panel-shadow-soft);
 }
 
 .card-header {
@@ -526,11 +581,12 @@ body {
 }
 
 .stat-card {
-  background: rgba(17, 21, 31, 0.96);
+  background: var(--panel-gradient);
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: var(--radius-md);
   padding: 16px 20px;
   text-align: center;
+  box-shadow: var(--panel-shadow-soft);
 }
 
 .stat-card--running   { border-color: var(--status-running); }
@@ -598,7 +654,7 @@ body {
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.07em;
-  color: #8490b0;
+  color: var(--text-muted);
   border-bottom: 1px solid var(--border);
   background: rgba(255,255,255,0.02);
   white-space: nowrap;
@@ -616,7 +672,7 @@ body {
 }
 
 .table tbody tr:hover td {
-  background: rgba(255,255,255,0.025);
+  background: rgba(32,212,216,0.035);
 }
 
 /* Jobs-specific columns */
@@ -730,13 +786,13 @@ body {
   justify-content: center;
   gap: 6px;
   padding: 7px 14px;
-  border-radius: 6px;
+  border-radius: var(--radius-sm);
   font-size: 13px;
   font-weight: 500;
   font-family: var(--font-ui);
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background 0.1s, border-color 0.1s, opacity 0.1s;
+  transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease, box-shadow 0.14s ease, opacity 0.14s ease;
   line-height: 1;
 }
 
@@ -746,17 +802,20 @@ body {
 }
 
 .btn--primary {
-  background: var(--accent);
-  color: #fff;
-  border-color: var(--accent);
+  background: linear-gradient(135deg, var(--brand-teal), var(--brand-cyan));
+  color: #031416;
+  border-color: rgba(103,232,249,0.7);
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(20,184,166,0.2);
 }
 
 .btn--primary:not(:disabled):hover {
-  filter: brightness(1.12);
+  filter: brightness(1.08);
+  box-shadow: 0 8px 22px rgba(20,184,166,0.28);
 }
 
 .btn--ghost {
-  background: transparent;
+  background: rgba(12,19,28,0.54);
   color: var(--text-muted);
   border-color: var(--border);
 }
@@ -764,7 +823,7 @@ body {
 .btn--ghost:not(:disabled):hover {
   background: var(--bg-hover);
   color: var(--text);
-  border-color: #3c4260;
+  border-color: var(--border-strong);
 }
 
 .btn--sm {
