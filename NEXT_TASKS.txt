@@ -39,6 +39,20 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[ ] (P0) Optional analysis settings and per-workflow capability gating
+         (recommended next task from the 2026-08-05 functionality/workflow
+         audit). Separate core readiness from optional capabilities; keep
+         import-without-analysis enabled; make BPM and key analysis independent,
+         default-off actions; preserve trusted/MIK-compatible BPM, key, and cue
+         data; and disable only the action whose tool/input is unavailable.
+
+[x] (P1) Full functionality, workflow, dependency, and product-surface audit
+         (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`
+         inventories the supported UI/API/CLI surface, external-tool contracts,
+         standalone usability, MIK gaps, optional-analysis design, first-run
+         workflow, route/sidebar UX, safety risks, phased roadmap, and the next
+         three implementation prompts. No runtime or library behavior changed.
+
 [x] (P1) Library Initialization / Import Wizard foundation (2026-08-05)
          Settings now initializes a pending configured root with CrateIQ's
          local `logs/processed.db` index only. Explicit preview scans report

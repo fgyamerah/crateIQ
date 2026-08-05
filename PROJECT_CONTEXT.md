@@ -6,6 +6,17 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Completed the full functionality, workflow, external-tool, and
+  product-surface audit in
+  `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`. The audit confirms
+  that import/browse/review, Manual and Smart Crates, native preview, and
+  portable/staged exports form a standalone core without optional binaries.
+  The highest-priority gap is per-workflow capability gating: current
+  readiness detects optional tools globally, but actions do not yet consume a
+  capability contract. MIK-compatible BPM/key tags are preserved by the
+  analyzer, but provenance, cue import, and coverage UI are missing. The next
+  recommended task is default-off, independent BPM/key settings plus scoped
+  tool gating; Library Import Wizard polish and MIK/source coverage follow.
 - 2026-08-05: Library Initialization / Import foundation lets Settings create
   only `logs/`, `exports/`, and an empty `logs/processed.db` schema for a
   pending configured root. Scan preview is explicit and read-only; confirmed

@@ -2,6 +2,18 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — docs: functionality, workflow, and dependency audit
+
+- Added `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`, covering the
+  current Library/import, review, analysis, crate, player, export, Settings,
+  Jobs, and safety surfaces plus a route-by-route UX review.
+- Documented a per-workflow dependency matrix for Mixed In Key, ffprobe,
+  ffmpeg, keyfinder-cli, aubio/librosa, beet, rmlint, and browser-native
+  playback. Core workflows remain independent of optional analysis tools.
+- Recommended optional-analysis capability gating as the next task, followed
+  by Import Wizard polish and MIK/compatible-metadata provenance and coverage.
+  This documentation-only audit changed no runtime or library behavior.
+
 [2026-08-05] — feat: explicit Library Initialization and Import foundation
 
 - Settings can initialize a saved configured library root by creating only
