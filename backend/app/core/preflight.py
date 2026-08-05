@@ -30,6 +30,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .config import BACKEND_DATA_DIR, PIPELINE_PY
 from .library_root import library_db_path, selected_library_root
+from ..services.waveform_readiness_service import get_waveform_readiness
 
 # backend/app/core/ → ×3 → repository root
 _REPO_ROOT = Path(__file__).resolve().parents[3]
@@ -104,7 +105,7 @@ def _check_library_root(root: Optional[Path], error: Optional[str]) -> CheckResu
             f"No usable library root is configured: {error}",
             required=True,
         )
-    meta = {"root": redact_path(root)}
+    meta = {"configured": True}
     if not root.exists():
         return CheckResult(
             name, "fail",
@@ -156,7 +157,7 @@ def _check_pipeline_db(root: Optional[Path]) -> CheckResult:
             required=True,
         )
     db_path = library_db_path(root)
-    meta = {"db_path": redact_path(db_path)}
+    meta = {"configured": True}
     try:
         db_path.resolve(strict=False).relative_to(root.resolve(strict=False))
     except ValueError:
@@ -195,7 +196,7 @@ def _check_pipeline_entrypoint() -> CheckResult:
 
 def _check_backend_data_dir() -> CheckResult:
     name = "backend_data_dir"
-    meta = {"path": redact_path(BACKEND_DATA_DIR)}
+    meta = {"configured": True}
     if BACKEND_DATA_DIR.is_dir():
         if os.access(BACKEND_DATA_DIR, os.W_OK):
             return CheckResult(
@@ -248,12 +249,12 @@ def _check_binary(
             if path.is_file() and os.access(path, os.X_OK):
                 return CheckResult(
                     check_name, "pass", f"{name} available (workflow: {purpose}).",
-                    metadata={"resolved": redact_path(path), "source": env_name if override else "PATH"},
+                    metadata={"detected": True, "source": env_name if override else "PATH"},
                 )
         elif shutil.which(candidate):
             return CheckResult(
                 check_name, "pass", f"{name} available (workflow: {purpose}).",
-                metadata={"resolved": candidate, "source": env_name if override else "PATH"},
+                metadata={"detected": True, "source": env_name if override else "PATH"},
             )
     return CheckResult(
         check_name, "warn",
@@ -290,6 +291,21 @@ def run_preflight() -> Dict[str, Any]:
     for spec in _BINARY_CHECKS:
         checks.append(_check_binary(*spec))
 
+    waveform = get_waveform_readiness([check.to_dict() for check in checks])
+    waveform_status = waveform["status"]
+    checks.append(CheckResult(
+        "waveform_foundation",
+        "pass" if waveform_status in {"disabled", "detected", "ready"} else "warn",
+        waveform["message"],
+        metadata={
+            "enabled": waveform["enabled"],
+            "capability_status": waveform_status,
+            "cache_ready": waveform["cache_ready"],
+            "engine_detected": waveform["engine"]["detected"],
+            "version_verified": waveform["engine"]["version_verified"],
+        },
+    ))
+
     if any(c.required and c.status == "fail" for c in checks):
         overall = "not_ready"
     elif any(c.status != "pass" for c in checks):
@@ -297,4 +313,8 @@ def run_preflight() -> Dict[str, Any]:
     else:
         overall = "ready"
 
-    return {"status": overall, "checks": [c.to_dict() for c in checks]}
+    return {
+        "status": overall,
+        "checks": [c.to_dict() for c in checks],
+        "waveform": waveform,
+    }

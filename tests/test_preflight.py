@@ -159,7 +159,8 @@ def test_analysis_tool_overrides_are_recognized(tmp_path, monkeypatch):
         check = _check_by_name(report, check_name)
         assert check["status"] == "pass"
         assert check["metadata"]["source"] == env_name
-        assert check["metadata"]["resolved"] == binary
+        assert check["metadata"]["detected"] is True
+        assert "resolved" not in check["metadata"]
 
 
 def test_preflight_is_read_only(tmp_path, monkeypatch):

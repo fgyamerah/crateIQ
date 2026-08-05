@@ -15,6 +15,7 @@ from fastapi import APIRouter
 from pydantic import BaseModel, Field
 
 from ...core.preflight import run_preflight
+from ...schemas.waveform import WaveformCapability
 
 router = APIRouter(tags=["runtime"])
 
@@ -30,6 +31,7 @@ class ReadinessCheck(BaseModel):
 class ReadinessResponse(BaseModel):
     status: str  # ready | degraded | not_ready
     checks: List[ReadinessCheck]
+    waveform: WaveformCapability
 
 
 @router.get("/runtime/readiness", response_model=ReadinessResponse)

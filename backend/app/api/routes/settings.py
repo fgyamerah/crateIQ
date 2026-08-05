@@ -10,6 +10,7 @@ from ...core.preflight import run_preflight
 from ...services import settings_service
 from ...services import library_setup_service
 from ...schemas.metadata_sources import MetadataSourceClearResponse, MetadataSourceTestResponse, MetadataSourcesResponse, MetadataSourcesUpdateRequest
+from ...schemas.waveform import WaveformEngineCapability
 
 router = APIRouter(tags=["settings"])
 
@@ -70,7 +71,10 @@ class AnalysisPreferencesUpdate(BaseModel):
 
 class WorkflowCapability(BaseModel):
     available: bool
-    status: Literal["available", "missing", "unknown"]
+    status: Literal[
+        "available", "missing", "unknown", "disabled", "misconfigured",
+        "cache_unavailable", "extractor_unavailable", "detected", "ready",
+    ]
     purpose: str
     message: str
     action_state: Literal["ready", "setup_required", "coming_soon"]
@@ -79,6 +83,8 @@ class WorkflowCapability(BaseModel):
     required_source: Optional[str] = None
     enabled: Optional[bool] = None
     locked: Optional[bool] = None
+    cache_ready: Optional[bool] = None
+    engine: Optional[WaveformEngineCapability] = None
 
 
 class SettingsCapabilities(BaseModel):

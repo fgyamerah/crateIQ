@@ -63,6 +63,61 @@ CREATE TABLE IF NOT EXISTS bpm_anomalies (
 
 CREATE INDEX IF NOT EXISTS idx_bpm_anomalies_status ON bpm_anomalies(review_status);
 CREATE INDEX IF NOT EXISTS idx_bpm_anomalies_reason ON bpm_anomalies(reason);
+
+-- Disposable waveform linkage/state.  This operational data intentionally
+-- lives in jobs.db and never in the trusted pipeline processed.db.
+CREATE TABLE IF NOT EXISTS waveform_track_state (
+    library_id          TEXT    NOT NULL,
+    track_id            INTEGER NOT NULL,
+    status              TEXT    NOT NULL DEFAULT 'not_generated'
+                                CHECK (status IN (
+                                    'not_generated', 'queued', 'processing',
+                                    'ready', 'failed', 'unsupported', 'stale',
+                                    'cancelled'
+                                )),
+    schema_version      INTEGER NOT NULL,
+    algorithm_version   TEXT    NOT NULL,
+    source_size_bytes   INTEGER,
+    source_mtime_ns     INTEGER,
+    source_ctime_ns     INTEGER,
+    source_device       INTEGER,
+    source_inode        INTEGER,
+    source_sha256       TEXT,
+    cache_key           TEXT,
+    generated_at        TEXT,
+    last_error_code     TEXT,
+    updated_at          TEXT    NOT NULL,
+    PRIMARY KEY (library_id, track_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_waveform_track_status
+    ON waveform_track_state(status);
+CREATE INDEX IF NOT EXISTS idx_waveform_track_cache_key
+    ON waveform_track_state(cache_key);
+
+-- W1 persists job records only.  No worker or automatic queue producer exists.
+CREATE TABLE IF NOT EXISTS waveform_jobs (
+    id                  TEXT    PRIMARY KEY,
+    library_id          TEXT    NOT NULL,
+    track_id            INTEGER NOT NULL,
+    status              TEXT    NOT NULL
+                                CHECK (status IN (
+                                    'queued', 'processing', 'succeeded',
+                                    'failed', 'cancelled'
+                                )),
+    created_at          TEXT    NOT NULL,
+    started_at          TEXT,
+    finished_at         TEXT,
+    cancel_requested    INTEGER NOT NULL DEFAULT 0
+                                CHECK (cancel_requested IN (0, 1)),
+    error_code          TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_waveform_jobs_status
+    ON waveform_jobs(status);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_waveform_one_active_track
+    ON waveform_jobs(library_id, track_id)
+    WHERE status IN ('queued', 'processing');
 """
 
 
@@ -129,4 +184,4 @@ def init_db() -> None:
         ]:
             _add_column_safe(conn, "jobs", col, defn)
 
-    log.info("Backend DB ready: %s", JOBS_DB_PATH)
+    log.info("Backend operational DB ready")

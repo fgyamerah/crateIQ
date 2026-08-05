@@ -66,10 +66,15 @@ log = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     # --- startup ---
     log.info("CrateIQ backend v%s starting up", BACKEND_VERSION)
-    log.info("CrateIQ root : %s", TOOLKIT_ROOT)
-    log.info("pipeline.py  : %s  (exists=%s)", PIPELINE_PY, PIPELINE_PY.is_file())
-    log.info("Library root : %s", read_only_service.get_library_root())
-    log.info("Pipeline DB  : %s  (exists=%s)", read_only_service.get_db_path(), read_only_service.db_exists())
+    log.info(
+        "CrateIQ runtime configured pipeline_entrypoint=%s pipeline_db_present=%s",
+        PIPELINE_PY.is_file(),
+        read_only_service.db_exists(),
+    )
+    log.debug("CrateIQ root: %s", TOOLKIT_ROOT)
+    log.debug("pipeline.py: %s", PIPELINE_PY)
+    log.debug("Library root: %s", read_only_service.get_library_root())
+    log.debug("Pipeline DB: %s", read_only_service.get_db_path())
 
     init_db()
 

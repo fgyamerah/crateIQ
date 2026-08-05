@@ -70,11 +70,21 @@ CURRENT FOCUS
     model, privacy contract, failure fallback, tests, and W1-W8 rollout. This is
     architecture only; no waveform extraction or cache exists yet.
 
-[ ] (P2) Implement Waveform Phase W1 — backend state and capability foundation
-    Add only the backend-owned jobs/cache state schema, cache-root validation,
-    configuration, and optional readiness/capability contract from the accepted
-    ADR. Do not decode audio in W1 and do not write waveform state to the trusted
-    pipeline `processed.db`.
+[x] (P2) Implement Waveform Phase W1 — backend state and capability foundation
+    (2026-08-05). Added validated conservative configuration, canonical cache
+    overlap/cleanup containment, privacy-safe library identity and source-stat
+    snapshots, explicit artifact/job/capability state models, idempotent
+    `waveform_track_state` and `waveform_jobs` tables in backend `jobs.db`, and
+    passive readiness/capability reporting. `source_sha256` is nullable and no
+    source content was hashed. No audio tool was executed, no artifact/worker/
+    endpoint/frontend was added, and trusted `processed.db` remains untouched.
+
+[ ] (P2) Implement Waveform Phase W2 — safe extractor wrapper only
+    Add the fixed read-only descriptor/probe/decode wrapper, bounded peak
+    accumulator, resource/cancellation guards, and fake-process tests without
+    wiring generation APIs. Resolve the deferred strong content-identity/cache-
+    key strategy without requiring redundant immediate full-file reads. Do not
+    proceed until W1 review is accepted.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

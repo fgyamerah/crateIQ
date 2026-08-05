@@ -6,6 +6,23 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Implemented Waveform Phase W1 backend foundation only. Added
+  environment-backed conservative limits, a canonical CrateIQ-owned cache-root
+  guard that rejects equality/ancestor/descendant/symlink overlap with the
+  selected library, and a cleanup-candidate containment primitive. Added
+  privacy-safe library identity plus cheap source stat snapshots behind the
+  same DB-backed canonical validation used by preview audio. Added explicit
+  artifact/job/capability enums and idempotent `waveform_track_state` /
+  `waveform_jobs` tables to backend `jobs.db`; trusted `processed.db` was not
+  extended. `source_sha256` and `cache_key` remain nullable/deferred. Runtime
+  readiness and Settings capabilities now distinguish disabled,
+  misconfigured, cache unavailable, extractor unavailable, and passively
+  detected-but-unverified states without returning cache/library/executable
+  paths. Normal future `not_generated` state is documented as `200`, not 409.
+  No extractor, worker, route, waveform artifact, source content hash, audio
+  decode/probe, FFmpeg/ffprobe execution, dependency, or frontend change was
+  added. W2 is the next separate phase.
+
 - 2026-08-05: Accepted the design-only real waveform architecture in
   `docs/architecture/WAVEFORM_ARCHITECTURE.md`. The selected architecture uses
   explicit demand-driven backend extraction with FFmpeg/ffprobe strictly as a

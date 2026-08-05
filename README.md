@@ -63,6 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
+| Waveform foundation | W1 backend foundation | Safe cache/config/state/readiness contracts only; no extraction, source hashing, peaks, artifacts, worker, or frontend rendering yet. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -183,11 +184,35 @@ Analysis Jobs show each capability independently:
 See [local tooling guidance](docs/operations/LOCAL_TOOLING.md) for setup notes
 and exact safety boundaries.
 
+### Waveform W1 configuration
+
+Waveform Phase W1 adds only an optional backend foundation. The default cache
+root is `backend/data/cache/waveforms/`, inside the already ignored backend
+runtime-data tree. An override must be absolute and is rejected if it equals,
+contains, or sits below the selected music-library root, including after
+symlink resolution.
+
+| Environment variable | Default |
+| --- | --- |
+| `CRATEIQ_WAVEFORMS_ENABLED` | `1` |
+| `CRATEIQ_WAVEFORM_CACHE_DIR` | backend-owned cache root |
+| `CRATEIQ_WAVEFORM_MAX_CONCURRENCY` | `1` (valid 1–2) |
+| `CRATEIQ_WAVEFORM_MAX_QUEUE_SIZE` | `32` |
+| `CRATEIQ_WAVEFORM_MAX_CACHE_BYTES` | `2147483648` (2 GiB) |
+
+Runtime readiness reports `disabled`, `misconfigured`, `cache_unavailable`,
+`extractor_unavailable`, or `detected`. In W1, `detected` means FFmpeg and
+ffprobe were found passively; neither executable was run and versions remain
+unverified. `ready` is reserved for a future verified extractor contract.
+Waveform operational state is stored only in backend `jobs.db`; the trusted
+library `processed.db` is not extended or written by this foundation.
+
 ## Development
 
 ```bash
 # Focused backend coverage for the current safe analysis workflows
 .venv/bin/python -m pytest -q tests/test_backend_api.py -k "analysis or jobs"
+.venv/bin/python -m pytest -q tests/test_waveform_foundation.py tests/test_preflight.py
 .venv/bin/python -m pytest -q tests/test_supported_route_contracts.py
 
 # Frontend checks

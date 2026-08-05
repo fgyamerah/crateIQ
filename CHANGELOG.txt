@@ -2,6 +2,35 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — Waveform W1 backend foundation
+
+- Added validated waveform configuration with conservative defaults, canonical
+  cache-root overlap/symlink/traversal guards, an empty-cache initialization
+  primitive, and strict future cleanup-candidate containment.
+- Added privacy-safe selected-library identity and cheap source stat snapshots
+  behind the same DB-backed canonical root validation used by preview audio.
+- Added explicit artifact, job, and capability states plus idempotent
+  `waveform_track_state` and `waveform_jobs` tables in backend `jobs.db`.
+  `source_sha256` and `cache_key` are nullable/deferred; waveform operational
+  state never enters trusted `processed.db`.
+- Extended runtime readiness and Settings capabilities with optional disabled,
+  misconfigured, cache-unavailable, extractor-unavailable, and passively
+  detected-but-not-runtime-verified states. No absolute cache/library/tool path
+  is added to the waveform payload, and missing waveform support never blocks
+  application startup.
+- Amended the waveform ADR so W1 does not mandate a redundant full-file hash
+  pass and normal future `not_generated` responses use `200`, not `409`.
+- Added comprehensive configuration, containment, symlink, Unicode/path,
+  lifecycle, persistence/reopen, jobs DB isolation, readiness, privacy, and
+  preview-validation regression coverage.
+- Files affected: backend waveform core/model/schema/services, backend jobs DB
+  schema, preflight/settings/runtime/preview integration, focused tests,
+  `.env.example`, README, waveform ADR, project context, next tasks, changelog.
+- Migration notes: backend startup idempotently creates two operational tables
+  in ignored `backend/data/jobs.db`. No extraction, audio analysis, waveform
+  artifact, source content hash, dependency, frontend change, music/tag/MIK/
+  crate/review/DJ-database write, or external call was added.
+
 [2026-08-05] — Design safe real waveform architecture
 
 - Added `docs/architecture/WAVEFORM_ARCHITECTURE.md`, an implementation-ready

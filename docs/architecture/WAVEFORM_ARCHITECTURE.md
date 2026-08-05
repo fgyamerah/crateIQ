@@ -1,6 +1,6 @@
 # CrateIQ Waveform Architecture and Safety Design
 
-**Status:** accepted design; not implemented
+**Status:** accepted design; Phase W1 foundation implemented
 
 **Date:** 2026-08-05
 
@@ -38,12 +38,27 @@ The version-1 design uses:
   pairs;
 - gzip-compressed, versioned JSON artifacts under
   `backend/data/cache/waveforms/` by default;
-- source identity based on a lazy content SHA-256 plus fast `stat` validation;
+- source identity that starts with cheap library/track/stat data while full
+  content SHA-256 remains nullable and deferred;
 - waveform job and linkage state in the backend-owned `jobs.db`, never in the
   trusted pipeline `processed.db` track metadata;
 - canvas rendering that consumes persistent-player state and calls its existing
   `seek(seconds)` action;
 - the current deterministic three-band signal as a clearly labeled fallback.
+
+### 1.1 Approved amendments incorporated by W1
+
+Two details of the original design were amended before extraction work:
+
+1. A full source SHA-256 is not a mandatory pass before decoding. W1 stores a
+   cheap validated source-stat snapshot independently and keeps
+   `source_sha256` nullable. W1 never reads source contents for hashing. W2/W3
+   must choose a content-identity strategy that preserves cache correctness
+   without forcing two immediate full-file reads for large sources.
+2. `not_generated` is a normal lifecycle state for an existing track. A future
+   read-only waveform endpoint should return a structured `200` state response;
+   `404` remains reserved for a track that does not exist. Routine lifecycle
+   states are not HTTP conflicts merely because no artifact exists yet.
 
 ## 2. Inspection findings and constraints
 
@@ -120,7 +135,7 @@ Track ID is a linkage key, not content identity:
 - a file can change in place without its ID changing;
 - different configured libraries can reuse the same integer IDs.
 
-Waveform state must therefore be keyed by `(library_key, track_id)` while cache
+Waveform state must therefore be keyed by `(library_id, track_id)` while cache
 artifacts are keyed by source content plus waveform schema/algorithm versions.
 
 ### 2.5 Existing safe preview serving
@@ -313,7 +328,7 @@ Conceptual schema:
   "algorithm_version": "mono-minmax-s16-v1",
   "cache_key": "sha256-hex",
   "source": {
-    "sha256": "sha256-hex",
+    "sha256": null,
     "size_bytes": 28499123,
     "mtime_ns_at_generation": 1785950000000000000
   },
@@ -344,7 +359,9 @@ Each `peaks` array has exactly `pair_count * 2` integers ordered
 `[min0, max0, min1, max1, ...]`, with `-32768 <= min <= max <= 32767`.
 Examples above are intentionally abbreviated.
 
-The source fingerprint and engine block stay backend/cache internal. Waveform
+The source fingerprint and engine block stay backend/cache internal. The
+content hash may be populated by a future generation strategy but is not
+required merely to represent state. Waveform
 API responses omit source fingerprint fields. Engine availability/version is
 reported through the local readiness capability, not repeated in every payload.
 
@@ -445,22 +462,26 @@ Default: `BACKEND_DATA_DIR / "cache" / "waveforms"`.
 Backend state uses:
 
 ```text
-library_key = SHA256(canonical selected-library-root bytes)
+library_id = SHA256("crateiq-library-v1" || canonical selected-library-root bytes)
 ```
 
 Only the digest is stored or returned by waveform internals. This prevents ID
 collisions between configured libraries without exposing the root.
 
-### 8.2 Two-tier source fingerprint
+### 8.2 Deferred content identity and cheap source signature
 
-Fast validation fields, stored internally per `(library_key, track_id)`:
+Cheap validation fields are stored internally per `(library_id, track_id)`
+only after canonical selected-root validation:
 
 ```text
 st_dev, st_ino, st_size, st_mtime_ns, st_ctime_ns
 ```
 
-Content identity, computed lazily only when there is no matching fast state or
-the fast state changed:
+W1 also stores `source_sha256` and `cache_key` as nullable fields. It does not
+hash source contents and does not define a cache key that requires a content
+hash before state can exist.
+
+A future strong content identity may still use:
 
 ```text
 source_sha256 = SHA256(all source bytes read through an O_RDONLY descriptor)
@@ -470,28 +491,24 @@ cache_key = SHA256(
 )
 ```
 
-Full hashing costs one sequential read, so it must never happen during Library
-listing/import/open or across the whole collection by default. It runs only for
-an explicitly requested uncached/changed track. The subsequent decoder read
-means first generation performs two source passes. This is deliberately chosen
-for robust identity; performance measurement may later justify a safe combined
-hash/decode implementation, but a sampled hash must not silently replace the
-content hash.
+Full hashing costs one sequential read. It must never happen during Library
+listing/import/open or across the whole collection by default. W2/W3 must
+decide whether hashing can safely share the decoder read, whether a later
+verification pass is needed, and how cache reuse is upgraded when a deferred
+hash becomes available. A sampled hash must not silently claim the same strong
+identity as a complete content hash.
 
 ### 8.3 Required behavior
 
-- **Same filename changed in place:** fast fields change; content is rehashed;
-  changed bytes produce a new cache key and old data is stale.
+- **Same filename changed in place:** fast fields change and existing waveform
+  state becomes stale; future content verification determines reuse.
 - **Content changed with timestamp restored:** `ctime` normally invalidates;
   if all fast fields are deliberately forged, this trusted-local design cannot
-  detect it until explicit regenerate. `force=true` rehashes.
-- **Rename in the same filesystem:** track link can stay valid; if `ctime`
-  changes, the full hash finds and reuses the same content artifact.
-- **Move across filesystems:** device/inode change; the full hash allows reuse.
-- **Duplicate files:** identical bytes share one content artifact, regardless of
-  path or track ID.
-- **Track DB ID changes:** the new link hashes on first request and can reuse the
-  content artifact.
+  detect it until an explicit future regenerate/strong-verification request.
+- **Rename or move:** cheap identity changes can mark state stale. Future strong
+  identity may safely recover reuse without making W1 depend on it.
+- **Duplicate files / track ID changes:** future content identity may enable
+  artifact reuse; W1 makes no reuse claim without that identity.
 - **Library rescan:** no generation occurs. Existing links are lazily checked.
 - **Deleted source:** state becomes `source_missing`; artifact remains cleanup-
   eligible and basic playback keeps its existing unavailable behavior.
@@ -506,68 +523,57 @@ or INFO log.
 Do not alter `processed.db` or attach waveform fields to `tracks`. Waveform data
 is derived operational state and belongs in backend `jobs.db`.
 
-Proposed schema:
+W1 schema implemented in backend-owned `jobs.db`:
 
 ```sql
 CREATE TABLE IF NOT EXISTS waveform_track_state (
-    library_key          TEXT NOT NULL,
+    library_id           TEXT NOT NULL,
     track_id             INTEGER NOT NULL,
     status               TEXT NOT NULL,
     cache_key            TEXT,
     schema_version       INTEGER NOT NULL,
     algorithm_version    TEXT NOT NULL,
-    source_dev           INTEGER,
-    source_ino           INTEGER,
+    source_device        INTEGER,
+    source_inode         INTEGER,
     source_size_bytes    INTEGER,
     source_mtime_ns      INTEGER,
     source_ctime_ns      INTEGER,
     source_sha256        TEXT,
-    engine_name          TEXT,
-    engine_version       TEXT,
-    duration_ms          INTEGER,
-    detail_pair_count    INTEGER,
     generated_at         TEXT,
-    last_accessed_at     TEXT,
-    failure_code         TEXT,
-    failure_message      TEXT,
-    retry_after          TEXT,
-    PRIMARY KEY (library_key, track_id)
+    last_error_code      TEXT,
+    updated_at           TEXT NOT NULL,
+    PRIMARY KEY (library_id, track_id)
 );
 
-CREATE INDEX IF NOT EXISTS idx_waveform_state_cache_key
+CREATE INDEX IF NOT EXISTS idx_waveform_track_cache_key
     ON waveform_track_state(cache_key);
-CREATE INDEX IF NOT EXISTS idx_waveform_state_accessed
-    ON waveform_track_state(last_accessed_at);
-
 CREATE TABLE IF NOT EXISTS waveform_jobs (
     id                    TEXT PRIMARY KEY,
-    library_key           TEXT NOT NULL,
+    library_id            TEXT NOT NULL,
     track_id              INTEGER NOT NULL,
-    cache_key             TEXT,
     status                TEXT NOT NULL,
-    progress_percent      REAL,
-    requested_at          TEXT NOT NULL,
+    created_at            TEXT NOT NULL,
     started_at            TEXT,
     finished_at           TEXT,
-    cancellation_requested INTEGER NOT NULL DEFAULT 0,
-    failure_code          TEXT,
-    failure_message       TEXT
+    cancel_requested      INTEGER NOT NULL DEFAULT 0,
+    error_code            TEXT
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_waveform_one_active_track
-    ON waveform_jobs(library_key, track_id)
-    WHERE status IN ('queued', 'hashing', 'processing', 'publishing');
+    ON waveform_jobs(library_id, track_id)
+    WHERE status IN ('queued', 'processing');
 ```
 
 Allowed track-state values:
 
 ```text
-not_generated, queued, hashing, processing, publishing, ready, stale,
-unsupported, source_missing, path_rejected, policy_rejected, failed, cancelled
+not_generated, queued, processing, ready, failed, unsupported, stale, cancelled
 ```
 
-Failure messages stored or returned here are sanitized categories, not raw
-stderr and not paths. Cross-database foreign keys are intentionally absent.
+W1 job states are `queued`, `processing`, `succeeded`, `failed`, and
+`cancelled`. Failure codes are sanitized categories, not raw stderr or paths.
+Cross-database foreign keys are intentionally absent. W2/W3 may add bounded
+progress fields additively when real work exists.
 
 ## 10. API contract
 
@@ -619,15 +625,12 @@ Queued/processing response (`202`, `Retry-After: 1`):
 }
 ```
 
-No-data/stale/failure response (`409`):
+Normal no-data response (`200`):
 
 ```json
 {
   "track_id": 42,
-  "status": "not_generated",
-  "code": "WAVEFORM_NOT_GENERATED",
-  "message": "No waveform has been generated for this track.",
-  "can_generate": true
+  "status": "not_generated"
 }
 ```
 
@@ -636,15 +639,16 @@ Status mapping:
 | Condition | HTTP | Code / status |
 | --- | ---: | --- |
 | valid cache | 200 | `ready` |
-| queued, hashing, processing, publishing | 202 | matching status |
+| queued or processing | 202 | matching status |
 | unknown track ID | 404 | `TRACK_NOT_FOUND` |
-| never generated | 409 | `WAVEFORM_NOT_GENERATED` |
-| stale/corrupt cache | 409 | `WAVEFORM_STALE` / `WAVEFORM_CACHE_CORRUPT` |
-| unsupported codec/container | 409 | `WAVEFORM_UNSUPPORTED` |
-| source missing | 409 | `WAVEFORM_SOURCE_MISSING` |
+| never generated | 200 | `not_generated` |
+| stale/corrupt cache | 200 | `stale` plus safe code where useful |
+| unsupported codec/container | 200 | `unsupported` |
+| previous extractor failure | 200 | `failed` plus sanitized code |
+| cancelled | 200 | `cancelled` |
+| source missing | 200 | failure state plus `WAVEFORM_SOURCE_MISSING` |
 | source outside root / symlink rejection | 403 | `WAVEFORM_PATH_REJECTED` |
 | policy size/duration rejection | 413 | `WAVEFORM_POLICY_REJECTED` |
-| previous extractor/cache failure | 409 | sanitized failure code |
 | feature disabled | 503 | `WAVEFORM_DISABLED` |
 | engine/cache misconfigured | 503 | `WAVEFORM_UNAVAILABLE` |
 
@@ -674,8 +678,8 @@ New job (`202`):
 
 Existing valid cache returns `200 ready`. An existing active job returns `202`
 with the same job ID and `deduplicated: true`. Queue saturation returns `429`
-with `Retry-After`. `force=true` bypasses the fast-state shortcut and rehashes,
-but still reuses a matching valid content artifact; it never overwrites source.
+with `Retry-After`. The exact future `force=true` content-verification behavior
+is deferred with the non-redundant hash decision; it never overwrites source.
 
 ### 10.3 Job observation and cancellation
 
@@ -700,14 +704,16 @@ Extend existing responses rather than inventing a disconnected health system:
   `analysis.waveform_generation` with `available`, `status`, `enabled`,
   `action_state`, engine name/version, and safe messages.
 
-Capability states:
+Capability states established by W1:
 
 | State | Meaning |
 | --- | --- |
-| `available` | enabled, engine/version valid, cache writable |
-| `unavailable` | required executable absent or unsupported |
 | `disabled` | operator disabled waveform support |
-| `misconfigured` | executable override/cache path/version/permissions invalid |
+| `misconfigured` | invalid limits or unsafe cache containment |
+| `cache_unavailable` | safe cache root cannot currently be written/created |
+| `extractor_unavailable` | FFmpeg or ffprobe was not passively detected |
+| `detected` | both tools found without execution; version is not verified |
+| `ready` | reserved for a future runtime-verified extractor contract |
 
 No capability response returns executable paths, cache paths, source paths, or
 library roots.
@@ -741,29 +747,31 @@ version 1.
 State machine:
 
 ```text
-not_generated/stale/failed
+not_generated/stale/failed/cancelled
         |
         | explicit POST
         v
-      queued -> hashing -> processing -> publishing -> ready
-        |          |           |             |
-        +----------+-----------+-------------+--> failed/cancelled
+      queued -> processing -> ready
+        |           |
+        +-----------+--> failed/cancelled/unsupported
 ```
 
-Every transition is persisted. On restart, `queued` jobs can be requeued;
-`hashing`, `processing`, and `publishing` jobs become `failed` with
-`BACKEND_RESTARTED`, and their temporary artifacts are cleanup candidates.
+Every transition is persisted. Future worker recovery must decide whether
+`queued` jobs are requeued; interrupted `processing` jobs become `failed` with
+`BACKEND_RESTARTED`, and only their contained temporary cache artifacts are
+cleanup candidates.
 
 ## 12. Concurrency and deduplication
 
 Use an in-process bounded async queue plus persistent job rows.
 
 1. A SQLite transaction and partial unique index deduplicate active requests for
-   the same `(library_key, track_id)` across tabs/clients.
+   the same `(library_id, track_id)` across tabs/clients.
 2. An in-memory per-track async lock prevents duplicate work inside one backend
    process.
-3. After hashing, a per-cache-key lock prevents two different track IDs with
-   identical bytes from decoding simultaneously.
+3. After future strong content identity is available, a per-cache-key lock can
+   prevent two different track IDs with identical bytes from decoding
+   simultaneously.
 4. Before work, check whether the content artifact already exists and validates;
    if so, link it and finish without decoding.
 5. On publish, `os.replace()` makes races harmless.
@@ -810,8 +818,9 @@ Configuration should stay small:
 | --- | --- |
 | `CRATEIQ_WAVEFORMS_ENABLED` | `1` |
 | `CRATEIQ_WAVEFORM_CACHE_DIR` | backend data cache path |
-| `CRATEIQ_WAVEFORM_MAX_CONCURRENCY` | `1` |
-| `CRATEIQ_WAVEFORM_CACHE_MAX_GIB` | `2` |
+| `CRATEIQ_WAVEFORM_MAX_CONCURRENCY` | `1` (valid: 1–2) |
+| `CRATEIQ_WAVEFORM_MAX_QUEUE_SIZE` | `32` |
+| `CRATEIQ_WAVEFORM_MAX_CACHE_BYTES` | `2147483648` (2 GiB) |
 
 Reuse existing `FFMPEG_BIN` and `FFPROBE_BIN`. Size/duration/peak/timeout limits
 are safety constants in version 1, not routine UI settings.
@@ -1009,7 +1018,7 @@ metadata provider, telemetry service, or third-party API.
 INFO logs may include:
 
 ```text
-event, library_key_prefix, track_id, job_id, state, cache_hit,
+event, library_id_prefix, track_id, job_id, state, cache_hit,
 engine_name, engine_version, duration_ms, elapsed_ms, pair_count,
 source_size_bucket, failure_code
 ```
@@ -1214,7 +1223,7 @@ same sources and canonical output validation before changing the ADR.
 
 Each phase is intended as a separate reviewable commit.
 
-### Phase W1 — backend state and capability foundation
+### Phase W1 — backend state and capability foundation (implemented 2026-08-05)
 
 **Files/components:** backend config, `core/db.py`, preflight/settings capability,
 new waveform schemas/state service, focused backend tests, docs.
@@ -1225,17 +1234,22 @@ cache-root validation, optional engine/cache capability. No source decoding.
 **Safety gate:** pipeline DB remains read-only; cache override cannot overlap a
 library root; missing feature does not block startup.
 
-**Complete when:** migrations are idempotent and capability tests cover all four
-states.
+**Result:** idempotent jobs DB tables, explicit artifact/job/capability enums,
+deferred nullable content hash, source-stat snapshots behind preview-strength
+path validation, canonical cache overlap/cleanup guards, passive privacy-safe
+FFmpeg/ffprobe detection, and optional readiness states are implemented. No
+extractor, artifact, worker, automatic queue producer, or waveform endpoint was
+added.
 
 ### Phase W2 — safe extraction wrapper
 
 **Files/components:** new `backend/app/services/waveform_extractor.py`, fingerprint
 helper, fake-process tests.
 
-**Scope:** read-only descriptor/hash, ffprobe validation contract, FFmpeg stdout
-stream, min/max accumulator, LOD generation, timeout/cancel/output caps. Do not
-wire an API yet.
+**Scope:** read-only descriptor handling, ffprobe validation contract, FFmpeg
+stdout stream, min/max accumulator, LOD generation, timeout/cancel/output caps,
+and the approved non-redundant content-identity decision. Do not wire an API
+yet.
 
 **Safety gate:** exact command-array tests prove no shell, source/output write,
 tag/metadata option, or unbounded buffer.
@@ -1383,7 +1397,7 @@ Positive:
 Negative:
 
 - FFmpeg/ffprobe are optional system dependencies;
-- first generation reads the source once for hashing and again for decoding;
+- strong content identity remains a W2/W3 design/measurement decision;
 - implementation needs a careful worker/subprocess/cache state machine;
 - version-1 mono amplitude is less rich than frequency-colored DJ waveforms;
 - exact codec behavior depends on the installed FFmpeg build;
@@ -1417,12 +1431,16 @@ The implementation must guarantee:
   algorithm/schema version;
 - cross-platform descriptor passing and hard child-memory limits outside Linux;
 - explicit library-wide batch generation UX;
+- the safest non-redundant content hash/fingerprint strategy and cache-key
+  upgrade path;
 - authentication/authorization before any non-local deployment.
 
-## 25. Explicit design-stage non-actions
+## 25. Explicit W1 non-actions
 
-Producing this document requires no audio decoding or waveform generation. No
-engine installation, invocation, benchmark, source probe, test audio creation,
-cache creation, runtime code change, source media operation, tag/metadata
-operation, DJ database operation, or external metadata lookup is part of this
-stage.
+W1 adds configuration, containment, jobs DB state, cheap validated stat
+snapshots, and passive executable discovery only. It performs no engine
+invocation, source content hash, source probe, audio decoding, peak generation,
+artifact generation, benchmark, source media operation, tag/metadata operation,
+DJ database operation, or external metadata lookup. W1 creates no cache during
+ordinary startup/readiness; its initialization primitive may create only a
+validated empty application cache directory when explicitly called.

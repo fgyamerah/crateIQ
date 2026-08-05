@@ -23,7 +23,7 @@ from pydantic import BaseModel
 from ...schemas.track import CompatibleTracksResponse, TrackDetail, TrackStats, TrackSummary
 from ...services import read_only as read_only_service
 from ...services import track_service
-from ...core.library_root import assert_path_under_root, selected_library_root
+from ...services import track_source_service
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["tracks"])
@@ -47,18 +47,14 @@ class TrackIssueCountsResponse(BaseModel):
 
 def _preview_audio_path(track_id: int) -> Path:
     """Resolve one DB-backed audio path without allowing arbitrary file reads."""
-    track = track_service.get_track_by_id(track_id)
-    if track is None:
-        raise HTTPException(status_code=404, detail="Track not found")
-    if not track.filepath:
-        raise HTTPException(status_code=404, detail="Preview audio is unavailable for this track")
     try:
-        path = assert_path_under_root(Path(track.filepath), selected_library_root())
-    except ValueError as exc:
+        return track_source_service.validated_track_source(track_id).path
+    except track_source_service.TrackSourceNotFound:
+        raise HTTPException(status_code=404, detail="Track not found")
+    except track_source_service.TrackSourcePathRejected as exc:
         raise HTTPException(status_code=400, detail="Preview audio path is outside the selected library") from exc
-    if not path.is_file():
-        raise HTTPException(status_code=404, detail="Preview audio file is unavailable")
-    return path
+    except track_source_service.TrackSourceUnavailable:
+        raise HTTPException(status_code=404, detail="Preview audio is unavailable for this track")
 
 
 def _parse_byte_range(header: str, size: int) -> tuple[int, int]:

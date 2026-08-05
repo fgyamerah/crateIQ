@@ -11,6 +11,7 @@ from typing import Any
 from ..core.crate_db import crates_db_path
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 from ..core.preflight import redact_path, run_preflight
+from .waveform_readiness_service import get_waveform_readiness
 
 _DEFAULT_ANALYSIS_PREFERENCES = {
     "analyze_bpm": False,
@@ -284,7 +285,7 @@ def _tool_rows(report: dict[str, Any]) -> list[dict[str, Any]]:
             "status": check["status"],
             "message": check["message"],
             "source": metadata.get("source") or metadata.get("env_override") or "PATH",
-            "resolved": metadata.get("resolved"),
+            "resolved": None,
         })
     return tools
 
@@ -337,6 +338,8 @@ def get_capabilities(
         }
 
     quality_available = has_tool("ffprobe")
+    waveform = report.get("waveform") or get_waveform_readiness(report.get("checks", ()))
+    waveform_status = waveform["status"]
     return {
         "core": {
             "library_import": {
@@ -420,6 +423,17 @@ def get_capabilities(
                 ),
                 "enabled": analysis_preferences["use_external_tools"],
                 "action_state": "ready" if quality_available else "setup_required",
+            },
+            "waveform_generation": {
+                "available": waveform_status in {"detected", "ready"},
+                "status": waveform_status,
+                "required_tools": ["ffmpeg", "ffprobe"],
+                "purpose": "Prepare optional derived waveform data in CrateIQ-owned cache storage.",
+                "message": waveform["message"],
+                "enabled": waveform["enabled"],
+                "action_state": "coming_soon" if waveform_status in {"detected", "ready"} else "setup_required",
+                "cache_ready": waveform["cache_ready"],
+                "engine": waveform["engine"],
             },
         },
         "policies": {
