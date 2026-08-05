@@ -4,7 +4,6 @@ import { AlertOctagon, CheckCircle2, ChevronDown, ChevronUp, RefreshCw } from 'l
 import { fetchLibraryOverview } from '../../api/library'
 import type { LibraryOverview } from '../../api/library'
 import { fetchTrack, fetchTrackIssues, fetchTrackPage } from '../../api/tracks'
-import { submitJob } from '../../api/jobs'
 import type {
   TrackDetail,
   TrackIssueCounts,
@@ -99,8 +98,6 @@ export default function LibraryView() {
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
-  const [analyzeBusy, setAnalyzeBusy] = useState(false)
-  const [analyzeMsg, setAnalyzeMsg] = useState<{ text: string; jobId?: string } | null>(null)
 
   const setUiPatch = useCallback((updater: (current: LibraryUiState) => LibraryUiState) => {
     setUi((current) => updater(current))
@@ -221,19 +218,6 @@ export default function LibraryView() {
     })
   }
 
-  async function runAnalyzeLibrary() {
-    setAnalyzeBusy(true)
-    setAnalyzeMsg(null)
-    try {
-      const job = await submitJob({ command: 'analyze-missing', args: [] })
-      setAnalyzeMsg({ text: 'Queued analysis job', jobId: job.id })
-    } catch (e) {
-      setAnalyzeMsg({ text: e instanceof Error ? e.message : 'Failed to queue analysis job' })
-    } finally {
-      setAnalyzeBusy(false)
-    }
-  }
-
   const items = trackPage?.items ?? []
   const total = trackPage?.total ?? 0
   const issueTotal = issues ? Object.values(issues).reduce((sum, n) => sum + (n || 0), 0) : 0
@@ -256,10 +240,7 @@ export default function LibraryView() {
         moreMenuRef={moreMenuRef}
         onToggleMore={() => setMoreMenuOpen((v) => !v)}
         onRefresh={refresh}
-        analyzeBusy={analyzeBusy}
-        analyzeMsg={analyzeMsg}
-        onAnalyze={runAnalyzeLibrary}
-        onViewJobs={() => navigate('/jobs')}
+        onOpenAnalysisTools={() => navigate('/settings#analysis-tools')}
       />
 
       <LibraryRuntimeStrip />

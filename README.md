@@ -319,14 +319,16 @@ export CRATEIQ_LIBRARY_ROOT=/path/to/library
 ### Optional local analysis and metadata tools
 
 Python packages in `requirements.txt` are separate from the optional external
-executables used by particular workflows. `keyfinder-cli`, `aubio`, and
-`beet` are never installed by the project requirements and are not needed to
-start CrateIQ. Missing tools make runtime readiness `degraded` and limit only
-the workflows that use them. See [Local tooling for Linux Mint and
-Ubuntu](docs/operations/LOCAL_TOOLING.md) for safe installation, verification,
-and `KEYFINDER_BIN`/`AUBIO_BIN`/`BEET_BIN` override guidance. When a
-distribution does not package `keyfinder-cli`, that guide uses a pinned,
-upstream-source-only user-local build; CrateIQ never installs it.
+executables used by particular workflows. Import, browsing, Manual and Smart
+Crates, native preview, and portable/staged exports do not need `keyfinder-cli`,
+`aubio`, `beet`, `rmlint`, `ffprobe`, or `ffmpeg`. Settings exposes a
+per-workflow capability status, so a missing tool disables only its own future
+workflow—not the core app. BPM and key/Camelot analysis preferences are
+default-off; import never runs them automatically. MIK-compatible values are
+preserved when present, and fallback analysis is locked to missing data only.
+See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
+for safe installation, verification, and override guidance. CrateIQ never
+installs optional tools itself.
 
 `CRATEMINDAI_LIBRARY_ROOT` remains a deprecated fallback for existing local
 setups when `CRATEIQ_LIBRARY_ROOT` is not set. Database paths, API paths,
@@ -418,11 +420,10 @@ Supported routes:
 | `/reconciliation` | Read-only reconciliation ledger and plan validation |
 
 Legacy or incomplete page implementations remain in `frontend/src/pages/` for
-reference but are intentionally hidden. `/dashboard`, `/collection`, `/tracks`,
-and `/settings` redirect to `/`; the singular `/export` and `/ssd-sync` aliases
-redirect to their supported routes. `Collection.tsx` includes unfinished controls,
-`Settings.tsx` is a placeholder, and `Dashboard.tsx`/`Tracks.tsx` duplicate the
-current library and operations surfaces.
+reference but are intentionally hidden. `/dashboard`, `/collection`, and
+`/tracks` redirect to `/`; the singular `/export` and `/ssd-sync` aliases
+redirect to their supported routes. `/settings` is a supported local-only
+diagnostics, setup, import, and optional-capability route.
 
 Core dashboard capabilities:
 
@@ -434,7 +435,7 @@ Core dashboard capabilities:
 - Serato staged exports: a saved Manual Crate can be previewed, then explicitly written as an M3U8 plus `manifest.json` below `<library-root>/exports/serato/<safe-crate-and-timestamp>/`. This is a staged, import/review handoff only: CrateIQ never writes to a live `_Serato_` folder, does not replace existing files, and does not currently generate Serato's binary `.crate` format. It never modifies music files, tags, BPM/key/cues, Mixed In Key data, or DJ app databases.
 - Rekordbox staged XML exports: a saved Manual Crate can be previewed, then explicitly written as a UTF-8 Rekordbox XML file below `<library-root>/exports/rekordbox/`. Import that file manually through Rekordbox's XML import workflow; CrateIQ does not write a live Rekordbox database, device, USB, or application folder. Each output is unique and no-overwrite. Filename is the safe default path mode; relative/filename imports can require path mapping. The export does not modify audio, tags, BPM/key/cues, Mixed In Key data, or Serato state.
 - Audio Preview Player: the Library inspector, Manual Crates, and Smart Crates can request browser-native playback of a selected local track through a scoped preview endpoint. It reads only an existing file beneath the selected library root and supports seeking with HTTP byte ranges; it never scans, transcodes, modifies audio/tags/BPM/key/cues, Mixed In Key data, or DJ databases. Demo tracks can intentionally report preview unavailable because their placeholder paths have no audio files. Waveforms, cue preview, beat grids, and keyboard shortcuts remain future work.
-- Settings (`/settings`): central local diagnostics for the active library, optional tools, readiness checks, and locked safety policies. The default export path mode is saved locally as `<library-root>/logs/app_settings.json`. Settings can also validate an existing readable absolute library root and save it as a pending `CRATEIQ_LIBRARY_ROOT` in ignored `<repo>/.run/local/crateiq.env`; the service helper reads it on the next configured-library start, so a restart is always required and folder scanning/import remains separate. Binary overrides stay private process-start configuration. No files, tags, MIK values, or DJ databases are changed.
+- Settings (`/settings`): central local diagnostics for the active library, optional tools, readiness checks, locked safety policies, and per-workflow capability gating. It persistently exposes only safe local preferences: default export path mode plus default-off BPM/key analysis and external-tool preference. MIK use, preservation of BPM/key/cues, and missing-data-only behavior are locked policies. Settings can also validate an existing readable absolute library root and save it as a pending `CRATEIQ_LIBRARY_ROOT` in ignored `<repo>/.run/local/crateiq.env`; the service helper reads it on the next configured-library start, so a restart is always required and folder scanning/import remains separate. Binary overrides stay private process-start configuration. No files, tags, MIK values, or DJ databases are changed.
 - Library setup and import: before a configured root can start, use Settings to initialize it. This creates only `<library-root>/logs/`, `<library-root>/exports/`, and an empty local `logs/processed.db` index; it does not scan audio. Scan preview is an explicit read-only action for common audio filenames, and confirmed import writes only filename/path records to the local index. No music files, tags, BPM/key/cues, Mixed In Key data, Serato, or Rekordbox databases are changed; analysis tools are not run automatically.
 - Issue count page with clickable filters.
 - Folder statistics from DB paths only.

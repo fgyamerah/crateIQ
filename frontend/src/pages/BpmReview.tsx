@@ -6,15 +6,13 @@ import {
   fetchBpmAnomalies,
   fetchBpmSummary,
   updateAnomaly,
-  submitReanalyze,
 } from '../api/analysis'
-import { fetchJobLogs } from '../api/jobs'
 import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
 import EmptyState from '../components/ui/EmptyState'
+import StatusStrip from '../components/ui/StatusStrip'
 import type { BpmAnomaly, AnomalyReviewStatus, BpmSummary } from '../types/analysis'
 import { REASON_COLORS, STATUS_COLORS } from '../types/analysis'
-import type { Job } from '../types/job'
 import { ApiError } from '../api/client'
 
 // ---------------------------------------------------------------------------
@@ -66,88 +64,6 @@ function SummaryBar({ summary }: { summary: BpmSummary | null }) {
         ))}
       </div>
     </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// ReanalyzePanel
-// ---------------------------------------------------------------------------
-
-interface ReanalyzePanelProps {
-  onJobStarted: (job: Job) => void
-}
-
-function ReanalyzePanel({ onJobStarted }: ReanalyzePanelProps) {
-  const [force, setForce]     = useState(true)
-  const [dryRun, setDryRun]   = useState(true)
-  const [busy, setBusy]       = useState(false)
-  const [err, setErr]         = useState<string | null>(null)
-
-  async function submit() {
-    setBusy(true)
-    setErr(null)
-    try {
-      const job = await submitReanalyze({ force, dry_run: dryRun })
-      onJobStarted(job)
-    } catch (e) {
-      setErr(e instanceof ApiError ? e.displayMessage : e instanceof Error ? e.message : 'Unknown error')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="reanalyze-panel">
-      <div className="reanalyze-row">
-        <label className="form-checkbox">
-          <input type="checkbox" checked={force} onChange={e => setForce(e.target.checked)} disabled={busy} />
-          --reanalyze (re-detect even if BPM already exists)
-        </label>
-        <label className="form-checkbox">
-          <input type="checkbox" checked={dryRun} onChange={e => setDryRun(e.target.checked)} disabled={busy} />
-          --dry-run (no writes)
-        </label>
-        <button className="btn btn--primary btn--sm" onClick={submit} disabled={busy}>
-          {busy ? 'Submitting…' : 'Queue Re-Analysis Job'}
-        </button>
-      </div>
-      {err && <span className="submit-error">{err}</span>}
-      <p className="reanalyze-note muted">
-        This runs <code>analyze-missing</code> as a tracked background job.
-        With <code>--reanalyze</code>, BPM is re-detected even for tracks that already
-        have a value — use this to fix incorrect stored BPMs.
-        Watch progress in the <Link to="/jobs" className="card-action">Jobs page</Link>.
-      </p>
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// LogInline — shows the last N lines of a job log inline
-// ---------------------------------------------------------------------------
-
-function LogInline({ jobId, active }: { jobId: string; active: boolean }) {
-  const [logs, setLogs] = useState('')
-
-  const load = useCallback(async () => {
-    try {
-      const text = await fetchJobLogs(jobId, 40)
-      setLogs(text)
-    } catch {
-      // Ignore — job may have just started
-    }
-  }, [jobId])
-
-  useEffect(() => {
-    load()
-    if (!active) return
-    const id = setInterval(load, 2000)
-    return () => clearInterval(id)
-  }, [load, active])
-
-  if (!logs) return null
-  return (
-    <pre className="bpm-job-log">{logs}</pre>
   )
 }
 
@@ -278,7 +194,6 @@ export default function BpmReview() {
   const [scanning, setScanning]   = useState(false)
   const [error, setError]         = useState<string | null>(null)
   const [scanResult, setScanResult] = useState<string | null>(null)
-  const [lastJob, setLastJob]     = useState<Job | null>(null)
 
   const [filterStatus, setFilterStatus] = useState<FilterStatus>('pending')
   const [filterReason, setFilterReason] = useState<FilterReason>('')
@@ -352,11 +267,6 @@ export default function BpmReview() {
     setAnomalies(prev => prev.map(a => a.id === updated.id ? updated : a))
   }
 
-  // ---------------------------------------------------------------------------
-  // Active job log polling
-  // ---------------------------------------------------------------------------
-  const jobActive = lastJob?.status === 'pending' || lastJob?.status === 'running'
-
   const pendingCount  = anomalies.filter(a => a.review_status === 'pending').length
   const requeuedCount = anomalies.filter(a => a.review_status === 'requeued').length
 
@@ -364,7 +274,7 @@ export default function BpmReview() {
     <div className="page">
       <PageHeader
         title="BPM Review"
-        subtitle="Detect and fix BPM anomalies across the library."
+        subtitle="Review stored BPM anomalies without starting audio analysis."
         actions={
           <>
             {loading && <span className="muted" style={{ fontSize: 12 }}>Loading…</span>}
@@ -372,9 +282,9 @@ export default function BpmReview() {
               className="btn btn--primary btn--sm"
               onClick={handleBpmCheck}
               disabled={scanning}
-              title="Scan all tracks in the library DB for suspicious BPM values"
+              title="Review stored BPM values in the local CrateIQ index"
             >
-              {scanning ? <><Loader2 size={13} className="spin" /> Scanning…</> : 'Run BPM Check'}
+              {scanning ? <><Loader2 size={13} className="spin" /> Checking…</> : 'Review BPM anomalies'}
             </button>
             <button className="btn btn--ghost btn--sm" onClick={loadAnomalies}>
               <RefreshCw size={13} />
@@ -395,25 +305,13 @@ export default function BpmReview() {
         <SummaryBar summary={summary} />
       </section>
 
-      {/* Re-analysis */}
+      {/* Optional analysis guidance */}
       <section className="section">
         <div className="card">
-          <h2 className="card-title">Re-Analysis Job</h2>
-          <ReanalyzePanel onJobStarted={(job) => setLastJob(job)} />
-          {lastJob && (
-            <div className="bpm-job-panel">
-              <div className="bpm-job-header">
-                <span className="muted" style={{ fontSize: 12 }}>
-                  Job <code>{lastJob.id.slice(0, 8)}</code>
-                </span>
-                <span className={`badge badge--${lastJob.status}`}>{lastJob.status}</span>
-                {jobActive && (
-                  <span className="live-indicator">live · polling 2s</span>
-                )}
-              </div>
-              <LogInline jobId={lastJob.id} active={jobActive} />
-            </div>
-          )}
+          <h2 className="card-title">Optional BPM analysis</h2>
+          <StatusStrip tone="info">
+            This page reviews values already in CrateIQ’s index. A dedicated missing-data-only BPM analysis workflow is not exposed here yet. Configure tool availability and preferences in <Link to="/settings#analysis-tools">Settings → Analysis &amp; tools</Link>; existing and Mixed In Key values remain protected.
+          </StatusStrip>
         </div>
       </section>
 

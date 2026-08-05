@@ -6,6 +6,15 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added per-workflow optional-analysis capability gating and
+  persisted safe analysis preferences. `GET /api/settings` and
+  `GET /api/settings/capabilities` distinguish always-available core work from
+  optional MIK coverage, BPM, key/Camelot, Beets, duplicate, and audio-quality
+  workflows. BPM/key preferences are default-off; MIK use, preservation of
+  existing BPM/key/cues, and missing-data-only behavior are locked on. Settings
+  never starts analysis, and import remains analysis-free. Existing broad
+  browser re-analysis UI now directs users to Settings until an explicit
+  DB-only missing-data analysis workflow exists.
 - 2026-08-05: Completed the full functionality, workflow, external-tool, and
   product-surface audit in
   `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`. The audit confirms

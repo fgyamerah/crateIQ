@@ -802,4 +802,12 @@ commit.
 
 ## Recommended next task
 
-Implement **optional analysis settings and per-workflow capability gating** first. It is the smallest cross-cutting change that makes the existing product safer and easier to understand without expanding feature scope. It establishes the contract needed by the Import Wizard, MIK coverage, BPM/key analysis jobs, duplicate detection, Beets workflows, quality probing, and export recovery.
+**Follow-up (2026-08-05):** the optional-analysis settings and per-workflow
+capability contract is now implemented. Core workflows remain independently
+available; Settings exposes default-off BPM/key preferences and locked MIK,
+existing-value, and missing-data-only policies. Cards honestly label unavailable
+or not-yet-runnable advanced workflows rather than launching a generic analyzer.
+
+The next task is a **DB-only, missing-data-only analysis jobs workflow** with
+explicit BPM/key eligibility previews and source-aware MIK-compatible metadata
+coverage before any fallback analysis is expanded.

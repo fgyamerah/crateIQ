@@ -39,12 +39,19 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
-[ ] (P0) Optional analysis settings and per-workflow capability gating
-         (recommended next task from the 2026-08-05 functionality/workflow
-         audit). Separate core readiness from optional capabilities; keep
-         import-without-analysis enabled; make BPM and key analysis independent,
-         default-off actions; preserve trusted/MIK-compatible BPM, key, and cue
-         data; and disable only the action whose tool/input is unavailable.
+[x] (P0) Optional analysis settings and per-workflow capability gating
+         (2026-08-05). Settings now separates always-ready core workflows from
+         tool/source-specific advanced capability cards, persists default-off
+         BPM/key and external-tool preferences, and locks MIK preservation,
+         existing BPM/key/cue preservation, and missing-data-only behavior.
+         Import remains analysis-free; unavailable tools disable only their
+         named future workflow.
+
+[ ] (P0) Add a DB-only, missing-data-only analysis jobs workflow
+         Consume the capability contract with explicit BPM-only and
+         key/Camelot-only eligibility previews, progress, cancellation, and
+         no tag/file/quarantine writes. Add source-aware MIK-compatible
+         metadata provenance before any fallback analysis is expanded.
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`

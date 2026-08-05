@@ -1534,18 +1534,69 @@ def test_settings_reports_safe_library_tools_and_locked_policies(client):
     assert payload["safety"]["mixed_in_key_authoritative"] is True
     assert payload["safety"]["no_live_serato_writes"] is True
     assert payload["preferences"]["default_export_path_mode"] == "filename"
+    assert payload["preferences"]["analysis"]["analyze_bpm"] is False
+    assert payload["preferences"]["analysis"]["analyze_key"] is False
+    assert payload["preferences"]["analysis"]["use_mik_when_present"] is True
+    assert payload["capabilities"]["core"]["library_import"]["available"] is True
+    assert payload["capabilities"]["policies"]["preserve_mik_values"] is True
 
 
-def test_settings_persists_safe_preference_and_rejects_invalid_updates(client):
+def test_settings_persists_safe_preference_and_analysis_preferences(client):
     test_client, root = client
-    updated = test_client.patch("/api/settings", json={"default_export_path_mode": "relative"})
+    updated = test_client.patch(
+        "/api/settings",
+        json={
+            "default_export_path_mode": "relative",
+            "analysis": {"analyze_bpm": True, "analyze_key": True, "use_external_tools": False},
+        },
+    )
     assert updated.status_code == 200
     assert updated.json()["preferences"]["default_export_path_mode"] == "relative"
+    assert updated.json()["preferences"]["analysis"] == {
+        "analyze_bpm": True,
+        "analyze_key": True,
+        "use_mik_when_present": True,
+        "preserve_existing_bpm_key_cues": True,
+        "missing_data_only": True,
+        "use_external_tools": False,
+    }
     settings_path = root / "logs" / "app_settings.json"
-    assert json.loads(settings_path.read_text(encoding="utf-8")) == {"default_export_path_mode": "relative"}
+    assert json.loads(settings_path.read_text(encoding="utf-8"))["analysis"]["analyze_bpm"] is True
     assert test_client.get("/api/settings").json()["preferences"]["default_export_path_mode"] == "relative"
     invalid = test_client.patch("/api/settings", json={"default_export_path_mode": "../../unsafe"})
     assert invalid.status_code == 422
+    locked = test_client.patch("/api/settings", json={"analysis": {"missing_data_only": False}})
+    assert locked.status_code == 422
+    assert "locked safety policy" in locked.json()["detail"]
+
+
+def test_settings_capabilities_only_disable_workflows_missing_their_tools(client, monkeypatch):
+    test_client, _ = client
+    missing_tools_report = {
+        "status": "degraded",
+        "checks": [
+            {
+                "name": f"binary_{name.replace('-', '_')}",
+                "status": "warn",
+                "message": f"{name} not found",
+                "metadata": {"source": "PATH"},
+            }
+            for name in ("ffprobe", "ffmpeg", "keyfinder-cli", "aubio", "beet", "rmlint", "rsync")
+        ],
+    }
+    monkeypatch.setattr(settings_service, "run_preflight", lambda: missing_tools_report)
+
+    response = test_client.get("/api/settings/capabilities")
+    assert response.status_code == 200
+    payload = response.json()
+    assert all(item["available"] is True for item in payload["core"].values())
+    assert payload["analysis"]["bpm_analysis"]["status"] == "missing"
+    assert payload["analysis"]["key_analysis"]["required_tool"] == "keyfinder-cli"
+    assert payload["analysis"]["beets_enrichment"]["status"] == "missing"
+    assert payload["analysis"]["duplicate_detection"]["status"] == "missing"
+    assert payload["analysis"]["audio_quality_probe"]["status"] == "missing"
+    assert payload["analysis"]["mixed_in_key_coverage"]["status"] == "unknown"
+    assert payload["analysis"]["mixed_in_key_coverage"]["locked"] is True
 
 
 def test_settings_recognizes_the_repository_demo_library():

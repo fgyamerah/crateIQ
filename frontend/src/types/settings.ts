@@ -51,11 +51,51 @@ export interface SettingsSafety {
   preview_before_export_or_apply: boolean
 }
 
+export type CapabilityStatus = 'available' | 'missing' | 'unknown'
+export type CapabilityActionState = 'ready' | 'setup_required' | 'coming_soon'
+
+export interface WorkflowCapability {
+  available: boolean
+  status: CapabilityStatus
+  purpose: string
+  message: string
+  action_state: CapabilityActionState
+  required_tool?: string | null
+  required_tools?: string[] | null
+  required_source?: string | null
+  enabled?: boolean | null
+  locked?: boolean | null
+}
+
+export interface SettingsCapabilities {
+  core: Record<string, WorkflowCapability>
+  analysis: Record<string, WorkflowCapability>
+  policies: {
+    preserve_mik_values: boolean
+    preserve_existing_bpm_key_cues: boolean
+    missing_data_only: boolean
+    no_tag_writes: boolean
+  }
+}
+
+export interface AnalysisPreferences {
+  analyze_bpm: boolean
+  analyze_key: boolean
+  use_mik_when_present: boolean
+  preserve_existing_bpm_key_cues: boolean
+  missing_data_only: boolean
+  use_external_tools: boolean
+}
+
 export interface SettingsResponse {
   library: SettingsLibrary
   tools: SettingsTool[]
   safety: SettingsSafety
-  preferences: { default_export_path_mode: 'filename' | 'relative' | 'absolute' }
+  preferences: {
+    default_export_path_mode: 'filename' | 'relative' | 'absolute'
+    analysis: AnalysisPreferences
+  }
+  capabilities: SettingsCapabilities
 }
 
 export interface RuntimeReadiness {

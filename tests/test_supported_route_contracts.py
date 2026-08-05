@@ -185,10 +185,11 @@ ROUTE_CONTRACTS: list[dict] = [
     },
     {
         "route": "/settings",
-        "purpose": "Local settings diagnostics and safe preferences",
-        "access": "read-only diagnostics; preference update deferred",
+        "purpose": "Local settings diagnostics, analysis capabilities, and safe preferences",
+        "access": "read-only diagnostics; explicit local preference update",
         "endpoints": [
-            ("/api/settings", "dict", ("library", "tools", "safety", "preferences")),
+            ("/api/settings", "dict", ("library", "tools", "safety", "preferences", "capabilities")),
+            ("/api/settings/capabilities", "dict", ("core", "analysis", "policies")),
             ("/api/settings/runtime", "dict", ("status", "checks")),
         ],
     },

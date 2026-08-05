@@ -1,7 +1,7 @@
 """Local Settings API: diagnostics plus one safe library-scoped preference."""
 from __future__ import annotations
 
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -46,6 +46,44 @@ class SettingsSafety(BaseModel):
 
 class SettingsPreferences(BaseModel):
     default_export_path_mode: Literal["filename", "relative", "absolute"]
+    analysis: "AnalysisPreferences"
+
+
+class AnalysisPreferences(BaseModel):
+    analyze_bpm: bool = False
+    analyze_key: bool = False
+    use_mik_when_present: bool = True
+    preserve_existing_bpm_key_cues: bool = True
+    missing_data_only: bool = True
+    use_external_tools: bool = True
+
+
+class AnalysisPreferencesUpdate(BaseModel):
+    analyze_bpm: Optional[bool] = None
+    analyze_key: Optional[bool] = None
+    use_mik_when_present: Optional[bool] = None
+    preserve_existing_bpm_key_cues: Optional[bool] = None
+    missing_data_only: Optional[bool] = None
+    use_external_tools: Optional[bool] = None
+
+
+class WorkflowCapability(BaseModel):
+    available: bool
+    status: Literal["available", "missing", "unknown"]
+    purpose: str
+    message: str
+    action_state: Literal["ready", "setup_required", "coming_soon"]
+    required_tool: Optional[str] = None
+    required_tools: Optional[list[str]] = None
+    required_source: Optional[str] = None
+    enabled: Optional[bool] = None
+    locked: Optional[bool] = None
+
+
+class SettingsCapabilities(BaseModel):
+    core: dict[str, WorkflowCapability]
+    analysis: dict[str, WorkflowCapability]
+    policies: dict[str, bool]
 
 
 class SettingsResponse(BaseModel):
@@ -53,10 +91,12 @@ class SettingsResponse(BaseModel):
     tools: list[SettingsTool]
     safety: SettingsSafety
     preferences: SettingsPreferences
+    capabilities: SettingsCapabilities
 
 
 class SettingsUpdateRequest(BaseModel):
     default_export_path_mode: Optional[Literal["filename", "relative", "absolute"]] = Field(default=None)
+    analysis: Optional[AnalysisPreferencesUpdate] = None
 
 
 class LibraryRootRequest(BaseModel):
@@ -85,9 +125,18 @@ async def get_settings() -> SettingsResponse:
 @router.patch("/settings", response_model=SettingsResponse)
 async def patch_settings(body: SettingsUpdateRequest) -> SettingsResponse:
     try:
-        return SettingsResponse(**settings_service.update_preferences(body.default_export_path_mode))
+        analysis_updates: dict[str, Any] | None = None
+        if body.analysis is not None:
+            analysis_updates = body.analysis.model_dump(exclude_none=True)
+        return SettingsResponse(**settings_service.update_preferences(body.default_export_path_mode, analysis_updates))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/settings/capabilities", response_model=SettingsCapabilities)
+async def get_settings_capabilities() -> SettingsCapabilities:
+    """Read-only, action-level availability for optional local workflows."""
+    return SettingsCapabilities(**settings_service.get_capabilities())
 
 
 @router.post("/settings/library/validate", response_model=LibraryRootValidationResponse)

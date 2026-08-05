@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: optional analysis capability gating
+
+- Added a read-only per-workflow capability contract to Settings. Core library
+  setup/import, browse, Manual/Smart Crates, and exports remain available even
+  when optional binaries are absent; MIK coverage, BPM, key/Camelot, Beets,
+  duplicate, and audio-quality capabilities each report their own status.
+- Added ignored local analysis preferences: BPM/key analysis default off and
+  external-tool use may be enabled or disabled; MIK use, preservation of
+  existing BPM/key/cues, and missing-data-only behavior are locked safety
+  policies. Saving preferences never runs analysis or writes media/tags.
+- Clarified the Library and BPM Review UI so they no longer imply a generic
+  forced re-analysis. A dedicated DB-only missing-data analysis runner remains
+  future work.
+
 [2026-08-05] — docs: functionality, workflow, and dependency audit
 
 - Added `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`, covering the

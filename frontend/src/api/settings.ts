@@ -1,9 +1,13 @@
 import { apiFetch } from './client'
-import type { LibraryRootValidation, LibrarySetupResult, RuntimeReadiness, SettingsResponse } from '../types/settings'
+import type { AnalysisPreferences, LibraryRootValidation, LibrarySetupResult, RuntimeReadiness, SettingsCapabilities, SettingsResponse } from '../types/settings'
 
 export const fetchSettings = () => apiFetch.get<SettingsResponse>('/settings')
 export const fetchSettingsRuntime = () => apiFetch.get<RuntimeReadiness>('/settings/runtime')
-export const updateSettings = (default_export_path_mode: SettingsResponse['preferences']['default_export_path_mode']) => apiFetch.patch<SettingsResponse>('/settings', { default_export_path_mode })
+export const fetchSettingsCapabilities = () => apiFetch.get<SettingsCapabilities>('/settings/capabilities')
+export const updateSettings = (body: {
+  default_export_path_mode?: SettingsResponse['preferences']['default_export_path_mode']
+  analysis?: Partial<AnalysisPreferences>
+}) => apiFetch.patch<SettingsResponse>('/settings', body)
 export const validateLibraryRoot = (library_root: string) => apiFetch.post<LibraryRootValidation>('/settings/library/validate', { library_root })
 export const updateLibraryRoot = (library_root: string) => apiFetch.patch<SettingsResponse>('/settings/library', { library_root })
 export const initializeLibrary = (library_root?: string) => apiFetch.post<LibrarySetupResult>('/settings/library/initialize', library_root ? { library_root } : {})

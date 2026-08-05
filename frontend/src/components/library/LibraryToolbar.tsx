@@ -10,11 +10,6 @@ import {
 } from 'lucide-react'
 import type { Density, SortKey, SortOrder } from './libraryUtils'
 
-interface AnalyzeMsg {
-  text: string
-  jobId?: string
-}
-
 interface Props {
   searchDraft: string
   searchRef: RefObject<HTMLInputElement>
@@ -30,10 +25,7 @@ interface Props {
   moreMenuRef: RefObject<HTMLDivElement>
   onToggleMore: () => void
   onRefresh: () => void
-  analyzeBusy: boolean
-  analyzeMsg: AnalyzeMsg | null
-  onAnalyze: () => void
-  onViewJobs: () => void
+  onOpenAnalysisTools: () => void
 }
 
 export default function LibraryToolbar({
@@ -51,10 +43,7 @@ export default function LibraryToolbar({
   moreMenuRef,
   onToggleMore,
   onRefresh,
-  analyzeBusy,
-  analyzeMsg,
-  onAnalyze,
-  onViewJobs,
+  onOpenAnalysisTools,
 }: Props) {
   return (
     <header className="lib-toolbar">
@@ -124,18 +113,10 @@ export default function LibraryToolbar({
       <div className="lib-toolbar-spacer" />
 
       <div className="lib-analyze">
-        <button type="button" className="lib-btn lib-btn--primary" onClick={onAnalyze} disabled={analyzeBusy}>
+        <button type="button" className="lib-btn lib-btn--primary" onClick={onOpenAnalysisTools}>
           <Sparkles size={15} />
-          {analyzeBusy ? 'Queuing…' : 'Analyze Library'}
+          Analysis &amp; tools
         </button>
-        {analyzeMsg && (
-          <span className="lib-analyze-msg">
-            {analyzeMsg.text}
-            {analyzeMsg.jobId && (
-              <button type="button" onClick={onViewJobs}>View jobs →</button>
-            )}
-          </span>
-        )}
       </div>
     </header>
   )

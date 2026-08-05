@@ -1,10 +1,12 @@
 # Optional local music-analysis tooling
 
 CrateIQ keeps Python dependencies and external runtime binaries separate.
-The tools below are optional: their absence produces a `degraded` readiness
-warning, but does not prevent CrateIQ from starting. Install only the tools
-needed for the workflows you intentionally use. Do not vendor binaries in this
-repository or commit local executable paths.
+The tools below are optional: their absence can produce a `degraded` runtime
+diagnostic, but does not prevent CrateIQ from starting or using its core
+workflows. Settings shows each tool against the single advanced workflow it
+would enable; a missing binary disables only that workflow. Install only the
+tools needed for workflows you intentionally use. Do not vendor binaries in
+this repository or commit local executable paths.
 
 ## Tool roles
 
@@ -13,10 +15,17 @@ repository or commit local executable paths.
 | `keyfinder-cli` | Fallback musical-key/Camelot analysis | Only for a track without existing Mixed In Key (MIK) key data. |
 | `aubio` | Fallback BPM analysis | Only for a track without existing BPM/MIK data. CrateIQ can also fall back to the existing Python `librosa` dependency when aubio is unavailable or fails. |
 | `beet` | Beets metadata import/enrichment and the legacy organizer path | Only when the relevant import/organizer workflow is intentionally run; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
+| `rmlint` | Duplicate-detection workflow | Only when the user explicitly starts duplicate detection; no files are deleted automatically. |
+| `ffprobe` + `ffmpeg` | Audio-quality/probing workflows | Only for explicit quality/probing or decode-support workflows. |
 
 Mixed In Key remains authoritative for existing BPM, key, and cue data.
 These tools fill only missing analysis; they must not be used to overwrite
 trusted MIK values.
+
+The current Settings capability card for Mixed In Key is intentionally marked
+**unknown / coming soon**: CrateIQ preserves compatible existing values, but
+does not yet provide source-aware MIK coverage or cue import. BPM and key
+preferences are default-off and never run as part of library import.
 
 ## Linux Mint / Ubuntu installation
 
