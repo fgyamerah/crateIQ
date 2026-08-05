@@ -283,6 +283,7 @@ export default function LibraryView() {
             onSelect={(id) => setUi((current) => ({ ...current, selectedId: id }))}
             onPrevPage={() => setUi((current) => ({ ...current, offset: Math.max(0, current.offset - LIMIT) }))}
             onNextPage={() => setUi((current) => ({ ...current, offset: current.offset + LIMIT }))}
+            onOpenImportWizard={() => navigate('/settings#library-setup-import')}
           />
 
           <TrackInspector track={selectedDetail} loading={detailLoading} />

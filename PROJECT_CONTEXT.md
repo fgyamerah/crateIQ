@@ -6,6 +6,15 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Polished the Settings Library Setup & Import flow into a
+  numbered, review-first wizard: select root, initialize the local index,
+  explicitly scan, review counts/samples/warnings, then import. Scan previews
+  now report files/folders and supported/unsupported/skipped counts plus cheap
+  duplicate-name and long-path hints; imports report new/existing/total indexed
+  counts and avoid duplicate DB records by path. This remains local-index-only:
+  it does not decode audio, run analysis, change files/tags/BPM/key/cues/MIK,
+  or write DJ application databases. The Library empty state links back to the
+  setup flow rather than suggesting analysis before import.
 - 2026-08-05: Added per-workflow optional-analysis capability gating and
   persisted safe analysis preferences. `GET /api/settings` and
   `GET /api/settings/capabilities` distinguish always-available core work from

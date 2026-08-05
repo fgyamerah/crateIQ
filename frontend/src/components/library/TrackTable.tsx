@@ -25,6 +25,7 @@ interface Props {
   onSelect: (id: number) => void
   onPrevPage: () => void
   onNextPage: () => void
+  onOpenImportWizard: () => void
 }
 
 const QUALITY_COLORS: Record<number, string> = {
@@ -70,6 +71,7 @@ export default function TrackTable({
   onSelect,
   onPrevPage,
   onNextPage,
+  onOpenImportWizard,
 }: Props) {
   const [scrollTop, setScrollTop] = useState(0)
 
@@ -157,7 +159,11 @@ export default function TrackTable({
               <tr aria-hidden="true"><td colSpan={9} style={{ height: virtualBottomPad, padding: 0, border: 0 }} /></tr>
             )}
             {!loading && items.length === 0 && (
-              <tr><td colSpan={9} className="lib-empty">No tracks match the current filters.</td></tr>
+              <tr>
+                <td colSpan={9} className="lib-empty">
+                  {total === 0 ? <div className="lib-empty-import"><strong>No tracks imported yet</strong><span>Set up the library, run a read-only scan preview, then import tracks into CrateIQ’s local index.</span><button className="lib-btn lib-btn--primary lib-btn--sm" type="button" onClick={onOpenImportWizard}>Open Library Setup &amp; Import</button></div> : 'No tracks match the current filters.'}
+                </td>
+              </tr>
             )}
           </tbody>
         </table>

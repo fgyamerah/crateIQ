@@ -808,6 +808,13 @@ available; Settings exposes default-off BPM/key preferences and locked MIK,
 existing-value, and missing-data-only policies. Cards honestly label unavailable
 or not-yet-runnable advanced workflows rather than launching a generic analyzer.
 
+**Follow-up (2026-08-05):** the Library Setup & Import surface now presents
+the safe first-use flow as select → initialize → scan preview → review →
+import. The preview adds counts and relative-path review hints; import remains
+local-index-only and idempotent by filepath. This resolves the audit’s
+fragmented first-run presentation, while metadata provenance and preview-token
+snapshotting remain future work.
+
 The next task is a **DB-only, missing-data-only analysis jobs workflow** with
 explicit BPM/key eligibility previews and source-aware MIK-compatible metadata
 coverage before any fallback analysis is expanded.

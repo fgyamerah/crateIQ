@@ -2,6 +2,17 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: guided Library Setup & Import review flow
+
+- Refined Settings into a numbered select → initialize → scan → review →
+  import sequence. Scan previews now return relative sample paths plus folders,
+  total/supported/unsupported/skipped counts, cheap duplicate-name candidates,
+  and long-path warnings; previews remain read-only.
+- Import now reports newly indexed, already indexed, and total indexed counts
+  and avoids duplicate rows by filepath. It still writes only CrateIQ’s local
+  index and never runs analysis or modifies media/tags/BPM/key/cues/MIK/DJ
+  databases. Empty Library results now link users to Setup & Import.
+
 [2026-08-05] — feat: optional analysis capability gating
 
 - Added a read-only per-workflow capability contract to Settings. Core library

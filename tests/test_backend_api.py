@@ -1673,14 +1673,26 @@ def test_library_scan_preview_and_explicit_import_only_write_the_local_index(cli
     audio = library_root / "sets" / "Artist One - First Track.mp3"
     audio.parent.mkdir()
     audio.write_bytes(b"fixture-audio")
+    nested_audio = library_root / "music" / "afro" / "Artist Two - Nested Track.flac"
+    nested_audio.parent.mkdir(parents=True)
+    nested_audio.write_bytes(b"fixture-audio")
     (library_root / "sets" / "notes.txt").write_text("ignore", encoding="utf-8")
     test_client.post("/api/settings/library/initialize", json={"library_root": str(library_root)}).raise_for_status()
     db_path = library_root / "logs" / "processed.db"
 
     preview = test_client.post("/api/library/scan-preview", json={"library_root": str(library_root)})
     assert preview.status_code == 200
-    assert preview.json()["track_count"] == 1
-    assert preview.json()["sample_tracks"] == ["sets/Artist One - First Track.mp3"]
+    preview_payload = preview.json()
+    assert preview_payload["track_count"] == 2
+    assert preview_payload["supported_audio_files"] == 2
+    assert preview_payload["total_files"] == 3
+    assert preview_payload["unsupported_file_count"] == 1
+    assert preview_payload["folders_scanned"] >= 3
+    assert preview_payload["importable"] is True
+    assert preview_payload["sample_tracks"] == [
+        "music/afro/Artist Two - Nested Track.flac",
+        "sets/Artist One - First Track.mp3",
+    ]
     assert "sets/notes.txt" in preview.json()["unsupported_files"]
     with sqlite3.connect(db_path) as conn:
         assert conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0] == 0
@@ -1689,8 +1701,20 @@ def test_library_scan_preview_and_explicit_import_only_write_the_local_index(cli
     assert unconfirmed.status_code == 422
     imported = test_client.post("/api/library/import", json={"library_root": str(library_root), "confirm": True})
     assert imported.status_code == 200
-    assert imported.json()["imported_count"] == 1
+    assert imported.json()["imported_count"] == 2
+    assert imported.json()["existing_count"] == 0
+    assert imported.json()["total_indexed_count"] == 2
+    assert imported.json()["next_actions"][0]["route"] == "/"
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute("SELECT artist, title, bpm, key_camelot FROM tracks").fetchone()
-    assert row == ("Artist One", "First Track", None, None)
+        rows = conn.execute("SELECT artist, title, bpm, key_camelot FROM tracks ORDER BY filepath").fetchall()
+    assert rows == [
+        ("Artist Two", "Nested Track", None, None),
+        ("Artist One", "First Track", None, None),
+    ]
+    repeated = test_client.post("/api/library/import", json={"library_root": str(library_root), "confirm": True})
+    assert repeated.status_code == 200
+    assert repeated.json()["imported_count"] == 0
+    assert repeated.json()["existing_count"] == 2
+    assert repeated.json()["total_indexed_count"] == 2
     assert audio.read_bytes() == b"fixture-audio"
+    assert nested_audio.read_bytes() == b"fixture-audio"

@@ -67,6 +67,13 @@ CURRENT FOCUS
          records only. Metadata analysis and all music/tag/MIK/DJ app changes
          remain deferred.
 
+[x] (P1) Library Import Wizard UX polish (2026-08-05)
+         Settings now presents the first-use path as select → initialize →
+         scan preview → review → import, with clear local-index-only safety
+         copy, relative samples, counts, warnings, import idempotency status,
+         and next actions. Empty libraries route to this flow instead of
+         suggesting analysis before tracks are imported.
+
 [x] (P1) Local-first Settings page (2026-08-05)
          `/settings` now exposes selected-library, optional-tool, runtime, and
          locked safety diagnostics. Its only editable value is the persisted

@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import {
+  ArrowRight,
   CheckCircle2,
   CircleAlert,
   FolderCog,
   RefreshCw,
+  ScanSearch,
   Settings2,
   ShieldCheck,
   Wrench,
@@ -82,6 +85,7 @@ function CapabilityCard({ label, capability }: { label: string; capability: Work
 }
 
 export default function Settings() {
+  const location = useLocation()
   const [settings, setSettings] = useState<SettingsResponse | null>(null)
   const [runtime, setRuntime] = useState<RuntimeReadiness | null>(null)
   const [pathMode, setPathMode] = useState<SettingsResponse['preferences']['default_export_path_mode']>('filename')
@@ -105,6 +109,7 @@ export default function Settings() {
   const [librarySaved, setLibrarySaved] = useState(false)
   const [setupBusy, setSetupBusy] = useState(false)
   const [setupResult, setSetupResult] = useState<LibrarySetupResult | null>(null)
+  const [previewedAt, setPreviewedAt] = useState<Date | null>(null)
 
   const applySettings = (next: SettingsResponse) => {
     setSettings(next)
@@ -127,6 +132,11 @@ export default function Settings() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  useEffect(() => {
+    if (loading || !location.hash) return
+    document.getElementById(location.hash.slice(1))?.scrollIntoView({ block: 'start' })
+  }, [loading, location.hash])
 
   const savePreference = async () => {
     setBusy(true)
@@ -215,6 +225,7 @@ export default function Settings() {
           ? await scanLibraryPreview()
           : await importLibrary()
       setSetupResult(result)
+      if (action === 'preview') setPreviewedAt(new Date())
       applySettings(await fetchSettings())
     } catch (err) {
       const label = action === 'preview' ? 'preview the scan' : `${action} the library`
@@ -247,6 +258,15 @@ export default function Settings() {
       ? 'Key/Camelot analysis is enabled as a preference, but keyfinder-cli is not currently available.'
       : null,
   ].filter((message): message is string => Boolean(message)) : []
+  const previewResult = setupResult && typeof setupResult.supported_audio_files === 'number' && typeof setupResult.imported_count !== 'number'
+    ? setupResult
+    : null
+  const importResult = setupResult && typeof setupResult.imported_count === 'number'
+    ? setupResult
+    : null
+  const canInitialize = Boolean(settings && !setupInitialized && !settings.library.restart_required)
+  const canPreview = Boolean(settings && setupInitialized && !settings.library.restart_required)
+  const canImport = Boolean(previewResult?.importable)
 
   return (
     <div className="page settings-page">
@@ -278,7 +298,7 @@ export default function Settings() {
           <section className="section">
             <div className="card settings-card">
               <div className="card-title-row">
-                <div><h2 className="card-title">Library</h2><p className="muted">Set a safe, existing library folder for the next CrateIQ start. Validation does not scan or import it.</p></div>
+                <div><h2 className="card-title">1. Select library folder</h2><p className="muted">Set a safe, existing library folder for the next CrateIQ start. Validation does not scan or import it.</p></div>
                 <Badge tone={readiness === 'ready' ? 'succeeded' : 'pending'}>{readiness?.replace('_', ' ')}</Badge>
               </div>
               <dl className="def-list settings-def-list">
@@ -304,11 +324,11 @@ export default function Settings() {
             </div>
           </section>
 
-          <section className="section">
-            <div className="card settings-card">
+          <section className="section" id="library-setup-import">
+            <div className="card settings-card settings-import-wizard">
               <div className="card-title-row">
-                <div><h2 className="card-title">Library setup &amp; import</h2><p className="muted">Each step is explicit. Initialization creates only CrateIQ’s local folders and empty index.</p></div>
-                <Badge tone={setupInitialized ? 'succeeded' : 'pending'}>{setupInitialized ? 'Ready to preview' : 'Setup required'}</Badge>
+                <div><h2 className="card-title">Library setup &amp; import</h2><p className="muted">Follow the steps in order. Optional BPM/key analysis always happens later, never during import.</p></div>
+                <Badge tone={importResult ? 'succeeded' : previewResult ? 'info' : setupInitialized ? 'succeeded' : 'pending'}>{importResult ? 'Imported' : previewResult ? 'Preview ready' : setupInitialized ? 'Ready to preview' : 'Setup required'}</Badge>
               </div>
               <StatusStrip tone="info">Import will add tracks to CrateIQ’s local index only. BPM/key analysis is optional and can be run later; analysis tools are never run during import.</StatusStrip>
               {optionalAnalysisWarnings.length > 0 && (
@@ -316,17 +336,69 @@ export default function Settings() {
                   {optionalAnalysisWarnings.join(' ')} Import without analysis is still available.
                 </StatusStrip>
               )}
-              <div className="settings-action-row">
-                <button className="btn btn--primary" disabled={setupBusy || setupInitialized || !settings.library.pending_library_root} onClick={() => void runSetup('initialize')}>{setupBusy ? 'Working…' : 'Initialize library'}</button>
-                <button className="btn btn--ghost" disabled={setupBusy || !setupInitialized} onClick={() => void runSetup('preview')}>Scan preview</button>
-                <button className="btn btn--ghost" disabled={setupBusy || !setupResult?.track_count} onClick={() => void runSetup('import')}>Import previewed tracks</button>
-              </div>
-              {setupResult && <div className="settings-setup-result">
-                <StatusStrip tone="good" icon={<CheckCircle2 size={15} />}>{setupResult.message}</StatusStrip>
-                {typeof setupResult.track_count === 'number' && <p className="muted settings-note">Found {setupResult.track_count} supported audio file{setupResult.track_count === 1 ? '' : 's'}; showing up to {setupResult.sample_tracks?.length ?? 0} paths.</p>}
-                {typeof setupResult.imported_count === 'number' && <p className="muted settings-note">Imported {setupResult.imported_count} track record{setupResult.imported_count === 1 ? '' : 's'} into the local index.</p>}
-                {setupResult.sample_tracks && setupResult.sample_tracks.length > 0 && <ul className="settings-sample-list">{setupResult.sample_tracks.map((track) => <li key={track}><code>{track}</code></li>)}</ul>}
-                {(setupResult.skipped_files?.length || setupResult.unsupported_files?.length || setupResult.warnings?.length) ? <StatusStrip tone="warn">{setupResult.warnings?.join(' ') || `${setupResult.unsupported_files?.length ?? 0} unsupported and ${setupResult.skipped_files?.length ?? 0} skipped file samples were omitted from import.`}</StatusStrip> : null}
+              <ol className="settings-import-steps">
+                <li className={setupInitialized ? 'is-complete' : ''}>
+                  <span className="settings-step-number">2</span>
+                  <div className="settings-step-content">
+                    <div><strong>Initialize CrateIQ index</strong><p>Creates only <code>logs/processed.db</code> and the local exports folder. No scan and no file changes.</p></div>
+                    <button className="btn btn--primary btn--sm" disabled={setupBusy || !canInitialize} onClick={() => void runSetup('initialize')} title={settings.library.restart_required ? 'Restart CrateIQ before initializing the pending library root.' : undefined}>{setupBusy ? 'Working…' : setupInitialized ? 'Index ready' : 'Initialize index'}</button>
+                  </div>
+                </li>
+                <li className={previewResult ? 'is-complete' : ''}>
+                  <span className="settings-step-number">3</span>
+                  <div className="settings-step-content">
+                    <div><strong>Scan preview</strong><p>Read-only discovery of <code>.mp3 .wav .aiff .aif .flac .m4a .aac .ogg</code> files, including subfolders.</p>{previewedAt && <small>Last preview: {previewedAt.toLocaleTimeString()}</small>}</div>
+                    <button className="btn btn--ghost btn--sm" disabled={setupBusy || !canPreview} onClick={() => void runSetup('preview')} title={!canPreview ? 'Initialize the active library root before scanning.' : undefined}>{setupBusy ? 'Scanning…' : <><ScanSearch size={14} /> Scan preview</>}</button>
+                  </div>
+                </li>
+                <li className={previewResult ? 'is-complete' : ''}>
+                  <span className="settings-step-number">4</span>
+                  <div className="settings-step-content">
+                    <div><strong>Review preview results</strong><p>Check the supported-file count, samples, and any warnings below. Nothing has been indexed yet.</p></div>
+                    <Badge tone={previewResult ? 'succeeded' : 'pending'}>{previewResult ? 'Ready to import' : 'Waiting for preview'}</Badge>
+                  </div>
+                </li>
+                <li className={importResult ? 'is-complete' : ''}>
+                  <span className="settings-step-number">5</span>
+                  <div className="settings-step-content">
+                    <div><strong>Import previewed tracks</strong><p>Writes only to CrateIQ’s local index. Music files, tags, BPM, key, cues, and MIK data stay unchanged.</p></div>
+                    <button className="btn btn--primary btn--sm" disabled={setupBusy || !canImport} onClick={() => void runSetup('import')} title={!canImport ? 'Run a preview that finds supported audio before importing.' : undefined}>{setupBusy ? 'Importing…' : 'Import tracks'}</button>
+                  </div>
+                </li>
+              </ol>
+              {previewResult && <div className="settings-setup-result">
+                <div className="settings-import-result-head"><div><h3>Preview results</h3><p className="muted">Review this read-only discovery before indexing anything.</p></div><Badge tone={previewResult.importable ? 'succeeded' : 'pending'}>{previewResult.importable ? 'Importable' : 'No audio found'}</Badge></div>
+                <div className="settings-import-summary">
+                  <span><strong>{previewResult.supported_audio_files}</strong> supported audio</span>
+                  <span><strong>{previewResult.total_files}</strong> files checked</span>
+                  <span><strong>{previewResult.folders_scanned}</strong> folders scanned</span>
+                  <span><strong>{previewResult.unsupported_file_count ?? 0}</strong> unsupported</span>
+                  <span><strong>{previewResult.skipped_file_count ?? 0}</strong> skipped</span>
+                </div>
+                {!previewResult.importable ? <EmptyState icon={<ScanSearch size={22} />} title="No audio files found" message="Choose another folder or add supported audio, then run another read-only preview." /> : <>
+                  {previewResult.sample_tracks?.length ? <div className="settings-import-samples"><strong>Sample tracks</strong><ul>{previewResult.sample_tracks.map((track) => <li key={track}><code>{track}</code></li>)}</ul></div> : null}
+                  {previewResult.duplicate_name_candidates?.length ? <StatusStrip tone="warn">Possible duplicate filenames: {previewResult.duplicate_name_candidates.map((candidate) => `${candidate.filename} (${candidate.count})`).join(', ')}. This is a review hint only; no duplicate detection has run.</StatusStrip> : null}
+                  {previewResult.long_path_warnings?.length ? <StatusStrip tone="warn">Long paths to review: {previewResult.long_path_warnings.join(', ')}</StatusStrip> : null}
+                </>}
+                {(previewResult.warnings?.length || previewResult.unsupported_files?.length || previewResult.skipped_files?.length) ? <StatusStrip tone="warn">{previewResult.warnings?.join(' ') || `${previewResult.unsupported_file_count ?? 0} unsupported and ${previewResult.skipped_file_count ?? 0} skipped files were omitted from import.`}</StatusStrip> : null}
+              </div>}
+              {importResult && <div className="settings-setup-result">
+                <StatusStrip tone="good" icon={<CheckCircle2 size={15} />}>{importResult.message}</StatusStrip>
+                <div className="settings-import-summary">
+                  <span><strong>{importResult.imported_count}</strong> newly indexed</span>
+                  <span><strong>{importResult.existing_count ?? 0}</strong> already indexed</span>
+                  <span><strong>{importResult.total_indexed_count ?? 0}</strong> total indexed</span>
+                  <span><strong>{importResult.skipped_file_count ?? 0}</strong> skipped</span>
+                </div>
+                {importResult.warnings?.length ? <StatusStrip tone="warn">{importResult.warnings.join(' ')}</StatusStrip> : null}
+                <div className="settings-next-actions">
+                  {(importResult.next_actions ?? [
+                    { label: 'Open Library', route: '/' },
+                    { label: 'Review Issues', route: '/issues' },
+                    { label: 'Build Manual Crates', route: '/crates' },
+                    { label: 'Configure Optional Analysis', route: '/settings#analysis-tools' },
+                  ]).map((action) => <Link className="btn btn--ghost btn--sm" key={action.route} to={action.route}>{action.label}<ArrowRight size={13} /></Link>)}
+                </div>
               </div>}
             </div>
           </section>

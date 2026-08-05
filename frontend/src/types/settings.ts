@@ -26,11 +26,22 @@ export interface LibrarySetupResult {
   initialized?: boolean
   processed_db?: string
   track_count?: number
+  supported_audio_files?: number
+  total_files?: number
+  folders_scanned?: number
+  unsupported_file_count?: number
+  skipped_file_count?: number
+  importable?: boolean
   imported_count?: number
+  existing_count?: number
+  total_indexed_count?: number
   sample_tracks?: string[]
   skipped_files?: string[]
   unsupported_files?: string[]
+  duplicate_name_candidates?: Array<{ filename: string; count: number }>
+  long_path_warnings?: string[]
   warnings?: string[]
+  next_actions?: Array<{ label: string; route: string }>
   message: string
 }
 

@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import sqlite3
+import os
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -88,33 +90,70 @@ def _scan(root: Path) -> dict[str, Any]:
     tracks: list[Path] = []
     unsupported: list[str] = []
     skipped: list[str] = []
+    long_path_warnings: list[str] = []
     warnings: list[str] = []
+    filename_counts: Counter[str] = Counter()
+    folders_scanned = 1
+    total_files = 0
+    unsupported_file_count = 0
+    skipped_file_count = 0
     try:
         paths = root.rglob("*")
         for path in paths:
             try:
-                if any(part in _SKIP_DIRECTORIES for part in path.relative_to(root).parts):
+                relative = path.relative_to(root)
+                if any(part in _SKIP_DIRECTORIES for part in relative.parts):
+                    continue
+                if path.is_dir():
+                    folders_scanned += 1
                     continue
                 if not path.is_file():
                     continue
-                relative = path.relative_to(root)
+                total_files += 1
+                if not os.access(path, os.R_OK):
+                    skipped_file_count += 1
+                    if len(skipped) < _SAMPLE_LIMIT:
+                        skipped.append(str(relative))
+                    continue
                 if path.suffix.lower() in _AUDIO_EXTENSIONS:
                     tracks.append(path)
-                elif len(unsupported) < _SAMPLE_LIMIT:
-                    unsupported.append(str(relative))
+                    filename_counts[path.name.casefold()] += 1
+                    if len(str(relative)) > 220 and len(long_path_warnings) < _SAMPLE_LIMIT:
+                        long_path_warnings.append(str(relative))
+                else:
+                    unsupported_file_count += 1
+                    if len(unsupported) < _SAMPLE_LIMIT:
+                        unsupported.append(str(relative))
             except (OSError, PermissionError, ValueError):
+                skipped_file_count += 1
                 if len(skipped) < _SAMPLE_LIMIT:
                     skipped.append(path.name)
     except (OSError, PermissionError) as exc:
         warnings.append(f"Some folders could not be read: {exc.__class__.__name__}.")
     tracks.sort(key=lambda path: str(path.relative_to(root)).lower())
+    duplicate_name_candidates = [
+        {"filename": filename, "count": count}
+        for filename, count in sorted(filename_counts.items())
+        if count > 1
+    ][:_SAMPLE_LIMIT]
+    if long_path_warnings:
+        warnings.append(f"{len(long_path_warnings)} long audio path(s) are shown for review.")
+    if skipped_file_count:
+        warnings.append(f"{skipped_file_count} unreadable or skipped file(s) were not included.")
     return {
         "library_root": redact_path(root),
         "track_count": len(tracks),
+        "supported_audio_files": len(tracks),
+        "total_files": total_files,
+        "folders_scanned": folders_scanned,
+        "unsupported_file_count": unsupported_file_count,
+        "skipped_file_count": skipped_file_count,
         "sample_tracks": [str(path.relative_to(root)) for path in tracks[:_SAMPLE_LIMIT]],
         "track_paths": tracks,
         "skipped_files": skipped,
         "unsupported_files": unsupported,
+        "duplicate_name_candidates": duplicate_name_candidates,
+        "long_path_warnings": long_path_warnings,
         "warnings": warnings,
     }
 
@@ -125,6 +164,7 @@ def scan_preview(library_root: str | None = None) -> dict[str, Any]:
         raise ValueError("Configured library is not initialized. Initialize it before scanning.")
     result = _scan(root)
     result.pop("track_paths")
+    result["importable"] = bool(result["supported_audio_files"])
     result["message"] = "Preview only. No music files or local index records were changed."
     return result
 
@@ -145,9 +185,16 @@ def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
     scan = _scan(root)
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(db_path) as conn:
+        existing_paths = {
+            row[0]
+            for row in conn.execute("SELECT filepath FROM tracks")
+        }
+        imported_count = 0
         for path in scan["track_paths"]:
             safe_path = assert_path_under_root(path, root)
             artist, title, confidence = _filename_metadata(safe_path)
+            if str(safe_path) not in existing_paths:
+                imported_count += 1
             conn.execute(
                 """
                 INSERT INTO tracks (filepath, filename, artist, title, filesize_bytes, status, processed_at, pipeline_ver, parse_confidence)
@@ -158,7 +205,17 @@ def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
                 """,
                 (str(safe_path), safe_path.name, artist, title, safe_path.stat().st_size, now, confidence),
             )
+        total_indexed_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     scan.pop("track_paths")
-    scan["imported_count"] = scan.pop("track_count")
+    scan["imported_count"] = imported_count
+    scan["existing_count"] = scan["supported_audio_files"] - imported_count
+    scan["total_indexed_count"] = total_indexed_count
+    scan["importable"] = bool(scan["supported_audio_files"])
+    scan["next_actions"] = [
+        {"label": "Open Library", "route": "/"},
+        {"label": "Review Issues", "route": "/issues"},
+        {"label": "Build Manual Crates", "route": "/crates"},
+        {"label": "Configure Optional Analysis", "route": "/settings#analysis-tools"},
+    ]
     scan["message"] = "Imported filenames into CrateIQ's local index only. Audio files and tags were not changed."
     return scan
