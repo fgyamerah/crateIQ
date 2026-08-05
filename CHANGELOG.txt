@@ -2,6 +2,14 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add multi-source enrichment review foundation
+
+- Added `/enrichment-review` for conservative local filename-hint suggestions
+  and source-status comparison. Provider APIs and Beets subprocess execution
+  remain explicitly unimplemented.
+- Review decisions and selected-field applies are DB-only; only empty
+  artist/title/genre fields may be applied after save and confirmation.
+
 [2026-08-05] — feat: add safe Metadata Sources settings foundation
 
 - Added a local-only registry for local tags, filename hints, Mixed In Key,

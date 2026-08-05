@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added `/enrichment-review`, a multi-source comparison foundation.
+  It generates only conservative local filename-hint suggestions today and
+  displays source state; no external API or Beets subprocess runs. Selected
+  empty artist/title/genre fields can be reviewed and applied only to the local
+  index, never to tags or media files.
+
 - 2026-08-05: Added Settings → Metadata Sources: a safe local-only registry
   for local tags, filename hints, MIK, Beets, and future external sources.
   External APIs are disabled by default; credentials live only in ignored

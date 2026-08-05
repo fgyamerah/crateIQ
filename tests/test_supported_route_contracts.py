@@ -80,6 +80,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/enrichment-review",
+        "purpose": "Multi-source local enrichment comparison review",
+        "access": "read-only saved suggestions; explicit DB-only selected-field apply",
+        "endpoints": [
+            ("/api/enrichment/review", "dict", ("summary", "items", "safety", "sources")),
+        ],
+    },
+    {
         "route": "/audit",
         "purpose": "Latest path/library audit report",
         "access": "read-only",
@@ -264,6 +272,11 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/enrichment/beets/preview-refresh (POST, local candidate snapshot)",
         "/api/enrichment/beets/tracks/{track_id} (PATCH, DB-only selection)",
         "/api/enrichment/beets/apply (POST, explicit selected-field DB-only apply)",
+    ],
+    "/enrichment-review": [
+        "/api/enrichment/review/preview-refresh (POST, local suggestions only)",
+        "/api/enrichment/review/tracks/{track_id}/suggestions/{suggestion_id} (PATCH, DB-only selection)",
+        "/api/enrichment/review/apply (POST, explicit selected-field DB-only apply)",
     ],
     "/metadata-repair": [
         "/api/metadata-repair/{id}/* (POST)",

@@ -2195,6 +2195,22 @@ def test_metadata_sources_are_safe_local_settings_and_never_echo_credentials(cli
     assert next(source for source in after_clear["sources"] if source["id"] == "spotify")["credentials_status"] == "missing"
 
 
+def test_multisource_enrichment_review_is_local_only_and_rejects_forbidden_fields(client):
+    test_client, _ = client
+    preview = test_client.post("/api/enrichment/review/preview-refresh")
+    assert preview.status_code == 200
+    body = preview.json()
+    assert "no_tag_writes" in body["safety"]
+    assert any("No external API calls" in warning for warning in body["warnings"])
+    assert all(item["source_id"] in {"filename_hints", "local_tags", "beets"} for item in body["items"])
+    assert all("bpm" not in item["allowed_fields"] for item in body["items"])
+    assert test_client.post("/api/enrichment/review/apply", json={"items": []}).status_code == 422
+    if body["items"]:
+        item = body["items"][0]
+        forbidden = test_client.patch(f"/api/enrichment/review/tracks/{item['track_id']}/suggestions/{item['suggestion_id']}", json={"selected_fields": {"bpm": "120"}})
+        assert forbidden.status_code == 422
+
+
 def test_settings_validates_and_saves_a_pending_library_root(client, monkeypatch, tmp_path):
     test_client, active_root = client
     pending_root = tmp_path / "next-library"

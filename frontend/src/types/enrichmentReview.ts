@@ -1,0 +1,4 @@
+export type EnrichmentDecision = 'pending' | 'applied' | 'ignored' | 'review_later'
+export interface EnrichmentSuggestion { suggestion_id:string; track_id:number; source_id:string; confidence:string; reason:string; filename:string; relative_path:string|null; current_fields:Record<string,string|null>; suggested_fields:Record<string,string>; allowed_fields:string[]; decision:EnrichmentDecision; note:string; selected_fields:Record<string,string> }
+export interface EnrichmentReview { summary:Record<string,number>; items:EnrichmentSuggestion[]; sources:Array<{id:string;label:string;category:string;enabled:boolean;configured:boolean;connection_status:string;current_behavior:string}>; safety:string[]; warnings:string[]; latest_preview_at:string|null; message:string|null }
+export interface EnrichmentApplyResult { applied:number; skipped:number; failed:number; warnings:string[]; review:EnrichmentReview }

@@ -43,6 +43,8 @@ CURRENT FOCUS
     storage and disabled-by-default external source registry.
 [ ] Design multi-source enrichment comparison/review after safe, explicit
     provider matching contracts are defined; do not add automatic lookup.
+[x] Add local-only multi-source enrichment review foundation; defer provider
+    connectors and matching until each has an explicit review contract.
 
 [x] (P1) Selected-field Beets enrichment review (2026-08-05)
          `/beets-review` now records review state and applies only explicitly
