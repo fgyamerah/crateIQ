@@ -6,6 +6,13 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added a bounded, preview-only ffprobe Audio Quality Probe to
+  `/jobs`. It calls `ffprobe -v error -show_format -show_streams -of json`
+  for at most ten validated imported tracks, returns only safe relative paths
+  plus container, codec, duration, bitrate, sample rate, channels, size, and
+  neutral probe states. It has no run/apply action and never transcodes or
+  writes media, tags, local DB fields, MIK data, or DJ-app databases; missing
+  ffprobe gates only this workflow.
 - 2026-08-05: Added optional, preview-only rmlint duplicate detection to
   `/jobs`. It scans at most 100 validated imported paths using JSON stdout,
   returns grouped relative-path candidates only, and has no resolution action.

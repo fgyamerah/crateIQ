@@ -39,6 +39,12 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Safe ffprobe audio-quality preview (2026-08-05)
+         `/jobs` now runs a bounded, read-only JSON metadata probe on at most
+         ten validated imported tracks when ffprobe is available. It returns
+         only safe relative paths and neutral probe states; no transcode,
+         media/tag/local-DB write, or remediation action exists.
+
 [x] (P1) Safe rmlint duplicate detection preview (2026-08-05)
          `/jobs` scans a bounded set of validated imported paths only through
          rmlint JSON output. It returns duplicate groups for review with no

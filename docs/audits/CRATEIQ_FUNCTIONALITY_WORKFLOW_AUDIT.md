@@ -9,6 +9,12 @@
 > stores only recognized mapped values with lower authority in the local index.
 > It never writes tags/media or overwrites MIK/trusted/existing key data.
 
+> Implementation follow-up (2026-08-05): audio quality now has a bounded,
+> preview-only `ffprobe` workflow. It reads JSON metadata from at most ten
+> validated imported paths, returns safe relative paths and neutral probe
+> results, and has no ffmpeg, transcode, file/tag/database write, or
+> remediation action. Missing ffprobe disables only this optional job.
+
 > Implementation follow-up (2026-08-05): duplicate detection is now a bounded,
 > preview-only rmlint workflow. It receives only validated imported paths,
 > requests JSON stdout without a script formatter, and returns review groups

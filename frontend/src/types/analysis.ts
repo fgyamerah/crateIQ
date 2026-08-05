@@ -145,6 +145,20 @@ export interface DuplicateCandidateGroup {
   items: DuplicateCandidateItem[]
 }
 
+export interface QualityProbeResult {
+  track_id: number
+  filename: string
+  relative_path: string | null
+  status: 'probe_ok' | 'missing_bitrate' | 'unreadable' | 'unsupported_format' | 'probe_error'
+  container: string | null
+  codec: string | null
+  duration_sec: number | null
+  bitrate_kbps: number | null
+  sample_rate_hz: number | null
+  channels: number | null
+  file_size_bytes: number | null
+}
+
 export interface AnalysisJobPreview {
   job: AnalysisJobDefinition
   total_tracks: number
@@ -156,6 +170,7 @@ export interface AnalysisJobPreview {
   preview_only: boolean
   summary: Record<string, number> | null
   groups: DuplicateCandidateGroup[]
+  quality_probes: QualityProbeResult[]
   next_step: string | null
 }
 

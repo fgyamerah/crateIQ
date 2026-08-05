@@ -211,8 +211,7 @@ def get_capabilities(
             "action_state": "coming_soon" if available else "setup_required",
         }
 
-    missing_quality_tools = [name for name in ("ffprobe", "ffmpeg") if not has_tool(name)]
-    quality_available = not missing_quality_tools
+    quality_available = has_tool("ffprobe")
     return {
         "core": {
             "library_import": {
@@ -287,15 +286,15 @@ def get_capabilities(
             "audio_quality_probe": {
                 "available": quality_available,
                 "status": "available" if quality_available else "missing",
-                "required_tools": ["ffprobe", "ffmpeg"],
-                "purpose": "Probe audio quality and support conversion validation.",
+                "required_tools": ["ffprobe"],
+                "purpose": "Preview existing audio metadata and potential file issues.",
                 "message": (
-                    "ffprobe and ffmpeg are available for optional audio quality workflows."
+                    "ffprobe is available for a bounded, preview-only audio metadata check. No transcode is used."
                     if quality_available
-                    else f"Missing {', '.join(missing_quality_tools)}. Install or configure the missing tool(s) for optional audio probing."
+                    else "ffprobe is not available. Install or configure it for optional audio probing."
                 ),
                 "enabled": analysis_preferences["use_external_tools"],
-                "action_state": "coming_soon" if quality_available else "setup_required",
+                "action_state": "ready" if quality_available else "setup_required",
             },
         },
         "policies": {

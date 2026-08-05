@@ -59,7 +59,7 @@ file-writing workflow.
 | Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
 | Beets enrichment | Preview/review foundation | Shows incomplete non-critical metadata; no `beet` invocation or apply flow. |
 | Duplicate detection with `rmlint` | Preview-only foundation | Bounded JSON scan; no delete, move, rename, quarantine, or DB decision action. |
-| Audio quality probe | Pending | Tool-gated; no runner is exposed yet. |
+| Audio quality probe with `ffprobe` | Preview-only foundation | Bounded JSON metadata checks; no transcode, file, tag, or DB writes. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ## Screenshots
@@ -152,7 +152,8 @@ Analysis Jobs show each capability independently:
 | `keyfinder-cli` | Preview-first, confirmed missing key/Camelot analysis. |
 | `beet` | Preview-limited enrichment planning only. |
 | `rmlint` | Preview-only duplicate candidates only. |
-| `ffprobe` / `ffmpeg` | Future audio-quality/probing workflow. |
+| `ffprobe` | Bounded preview-only audio metadata checks; no transcode or writes. |
+| `ffmpeg` | Reserved for separate, explicitly scoped decode/conversion workflows. |
 
 See [local tooling guidance](docs/operations/LOCAL_TOOLING.md) for setup notes
 and exact safety boundaries.

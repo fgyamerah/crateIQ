@@ -16,7 +16,8 @@ this repository or commit local executable paths.
 | `aubio` | Preview-first, DB-only BPM analysis | Only after explicit confirmation for a track with null BPM. The in-app runner uses aubio only; it does not fall back to librosa. |
 | `beet` | Preview-limited Beets enrichment planning; legacy organizer/import paths | The safe `/jobs` preview never launches it. Legacy paths must remain explicit; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
 | `rmlint` | Preview-only duplicate candidate detection | Only from the explicit `/jobs` preview. It uses bounded JSON output and has no delete, move, rename, quarantine, tag-write, file-write, or DB-decision action. |
-| `ffprobe` + `ffmpeg` | Audio-quality/probing workflows | Only for explicit quality/probing or decode-support workflows. |
+| `ffprobe` | Preview-only audio-quality metadata checks | Only from explicit `/jobs` preview. It probes at most ten validated imported files with JSON output and never transcodes or writes media, tags, or DB fields. |
+| `ffmpeg` | Separate decode/conversion support workflows | Not used by the safe `/jobs` audio-quality preview. |
 
 Mixed In Key remains authoritative for existing BPM, key, and cue data.
 These tools fill only missing analysis; they must not be used to overwrite
@@ -46,6 +47,12 @@ most 100 validated imported audio paths. The JSON is read directly and
 discarded; CrateIQ never requests rmlint's script formatter, executes a
 generated script, or exposes a file-resolution action. A future dedicated
 review workflow is required before any duplicate decision can be persisted.
+
+Audio quality probing is preview-only as well. When `ffprobe` is available,
+CrateIQ invokes `ffprobe -v error -show_format -show_streams -of json <file>`
+through an argument list for at most ten validated imported tracks. It returns
+safe relative paths and neutral metadata/probe states only. It does not invoke
+`ffmpeg`, transcode, change files or tags, or write local database findings.
 
 ## Linux Mint / Ubuntu installation
 

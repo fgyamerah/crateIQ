@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: safe ffprobe audio-quality preview
+
+- Added a bounded, preview-only ffprobe JSON probe for up to ten validated
+  imported paths. `/jobs` returns safe relative paths with neutral container,
+  codec, duration, bitrate, sample-rate, channel, size, and probe-status data.
+- The command is `ffprobe -v error -show_format -show_streams -of json <file>`
+  through an argument list and timeout. There is no ffmpeg invocation,
+  transcode, file/tag/local-DB write, or remediation action; missing ffprobe
+  disables only this optional workflow.
+
 [2026-08-05] — feat: safe rmlint duplicate preview
 
 - Added a bounded, preview-only rmlint JSON scan for validated imported track

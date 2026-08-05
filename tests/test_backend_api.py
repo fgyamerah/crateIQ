@@ -1841,6 +1841,71 @@ def test_duplicate_preview_uses_rmlint_json_only_and_never_writes(client, monkey
     assert any("timed out" in warning for warning in timed_out.json()["warnings"])
 
 
+def test_audio_quality_preview_uses_ffprobe_json_only_and_never_writes(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    alpha_path = root / "library" / "house" / "alpha.mp3"
+    alpha_path.parent.mkdir(parents=True, exist_ok=True)
+    alpha_path.write_bytes(b"safe-quality-preview-fixture")
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute("SELECT id, filepath, bpm, key_musical, key_camelot FROM tracks ORDER BY id").fetchall()
+
+    tool_report = {
+        "status": "ready",
+        "checks": [
+            {"name": "binary_ffprobe", "status": "pass", "message": "ffprobe available", "metadata": {"source": "PATH"}},
+            {"name": "binary_ffmpeg", "status": "warn", "message": "ffmpeg missing", "metadata": {"source": "PATH"}},
+        ],
+    }
+    monkeypatch.setattr(settings_service, "run_preflight", lambda: tool_report)
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_ffprobe_binary", lambda: "/fake/ffprobe")
+
+    def fake_ffprobe(command, **kwargs):
+        assert command == [
+            "/fake/ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(alpha_path),
+        ]
+        assert kwargs.get("shell", False) is False
+        assert kwargs["timeout"] == 15
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            "format": {"format_name": "mp3", "duration": "201.25", "bit_rate": "192000", "size": "1234"},
+            "streams": [{"codec_type": "audio", "codec_name": "mp3", "sample_rate": "44100", "channels": 2}],
+        }), stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_ffprobe)
+    capability = test_client.get("/api/settings/capabilities").json()["analysis"]["audio_quality_probe"]
+    assert capability["available"] is True
+    assert capability["required_tools"] == ["ffprobe"]
+    listed = {job["type"]: job for job in test_client.get("/api/analysis/jobs").json()["jobs"]}
+    assert listed["audio_quality_probe"]["status"] == "ready"
+    assert listed["audio_quality_probe"]["write_behavior"].startswith("preview_only")
+
+    preview = test_client.get("/api/analysis/jobs/audio_quality_probe/preview")
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["preview_only"] is True and payload["runner_implemented"] is False
+    alpha = payload["quality_probes"][0]
+    assert alpha == {
+        "track_id": 1, "filename": "alpha.mp3", "relative_path": "library/house/alpha.mp3",
+        "status": "probe_ok", "container": "mp3", "codec": "mp3", "duration_sec": 201.25,
+        "bitrate_kbps": 192, "sample_rate_hz": 44100, "channels": 2, "file_size_bytes": 1234,
+    }
+    assert all(not (item["relative_path"] or "").startswith(str(root)) for item in payload["quality_probes"])
+    assert any("No transcode" in warning or "No transcode" in warning.capitalize() for warning in payload["warnings"])
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute("SELECT id, filepath, bpm, key_musical, key_camelot FROM tracks ORDER BY id").fetchall()
+    assert after == before
+
+    pending = test_client.post("/api/analysis/jobs/audio_quality_probe/run", json={"confirm": True})
+    assert pending.status_code == 409
+    assert "preview-only" in pending.json()["detail"]
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", lambda *args, **kwargs: (_ for _ in ()).throw(subprocess.TimeoutExpired("ffprobe", 15)))
+    timed_out = test_client.get("/api/analysis/jobs/audio_quality_probe/preview")
+    assert timed_out.status_code == 200
+    assert timed_out.json()["quality_probes"][0]["status"] == "probe_error"
+    assert any("timed out" in warning for warning in timed_out.json()["warnings"])
+
+
 def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"

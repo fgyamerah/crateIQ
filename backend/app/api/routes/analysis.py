@@ -69,7 +69,7 @@ async def get_analysis_job_history() -> AnalysisJobHistoryResponse:
 
 @router.get("/analysis/jobs/{job_type}/preview", response_model=AnalysisJobPreview)
 async def preview_analysis_job(job_type: str) -> AnalysisJobPreview:
-    """Preview safe candidates; duplicate detection may run constrained rmlint JSON only."""
+    """Preview safe candidates; duplicate/quality previews use constrained read-only CLI JSON."""
     try:
         return AnalysisJobPreview(**analysis_jobs_service.preview(job_type))
     except ValueError as exc:

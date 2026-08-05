@@ -18,13 +18,21 @@ function label(status: AnalysisJobStatus) {
 }
 
 function jobLabel(job: AnalysisJobDefinition) {
-  return job.type === 'duplicate_detection' ? 'Preview only' : label(job.status)
+  if (job.type === 'duplicate_detection') return 'Preview only'
+  if (job.type === 'audio_quality_probe') return job.status === 'missing_tool' ? 'Missing tool' : job.status === 'disabled' ? 'No tracks yet' : 'Probe only'
+  return label(job.status)
 }
 
 function formatBytes(size: number | null) {
   if (size == null) return 'size unavailable'
   if (size < 1024 * 1024) return `${Math.round(size / 1024)} KB`
   return `${(size / (1024 * 1024)).toFixed(1)} MB`
+}
+
+function formatDuration(seconds: number | null) {
+  if (seconds == null) return 'duration unavailable'
+  const minutes = Math.floor(seconds / 60)
+  return `${minutes}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
 }
 
 function errorMessage(error: unknown) {
@@ -125,14 +133,18 @@ export default function AnalysisJobsCatalog() {
           <p className="settings-note">Writes: {job.write_behavior}. {job.safety.join(' · ').replace(/_/g, ' ')}.</p>
           <div className="settings-action-row">
             <button className="btn btn--ghost btn--sm" disabled={previewing === job.type || job.status === 'disabled'} onClick={() => void showPreview(job.type)}><Eye size={13} /> {previewing === job.type ? 'Loading…' : 'Preview'}</button>
-            {job.type === 'mixed_in_key_coverage' ? <Link className="btn btn--primary btn--sm" to="/settings#analysis-tools">Open MIK import</Link> : (job.type === 'bpm_analysis' || job.type === 'key_analysis') && job.runner_implemented ? <span className="analysis-job-run-hint">Preview, then confirm below</span> : <Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools"><Wrench size={13} /> {job.status === 'missing_tool' ? 'Tool setup' : job.type === 'beets_enrichment' ? 'Review required' : job.type === 'duplicate_detection' ? 'Resolution pending' : 'Runner pending'}</Link>}
+            {job.type === 'mixed_in_key_coverage' ? <Link className="btn btn--primary btn--sm" to="/settings#analysis-tools">Open MIK import</Link> : (job.type === 'bpm_analysis' || job.type === 'key_analysis') && job.runner_implemented ? <span className="analysis-job-run-hint">Preview, then confirm below</span> : <Link className="btn btn--ghost btn--sm" to="/settings#analysis-tools"><Wrench size={13} /> {job.status === 'missing_tool' ? 'Tool setup' : job.type === 'beets_enrichment' ? 'Review required' : job.type === 'duplicate_detection' ? 'Resolution pending' : job.type === 'audio_quality_probe' ? 'Review pending' : 'Runner pending'}</Link>}
           </div>
         </article>)}
       </div>}
       {preview && <section className="analysis-job-preview" aria-live="polite">
         <div className="settings-import-result-head"><div><h2 className="card-title">{preview.job.label} preview</h2><p className="muted">{preview.candidate_count} candidates from {preview.total_tracks} indexed tracks.</p></div><Badge tone={tone(preview.job.status)}>{jobLabel(preview.job)}</Badge></div>
         <StatusStrip tone="info">Expected behavior: {preview.expected_write_behavior}. {preview.runner_implemented ? 'A safe runner is available.' : 'No runner was started.'}</StatusStrip>
-        {preview.job.type === 'duplicate_detection' ? <>
+        {preview.job.type === 'audio_quality_probe' ? <>
+          <div className="settings-import-summary"><span><strong>{preview.summary?.total_tracks_checked ?? 0}</strong> checked</span><span><strong>{preview.summary?.probe_ok ?? 0}</strong> probe ok</span><span><strong>{preview.summary?.needs_review ?? 0}</strong> needs review</span></div>
+          {preview.quality_probes.length > 0 ? <div className="settings-import-samples"><strong>Sample file probes</strong><ul>{preview.quality_probes.map((item) => <li key={item.track_id}><code>{item.relative_path ?? item.filename}</code> · {item.status.replace(/_/g, ' ')}<br /><span className="muted">{item.container ?? 'container unavailable'} · {item.codec ?? 'codec unavailable'} · {item.bitrate_kbps == null ? 'bitrate unavailable' : `${item.bitrate_kbps} kbps`} · {item.sample_rate_hz == null ? 'sample rate unavailable' : `${item.sample_rate_hz} Hz`} · {formatDuration(item.duration_sec)} · {formatBytes(item.file_size_bytes)}</span></li>)}</ul></div> : <EmptyState title="No files probed" message="No readable imported tracks were available for this bounded preview." />}
+          {preview.next_step && <StatusStrip tone="warn">{preview.next_step}</StatusStrip>}
+        </> : preview.job.type === 'duplicate_detection' ? <>
           <div className="settings-import-summary"><span><strong>{preview.summary?.total_tracks_checked ?? 0}</strong> checked</span><span><strong>{preview.summary?.duplicate_groups ?? 0}</strong> groups</span><span><strong>{preview.summary?.duplicate_candidates ?? 0}</strong> candidates</span></div>
           {preview.groups.length > 0 ? <div className="settings-import-samples"><strong>Duplicate groups</strong><ul>{preview.groups.map((group) => <li key={group.group_id}><strong>{group.group_id}</strong> · {group.reason} · {group.confidence} confidence<ul>{group.items.map((item) => <li key={item.track_id}><code>{item.relative_path ?? item.filename}</code>{item.artist || item.title ? ` · ${[item.artist, item.title].filter(Boolean).join(' — ')}` : ''} · {formatBytes(item.size_bytes)}</li>)}</ul></li>)}</ul></div> : <EmptyState title="No duplicate groups found" message="This preview found no duplicate groups in the bounded readable track set." />}
           {preview.next_step && <StatusStrip tone="warn">{preview.next_step}</StatusStrip>}

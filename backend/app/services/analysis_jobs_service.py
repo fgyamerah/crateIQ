@@ -48,6 +48,8 @@ _KEY_MIGRATION_COLUMNS = {
 }
 _RMLINT_TIMEOUT_SECONDS = 30
 _RMLINT_MAX_FILES = 100
+_FFPROBE_TIMEOUT_SECONDS = 15
+_FFPROBE_MAX_FILES = 10
 
 
 def _track_rows() -> list[dict[str, Any]]:
@@ -99,6 +101,16 @@ def _resolve_rmlint_binary() -> str | None:
     return resolved if resolved and os.access(resolved, os.X_OK) else None
 
 
+def _resolve_ffprobe_binary() -> str | None:
+    """Resolve only ffprobe for the bounded, read-only quality preview."""
+    override = os.environ.get("FFPROBE_BIN", "").strip()
+    if override:
+        resolved = shutil.which(override)
+        return resolved if resolved and os.access(resolved, os.X_OK) else None
+    resolved = shutil.which("ffprobe")
+    return resolved if resolved and os.access(resolved, os.X_OK) else None
+
+
 def _parse_keyfinder_output(output: str) -> tuple[str | None, str | None]:
     """Accept only an exact known musical key or Camelot keyfinder result."""
     for line in reversed([line.strip() for line in output.splitlines() if line.strip()]):
@@ -132,6 +144,50 @@ def _parse_aubio_bpm(output: str) -> float | None:
         return None
     value = float(statistics.median(values))
     return round(value, 2) if _BPM_MIN <= value <= _BPM_MAX else None
+
+
+def _optional_float(value: Any) -> float | None:
+    try:
+        parsed = float(value)
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _optional_int(value: Any) -> int | None:
+    try:
+        parsed = int(float(value))
+    except (TypeError, ValueError):
+        return None
+    return parsed if parsed >= 0 else None
+
+
+def _parse_ffprobe_payload(payload: dict[str, Any], fallback_size: Any = None) -> dict[str, Any]:
+    """Extract a deliberately small, neutral subset of ffprobe's JSON output."""
+    format_info = payload.get("format") if isinstance(payload.get("format"), dict) else {}
+    streams = payload.get("streams") if isinstance(payload.get("streams"), list) else []
+    audio_stream = next(
+        (stream for stream in streams if isinstance(stream, dict) and stream.get("codec_type") == "audio"),
+        None,
+    )
+    if audio_stream is None:
+        return {
+            "status": "unsupported_format", "container": format_info.get("format_name"),
+            "codec": None, "duration_sec": _optional_float(format_info.get("duration")),
+            "bitrate_kbps": None, "sample_rate_hz": None, "channels": None,
+            "file_size_bytes": _optional_int(format_info.get("size")) or _optional_int(fallback_size),
+        }
+    bitrate = _optional_int(format_info.get("bit_rate")) or _optional_int(audio_stream.get("bit_rate"))
+    return {
+        "status": "probe_ok" if bitrate is not None else "missing_bitrate",
+        "container": format_info.get("format_name"),
+        "codec": audio_stream.get("codec_name"),
+        "duration_sec": _optional_float(format_info.get("duration")) or _optional_float(audio_stream.get("duration")),
+        "bitrate_kbps": round(bitrate / 1000) if bitrate is not None else None,
+        "sample_rate_hz": _optional_int(audio_stream.get("sample_rate")),
+        "channels": _optional_int(audio_stream.get("channels")),
+        "file_size_bytes": _optional_int(format_info.get("size")) or _optional_int(fallback_size),
+    }
 
 
 def _ensure_bpm_columns(conn: sqlite3.Connection) -> None:
@@ -226,13 +282,12 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         if missing_fields:
             enrichment_candidates.append({**row, "missing_fields": missing_fields})
 
-    def pending_or_missing(capability_name: str) -> str:
-        return "coming_soon" if _tool_ready(capabilities[capability_name]) else "missing_tool"
-
     aubio_binary = _resolve_aubio_binary()
     keyfinder_binary = _resolve_keyfinder_binary()
     rmlint_binary = _resolve_rmlint_binary()
+    ffprobe_binary = _resolve_ffprobe_binary()
     rmlint_ready = bool(rmlint_binary and _tool_ready(capabilities["duplicate_detection"]))
+    ffprobe_ready = bool(ffprobe_binary and _tool_ready(capabilities["audio_quality_probe"]))
     bpm_status = "ready" if aubio_binary and missing_bpm else "disabled" if aubio_binary else "missing_tool"
     definitions = [
         {
@@ -310,15 +365,18 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         {
             "type": "audio_quality_probe",
             "label": "Audio quality probe",
-            "status": pending_or_missing("audio_quality_probe"),
-            "required_tools": ["ffprobe", "ffmpeg"],
-            "candidate_count": total,
+            "status": "ready" if ffprobe_ready and total else "disabled" if ffprobe_ready else "missing_tool",
+            "required_tools": ["ffprobe"],
+            "candidate_count": min(total, _FFPROBE_MAX_FILES),
             "enabled": bool(capabilities["audio_quality_probe"].get("enabled")),
             "default_enabled": False,
             "runner_implemented": False,
-            "write_behavior": "runner_pending; no transcode or writes",
-            "safety": _SAFETY,
-            "message": "Future probes will inspect files only. No transcode or media modification is available.",
+            "write_behavior": "preview_only; no transcode, file, tag, or database writes",
+            "safety": ["probe_only", "no_transcode", "no_tag_writes", "no_file_writes"],
+            "message": (
+                f"Preview up to {_FFPROBE_MAX_FILES} validated imported tracks with ffprobe JSON. No files are changed."
+                if ffprobe_ready else "ffprobe is required for this optional, preview-only audio metadata check. Import remains available without it."
+            ),
         },
     ]
     return definitions, rows
@@ -440,6 +498,84 @@ def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]
     }
 
 
+def _preview_audio_quality(job: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
+    """Probe a small, validated track sample with ffprobe JSON and discard output."""
+    warnings: list[str] = []
+    root = selected_library_root()
+    binary = _resolve_ffprobe_binary() if job["status"] != "missing_tool" else None
+    candidates = rows[:_FFPROBE_MAX_FILES]
+    if len(rows) > len(candidates):
+        warnings.append(f"Preview is limited to {_FFPROBE_MAX_FILES} indexed tracks; no broader scan was started.")
+    if not binary:
+        warnings.append("Required tool unavailable: ffprobe. No audio metadata probe was started.")
+        return {
+            "job": job, "total_tracks": len(rows), "candidate_count": 0, "samples": [], "warnings": warnings,
+            "expected_write_behavior": job["write_behavior"], "runner_implemented": False, "preview_only": True,
+            "summary": {"total_tracks_checked": 0, "probe_ok": 0, "needs_review": 0}, "quality_probes": [],
+            "next_step": "Audio-quality review and remediation actions are not implemented yet.",
+        }
+
+    probes: list[dict[str, Any]] = []
+    for row in candidates:
+        base = _as_candidate(row)
+        result = {
+            "track_id": row["id"], "filename": row["filename"], "relative_path": base["relative_path"],
+            "status": "unreadable", "container": None, "codec": None, "duration_sec": None,
+            "bitrate_kbps": None, "sample_rate_hz": None, "channels": None,
+            "file_size_bytes": _optional_int(row.get("filesize_bytes")),
+        }
+        try:
+            path = assert_path_under_root(row["filepath"], root)
+        except (KeyError, TypeError, ValueError):
+            warnings.append(f"Skipped {row.get('filename', 'a track')}: its path is outside the selected library root.")
+            probes.append(result)
+            continue
+        if not path.is_file():
+            warnings.append(f"Skipped {row['filename']}: its file is missing or unreadable.")
+            probes.append(result)
+            continue
+        try:
+            completed = subprocess.run(
+                [binary, "-v", "error", "-show_format", "-show_streams", "-of", "json", str(path)],
+                capture_output=True, text=True, timeout=_FFPROBE_TIMEOUT_SECONDS, check=False, shell=False,
+            )
+        except subprocess.TimeoutExpired:
+            result["status"] = "probe_error"
+            warnings.append(f"ffprobe timed out for {row['filename']}; no files were changed.")
+            probes.append(result)
+            continue
+        except OSError:
+            result["status"] = "probe_error"
+            warnings.append(f"ffprobe could not read {row['filename']}; no files were changed.")
+            probes.append(result)
+            continue
+        if completed.returncode != 0:
+            result["status"] = "probe_error"
+            warnings.append(f"ffprobe returned no usable metadata for {row['filename']}; no files were changed.")
+            probes.append(result)
+            continue
+        try:
+            payload = json.loads(completed.stdout)
+        except json.JSONDecodeError:
+            result["status"] = "probe_error"
+            warnings.append(f"ffprobe returned unreadable metadata for {row['filename']}; no files were changed.")
+            probes.append(result)
+            continue
+        result.update(_parse_ffprobe_payload(payload, row.get("filesize_bytes")))
+        probes.append(result)
+
+    probe_ok = sum(probe["status"] == "probe_ok" for probe in probes)
+    warnings.append("Preview only: ffprobe metadata is read and discarded. No transcode, tag, file, or database action exists.")
+    return {
+        "job": job, "total_tracks": len(rows), "candidate_count": len(candidates),
+        "samples": [_as_candidate(row) for row in candidates], "warnings": warnings,
+        "expected_write_behavior": job["write_behavior"], "runner_implemented": False, "preview_only": True,
+        "summary": {"total_tracks_checked": len(candidates), "probe_ok": probe_ok, "needs_review": len(candidates) - probe_ok},
+        "quality_probes": probes,
+        "next_step": "Audio-quality review and remediation actions are not implemented yet.",
+    }
+
+
 def preview(job_type: str) -> dict[str, Any]:
     definitions, rows = _definitions()
     job = next((item for item in definitions if item["type"] == job_type), None)
@@ -465,6 +601,9 @@ def preview(job_type: str) -> dict[str, Any]:
 
     if job_type == "duplicate_detection":
         return _preview_duplicate_detection(job, rows)
+
+    if job_type == "audio_quality_probe":
+        return _preview_audio_quality(job, rows)
 
     if job_type == "bpm_analysis":
         candidates = [row for row in rows if row.get("bpm") is None]
@@ -509,6 +648,8 @@ def run(job_type: str, *, confirm: bool = False, limit: int = 10) -> dict[str, A
         return _run_key_analysis(limit)
     if job_type == "duplicate_detection":
         raise RuntimeError("Duplicate detection is preview-only. Resolution actions are not implemented; no files, tags, or database decisions were changed.")
+    if job_type == "audio_quality_probe":
+        raise RuntimeError("Audio quality probing is preview-only. No files, tags, or database records were changed.")
     raise RuntimeError("This analysis runner is not implemented yet. Preview candidates and configure the required tool; no job was started.")
 
 

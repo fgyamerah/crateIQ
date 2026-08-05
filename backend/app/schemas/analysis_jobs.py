@@ -60,6 +60,20 @@ class DuplicateCandidateGroup(BaseModel):
     items: list[DuplicateCandidateItem] = Field(default_factory=list)
 
 
+class QualityProbeResult(BaseModel):
+    track_id: int
+    filename: str
+    relative_path: Optional[str] = None
+    status: Literal["probe_ok", "missing_bitrate", "unreadable", "unsupported_format", "probe_error"]
+    container: Optional[str] = None
+    codec: Optional[str] = None
+    duration_sec: Optional[float] = None
+    bitrate_kbps: Optional[int] = None
+    sample_rate_hz: Optional[int] = None
+    channels: Optional[int] = None
+    file_size_bytes: Optional[int] = None
+
+
 class AnalysisJobListResponse(BaseModel):
     jobs: list[AnalysisJobDefinition]
 
@@ -75,6 +89,7 @@ class AnalysisJobPreview(BaseModel):
     preview_only: bool = False
     summary: dict[str, int] | None = None
     groups: list[DuplicateCandidateGroup] = Field(default_factory=list)
+    quality_probes: list[QualityProbeResult] = Field(default_factory=list)
     next_step: Optional[str] = None
 
 
