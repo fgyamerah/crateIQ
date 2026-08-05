@@ -7619,6 +7619,41 @@ tr.row--selected td {
 .quality-review-note { color: var(--text-muted); display: grid; font-size: 11px; gap: 4px; }
 .quality-review-note textarea.form-input { min-height: 70px; resize: vertical; }
 .quality-review-save-note { justify-self: start; }
+.beets-review-page { display: grid; gap: 16px; padding-bottom: 44px; }
+.beets-review-header { margin-bottom: 0; }
+.beets-review-header-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
+.beets-review-policy-chips { display: flex; flex-wrap: wrap; gap: 7px; }
+.beets-review-policy-chips span { align-items: center; background: rgba(139,92,246,.09); border: 1px solid rgba(139,92,246,.26); border-radius: 999px; color: #ded0ff; display: inline-flex; font-size: 11px; gap: 5px; line-height: 1.2; padding: 5px 8px; }
+.beets-review-policy-chips svg { color: var(--brand-violet); }
+.beets-review-kpis { display: grid; gap: 10px; grid-template-columns: repeat(6, minmax(0, 1fr)); }
+.beets-review-layout { align-items: start; display: grid; gap: 14px; grid-template-columns: minmax(275px, 345px) minmax(0, 1fr); min-width: 0; }
+.beets-review-candidates, .beets-review-detail { background: linear-gradient(145deg, rgba(22,27,39,.98), rgba(14,18,27,.98)); border: 1px solid var(--border); border-radius: 14px; display: grid; gap: 12px; min-width: 0; padding: 14px; }
+.beets-review-panel-heading { align-items: flex-start; display: flex; gap: 10px; justify-content: space-between; }
+.beets-review-panel-heading > div { min-width: 0; }
+.beets-review-panel-heading h2 { font-size: 16px; margin: 0 0 3px; overflow-wrap: anywhere; }
+.beets-review-panel-heading p { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin: 0; }
+.beets-review-scroll { display: grid; gap: 7px; max-height: 620px; overflow: auto; padding-right: 2px; }
+.beets-review-option { align-items: flex-start; background: rgba(8,12,19,.46); border: 1px solid var(--border); border-radius: 10px; color: var(--text); cursor: pointer; display: flex; font: inherit; gap: 9px; justify-content: space-between; min-width: 0; padding: 10px; text-align: left; transition: background .12s ease, border-color .12s ease; }
+.beets-review-option:hover, .beets-review-option.is-selected { background: rgba(139,92,246,.09); border-color: rgba(139,92,246,.44); }
+.beets-review-option > span { display: grid; gap: 4px; min-width: 0; }
+.beets-review-option > span:last-child { justify-items: end; }
+.beets-review-option strong, .beets-review-option small { overflow-wrap: anywhere; }
+.beets-review-option small { color: var(--text-muted); font-size: 11px; }
+.beets-review-path { background: rgba(8,12,19,.46); border-radius: 8px; color: #ded0ff; font-size: 12px; overflow-wrap: anywhere; padding: 8px 10px; }
+.beets-review-fields { display: grid; gap: 8px; }
+.beets-review-fields > strong { font-size: 13px; }
+.beets-review-fields > p { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin: -3px 0 2px; }
+.beets-review-field { align-items: center; background: rgba(8,12,19,.4); border: 1px solid rgba(67,77,108,.58); border-radius: 10px; display: grid; gap: 9px; grid-template-columns: auto minmax(100px, .65fr) minmax(0, 1.35fr); padding: 9px; }
+.beets-review-field span { display: grid; gap: 2px; min-width: 0; }
+.beets-review-field strong { font-size: 12px; }
+.beets-review-field small { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.beets-review-field .form-input { min-width: 0; }
+.beets-review-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.beets-review-note { color: var(--text-muted); display: grid; font-size: 11px; gap: 4px; }
+.beets-review-note textarea.form-input { min-height: 68px; resize: vertical; }
+.beets-review-apply { background: rgba(139,92,246,.07); border: 1px solid rgba(139,92,246,.26); border-radius: 10px; display: grid; gap: 9px; padding: 12px; }
+.beets-review-apply .form-check { color: var(--text); font-size: 12px; }
+.beets-review-apply small { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 @media (max-width: 520px) {
   .settings-header-actions { justify-content: flex-start; }
   .settings-capability { flex-direction: column; }
@@ -7637,6 +7672,12 @@ tr.row--selected td {
   .quality-review-header { flex-direction: column; }
   .quality-review-header-actions { justify-content: flex-start; }
   .quality-review-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .beets-review-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .beets-review-layout { grid-template-columns: 1fr; }
+  .beets-review-header { flex-direction: column; }
+  .beets-review-header-actions { justify-content: flex-start; }
+  .beets-review-field { grid-template-columns: auto minmax(0, 1fr); }
+  .beets-review-field .form-input { grid-column: 2; }
 }
 .manual-library-picker { margin-top: 20px; }
 .manual-library-picker > .form-input { margin-bottom: 8px; max-width: 520px; }
@@ -7687,6 +7728,7 @@ tr.row--selected td {
   .duplicates-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .duplicates-review-layout { grid-template-columns: 1fr; }
   .quality-review-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .beets-review-kpis { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 @media (max-width: 520px) {
@@ -7694,6 +7736,7 @@ tr.row--selected td {
   .analysis-jobs-kpis, .analysis-jobs-grid { grid-template-columns: 1fr; }
   .duplicates-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .quality-review-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .beets-review-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .smart-criteria { grid-template-columns: 1fr; }
   .crate-export-controls { grid-template-columns: 1fr; }
   .serato-export-controls { grid-template-columns: 1fr; }

@@ -7,6 +7,7 @@ import SmartCrates from './pages/SmartCrates'
 import LibraryView from './components/library/LibraryView'
 import ErrorBoundary from './components/ErrorBoundary'
 import BpmReview from './pages/BpmReview'
+import BeetsReview from './pages/BeetsReview'
 import Export from './pages/Export'
 import Jobs from './pages/Jobs'
 import Reconciliation from './pages/Reconciliation'
@@ -26,6 +27,7 @@ export default function App() {
           <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
           <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
+          <Route path="beets-review" element={<ErrorBoundary><BeetsReview /></ErrorBoundary>} />
           <Route path="audit" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="folders" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="quality" element={<ErrorBoundary><Quality /></ErrorBoundary>} />

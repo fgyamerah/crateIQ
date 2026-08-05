@@ -19,6 +19,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .api.routes import analysis as analysis_router
+from .api.routes import beets_review as beets_review_router
 from .api.routes import crates as crates_router
 from .api.routes import duplicates as duplicates_router
 from .api.routes import exports as exports_router
@@ -130,6 +131,7 @@ app.include_router(library_router.router,    prefix=API_PREFIX)
 app.include_router(tracks_router.router,     prefix=API_PREFIX)
 app.include_router(insights_router.router,    prefix=API_PREFIX)
 app.include_router(analysis_router.router,   prefix=API_PREFIX)
+app.include_router(beets_review_router.router, prefix=API_PREFIX)
 app.include_router(crates_router.router,     prefix=API_PREFIX)
 app.include_router(duplicates_router.router, prefix=API_PREFIX)
 app.include_router(smart_crates_router.router, prefix=API_PREFIX)

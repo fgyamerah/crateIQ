@@ -63,6 +63,7 @@ const NAV: NavSection[] = [
       { to: '/quality-review', label: 'Quality Review', Icon: AudioLines },
       { to: '/issues',       label: 'Issues',           Icon: AlertTriangle, badgeKey: 'issues' },
       { to: '/enrichment',   label: 'Enrichment Queue', Icon: Sparkles,      badgeKey: 'enrichment' },
+      { to: '/beets-review', label: 'Beets Review',      Icon: Sparkles },
       { to: '/metadata-repair', label: 'Metadata Repair', Icon: Wrench,      badgeKey: 'repair' },
       { to: '/metadata-sanitation', label: 'Metadata Sanitation', Icon: Eraser },
       { to: '/bpm-review',   label: 'BPM Review',       Icon: Activity,      badgeKey: 'bpm' },

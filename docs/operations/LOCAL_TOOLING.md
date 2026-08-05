@@ -14,7 +14,7 @@ this repository or commit local executable paths.
 | --- | --- | --- |
 | `keyfinder-cli` | Preview-first, DB-only key/Camelot analysis | Only after explicit confirmation for a track with both key fields empty; it never replaces MIK/existing key data. |
 | `aubio` | Preview-first, DB-only BPM analysis | Only after explicit confirmation for a track with null BPM. The in-app runner uses aubio only; it does not fall back to librosa. |
-| `beet` | Preview-limited Beets enrichment planning; legacy organizer/import paths | The safe `/jobs` preview never launches it. Legacy paths must remain explicit; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
+| `beet` | Local metadata-candidate planning; legacy organizer/import paths | `/beets-review` never launches it; selected user-entered missing fields can be applied to CrateIQ's local index only. Legacy paths must remain explicit. |
 | `rmlint` | Preview-only duplicate candidate detection | Only from the explicit `/jobs` preview. It uses bounded JSON output and has no delete, move, rename, quarantine, tag-write, file-write, or DB-decision action. |
 | `ffprobe` | Preview-only audio-quality metadata checks | Only from explicit `/jobs` preview. It probes at most ten validated imported files with JSON output and never transcodes or writes media, tags, or DB fields. |
 | `ffmpeg` | Separate decode/conversion support workflows | Not used by the safe `/jobs` audio-quality preview. |
@@ -34,12 +34,17 @@ preview for each tool-specific workflow. BPM is the exception: after preview
 and explicit confirmation, it runs `aubio tempo <file>` for a small selected
 limit and writes only valid 40–250 BPM plus lower-authority provenance to
 CrateIQ's local index. It never writes audio/tags or replaces MIK/trusted BPM.
-All other installed tools remain preview-only until their explicit DB-only
-runner exists.
+Key/Camelot analysis has its own explicit DB-only runner. Beets Review can
+apply explicitly selected missing artist/title/genre values to the local index
+without invoking `beet`; all remaining installed-tool workflows are
+preview-only until their explicit DB-only runner exists.
 
-Beets is preview-limited in this phase. Its card shows local-index records with
-missing artist, title, or genre but never invokes `beet`, a user Beets config,
-or a Beets library database. There is no tag write, file move, or apply action.
+Beets remains optional and is never launched by the safe review flow. Its card
+shows local-index records with missing artist, title, or genre. `/beets-review`
+can apply only user-entered, explicitly selected and confirmed missing fields
+to CrateIQ's local index; it never invokes `beet`, a user Beets config, or a
+Beets library database. There is no tag write, file move, or broad automatic
+apply action.
 
 Duplicate detection is also preview-only. When available, CrateIQ invokes
 `rmlint -T df -o json --no-followlinks --no-with-color --no-crossdev` with at

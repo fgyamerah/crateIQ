@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add selected-field Beets enrichment review
+
+- Added `/beets-review`, a review-before-apply workspace for missing local
+  artist, title, and genre values. Users must enter, select, save, and confirm
+  every field before it is applied to CrateIQ's local index.
+- This foundation never invokes `beet`, a user Beets config, or a Beets
+  library. It writes selected non-empty fields plus local provenance only;
+  existing values, BPM/key/Camelot/cues/MIK data, tags, media files, and DJ
+  databases remain untouched.
+
 [2026-08-05] — feat: add safe Audio Quality Review
 
 - Added `/quality-review`, which saves bounded ffprobe findings and optional

@@ -387,6 +387,19 @@ def list_jobs() -> dict[str, Any]:
     return {"jobs": definitions}
 
 
+def beets_enrichment_candidates() -> list[dict[str, Any]]:
+    """Return every local-index metadata candidate without invoking beet."""
+    candidates: list[dict[str, Any]] = []
+    for row in _track_rows():
+        missing_fields = [field for field in ("artist", "title", "genre") if not row.get(field)]
+        if missing_fields:
+            candidates.append({
+                **row, "track_id": row["id"], "relative_path": _as_candidate(row)["relative_path"],
+                "missing_fields": missing_fields,
+            })
+    return candidates
+
+
 def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]) -> dict[str, Any]:
     """Run rmlint's JSON formatter only; never create/execute an action script."""
     warnings: list[str] = []
@@ -610,8 +623,7 @@ def preview(job_type: str) -> dict[str, Any]:
     elif job_type == "key_analysis":
         candidates = [row for row in rows if not (row.get("key_camelot") or row.get("key_musical"))]
     elif job_type == "beets_enrichment":
-        candidates = [{**row, "missing_fields": [field for field in ("artist", "title", "genre") if not row.get(field)]} for row in rows]
-        candidates = [row for row in candidates if row["missing_fields"]]
+        candidates = beets_enrichment_candidates()
     else:
         candidates = rows
     warnings = []

@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added `/beets-review`, a selected-field local enrichment
+  workspace. It snapshots only candidates missing artist/title/genre, then
+  requires each user-entered value to be explicitly selected, saved, and
+  confirmed before applying it to `processed.db`. Beets subprocess/config/
+  library access remains deferred; existing fields, BPM/key/Camelot/cues/MIK,
+  tags, media files, and DJ databases are never changed.
 - 2026-08-05: Added `/quality-review`, a safe Audio Quality Review workspace
   over the bounded ffprobe preview. Refresh stores only safe probe findings in
   the selected library's `processed.db`; reviewed/ignore/review-later/
@@ -50,8 +56,9 @@
   choices; missing rmlint disables only preview refresh, not existing reviews.
 - 2026-08-05: Added a safe Beets enrichment preview. It uses only the local
   index to identify missing artist/title/genre fields and never invokes beet,
-  writes tags, moves files, or writes suggestions. The card is review-required
-  until a future selected-field DB-only acceptance workflow exists.
+  writes tags, moves files, or writes suggestions. `/beets-review` now offers
+  an explicit selected-field DB-only acceptance workflow; broad enrichment and
+  all file/tag operations remain deferred.
 - 2026-08-05: Added the safe key/Camelot Analysis Jobs runner. After preview
   and explicit confirmation, it invokes `keyfinder-cli <file>` only for rows
   with both key fields null, maps only recognized musical/Camelot values using

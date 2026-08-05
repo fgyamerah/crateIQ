@@ -1788,6 +1788,68 @@ def test_beets_preview_is_local_db_only_and_never_targets_analysis_fields(client
     assert "not implemented" in run.json()["detail"]
 
 
+def test_beets_review_applies_only_saved_selected_local_fields(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("Beets review must not spawn a subprocess")),
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE tracks SET genre = NULL WHERE filename = 'delta.mp3'")
+        before = conn.execute(
+            "SELECT id, artist, title, genre, bpm, key_musical, key_camelot FROM tracks WHERE filename = 'delta.mp3'"
+        ).fetchone()
+
+    empty = test_client.get("/api/enrichment/beets/review")
+    assert empty.status_code == 200 and empty.json()["items"] == []
+    refreshed = test_client.post("/api/enrichment/beets/preview-refresh")
+    assert refreshed.status_code == 200
+    payload = refreshed.json()
+    assert payload["source"] == "crateiq_metadata_candidate"
+    assert payload["safety"] == ["db_only_apply", "review_before_apply", "no_tag_writes", "no_file_moves", "no_audio_changes", "no_bpm_key_camelot_cue_changes"]
+    item = next(item for item in payload["items"] if item["track_id"] == before[0])
+    assert item["allowed_fields"] == ["genre"]
+    assert item["selected_fields"] == {}
+
+    unsaved = test_client.post("/api/enrichment/beets/apply", json={"confirm": True, "items": [{"track_id": before[0], "fields": {"genre": "Afro House"}}]})
+    assert unsaved.status_code == 200
+    assert unsaved.json()["failed"] == 1
+    assert "Save the selected fields" in unsaved.json()["warnings"][0]
+    missing_confirm = test_client.post("/api/enrichment/beets/apply", json={"confirm": False, "items": [{"track_id": before[0], "fields": {"genre": "Afro House"}}]})
+    assert missing_confirm.status_code == 422
+    forbidden = test_client.patch(
+        f"/api/enrichment/beets/tracks/{before[0]}",
+        json={"decision": "pending", "selected_fields": {"bpm": "128"}},
+    )
+    assert forbidden.status_code == 422
+
+    saved = test_client.patch(
+        f"/api/enrichment/beets/tracks/{before[0]}",
+        json={"decision": "pending", "note": "Use this local genre", "selected_fields": {"genre": "Afro House"}},
+    )
+    assert saved.status_code == 200
+    assert next(item for item in saved.json()["items"] if item["track_id"] == before[0])["selected_fields"] == {"genre": "Afro House"}
+    applied = test_client.post("/api/enrichment/beets/apply", json={"confirm": True, "items": [{"track_id": before[0], "fields": {"genre": "Afro House"}}]})
+    assert applied.status_code == 200 and applied.json()["applied"] == 1
+    assert applied.json()["review"]["summary"]["applied"] == 1
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute(
+            "SELECT artist, title, genre, bpm, key_musical, key_camelot, enrichment_source, enrichment_updated_at FROM tracks WHERE id = ?",
+            (before[0],),
+        ).fetchone()
+    assert after[:6] == (before[1], before[2], "Afro House", before[4], before[5], before[6])
+    assert after[6] == "crateiq_metadata_candidate" and after[7]
+
+    repeated = test_client.post("/api/enrichment/beets/apply", json={"confirm": True, "items": [{"track_id": before[0], "fields": {"genre": "Afro House"}}]})
+    assert repeated.status_code == 200 and repeated.json()["skipped"] == 1
+    assert "overwrite is not supported" in repeated.json()["warnings"][0]
+    with sqlite3.connect(db_path) as conn:
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert {"beets_review_snapshots", "beets_review_decisions"}.issubset(tables)
+
+
 def test_duplicate_preview_uses_rmlint_json_only_and_never_writes(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"

@@ -39,6 +39,17 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Selected-field Beets enrichment review (2026-08-05)
+         `/beets-review` now records review state and applies only explicitly
+         entered/saved/confirmed artist, title, or genre fields to the local
+         index. Beets itself is not invoked; no tags, files, BPM/key/Camelot,
+         cue, or DJ-database values are changed.
+
+[ ] (P2) Safe Beets suggestion adapter and selected-field confidence review
+         If Beets can supply suggestions without touching its user config or
+         library, add a temporary-config, no-tag-write adapter. Keep broad
+         automatic enrichment and overwrites out of scope.
+
 [x] (P1) Safe Audio Quality Review workspace (2026-08-05)
          `/quality-review` now saves bounded ffprobe findings plus
          reviewed/ignore/review-later/unresolved notes only in the selected
@@ -92,8 +103,9 @@ CURRENT FOCUS
 
 [x] (P1) Safe Beets enrichment preview (2026-08-05)
          `/jobs` now reviews only local-index rows missing artist/title/genre.
-         It never invokes beet, modifies tags/files, or applies suggestions;
-         selected-field DB-only acceptance remains a future review workflow.
+         It never invokes beet or modifies tags/files. Selected-field local
+         DB acceptance now lives in `/beets-review`; suggestions remain local
+         candidate inputs until a safe Beets adapter is designed.
 
 [x] (P0) Safe key/Camelot analysis runner (2026-08-05)
          `/jobs` now supports a preview-first, explicitly confirmed
