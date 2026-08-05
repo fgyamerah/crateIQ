@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
-import AudioPreviewPlayer from '../components/player/AudioPreviewPlayer'
+import { Pause, Play } from 'lucide-react'
 import ThreeBandWaveform from '../components/player/ThreeBandWaveform'
+import { usePersistentPlayer } from '../components/player/usePersistentPlayer'
+import type { PersistentPlayerTrack } from '../components/player/usePersistentPlayer'
 import { apiFetch } from '../api/client'
 import PageHeader from '../components/PageHeader'
 import StatusStrip from '../components/ui/StatusStrip'
@@ -46,8 +48,24 @@ function displayTitle(track: Track): string {
   return track.title || track.filename || 'Untitled track'
 }
 
+function toPlayerTrack(track: Track): PersistentPlayerTrack {
+  return {
+    id: track.track_id,
+    artist: track.artist,
+    title: track.title,
+    filename: track.filename,
+    genre: track.genre,
+    bpm: track.bpm,
+    key_camelot: track.key_camelot,
+    duration_sec: track.duration_sec,
+    sourceLabel: 'Music Review',
+  }
+}
+
 export default function MusicReview() {
   const [searchParams] = useSearchParams()
+  const persistentPlayer = usePersistentPlayer()
+  const requestedPlayerTrackRef = useRef<number | null>(null)
   const [tracks, setTracks] = useState<Track[]>([])
   const [selected, setSelected] = useState<Track | null>(null)
   const [notes, setNotes] = useState('')
@@ -76,6 +94,23 @@ export default function MusicReview() {
   useEffect(() => { void load() }, [load])
   useEffect(() => { setNotes(selected?.notes ?? '') }, [selected?.track_id])
 
+  const playerQueue = useMemo(() => tracks.map(toPlayerTrack), [tracks])
+
+  useEffect(() => {
+    if (!requestedTrackId || requestedPlayerTrackRef.current === requestedTrackId) return
+    const requestedTrack = playerQueue.find((track) => track.id === requestedTrackId)
+    if (!requestedTrack) return
+    requestedPlayerTrackRef.current = requestedTrackId
+    persistentPlayer.loadTrack(requestedTrack, playerQueue)
+  }, [persistentPlayer.loadTrack, playerQueue, requestedTrackId])
+
+  useEffect(() => {
+    const playerTrack = persistentPlayer.currentTrack
+    if (!playerTrack || playerTrack.sourceLabel !== 'Music Review') return
+    const matchingTrack = tracks.find((track) => track.track_id === playerTrack.id)
+    if (matchingTrack && matchingTrack.track_id !== selected?.track_id) setSelected(matchingTrack)
+  }, [persistentPlayer.currentTrack, selected?.track_id, tracks])
+
   const save = async (status: string) => {
     if (!selected) return
     const next = await apiFetch.patch<Track>(`/reviews/tracks/${selected.track_id}`, {
@@ -94,10 +129,25 @@ export default function MusicReview() {
   }
 
   const selectedIndex = tracks.findIndex((track) => track.track_id === selected?.track_id)
+  const selectTrack = (track: Track, autoplay = false) => {
+    setSelected(track)
+    persistentPlayer.loadTrack(toPlayerTrack(track), playerQueue, { autoplay })
+  }
+
   const selectRelative = (delta: number) => {
     if (!tracks.length) return
     const nextIndex = (selectedIndex + delta + tracks.length) % tracks.length
-    setSelected(tracks[nextIndex])
+    const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
+    selectTrack(tracks[nextIndex], keepPlaying)
+  }
+
+  const playSelected = () => {
+    if (!selected) return
+    if (persistentPlayer.currentTrack?.id === selected.track_id) {
+      void persistentPlayer.togglePlayback()
+      return
+    }
+    persistentPlayer.loadTrack(toPlayerTrack(selected), playerQueue, { autoplay: true })
   }
 
   const reviewCounts = useMemo(() => ({
@@ -127,11 +177,13 @@ export default function MusicReview() {
       }
       if ((key === 'n' || event.key === 'ArrowRight') && tracks.length) {
         event.preventDefault()
-        setSelected(tracks[(index + 1 + tracks.length) % tracks.length])
+        const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
+        selectTrack(tracks[(index + 1 + tracks.length) % tracks.length], keepPlaying)
       }
       if ((key === 'p' || event.key === 'ArrowLeft') && tracks.length) {
         event.preventDefault()
-        setSelected(tracks[(index - 1 + tracks.length) % tracks.length])
+        const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
+        selectTrack(tracks[(index - 1 + tracks.length) % tracks.length], keepPlaying)
       }
     }
     window.addEventListener('keydown', handler)
@@ -173,7 +225,7 @@ export default function MusicReview() {
               <button
                 className={`music-review-row${selected?.track_id === track.track_id ? ' is-selected' : ''}`}
                 key={track.track_id}
-                onClick={() => setSelected(track)}
+                onClick={() => selectTrack(track)}
                 aria-pressed={selected?.track_id === track.track_id}
               >
                 <span className="music-review-row-index">{index + 1}</span>
@@ -200,18 +252,21 @@ export default function MusicReview() {
             </div>
             {selected && <Badge tone={reviewTone(selected.review_status)}>{reviewLabel(selected.review_status)}{selected.rating ? ` · ${selected.rating}/5` : ''}</Badge>}
           </div>
-          <AudioPreviewPlayer
-            track={selected ? {
-              id: selected.track_id,
-              artist: selected.artist,
-              title: selected.title,
-              filename: selected.filename,
-              genre: selected.genre,
-              bpm: selected.bpm,
-              key_camelot: selected.key_camelot,
-              duration_sec: selected.duration_sec,
-            } : null}
-          />
+          <div className="music-review-player-action">
+            <button className="btn btn--primary btn--sm" type="button" disabled={!selected} onClick={playSelected}>
+              {persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
+                ? <Pause size={14} fill="currentColor" />
+                : <Play size={14} fill="currentColor" />}
+              {!selected
+                ? 'Select a track to play'
+                : persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected.track_id
+                  ? 'Pause bottom player'
+                  : persistentPlayer.currentTrack?.id === selected.track_id
+                    ? 'Play current track'
+                    : 'Play in bottom player'}
+            </button>
+            <span>Uses the visible Music Review queue · browser preview only</span>
+          </div>
           <ThreeBandWaveform seed={selected?.track_id ?? 0} inactive={!selected} />
           {selected && (
             <>

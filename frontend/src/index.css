@@ -8021,6 +8021,22 @@ tr.row--selected td {
 .music-review-detail .audio-preview-player { margin: 0; background: rgba(5,9,16,.48); border-color: rgba(32,212,216,.2); }
 .music-review-detail .three-band-waveform { background: rgba(5,9,16,.62); }
 
+.music-review-player-action {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 9px;
+  border: 1px solid rgba(32,212,216,.18);
+  border-radius: 9px;
+  background: rgba(5,9,16,.48);
+}
+
+.music-review-player-action > span {
+  color: var(--text-subtle);
+  font-size: 9.5px;
+  line-height: 1.35;
+}
+
 .music-review-status-section { display: grid; gap: 8px; padding-top: 2px; }
 .music-review-section-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
 .music-review-section-head strong { font-size: 12px; }
