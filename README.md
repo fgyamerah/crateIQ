@@ -344,6 +344,10 @@ Key/Camelot follows the same explicit preview/confirmation pattern with
 `keyfinder-cli <file>`. Recognized musical keys and Camelot values use the
 existing mapping; results are local-index-only `keyfinder-cli` provenance with
 lower authority than MIK, and no existing key value is replaced.
+Beets enrichment is optional and preview/review-first: its current card only
+identifies local-index rows missing artist, title, or genre. It does not invoke
+`beet`, write tags, move files, or apply suggestions; any future accepted
+enrichment will require selected fields and remain DB-only.
 See [Local tooling for Linux Mint and Ubuntu](docs/operations/LOCAL_TOOLING.md)
 for safe installation, verification, and override guidance. CrateIQ never
 installs optional tools itself.

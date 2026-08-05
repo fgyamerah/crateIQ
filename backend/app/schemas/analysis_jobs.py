@@ -41,6 +41,7 @@ class AnalysisJobCandidate(BaseModel):
     bpm: Optional[float] = None
     key_camelot: Optional[str] = None
     key_musical: Optional[str] = None
+    missing_fields: list[str] = Field(default_factory=list)
 
 
 class AnalysisJobListResponse(BaseModel):

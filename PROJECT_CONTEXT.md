@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added a safe Beets enrichment preview. It uses only the local
+  index to identify missing artist/title/genre fields and never invokes beet,
+  writes tags, moves files, or writes suggestions. The card is review-required
+  until a future selected-field DB-only acceptance workflow exists.
 - 2026-08-05: Added the safe key/Camelot Analysis Jobs runner. After preview
   and explicit confirmation, it invokes `keyfinder-cli <file>` only for rows
   with both key fields null, maps only recognized musical/Camelot values using

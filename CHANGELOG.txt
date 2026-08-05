@@ -2,6 +2,14 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: safe Beets enrichment preview
+
+- Added a preview-limited Beets card that identifies missing non-critical
+  artist/title/genre fields from CrateIQ's local index only. It never invokes
+  beet, writes tags, moves files, or changes BPM/key/Camelot/cues.
+- The workflow remains review-required: no automatic or DB apply path exists
+  until explicit selected-field review controls are implemented.
+
 [2026-08-05] — feat: safe preview-first key/Camelot runner
 
 - Added an explicitly confirmed keyfinder-cli runner for rows missing both

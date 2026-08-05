@@ -1762,6 +1762,32 @@ def test_keyfinder_parser_accepts_known_keys_and_rejects_unknown_values():
     assert analysis_jobs_service._parse_keyfinder_output("not a key\n") == (None, None)
 
 
+def test_beets_preview_is_local_db_only_and_never_targets_analysis_fields(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess,
+        "run",
+        lambda *args, **kwargs: (_ for _ in ()).throw(AssertionError("beet must not run during preview")),
+    )
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE tracks SET genre = NULL WHERE filename = 'delta.mp3'")
+        before = conn.execute("SELECT bpm, key_musical, key_camelot, genre FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    preview = test_client.get("/api/analysis/jobs/beets_enrichment/preview")
+    assert preview.status_code == 200
+    assert preview.json()["candidate_count"] == 1
+    assert preview.json()["samples"][0]["missing_fields"] == ["genre"]
+    assert preview.json()["runner_implemented"] is False
+    assert any("does not invoke beet" in warning for warning in preview.json()["warnings"])
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute("SELECT bpm, key_musical, key_camelot, genre FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    assert after == before
+
+    run = test_client.post("/api/analysis/jobs/beets_enrichment/run", json={"confirm": True})
+    assert run.status_code == 409
+    assert "not implemented" in run.json()["detail"]
+
+
 def test_mik_coverage_preview_and_db_only_import(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"

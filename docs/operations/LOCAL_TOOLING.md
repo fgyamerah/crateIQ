@@ -14,7 +14,7 @@ this repository or commit local executable paths.
 | --- | --- | --- |
 | `keyfinder-cli` | Preview-first, DB-only key/Camelot analysis | Only after explicit confirmation for a track with both key fields empty; it never replaces MIK/existing key data. |
 | `aubio` | Preview-first, DB-only BPM analysis | Only after explicit confirmation for a track with null BPM. The in-app runner uses aubio only; it does not fall back to librosa. |
-| `beet` | Beets metadata import/enrichment and the legacy organizer path | Only when the relevant import/organizer workflow is intentionally run; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
+| `beet` | Preview-limited Beets enrichment planning; legacy organizer/import paths | The safe `/jobs` preview never launches it. Legacy paths must remain explicit; CrateIQ falls back to its Python organizer if `beet` is unavailable. |
 | `rmlint` | Duplicate-detection workflow | Only when the user explicitly starts duplicate detection; no files are deleted automatically. |
 | `ffprobe` + `ffmpeg` | Audio-quality/probing workflows | Only for explicit quality/probing or decode-support workflows. |
 
@@ -35,6 +35,10 @@ limit and writes only valid 40–250 BPM plus lower-authority provenance to
 CrateIQ's local index. It never writes audio/tags or replaces MIK/trusted BPM.
 All other installed tools remain preview-only until their explicit DB-only
 runner exists.
+
+Beets is preview-limited in this phase. Its card shows local-index records with
+missing artist, title, or genre but never invokes `beet`, a user Beets config,
+or a Beets library database. There is no tag write, file move, or apply action.
 
 ## Linux Mint / Ubuntu installation
 
@@ -60,9 +64,10 @@ package in code.
 
 ### Beets
 
-CrateIQ invokes Beets through the `beet` CLI; it does not import the `beets`
-Python library. On Linux Mint/Ubuntu, prefer the distribution package for a
-system-managed optional CLI:
+The legacy CrateIQ integration uses the `beet` CLI rather than importing the
+`beets` Python library. The safe `/jobs` Beets preview does not invoke that
+CLI, a user Beets config, or a Beets library database. On Linux Mint/Ubuntu,
+prefer the distribution package for a system-managed optional CLI:
 
 ```bash
 sudo apt install beets

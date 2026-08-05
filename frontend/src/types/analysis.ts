@@ -126,6 +126,7 @@ export interface AnalysisJobCandidate {
   bpm: number | null
   key_camelot: string | null
   key_musical: string | null
+  missing_fields: string[]
 }
 
 export interface AnalysisJobPreview {

@@ -181,6 +181,7 @@ def _as_candidate(row: dict[str, Any]) -> dict[str, Any]:
         "bpm": row.get("bpm"),
         "key_camelot": row.get("key_camelot"),
         "key_musical": row.get("key_musical"),
+        "missing_fields": row.get("missing_fields", []),
     }
 
 
@@ -194,6 +195,11 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
     total = len(rows)
     missing_bpm = [row for row in rows if row.get("bpm") is None]
     missing_key = [row for row in rows if not (row.get("key_camelot") or row.get("key_musical"))]
+    enrichment_candidates = []
+    for row in rows:
+        missing_fields = [field for field in ("artist", "title", "genre") if not row.get(field)]
+        if missing_fields:
+            enrichment_candidates.append({**row, "missing_fields": missing_fields})
 
     def pending_or_missing(capability_name: str) -> str:
         return "coming_soon" if _tool_ready(capabilities[capability_name]) else "missing_tool"
@@ -248,15 +254,15 @@ def _definitions() -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
         {
             "type": "beets_enrichment",
             "label": "Beets enrichment",
-            "status": pending_or_missing("beets_enrichment"),
+            "status": "ready" if _tool_ready(capabilities["beets_enrichment"]) and enrichment_candidates else "disabled" if _tool_ready(capabilities["beets_enrichment"]) else "missing_tool",
             "required_tools": ["beet"],
-            "candidate_count": total,
+            "candidate_count": len(enrichment_candidates),
             "enabled": False,
             "default_enabled": False,
             "runner_implemented": False,
-            "write_behavior": "review_only; no tag writes",
-            "safety": _SAFETY,
-            "message": "A review-first, DB-only enrichment runner is still pending.",
+            "write_behavior": "review_required; DB-only accepted enrichment",
+            "safety": ["preview_first", "no_tag_writes", "no_file_moves", "preserve_trusted_values"],
+            "message": "Preview incomplete non-critical metadata from the local index. Beets execution and automatic apply are intentionally deferred.",
         },
         {
             "type": "duplicate_detection",
@@ -320,6 +326,9 @@ def preview(job_type: str) -> dict[str, Any]:
         candidates = [row for row in rows if row.get("bpm") is None]
     elif job_type == "key_analysis":
         candidates = [row for row in rows if not (row.get("key_camelot") or row.get("key_musical"))]
+    elif job_type == "beets_enrichment":
+        candidates = [{**row, "missing_fields": [field for field in ("artist", "title", "genre") if not row.get(field)]} for row in rows]
+        candidates = [row for row in candidates if row["missing_fields"]]
     else:
         candidates = rows
     warnings = []
@@ -329,6 +338,8 @@ def preview(job_type: str) -> dict[str, Any]:
         warnings.append("Preview is read-only. An explicit confirmed run invokes aubio only and writes BPM/provenance to CrateIQ's local index.")
     elif job_type == "key_analysis" and job["runner_implemented"]:
         warnings.append("Preview is read-only. An explicit confirmed run invokes keyfinder-cli only and writes key/Camelot provenance to CrateIQ's local index.")
+    elif job_type == "beets_enrichment":
+        warnings.append("Preview is DB-only and does not invoke beet. Suggestions/apply require a future selected-field review flow.")
     else:
         warnings.append("This preview is read-only. The runner is not implemented and no files, tags, or local track fields are changed.")
     return {

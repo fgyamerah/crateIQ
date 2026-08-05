@@ -39,6 +39,11 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Safe Beets enrichment preview (2026-08-05)
+         `/jobs` now reviews only local-index rows missing artist/title/genre.
+         It never invokes beet, modifies tags/files, or applies suggestions;
+         selected-field DB-only acceptance remains a future review workflow.
+
 [x] (P0) Safe key/Camelot analysis runner (2026-08-05)
          `/jobs` now supports a preview-first, explicitly confirmed
          keyfinder-cli-only key pass. Only rows missing both key fields are

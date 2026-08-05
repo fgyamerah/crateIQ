@@ -278,7 +278,7 @@ def get_capabilities(
                 tool="beet",
                 purpose="Run the explicit Beets import/enrichment workflow.",
                 message="Install or configure beet to use the optional Beets workflow.",
-            ),
+            ) | ({"action_state": "ready", "message": "beet is available for preview-limited, review-first enrichment planning."} if has_tool("beet") else {}),
             "duplicate_detection": optional_tool_capability(
                 tool="rmlint",
                 purpose="Run the explicit duplicate detection workflow.",

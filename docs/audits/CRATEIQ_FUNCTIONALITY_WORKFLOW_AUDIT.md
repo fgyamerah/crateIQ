@@ -9,6 +9,13 @@
 > stores only recognized mapped values with lower authority in the local index.
 > It never writes tags/media or overwrites MIK/trusted/existing key data.
 
+> Implementation follow-up (2026-08-05): Beets is now represented as a
+> preview-limited enrichment workflow. It identifies missing non-critical
+> `artist`, `title`, and `genre` index fields without invoking `beet` or
+> writing files, tags, or the local database. Automatic/accepted enrichment
+> remains deliberately review-required until a selected-field DB-only apply
+> flow exists.
+
 > Implementation follow-up (2026-08-05): BPM is now the first actual Analysis
 > Jobs runner. It requires aubio, preview, confirmation, and a small explicit
 > limit; it writes only null-BPM records to the local index with lower-authority
