@@ -2,29 +2,12 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { Play } from 'lucide-react'
 import AudioPreviewPlayer from '../player/AudioPreviewPlayer'
+import ThreeBandWaveform from '../player/ThreeBandWaveform'
 import type { CompatibleTrack, CompatibleTracksResponse, TrackDetail } from '../../types/track'
 import { fetchCompatibleTracks } from '../../api/tracks'
 import { ApiError } from '../../api/client'
 import CamelotWheel from './CamelotWheel'
 import { camelotHeroStyle, camelotStyle, displayValue } from './libraryUtils'
-
-function WaveformPreview({ seed, inactive }: { seed: number; inactive?: boolean }) {
-  const bars = useMemo(() => {
-    let s = seed || 1
-    const rnd = () => {
-      s = (s * 1103515245 + 12345) & 0x7fffffff
-      return (s % 100) / 100
-    }
-    return Array.from({ length: 64 }, () => 0.12 + rnd() * 0.88)
-  }, [seed])
-  return (
-    <div className={`lib-waveform${inactive ? ' lib-waveform--inactive' : ''}`} aria-hidden="true">
-      {bars.map((h, i) => (
-        <span key={i} style={{ height: `${Math.round(h * 100)}%` }} />
-      ))}
-    </div>
-  )
-}
 
 interface Props {
   track: TrackDetail | null
@@ -243,10 +226,10 @@ export default function TrackInspector({ track, loading }: Props) {
       </section>
 
       <section className="lib-inspector-section">
-        <h3>Signal preview</h3>
-        <WaveformPreview seed={track?.id ?? 0} inactive={!track} />
+        <h3>Three-band signal preview</h3>
+        <ThreeBandWaveform seed={track?.id ?? 0} inactive={!track} compact />
         <span className="lib-muted lib-inspector-note">
-          Visual placeholder only — no waveform analysis is performed.
+          Equalizer-style visual placeholder only — no waveform analysis is performed.
         </span>
       </section>
 

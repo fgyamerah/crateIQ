@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import AudioPreviewPlayer from '../components/player/AudioPreviewPlayer'
+import ThreeBandWaveform from '../components/player/ThreeBandWaveform'
 import { apiFetch } from '../api/client'
 import PageHeader from '../components/PageHeader'
 import StatusStrip from '../components/ui/StatusStrip'
@@ -115,6 +116,7 @@ export default function MusicReview() {
               duration_sec: selected.duration_sec,
             } : null}
           />
+          <ThreeBandWaveform seed={selected?.track_id ?? 0} inactive={!selected} />
           {selected && (
             <>
               <div className="settings-action-row">

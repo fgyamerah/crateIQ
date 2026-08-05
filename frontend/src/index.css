@@ -7085,26 +7085,65 @@ tr.row--selected td {
   white-space: nowrap;
 }
 
-.lib-waveform {
+.three-band-waveform {
+  display: grid;
+  gap: 5px;
+  padding: 10px 11px;
+  border: 1px solid rgba(32,212,216,0.18);
+  border-radius: 10px;
+  background: rgba(5,9,16,0.52);
+  overflow: hidden;
+}
+
+.three-band-waveform-band {
+  min-width: 0;
+  display: grid;
+  grid-template-columns: 26px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.three-band-waveform-label {
+  color: var(--text-muted);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.three-band-waveform-segments {
+  height: 18px;
   display: flex;
-  align-items: flex-end;
+  align-items: center;
   gap: 2px;
-  height: 40px;
-  padding: 4px 0;
 }
 
-.lib-waveform span {
-  flex: 1;
+.three-band-waveform-segment {
+  flex: 1 1 0;
   min-width: 1px;
+  height: var(--wave-height);
   border-radius: 1px;
-  background: linear-gradient(180deg, var(--brand-cyan), var(--brand-violet));
-  opacity: 0.55;
-  transition: opacity 0.2s ease, filter 0.2s ease;
+  opacity: 0.82;
 }
 
-.lib-waveform--inactive span {
-  opacity: 0.22;
-  filter: grayscale(1);
+.three-band-waveform-band--low .three-band-waveform-segment {
+  background: linear-gradient(180deg, #2dd4bf, #0f766e);
+}
+
+.three-band-waveform-band--mid .three-band-waveform-segment {
+  background: linear-gradient(180deg, #22d3ee, #0e7490);
+}
+
+.three-band-waveform-band--high .three-band-waveform-segment {
+  background: linear-gradient(180deg, #c4b5fd, #7c3aed);
+}
+
+.three-band-waveform--compact { gap: 3px; padding: 8px 9px; }
+.three-band-waveform--compact .three-band-waveform-segments { height: 13px; }
+
+.three-band-waveform--inactive {
+  filter: grayscale(0.72);
+  opacity: 0.42;
 }
 
 .lib-inspector-note {

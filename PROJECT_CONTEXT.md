@@ -6,6 +6,10 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added reusable `ThreeBandWaveform.tsx` to the Library inspector
+  and Music Review. Its low/mid/high bars are deterministic presentation from
+  a track id, not analyzed waveform data; it reads and writes no audio or tags.
+
 - 2026-08-05: Refined the Library route against
   `docs/mockups/library.webp`: denser status/metric surfaces, a dark DJ-table
   treatment with keyboard-selectable rows, and a 380px inspector rail that

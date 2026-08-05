@@ -2,6 +2,13 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add three-band waveform visual
+
+- Added a reusable deterministic low/mid/high equalizer-style visual to the
+  Library inspector and Music Review player panel.
+- The component is explicitly decorative: it reads no audio, invokes no
+  analysis tools, and never writes tags, files, or library data.
+
 [2026-08-05] — style: align Library with DJ dashboard mockup
 
 - Refined the full-width Library workspace against `docs/mockups/library.webp`

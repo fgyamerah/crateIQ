@@ -39,6 +39,9 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Add a reusable visual-only low/mid/high equalizer-style waveform to the
+    Library inspector and Music Review; no audio analysis or file access.
+
 [x] Align the Library workspace to `docs/mockups/library.webp` with compact
     metrics, polished DJ-style rows, a clear selected state, and an integrated
     inspector/player/harmonic rail while preserving the Camelot wheel.
