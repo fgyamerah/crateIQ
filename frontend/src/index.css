@@ -8094,6 +8094,7 @@ tr.row--selected td {
 .smart-crates-controls, .smart-crates-work { background: var(--bg-surface); border: 1px solid var(--border); border-radius: 14px; padding: 18px; }
 .smart-crates-controls { display: grid; gap: 8px; }
 .smart-crates-controls h2 { font-size: 15px; margin-bottom: 3px; }
+.smart-review-context { margin: -2px 0 10px; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .smart-preset { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); cursor: pointer; display: grid; gap: 3px; padding: 10px; text-align: left; }
 .smart-preset:hover { border-color: var(--accent); background: var(--bg-hover); }
 .smart-preset span, .smart-unavailable { color: var(--text-muted); font-size: 12px; line-height: 1.4; }

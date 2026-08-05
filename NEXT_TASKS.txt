@@ -39,6 +39,9 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] Show Music Review status/rating context in Manual Crate order/finder rows
+    and Smart Crate preview rows without changing order, eligibility, or rules.
+
 [x] Align Music Review with the Library DJ dashboard while preserving deep
     links, DB-only review controls, audio preview, and form-safe shortcuts.
 

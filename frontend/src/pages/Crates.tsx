@@ -11,6 +11,8 @@ import KpiCard from '../components/ui/KpiCard'
 import StatusStrip from '../components/ui/StatusStrip'
 import PageHeader from '../components/PageHeader'
 import AudioPreviewPlayer, { type AudioPreviewTrack } from '../components/player/AudioPreviewPlayer'
+import ReviewStatusBadge from '../components/reviews/ReviewStatusBadge'
+import { fetchReviewSummary, type ReviewSummary } from '../api/reviews'
 
 function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.message : 'Could not complete that crate action. Please try again.'
@@ -33,6 +35,7 @@ export default function Crates() {
   const [libraryTracks, setLibraryTracks] = useState<TrackSummary[]>([])
   const [loadingTracks, setLoadingTracks] = useState(false)
   const [previewTrack, setPreviewTrack] = useState<AudioPreviewTrack | null>(null)
+  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({})
 
   const loadCrates = async (preferredId?: number | null) => {
     setLoading(true); setError(null)
@@ -61,6 +64,17 @@ export default function Crates() {
     }, 200)
     return () => window.clearTimeout(timeout)
   }, [selectedId, trackQuery])
+  useEffect(() => {
+    let cancelled = false
+    const ids = [
+      ...(detail?.tracks.map((track) => track.track_id) ?? []),
+      ...libraryTracks.map((track) => track.id),
+    ]
+    fetchReviewSummary(ids)
+      .then((response) => { if (!cancelled) setReviewSummary(response.reviews) })
+      .catch(() => { if (!cancelled) setReviewSummary({}) })
+    return () => { cancelled = true }
+  }, [detail?.tracks, libraryTracks])
 
   const selectedTrackIds = useMemo(() => new Set(detail?.tracks.map((track) => track.track_id) ?? []), [detail])
   const refreshDetail = async (id = selectedId) => {
@@ -137,8 +151,8 @@ export default function Crates() {
           <div className="manual-crate-meta"><div className="manual-crate-meta-fields"><label>Name<input className="form-input" value={name} maxLength={120} onChange={(event) => setName(event.target.value)} /></label><label>Notes<textarea className="form-input" value={notes} maxLength={1000} placeholder="Optional set context, venue notes, or transition ideas" onChange={(event) => setNotes(event.target.value)} /></label></div><div className="manual-crate-actions"><button className="btn btn--primary btn--sm" disabled={saving || !name.trim()} onClick={() => void saveMetadata()}><Pencil size={13} /> Save details</button><button className="btn btn--danger btn--sm" disabled={saving} onClick={() => void removeCrate()}><Trash2 size={13} /> Delete</button></div></div>
           <div className="manual-crate-section-head"><div><h2>Crate order</h2><p>{detail.track_count} track{detail.track_count === 1 ? '' : 's'} · updated {fmtDate(detail.updated_at)}</p></div><button className="btn btn--ghost btn--sm" disabled={saving} onClick={() => void refreshDetail()}><RefreshCw size={13} /> Refresh</button></div>
           <AudioPreviewPlayer track={previewTrack} />
-          {detail.tracks.length === 0 ? <EmptyState icon={<ListMusic size={24} />} title="This crate is empty" message="Use the library finder below to add tracks. Their order stays explicit and editable." /> : <div className="manual-crate-tracks">{detail.tracks.map((track, index) => <div className="manual-crate-track" key={track.track_id}><span className="manual-crate-position">{track.position}</span><div className="manual-crate-track-main"><strong>{trackTitle(track)}</strong><span>{track.genre ?? 'Unknown genre'} · {track.bpm?.toFixed(1) ?? '—'} BPM · {fmtDuration(track.duration_sec)}{track.missing_from_library ? ' · no longer in selected library' : ''}</span></div>{track.key_camelot && <Badge tone="info">{track.key_camelot}</Badge>}<div className="manual-crate-track-actions"><button className="btn btn--ghost btn--xs" disabled={saving || track.missing_from_library} onClick={() => setPreviewTrack({ id: track.track_id, artist: track.artist, title: track.title, filename: track.filename, genre: track.genre, bpm: track.bpm, key_camelot: track.key_camelot, duration_sec: track.duration_sec })}>Preview</button><button className="btn btn--ghost btn--xs" disabled={saving || index === 0} aria-label={`Move ${trackTitle(track)} up`} onClick={() => void moveTrack(index, -1)}><ChevronUp size={15} /></button><button className="btn btn--ghost btn--xs" disabled={saving || index === detail.tracks.length - 1} aria-label={`Move ${trackTitle(track)} down`} onClick={() => void moveTrack(index, 1)}><ChevronDown size={15} /></button><button className="btn btn--ghost btn--xs" disabled={saving} onClick={() => void removeTrack(track.track_id)}>Remove</button></div></div>)}</div>}
-          <div className="manual-library-picker"><div className="manual-crate-section-head"><div><h2>Add tracks</h2><p>Search the selected library. Adding is local and does not touch audio metadata.</p></div>{loadingTracks && <Loader2 className="spin" size={16} />}</div><input className="form-input" type="search" placeholder="Search artist, title, or filename…" value={trackQuery} onChange={(event) => setTrackQuery(event.target.value)} />{libraryTracks.length === 0 && !loadingTracks ? <p className="muted">No library tracks match this search.</p> : <div className="manual-library-results">{libraryTracks.map((track) => <div className="manual-library-result" key={track.id}><span><strong>{trackTitle(track)}</strong><small>{track.genre ?? 'Unknown genre'} · {track.bpm?.toFixed(1) ?? '—'} BPM {track.key_camelot ? `· ${track.key_camelot}` : ''}</small></span><button className="btn btn--ghost btn--xs" disabled={saving || selectedTrackIds.has(track.id)} onClick={() => void addTrack(track.id)}>{selectedTrackIds.has(track.id) ? 'Added' : 'Add'}</button></div>)}</div>}</div>
+          {detail.tracks.length === 0 ? <EmptyState icon={<ListMusic size={24} />} title="This crate is empty" message="Use the library finder below to add tracks. Their order stays explicit and editable." /> : <div className="manual-crate-tracks">{detail.tracks.map((track, index) => <div className="manual-crate-track" key={track.track_id}><span className="manual-crate-position">{track.position}</span><div className="manual-crate-track-main"><strong>{trackTitle(track)}</strong><span>{track.genre ?? 'Unknown genre'} · {track.bpm?.toFixed(1) ?? '—'} BPM · {fmtDuration(track.duration_sec)}{track.missing_from_library ? ' · no longer in selected library' : ''}</span></div>{track.key_camelot && <Badge tone="info">{track.key_camelot}</Badge>}<ReviewStatusBadge trackId={track.track_id} status={reviewSummary[String(track.track_id)]?.review_status} rating={reviewSummary[String(track.track_id)]?.rating} /><div className="manual-crate-track-actions"><button className="btn btn--ghost btn--xs" disabled={saving || track.missing_from_library} onClick={() => setPreviewTrack({ id: track.track_id, artist: track.artist, title: track.title, filename: track.filename, genre: track.genre, bpm: track.bpm, key_camelot: track.key_camelot, duration_sec: track.duration_sec })}>Preview</button><button className="btn btn--ghost btn--xs" disabled={saving || index === 0} aria-label={`Move ${trackTitle(track)} up`} onClick={() => void moveTrack(index, -1)}><ChevronUp size={15} /></button><button className="btn btn--ghost btn--xs" disabled={saving || index === detail.tracks.length - 1} aria-label={`Move ${trackTitle(track)} down`} onClick={() => void moveTrack(index, 1)}><ChevronDown size={15} /></button><button className="btn btn--ghost btn--xs" disabled={saving} onClick={() => void removeTrack(track.track_id)}>Remove</button></div></div>)}</div>}
+          <div className="manual-library-picker"><div className="manual-crate-section-head"><div><h2>Add tracks</h2><p>Search the selected library. Adding is local and does not touch audio metadata.</p></div>{loadingTracks && <Loader2 className="spin" size={16} />}</div><input className="form-input" type="search" placeholder="Search artist, title, or filename…" value={trackQuery} onChange={(event) => setTrackQuery(event.target.value)} />{libraryTracks.length === 0 && !loadingTracks ? <p className="muted">No library tracks match this search.</p> : <div className="manual-library-results">{libraryTracks.map((track) => <div className="manual-library-result" key={track.id}><span><strong>{trackTitle(track)}</strong><small>{track.genre ?? 'Unknown genre'} · {track.bpm?.toFixed(1) ?? '—'} BPM {track.key_camelot ? `· ${track.key_camelot}` : ''}</small></span><ReviewStatusBadge trackId={track.id} status={reviewSummary[String(track.id)]?.review_status} rating={reviewSummary[String(track.id)]?.rating} /><button className="btn btn--ghost btn--xs" disabled={saving || selectedTrackIds.has(track.id)} onClick={() => void addTrack(track.id)}>{selectedTrackIds.has(track.id) ? 'Added' : 'Add'}</button></div>)}</div>}</div>
         </>}
       </section>
     </div>

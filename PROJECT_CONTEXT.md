@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Manual Crate order/finder rows and Smart Crate preview rows now
+  show bounded read-only Music Review status/rating badges linking to the exact
+  track. Summary requests batch at 200 IDs. Manual order and Smart Crate rules,
+  ranking, eligibility, and save behavior are unchanged; rejected tracks are
+  context only and are not automatically excluded.
+
 - 2026-08-05: Music Review now uses the Library's dense dark DJ-dashboard
   direction: real review metrics, a full-width track queue, a sticky selected-
   track player/review rail, the three-band visual, and explicit previous/next

@@ -2,6 +2,13 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: show Music Review badges in crates
+
+- Added read-only Music Review status/rating badges and track-specific links
+  to Manual Crate order/finder rows and Smart Crate preview rows.
+- Review context does not change manual ordering, add/remove behavior, smart
+  criteria, ranking, rules, or save behavior; rejected tracks remain eligible.
+
 [2026-08-05] — style: align Music Review with Library dashboard
 
 - Rebuilt Music Review as a full-width dark DJ workspace with compact review
