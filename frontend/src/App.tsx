@@ -13,6 +13,7 @@ import Reconciliation from './pages/Reconciliation'
 import MetadataRepair from './pages/MetadataRepair'
 import MetadataSanitation from './pages/MetadataSanitation'
 import Quality from './pages/Quality'
+import QualityReview from './pages/QualityReview'
 import SetBuilder from './pages/SetBuilder'
 import SsdSync from './pages/SsdSync'
 import Settings from './pages/Settings'
@@ -28,6 +29,7 @@ export default function App() {
           <Route path="audit" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="folders" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="quality" element={<ErrorBoundary><Quality /></ErrorBoundary>} />
+          <Route path="quality-review" element={<ErrorBoundary><QualityReview /></ErrorBoundary>} />
           <Route path="metadata-repair" element={<ErrorBoundary><MetadataRepair /></ErrorBoundary>} />
           <Route path="metadata-sanitation" element={<ErrorBoundary><MetadataSanitation /></ErrorBoundary>} />
           <Route path="bpm-review" element={<ErrorBoundary><BpmReview /></ErrorBoundary>} />

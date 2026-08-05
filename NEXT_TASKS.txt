@@ -39,6 +39,16 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Safe Audio Quality Review workspace (2026-08-05)
+         `/quality-review` now saves bounded ffprobe findings plus
+         reviewed/ignore/review-later/unresolved notes only in the selected
+         library's local index. No transcode, remediation, file/tag write, or
+         cleanup action exists; any remediation design remains deferred.
+
+[ ] (P2) Quality remediation planning and explicit backup/review design
+         Define any future transcode/replace workflow separately with file
+         backups, explicit per-track confirmation, and zero automatic action.
+
 [x] (P1) Safe Duplicate Review workspace (2026-08-05)
          `/duplicates` now saves keep/ignore/review-later/unresolved decisions
          and optional notes only in the selected library's local index, scoped

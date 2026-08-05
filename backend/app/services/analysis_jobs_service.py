@@ -512,7 +512,7 @@ def _preview_audio_quality(job: dict[str, Any], rows: list[dict[str, Any]]) -> d
             "job": job, "total_tracks": len(rows), "candidate_count": 0, "samples": [], "warnings": warnings,
             "expected_write_behavior": job["write_behavior"], "runner_implemented": False, "preview_only": True,
             "summary": {"total_tracks_checked": 0, "probe_ok": 0, "needs_review": 0}, "quality_probes": [],
-            "next_step": "Audio-quality review and remediation actions are not implemented yet.",
+            "next_step": "Open Audio Quality Review to record DB-only findings. No transcode or remediation action exists.",
         }
 
     probes: list[dict[str, Any]] = []
@@ -572,7 +572,7 @@ def _preview_audio_quality(job: dict[str, Any], rows: list[dict[str, Any]]) -> d
         "expected_write_behavior": job["write_behavior"], "runner_implemented": False, "preview_only": True,
         "summary": {"total_tracks_checked": len(candidates), "probe_ok": probe_ok, "needs_review": len(candidates) - probe_ok},
         "quality_probes": probes,
-        "next_step": "Audio-quality review and remediation actions are not implemented yet.",
+        "next_step": "Open Audio Quality Review to record DB-only findings. No transcode or remediation action exists.",
     }
 
 

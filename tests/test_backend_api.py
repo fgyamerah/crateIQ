@@ -1958,6 +1958,68 @@ def test_audio_quality_preview_uses_ffprobe_json_only_and_never_writes(client, m
         after = conn.execute("SELECT id, filepath, bpm, key_musical, key_camelot FROM tracks ORDER BY id").fetchall()
     assert after == before
 
+
+def test_quality_review_persists_ffprobe_findings_and_decisions(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    alpha_path = root / "library" / "house" / "alpha.mp3"
+    alpha_path.parent.mkdir(parents=True, exist_ok=True)
+    alpha_path.write_bytes(b"safe-quality-review-fixture")
+    with sqlite3.connect(db_path) as conn:
+        before = conn.execute("SELECT id, filepath, filename FROM tracks ORDER BY id").fetchall()
+
+    monkeypatch.setattr(
+        settings_service,
+        "run_preflight",
+        lambda: {"status": "ready", "checks": [
+            {"name": "binary_ffprobe", "status": "pass", "message": "ffprobe available", "metadata": {"source": "PATH"}},
+            {"name": "binary_ffmpeg", "status": "warn", "message": "ffmpeg missing", "metadata": {"source": "PATH"}},
+        ]},
+    )
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_ffprobe_binary", lambda: "/fake/ffprobe")
+
+    def fake_ffprobe(command, **kwargs):
+        assert command == ["/fake/ffprobe", "-v", "error", "-show_format", "-show_streams", "-of", "json", str(alpha_path)]
+        assert kwargs.get("shell", False) is False
+        return SimpleNamespace(returncode=0, stdout=json.dumps({
+            "format": {"format_name": "mp3", "bit_rate": "128000", "size": "1234"},
+            "streams": [{"codec_type": "audio", "codec_name": "mp3", "sample_rate": "44100", "channels": 2}],
+        }), stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_ffprobe)
+    empty = test_client.get("/api/quality/review")
+    assert empty.status_code == 200 and empty.json()["items"] == []
+
+    refreshed = test_client.post("/api/quality/review/preview-refresh")
+    assert refreshed.status_code == 200
+    payload = refreshed.json()
+    assert payload["safety"] == ["db_only_review", "probe_only", "no_transcode", "no_file_writes", "no_tag_writes"]
+    assert payload["low_bitrate_threshold_kbps"] == 192
+    alpha = next(item for item in payload["items"] if item["track_id"] == 1)
+    assert alpha["status"] == "probe_ok"
+    assert alpha["flags"] == ["missing_duration", "low_bitrate"]
+    assert alpha["relative_path"] == "library/house/alpha.mp3"
+    assert payload["summary"]["tracks_checked"] == len(before)
+    assert payload["summary"]["findings"] == len(before)
+
+    saved = test_client.patch("/api/quality/review/tracks/1", json={"decision": "reviewed", "note": "Checked locally"})
+    assert saved.status_code == 200
+    assert saved.json()["summary"]["reviewed"] == 1
+    assert next(item for item in saved.json()["items"] if item["track_id"] == 1)["note"] == "Checked locally"
+    reread = test_client.get("/api/quality/review")
+    assert next(item for item in reread.json()["items"] if item["track_id"] == 1)["decision"] == "reviewed"
+
+    invalid = test_client.patch("/api/quality/review/tracks/1", json={"decision": "transcode"})
+    assert invalid.status_code == 422
+    missing = test_client.patch("/api/quality/review/tracks/999", json={"decision": "ignore"})
+    assert missing.status_code == 404
+    with sqlite3.connect(db_path) as conn:
+        after = conn.execute("SELECT id, filepath, filename FROM tracks ORDER BY id").fetchall()
+        tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    assert after == before
+    assert {"quality_review_snapshots", "quality_review_decisions"}.issubset(tables)
+    assert alpha_path.read_bytes() == b"safe-quality-review-fixture"
+
     pending = test_client.post("/api/analysis/jobs/audio_quality_probe/run", json={"confirm": True})
     assert pending.status_code == 409
     assert "preview-only" in pending.json()["detail"]

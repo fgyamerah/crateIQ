@@ -98,6 +98,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/quality-review",
+        "purpose": "Database-only ffprobe finding review",
+        "access": "read-only saved preview; refresh and decisions deferred",
+        "endpoints": [
+            ("/api/quality/review", "dict", ("summary", "items", "safety")),
+        ],
+    },
+    {
         "route": "/metadata-repair",
         "purpose": "Deterministic metadata repair review",
         "access": "read-only list; review/apply actions deferred",
@@ -228,6 +236,10 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
     "/duplicates": [
         "/api/duplicates/review/preview-refresh (POST, bounded preview snapshot)",
         "/api/duplicates/review/groups/{group_id}/items/{track_id} (PATCH, DB-only review decision)",
+    ],
+    "/quality-review": [
+        "/api/quality/review/preview-refresh (POST, bounded ffprobe snapshot)",
+        "/api/quality/review/tracks/{track_id} (PATCH, DB-only review decision)",
     ],
     "/set-builder": ["/api/playlists/set-builder (POST)"],
     "/exports": ["/api/exports/validate (POST)", "/api/exports/run (POST)"],

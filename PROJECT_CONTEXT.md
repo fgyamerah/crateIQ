@@ -6,6 +6,12 @@
 
 ## Latest Milestone
 
+- 2026-08-05: Added `/quality-review`, a safe Audio Quality Review workspace
+  over the bounded ffprobe preview. Refresh stores only safe probe findings in
+  the selected library's `processed.db`; reviewed/ignore/review-later/
+  unresolved decisions and notes are DB-only and scoped to each snapshot.
+  It uses a neutral low-bitrate candidate flag for lossy codecs below 192 kbps
+  and has no transcode, remediation, file/tag, or DJ-database action.
 - 2026-08-05: Added `/duplicates`, a safe Duplicate Review workspace layered
   over the bounded rmlint preview. Refresh stores only a safe relative-path
   preview snapshot in the selected library's `processed.db`; keep, ignore,
@@ -32,7 +38,8 @@
   `/jobs`. It calls `ffprobe -v error -show_format -show_streams -of json`
   for at most ten validated imported tracks, returns only safe relative paths
   plus container, codec, duration, bitrate, sample rate, channels, size, and
-  neutral probe states. It has no run/apply action and never transcodes or
+  neutral probe states. Audio Quality Review can separately store DB-only
+  human review choices; it has no run/apply action and never transcodes or
   writes media, tags, local DB fields, MIK data, or DJ-app databases; missing
   ffprobe gates only this workflow.
 - 2026-08-05: Added optional, preview-only rmlint duplicate detection to

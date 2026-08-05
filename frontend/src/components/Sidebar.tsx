@@ -22,6 +22,7 @@ import {
   Heart,
   Settings,
   CopyCheck,
+  AudioLines,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { fetchReviewSummary } from '../api/insights'
@@ -59,6 +60,7 @@ const NAV: NavSection[] = [
     items: [
       { to: '/',             label: 'Library',          Icon: Library,       end: true },
       { to: '/quality',      label: 'Quality',          Icon: BarChart3 },
+      { to: '/quality-review', label: 'Quality Review', Icon: AudioLines },
       { to: '/issues',       label: 'Issues',           Icon: AlertTriangle, badgeKey: 'issues' },
       { to: '/enrichment',   label: 'Enrichment Queue', Icon: Sparkles,      badgeKey: 'enrichment' },
       { to: '/metadata-repair', label: 'Metadata Repair', Icon: Wrench,      badgeKey: 'repair' },

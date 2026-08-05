@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-05] — feat: add safe Audio Quality Review
+
+- Added `/quality-review`, which saves bounded ffprobe findings and optional
+  reviewed/ignore/review-later notes only in the selected library's local
+  index. Low-bitrate candidates are conservatively limited to lossy codecs
+  below 192 kbps and are never presented as a subjective quality verdict.
+- No transcode, remediation, file/tag write, move, copy, rename, deletion, or
+  DJ-database action is exposed. `/jobs` now links to this DB-only review page
+  while keeping the Audio Quality Probe explicitly probe-only.
+
 [2026-08-05] — feat: add safe Duplicate Review
 
 - Added `/duplicates` and a local-index-only review layer over the bounded
