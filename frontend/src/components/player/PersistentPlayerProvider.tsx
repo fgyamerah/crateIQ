@@ -79,6 +79,7 @@ export default function PersistentPlayerProvider({ children }: { children: React
       return
     }
 
+    audioRef.current?.pause()
     autoplayRef.current = Boolean(options.autoplay)
     setStatus('loading')
     setPlaying(false)
@@ -89,6 +90,7 @@ export default function PersistentPlayerProvider({ children }: { children: React
   const moveToIndex = useCallback((nextIndex: number, autoplay: boolean) => {
     const track = queue[nextIndex]
     if (!track) return
+    audioRef.current?.pause()
     autoplayRef.current = autoplay
     setCurrentIndex(nextIndex)
     setCurrentTrack(track)
@@ -101,12 +103,12 @@ export default function PersistentPlayerProvider({ children }: { children: React
 
   const previous = useCallback(() => {
     if (currentIndex <= 0) return
-    moveToIndex(currentIndex - 1, playing)
+    moveToIndex(currentIndex - 1, playing || autoplayRef.current)
   }, [currentIndex, moveToIndex, playing])
 
   const next = useCallback(() => {
     if (currentIndex < 0 || currentIndex >= queue.length - 1) return
-    moveToIndex(currentIndex + 1, playing)
+    moveToIndex(currentIndex + 1, playing || autoplayRef.current)
   }, [currentIndex, moveToIndex, playing, queue.length])
 
   const togglePlayback = useCallback(async () => {
@@ -206,6 +208,14 @@ export default function PersistentPlayerProvider({ children }: { children: React
             autoplayRef.current = false
             void play()
           }
+        }}
+        onPlaying={() => {
+          setStatus('ready')
+          setError(null)
+          setPlaying(true)
+        }}
+        onWaiting={() => {
+          if (currentTrack) setStatus('loading')
         }}
         onLoadedMetadata={(event) => {
           const nextDuration = event.currentTarget.duration

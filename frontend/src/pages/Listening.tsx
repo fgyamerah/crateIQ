@@ -136,7 +136,8 @@ export default function MusicReview() {
 
   const selectRelative = (delta: number) => {
     if (!tracks.length) return
-    const nextIndex = (selectedIndex + delta + tracks.length) % tracks.length
+    const nextIndex = selectedIndex + delta
+    if (nextIndex < 0 || nextIndex >= tracks.length) return
     const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
     selectTrack(tracks[nextIndex], keepPlaying)
   }
@@ -177,13 +178,19 @@ export default function MusicReview() {
       }
       if ((key === 'n' || event.key === 'ArrowRight') && tracks.length) {
         event.preventDefault()
-        const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
-        selectTrack(tracks[(index + 1 + tracks.length) % tracks.length], keepPlaying)
+        const nextIndex = index + 1
+        if (nextIndex < tracks.length) {
+          const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
+          selectTrack(tracks[nextIndex], keepPlaying)
+        }
       }
       if ((key === 'p' || event.key === 'ArrowLeft') && tracks.length) {
         event.preventDefault()
-        const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
-        selectTrack(tracks[(index - 1 + tracks.length) % tracks.length], keepPlaying)
+        const previousIndex = index - 1
+        if (previousIndex >= 0) {
+          const keepPlaying = persistentPlayer.playing && persistentPlayer.currentTrack?.id === selected?.track_id
+          selectTrack(tracks[previousIndex], keepPlaying)
+        }
       }
     }
     window.addEventListener('keydown', handler)
@@ -319,8 +326,8 @@ export default function MusicReview() {
 
               <div className="music-review-footer-actions">
                 <div>
-                  <button className="btn btn--ghost btn--sm" onClick={() => selectRelative(-1)} disabled={!tracks.length}>← Previous</button>
-                  <button className="btn btn--ghost btn--sm" onClick={() => selectRelative(1)} disabled={!tracks.length}>Next →</button>
+                  <button className="btn btn--ghost btn--sm" onClick={() => selectRelative(-1)} disabled={selectedIndex <= 0}>← Previous</button>
+                  <button className="btn btn--ghost btn--sm" onClick={() => selectRelative(1)} disabled={selectedIndex < 0 || selectedIndex >= tracks.length - 1}>Next →</button>
                 </div>
                 <button className="btn btn--primary" onClick={() => void save(selected.review_status)}>Save notes</button>
               </div>

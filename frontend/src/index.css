@@ -324,6 +324,7 @@ textarea {
 
 .persistent-player-utility { min-width: 0; display: grid; gap: 8px; }
 .persistent-player-state { min-height: 28px; display: flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 10px; line-height: 1.35; }
+.persistent-player-state.is-unavailable { color: #ffd7dd; }
 .persistent-player-state span { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .persistent-player-state button { flex: 0 0 auto; display: inline-flex; align-items: center; gap: 4px; padding: 3px 6px; border: 1px solid rgba(251,113,133,.3); border-radius: 5px; color: #ffd7dd; background: rgba(251,113,133,.09); font-size: 9.5px; cursor: pointer; }
 

@@ -237,6 +237,16 @@ export default function LibraryView() {
     relativePath: track.filepath,
     sourceLabel: 'Library',
   })), [items])
+
+  useEffect(() => {
+    const playerTrack = persistentPlayer.currentTrack
+    if (!playerTrack || playerTrack.sourceLabel !== 'Library') return
+    if (!items.some((track) => track.id === playerTrack.id)) return
+    setUi((current) => current.selectedId === playerTrack.id
+      ? current
+      : { ...current, selectedId: playerTrack.id })
+  }, [items, persistentPlayer.currentTrack])
+
   const total = trackPage?.total ?? 0
   const issueTotal = issues ? Object.values(issues).reduce((sum, n) => sum + (n || 0), 0) : 0
   const activeFilterCount = [ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter].filter(Boolean).length

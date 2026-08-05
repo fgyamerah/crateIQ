@@ -110,10 +110,10 @@ export default function PersistentBottomPlayer() {
 
       {!player.minimized && (
         <div className="persistent-player-utility">
-          <div className="persistent-player-state" aria-live="polite">
+          <div className={`persistent-player-state${player.status === 'unavailable' ? ' is-unavailable' : ''}`} aria-live="polite">
             {player.status === 'unavailable' ? (
               <>
-                <span>{player.error}</span>
+                <span title={player.error ?? undefined}>{player.error}</span>
                 <button type="button" onClick={player.retry}><RotateCcw size={12} /> Retry</button>
               </>
             ) : (
