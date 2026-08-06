@@ -4,277 +4,820 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CrateIQ — Command Reference</title>
-<link
-  rel="stylesheet"
-  href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css"
-  integrity="sha384-T3c6CoIi6uLrA9TneNEoa7RxnatzjcDSCmG1MXxSR1GAsXEV/Dwwykc2MPK8M2HN"
-  crossorigin="anonymous"
->
 <style>
-  body { font-size: 14px; }
-  .sidebar {
-    position: sticky;
-    top: 0;
-    height: 100vh;
-    overflow-y: auto;
-    border-right: 1px solid #dee2e6;
-    background: #f8f9fa;
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --bg:        #0e1117;
+    --bg2:       #161b22;
+    --bg3:       #1c2330;
+    --border:    #30363d;
+    --text:      #e6edf3;
+    --text-dim:  #8b949e;
+    --accent:    #58a6ff;
+    --accent2:   #3fb950;
+    --warn:      #d29922;
+    --code-bg:   #161b22;
+    --nav-w:     260px;
+    --font-mono: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
   }
-  .sidebar .nav-link { color: #495057; }
-  .sidebar .nav-link:hover,
-  .sidebar .nav-link.active { color: #0d6efd; background: transparent; }
-  pre code { font-size: 12px; }
-  section { scroll-margin-top: 1rem; }
+
+  html { scroll-behavior: smooth; }
+  body {
+    background: var(--bg); color: var(--text); font-family: var(--font-sans);
+    font-size: 14px; line-height: 1.6; display: flex; min-height: 100vh;
+  }
+
+  /* ── Navigation ── */
+  #nav {
+    position: fixed; top: 0; left: 0; width: var(--nav-w); height: 100vh;
+    background: var(--bg2); border-right: 1px solid var(--border);
+    overflow-y: auto; padding: 0 0 24px 0; z-index: 100;
+    scrollbar-width: thin; scrollbar-color: var(--border) transparent;
+  }
+  .nav-header {
+    padding: 16px 16px 12px; border-bottom: 1px solid var(--border);
+    position: sticky; top: 0; background: var(--bg2); z-index: 1;
+  }
+  .nav-header h1 { font-size: 13px; font-weight: 700; color: var(--accent);
+    letter-spacing: 0.5px; text-transform: uppercase; }
+  .nav-header p { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .nav-section { padding: 10px 0 4px 0; }
+  .nav-section-title {
+    font-size: 10px; font-weight: 700; color: var(--text-dim);
+    text-transform: uppercase; letter-spacing: 1px; padding: 0 16px 4px;
+  }
+  #nav a {
+    display: block; padding: 5px 16px 5px 20px; color: var(--text-dim);
+    text-decoration: none; font-size: 13px; border-left: 2px solid transparent;
+    transition: color .15s, border-color .15s, background .15s;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  #nav a:hover { color: var(--text); background: var(--bg3); border-left-color: var(--accent); }
+  #nav a.active { color: var(--accent); border-left-color: var(--accent);
+    background: rgba(88,166,255,0.08); }
+
+  /* ── Content ── */
+  #content { margin-left: var(--nav-w); flex: 1; max-width: 900px; padding: 40px 48px 80px; }
+  .page-header { margin-bottom: 40px; padding-bottom: 24px; border-bottom: 1px solid var(--border); }
+  .page-header h1 { font-size: 28px; font-weight: 700; margin-bottom: 8px; }
+  .page-header p { color: var(--text-dim); font-size: 15px; max-width: 600px; }
+  .meta-line { font-size: 12px; color: var(--text-dim); margin-top: 8px; }
+
+  /* ── Sections ── */
+  .section { margin-bottom: 56px; }
+  .section-title {
+    font-size: 13px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 1px; color: var(--text-dim);
+    border-bottom: 1px solid var(--border); padding-bottom: 8px; margin-bottom: 24px;
+  }
+
+  /* ── Command blocks ── */
+  .command-block {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 8px;
+    padding: 24px 28px; margin-bottom: 20px;
+  }
+  .command-name { font-size: 18px; font-weight: 700; color: var(--accent); margin-bottom: 6px; }
+  .command-desc { color: var(--text-dim); margin-bottom: 14px; }
+  .usage-line { margin-bottom: 16px; }
+  .usage-line code { background: var(--code-bg); padding: 4px 8px; border-radius: 4px;
+    font-family: var(--font-mono); font-size: 13px; color: var(--accent2); }
+
+  /* ── Notes ── */
+  .notes { margin: 12px 0; padding: 12px 16px; background: var(--bg3);
+    border-left: 3px solid var(--warn); border-radius: 0 4px 4px 0; }
+  .notes pre { font-family: var(--font-mono); font-size: 12px; color: var(--text-dim);
+    white-space: pre-wrap; }
+
+  /* ── Flags table ── */
+  h4 { font-size: 12px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-dim); margin: 16px 0 8px; }
+  .flag-table { width: 100%; border-collapse: collapse; font-size: 13px; margin-bottom: 16px; }
+  .flag-table th { text-align: left; color: var(--text-dim); font-size: 11px;
+    font-weight: 600; text-transform: uppercase; letter-spacing: 0.5px;
+    padding: 4px 8px; border-bottom: 1px solid var(--border); }
+  .flag-table td { padding: 6px 8px; border-bottom: 1px solid var(--bg3); vertical-align: top; }
+  .flag-cell { width: 35%; white-space: nowrap; }
+  .flag-cell code { font-family: var(--font-mono); font-size: 12px; color: var(--accent2); }
+  .meta { color: var(--warn); font-style: italic; }
+  .default { color: var(--text-dim); font-size: 11px; }
+
+  /* ── Examples ── */
+  pre { background: var(--code-bg); border: 1px solid var(--border);
+    border-radius: 6px; padding: 14px 16px; overflow-x: auto; }
+  pre code { font-family: var(--font-mono); font-size: 12px; color: var(--text);
+    white-space: pre; }
 </style>
 </head>
-<body data-bs-spy="scroll" data-bs-target="#sidebar-nav" data-bs-offset="20">
+<body>
 
-<div class="container-fluid">
-  <div class="row">
+<nav id="nav">
+  <div class="nav-header">
+    <h1>CrateIQ</h1>
+    <p>Command Reference</p>
+  </div>
+  <div class="nav-section"><div class="nav-section-title">MAIN PIPELINE</div>
+<a href="#main">MAIN</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">LIBRARY MAINTENANCE</div>
+<a href="#dedupe">dedupe</a>
+<a href="#metadata-clean">metadata-clean</a>
+<a href="#tag-normalize">tag-normalize</a>
+<a href="#analyze-missing">analyze-missing</a>
+<a href="#audit-quality">audit-quality</a>
+<a href="#artist-folder-clean">artist-folder-clean</a>
+<a href="#artist-merge">artist-merge</a>
+<a href="#db-prune-stale">db-prune-stale</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">AUDIO CONVERSION</div>
+<a href="#convert-audio">convert-audio</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">PLAYLISTS AND EXPORT</div>
+<a href="#playlists">playlists</a>
+<a href="#rekordbox-export">rekordbox-export</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">CUES AND SETS</div>
+<a href="#cue-suggest">cue-suggest</a>
+<a href="#set-builder">set-builder</a>
+<a href="#harmonic-suggest">harmonic-suggest</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">LABEL INTELLIGENCE</div>
+<a href="#label-intel">label-intel</a>
+<a href="#label-clean">label-clean</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">METADATA INTELLIGENCE</div>
+<a href="#metadata-sanitize">metadata-sanitize</a>
+<a href="#artist-intelligence">artist-intelligence</a>
+<a href="#ai-normalize">ai-normalize</a>
+<a href="#metadata-enrich-online">metadata-enrich-online</a>
+<a href="#review-queue">review-queue</a>
+<a href="#filename-normalize">filename-normalize</a>
+</div>
+<div class="nav-section"><div class="nav-section-title">DOCS</div>
+<a href="#generate-docs">generate-docs</a>
+<a href="#validate-docs">validate-docs</a>
+</div>
+</nav>
 
-    <!-- Sidebar -->
-    <nav id="sidebar-nav" class="col-md-3 col-lg-2 d-none d-md-flex flex-column sidebar py-3 ps-3 pe-0">
-      <div class="mb-3">
-        <strong class="d-block">CrateIQ</strong>
-        <span class="text-muted" style="font-size:11px">Command Reference &nbsp;·&nbsp; v2.0.0</span>
-      </div>
-      <div class="mb-1" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#6c757d;font-weight:700;">
-        Preamble
-      </div>
-      <ul class="nav flex-column mb-3 small">
-        <li class="nav-item"><a class="nav-link py-1 px-3" href="#core-pipeline">Core Pipeline</a></li>
-        <li class="nav-item"><a class="nav-link py-1 px-3" href="#operational-states">Operational States</a></li>
-        <li class="nav-item"><a class="nav-link py-1 px-3" href="#safety-guarantees">Safety Guarantees</a></li>
-      </ul>
-      <div class="mb-1" style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:#6c757d;font-weight:700;">
-        Commands
-      </div>
-      <ul class="nav flex-column small">
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#metadata-sanitize">metadata-sanitize</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#ai-normalize">ai-normalize</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#artist-intelligence">artist-intelligence</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#metadata-enrich-online">metadata-enrich-online</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#review-queue">review-queue</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#filename-normalize">filename-normalize</a></li>
-      <li class="nav-item"><a class="nav-link py-1 px-3 small" href="#library-organize">library-organize</a></li>
-      </ul>
-    </nav>
+<main id="content">
+  <div class="page-header">
+    <h1>CrateIQ — Command Reference</h1>
+    <p>Local-first DJ library automation toolkit. Ubuntu Studio 24 → Rekordbox on Windows.</p>
+    <div class="meta-line">Version 1.7.0 &nbsp;·&nbsp; Generated 2026-08-06</div>
+  </div>
 
-    <!-- Main content -->
-    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-5 py-4">
+  <section id="main-pipeline" class="section"><h2 class="section-title">MAIN PIPELINE</h2>
 
-      <div class="mb-4 pb-3 border-bottom">
-        <h1 class="h3 mb-1">CrateIQ Command Reference</h1>
-        <span class="text-muted small">Version 2.0.0 &nbsp;·&nbsp; Updated 2026-04-20</span>
-      </div>
+<div id="main" class="command-block">
+  <h3 class="command-name">MAIN</h3>
+  <p class="command-desc">Run the full 9-step inbox pipeline: QC → dedupe → organize → sanitize → analyze → tag → cue-suggest → playlists → report.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py [FLAGS]</code></div>
+  <div class="notes"><pre>MIK-FIRST POLICY:
+  Mixed In Key is the authoritative source for BPM, key, and cue data.
+  The pipeline NEVER overwrites existing BPM, key, or cue values.
+  Analysis only runs for tracks where those values are absent.
 
-      <!-- Core Pipeline -->
-      <section id="core-pipeline" class="mb-5 pb-3 border-bottom">
-        <h2 class="h5 mb-3">Core Pipeline</h2>
-        <p class="mb-2"><code class="bg-light border rounded px-2 py-1">filename-normalize</code> <span class='text-muted'>→</span> <code class="bg-light border rounded px-2 py-1">metadata-sanitize</code> <span class='text-muted'>→</span> <code class="bg-light border rounded px-2 py-1">ai-normalize</code> <span class='text-muted'>→</span> <code class="bg-light border rounded px-2 py-1">artist-intelligence</code> <span class='text-muted'>→</span> <code class="bg-light border rounded px-2 py-1">metadata-enrich-online</code> <span class='text-muted'>→</span> <code class="bg-light border rounded px-2 py-1">library-organize</code></p>
-        <p class="text-muted small mb-0">
-          Each stage is standalone — run one, or compose the full pipeline.<br>
-          Preview by default. Nothing writes without <code>--apply</code>.
-        </p>
-      </section>
+IDEMPOTENCY:
+  Already-processed tracks (TXXX:PROCESSED=1 + status=ok in DB) are
+  skipped automatically — safe to re-run at any time.
 
-      <!-- Operational States -->
-      <section id="operational-states" class="mb-5 pb-3 border-bottom">
-        <h2 class="h5 mb-3">Operational States</h2>
-        <p class="text-muted small">Applies to <code>metadata-enrich-online</code> results.</p>
-        <table class="table table-sm table-bordered small">
-          <thead class="table-light">
-            <tr><th>State</th><th>Condition</th><th>Action</th></tr>
-          </thead>
-          <tbody>
-            <tr><td><span class="badge bg-secondary">APPLY</span></td><td><small>conf ≥ 0.80, all safety rules pass</small></td><td><small>Written with <code>--apply</code></small></td></tr>
-<tr><td><span class="badge bg-secondary">REVIEW</span></td><td><small>0.70 ≤ conf &lt; 0.80</small></td><td><small>Added to review queue</small></td></tr>
-<tr><td><span class="badge bg-secondary">SKIP</span></td><td><small>Hard safety block fires</small></td><td><small>Moved to IGNORED with <code>--move-ignored</code></small></td></tr>
-          </tbody>
-        </table>
-      </section>
+Supported audio formats: .mp3 .flac .wav .aiff .aif .m4a .ogg .opus</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Run all detection and analysis but make no file changes. Does not write tags, move files, or modify the DB.</td></tr>
+<tr><td class="flag-cell"><code>--skip-beets</code></td><td class="desc-cell">Skip Beets/MusicBrainz lookup. Uses the Python filename-parser fallback for organizing files. Useful when Beets is slow, unavailable, or gives wrong results.</td></tr>
+<tr><td class="flag-cell"><code>--skip-analysis</code></td><td class="desc-cell">[Legacy — rarely needed] Force-skip all BPM/key analysis even for tracks missing those values. The pipeline is MIK-first and only fills gaps by default; use this only to skip analysis entirely.</td></tr>
+<tr><td class="flag-cell"><code>--reanalyze</code></td><td class="desc-cell">Re-run BPM+key analysis on sorted library tracks that are missing BPM or key in the DB. Does not process new inbox files.</td></tr>
+<tr><td class="flag-cell"><code>--force-cue-suggest</code></td><td class="desc-cell">Enable cue point suggestion after tag writing. DISABLED by default (MIK-first policy: cue data is owned by MIK). Only use this if you are not using Mixed In Key.</td></tr>
+<tr><td class="flag-cell"><code>--label-enrich-from-library</code></td><td class="desc-cell">Enrich the label database using real BPM/genre data from all processed tracks. Reads the TPUB/organization tag from every status=ok track in the DB — no audio re-analysis.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Override the music root directory for this run. Replaces DJ_MUSIC_ROOT and all derived paths (inbox, library, playlists, logs, DB) with paths relative to DIR.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug-level logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py
+python3 pipeline.py --dry-run
+python3 pipeline.py --skip-beets
+python3 pipeline.py --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py --reanalyze
+python3 pipeline.py --force-cue-suggest
+python3 pipeline.py --label-enrich-from-library</code></pre>
+</div>
 
-      <!-- Safety Guarantees -->
-      <section id="safety-guarantees" class="mb-5 pb-3 border-bottom">
-        <h2 class="h5 mb-3">Safety Guarantees</h2>
-        <ul class="small mb-0">
-          <li>Artist field: <strong>never proposed or modified</strong></li>
-<li>BPM, key, and cues: <strong>never modified</strong> — Mixed In Key owns these</li>
-<li>Version mismatch: conflicting version tokens → confidence capped at 0.74</li>
-<li>Low artist similarity (&lt; 0.90, no ISRC anchor): confidence capped at 0.74</li>
-<li>ISRC exact match: overrides all formula limits → confidence 0.98</li>
-<li>Preview by default on every command — nothing writes without <code>--apply</code></li>
-        </ul>
-      </section>
-
-      <!-- Command sections -->
-      <section id="metadata-sanitize" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>metadata-sanitize</code></h2>
-  <p class="text-muted">Deterministic offline cleaning of all metadata fields. Removes URL watermarks, promo artifacts, DJ pool tags, malformed ISRCs, and BPM/key comment noise.</p>
-  <div class="alert alert-warning py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Idempotent — re-running a clean file produces no further changes.
-Safe to run before any AI or enrichment step.</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3"><li>Strips URL watermarks, promo tags, and DJ pool artifacts from every metadata field</li>
-<li>Removes malformed ISRCs and BPM/key noise embedded in comment fields</li>
-<li>Runs fully offline — no network, no AI, no external dependencies</li>
-<li>Safe to repeat — already-clean files produce no further changes</li></ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py metadata-sanitize --input ~/Music/inbox --apply</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="text-nowrap"><code>--input DIR</code></td><td class="small text-muted">Directory of audio files to process.</td></tr>
-<tr><td class="text-nowrap"><code>--apply</code></td><td class="small text-muted">Write changes to files. Without this flag, preview only.</td></tr>
-<tr><td class="text-nowrap"><code>--verbose</code></td><td class="small text-muted">Enable debug logging.</td></tr></tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py metadata-sanitize --input ~/Music/inbox
-python3 pipeline.py metadata-sanitize --input ~/Music/inbox --apply</code></pre>
 </section>
+<section id="library-maintenance" class="section"><h2 class="section-title">LIBRARY MAINTENANCE</h2>
 
-<section id="ai-normalize" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>ai-normalize</code></h2>
-  <p class="text-muted">Local AI (Ollama) metadata proposals for artist, title, version, label, remixers, and featured artists. Preview by default; --apply to write. BPM, key, and cues are never touched.</p>
-  <div class="alert alert-warning py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Min confidence: 0.75 — proposals below threshold are skipped, not applied.
---pre-sanitize: runs metadata-sanitize before inference (recommended).</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3"><li>Proposes improved artist, title, version, label, and remixer values via a local LLM</li>
-<li>Uses Ollama — all inference runs on your machine, no data sent externally</li>
-<li>Skips proposals below 0.75 confidence; BPM, key, and cues are never touched</li>
-<li>Use <code>--pre-sanitize</code> to clean fields before inference in a single pass</li></ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py ai-normalize --input ~/Music/inbox --pre-sanitize --apply</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="text-nowrap"><code>--input DIR</code></td><td class="small text-muted">Directory of audio files to process.</td></tr>
-<tr><td class="text-nowrap"><code>--apply</code></td><td class="small text-muted">Write accepted proposals to files.</td></tr>
-<tr><td class="text-nowrap"><code>--pre-sanitize</code></td><td class="small text-muted">Run metadata-sanitize before AI inference.</td></tr>
-<tr><td class="text-nowrap"><code>--min-confidence 0.75</code></td><td class="small text-muted">Minimum confidence to accept a proposal.</td></tr>
-<tr><td class="text-nowrap"><code>--model MODEL</code></td><td class="small text-muted">Ollama model to use. Default: OLLAMA_DEFAULT_MODEL env.</td></tr>
-<tr><td class="text-nowrap"><code>--verbose</code></td><td class="small text-muted">Enable debug logging.</td></tr></tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py ai-normalize --input ~/Music/inbox
+<div id="dedupe" class="command-block">
+  <h3 class="command-name">dedupe</h3>
+  <p class="command-desc">Detect and quarantine duplicate audio files across the library.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py dedupe [FLAGS]</code></div>
+  <div class="notes"><pre>Detection cases:
+  Case A  Exact duplicate (same SHA-256 hash)       -&gt; quarantine all but one
+  Case B  Same track, different quality/format       -&gt; quarantine lower quality
+  Case C  Different versions (Extended vs Radio)     -&gt; report only, never moved
+
+Quality priority (highest first):
+  WAV/AIFF &gt; FLAC &gt; MP3 320 &gt; MP3 256 &gt; M4A &gt; MP3 192 &gt; OGG/OPUS &gt; MP3 128</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Preview duplicate groups — move no files.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan this directory instead of pulling tracks from the database.</td></tr>
+<tr><td class="flag-cell"><code>--quarantine-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Directory to move duplicate files into. <span class="default">(default: library/sorted/_duplicates)</span></td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py dedupe --dry-run
+python3 pipeline.py dedupe
+python3 pipeline.py dedupe --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py dedupe --quarantine-dir /music/review/dupes/</code></pre>
+</div>
+
+
+<div id="metadata-clean" class="command-block">
+  <h3 class="command-name">metadata-clean</h3>
+  <p class="command-desc">Strip URL watermarks and promo junk from all metadata fields across the library.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py metadata-clean [FLAGS]</code></div>
+  <div class="notes"><pre>Fields cleaned: title, artist, album, albumartist, genre, comment,
+  organization/label (TPUB), grouping (TIT1), catalog number
+
+What is removed:
+  URLs/domains      https://djsoundtop.com, TraxCrate.com, www.djcity.com
+  DJ pool phrases   fordjonly, djcity, zipdj, musicafresca, promo only
+  Promo phrases     official audio, free download, downloaded from
+  Comment noise     Camelot keys, BPM strings (e.g. 6A | Gm | 121 BPM)</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Preview all field changes — make no file writes.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan audio files in this directory instead of pulling from the DB.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py metadata-clean --dry-run
+python3 pipeline.py metadata-clean
+python3 pipeline.py metadata-clean --path /mnt/music_ssd/KKDJ/</code></pre>
+</div>
+
+
+<div id="tag-normalize" class="command-block">
+  <h3 class="command-name">tag-normalize</h3>
+  <p class="command-desc">Standardize MP3 ID3 tag format for Rekordbox (ID3v2.4 → ID3v2.3, remove ID3v1).</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py tag-normalize [FLAGS]</code></div>
+  <div class="notes"><pre>Non-MP3 files (FLAC, WAV, AIFF, M4A, OGG, OPUS) are always skipped.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Detect issues without writing any files.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan this directory instead of the default sorted library.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py tag-normalize --dry-run
+python3 pipeline.py tag-normalize
+python3 pipeline.py tag-normalize --path /mnt/music_ssd/KKDJ/sorted/</code></pre>
+</div>
+
+
+<div id="analyze-missing" class="command-block">
+  <h3 class="command-name">analyze-missing</h3>
+  <p class="command-desc">Detect BPM and key for tracks missing that data — writes to DB and audio tags.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py analyze-missing [FLAGS]</code></div>
+  <div class="notes"><pre>Safe to run multiple times — will not overwrite valid existing values.
+This is the MIK-first analysis: only fills gaps left by Mixed In Key.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--path <span class="meta">PATH</span></code></td><td class="desc-cell">Restrict analysis to tracks under this directory. <span class="default">(default: entire library)</span></td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Run detection but do not write to DB or audio file tags.</td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Maximum number of tracks to process in this run.</td></tr>
+<tr><td class="flag-cell"><code>--timeout-sec <span class="meta">N</span></code></td><td class="desc-cell">Stop processing after this many seconds. <span class="default">(default: no timeout)</span></td></tr>
+<tr><td class="flag-cell"><code>--min-confidence <span class="meta">FLOAT</span></code></td><td class="desc-cell">Minimum BPM confidence score to accept a result. <span class="default">(default: 0.0 (accept all))</span></td></tr>
+<tr><td class="flag-cell"><code>--file-timeout-sec <span class="meta">N</span></code></td><td class="desc-cell">Hard per-file wall-clock timeout in seconds. <span class="default">(default: 10)</span></td></tr>
+<tr><td class="flag-cell"><code>--no-isolate-corrupt</code></td><td class="desc-cell">Disable automatic corrupt-file isolation (isolation is ON by default).</td></tr>
+<tr><td class="flag-cell"><code>--corrupt-dir <span class="meta">PATH</span></code></td><td class="desc-cell">Base directory for quarantined corrupt files.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py analyze-missing
+python3 pipeline.py analyze-missing --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py analyze-missing --limit 50 --timeout-sec 300
+python3 pipeline.py analyze-missing --dry-run --verbose
+python3 pipeline.py analyze-missing --file-timeout-sec 20</code></pre>
+</div>
+
+
+<div id="audit-quality" class="command-block">
+  <h3 class="command-name">audit-quality</h3>
+  <p class="command-desc">Audit library for codec/bitrate quality — classify into LOSSLESS/HIGH/MEDIUM/LOW/UNKNOWN.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py audit-quality [FLAGS]</code></div>
+  <div class="notes"><pre>Quality tiers:
+  LOSSLESS  FLAC / ALAC / WAV / AIFF (codec-based; bitrate irrelevant)
+  HIGH      lossy codec (MP3/AAC) &gt;= 256 kbps
+  MEDIUM    lossy codec 192-255 kbps
+  LOW       lossy codec &lt; 192 kbps  (threshold: --min-lossy-kbps)
+  UNKNOWN   ffprobe could not read file or codec/bitrate unrecognized
+
+QUALITY tag locations:
+  MP3  : TXXX:QUALITY  (ID3v2.3 custom text frame)
+  FLAC : QUALITY       (Vorbis comment)
+  M4A  : ----:com.apple.iTunes:QUALITY  (MP4 freeform atom)
+  AIFF/WAV : skipped safely (tagging unreliable; no error raised)</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan this directory. <span class="default">(default: library/sorted)</span></td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Probe and classify; log intended actions; write no files.</td></tr>
+<tr><td class="flag-cell"><code>--move-low-quality <span class="meta">DIR</span></code></td><td class="desc-cell">Move only LOW quality files to DIR (folder structure preserved).</td></tr>
+<tr><td class="flag-cell"><code>--write-tags</code></td><td class="desc-cell">Write a QUALITY tag to each file. UNKNOWN files are skipped.</td></tr>
+<tr><td class="flag-cell"><code>--report-format <span class="meta">FORMATS</span></code></td><td class="desc-cell">Comma-separated list of output formats: csv, json. <span class="default">(default: csv,json)</span></td></tr>
+<tr><td class="flag-cell"><code>--min-lossy-kbps <span class="meta">N</span></code></td><td class="desc-cell">Bitrate threshold (kbps) separating LOW from MEDIUM. <span class="default">(default: 192)</span></td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging and per-file output.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py audit-quality
+python3 pipeline.py audit-quality --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py audit-quality --dry-run --verbose
+python3 pipeline.py audit-quality --move-low-quality /music/_low_quality
+python3 pipeline.py audit-quality --write-tags
+python3 pipeline.py audit-quality --report-format csv
+python3 pipeline.py audit-quality --min-lossy-kbps 160</code></pre>
+</div>
+
+
+<div id="artist-folder-clean" class="command-block">
+  <h3 class="command-name">artist-folder-clean</h3>
+  <p class="command-desc">Fix bad artist folder names across the library (Camelot prefixes, URL junk, symbols).</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py artist-folder-clean [FLAGS]</code></div>
+  <div class="notes"><pre>Detection rules:
+  pure_camelot    e.g. &#x27;10B&#x27;, &#x27;1A&#x27;               -&gt; review
+  camelot_prefix  e.g. &#x27;1A - Afrikan Roots&#x27;       -&gt; rename/merge
+  bracket_junk    e.g. &#x27;[HouseGrooveSA]&#x27;          -&gt; review
+  url_junk        e.g. &#x27;djcity.com&#x27;               -&gt; review
+  symbol_heavy    &lt; 40% alphanumeric chars        -&gt; review</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Scan and report only. No file moves (same as default).</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Apply all recoverable renames and merges. Unrecoverable folders go to the review report only.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan this directory instead of the default sorted library.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py artist-folder-clean --dry-run
+python3 pipeline.py artist-folder-clean --apply
+python3 pipeline.py artist-folder-clean --apply --path /mnt/music_ssd/KKDJ/</code></pre>
+</div>
+
+
+<div id="artist-merge" class="command-block">
+  <h3 class="command-name">artist-merge</h3>
+  <p class="command-desc">Merge artist folder spelling variants into a single canonical folder.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py artist-merge [FLAGS]</code></div>
+  
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Scan and report only. No file moves.</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Apply safe merges. Uncertain merges go to the review report.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan this directory instead of the default sorted library.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py artist-merge --dry-run
+python3 pipeline.py artist-merge --apply
+python3 pipeline.py artist-merge --apply --path /mnt/music_ssd/KKDJ/</code></pre>
+</div>
+
+
+<div id="db-prune-stale" class="command-block">
+  <h3 class="command-name">db-prune-stale</h3>
+  <p class="command-desc">Mark DB rows stale when the file no longer exists on disk.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py db-prune-stale [FLAGS]</code></div>
+  <div class="notes"><pre>Stale rows are marked status=&#x27;stale&#x27; — they are NEVER deleted.
+After pruning, rekordbox-export will no longer warn about them.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Report stale rows without marking them.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Library root to search for files. <span class="default">(default: RB_LINUX_ROOT from config (/mnt/music_ssd))</span></td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py db-prune-stale --dry-run
+python3 pipeline.py db-prune-stale
+python3 pipeline.py db-prune-stale --path /mnt/music_ssd/KKDJ/</code></pre>
+</div>
+
+</section>
+<section id="audio-conversion" class="section"><h2 class="section-title">AUDIO CONVERSION</h2>
+
+<div id="convert-audio" class="command-block">
+  <h3 class="command-name">convert-audio</h3>
+  <p class="command-desc">Convert .m4a files to .aiff with parallel ffmpeg, preserving metadata and archiving originals.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py convert-audio --src PATH --dst PATH --archive PATH [FLAGS]</code></div>
+  <div class="notes"><pre>Workflow per file:
+  1. ffprobe validates source (corrupt files skipped)
+  2. ffmpeg converts with metadata copied (-map_metadata 0)
+  3. Output verified: ffprobe check + duration delta &lt;= tolerance
+  4. On success: original .m4a moved to --archive
+  5. On failure: original left untouched; broken output removed
+
+Output codec: pcm_s16be (16-bit big-endian PCM AIFF).
+
+Environment overrides:
+  FFMPEG_BIN   path to ffmpeg binary (default: ffmpeg)
+  FFPROBE_BIN  path to ffprobe binary (default: ffprobe)</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--src <span class="meta">PATH</span></code></td><td class="desc-cell">Root directory containing .m4a files (scanned recursively). REQUIRED.</td></tr>
+<tr><td class="flag-cell"><code>--dst <span class="meta">PATH</span></code></td><td class="desc-cell">Root directory for output .aiff files. REQUIRED.</td></tr>
+<tr><td class="flag-cell"><code>--archive <span class="meta">PATH</span></code></td><td class="desc-cell">Root directory where original .m4a files are moved after success. REQUIRED.</td></tr>
+<tr><td class="flag-cell"><code>--workers <span class="meta">N</span></code></td><td class="desc-cell">Number of parallel ffmpeg workers. <span class="default">(default: 4)</span></td></tr>
+<tr><td class="flag-cell"><code>--overwrite</code></td><td class="desc-cell">Re-convert files that already have a .aiff output in --dst.</td></tr>
+<tr><td class="flag-cell"><code>--verify-tolerance-sec <span class="meta">SECS</span></code></td><td class="desc-cell">Maximum allowed duration difference (seconds) between source and output. <span class="default">(default: 1.0)</span></td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Probe sources and show what would be converted. Write no files.</td></tr>
+<tr><td class="flag-cell"><code>--no-progress</code></td><td class="desc-cell">Disable the tqdm progress bar even when tqdm is installed.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py convert-audio \
+    --src /downloads/m4a \
+    --dst /mnt/music_ssd/KKDJ/inbox \
+    --archive /mnt/music_ssd/originals_m4a
+python3 pipeline.py convert-audio \
+    --src /downloads --dst /music --archive /archive \
+    --workers 8 --verify-tolerance-sec 2.0 --dry-run</code></pre>
+</div>
+
+</section>
+<section id="playlists-and-export" class="section"><h2 class="section-title">PLAYLISTS AND EXPORT</h2>
+
+<div id="playlists" class="command-block">
+  <h3 class="command-name">playlists</h3>
+  <p class="command-desc">Generate all M3U playlists and Rekordbox XML from the library DB.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py playlists [FLAGS]</code></div>
+  <div class="notes"><pre>Output structure:
+  M3U_DIR/              letter playlists (A.m3u8...Z.m3u8) + _all_tracks.m3u8
+  M3U_DIR/Genre/        Afro House.m3u8, Amapiano.m3u8 ...
+  M3U_DIR/Energy/       Peak.m3u8, Mid.m3u8, Chill.m3u8
+  M3U_DIR/Combined/     Peak Afro House.m3u8, Chill Deep House.m3u8 ...
+  M3U_DIR/Key/          1A.m3u8 ... 12B.m3u8
+  M3U_DIR/Route/        Acapella.m3u8, Tool.m3u8, Vocal.m3u8
+  XML_DIR/              rekordbox_library.xml</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Show what would be written — create no files.</td></tr>
+<tr><td class="flag-cell"><code>--no-genre</code></td><td class="desc-cell">Skip Genre/ playlists.</td></tr>
+<tr><td class="flag-cell"><code>--no-energy</code></td><td class="desc-cell">Skip Energy/ playlists.</td></tr>
+<tr><td class="flag-cell"><code>--no-combined</code></td><td class="desc-cell">Skip Combined/ playlists.</td></tr>
+<tr><td class="flag-cell"><code>--no-key</code></td><td class="desc-cell">Skip Key/ (Camelot) playlists.</td></tr>
+<tr><td class="flag-cell"><code>--no-route</code></td><td class="desc-cell">Skip Route/ playlists (Acapella, Tool, Vocal).</td></tr>
+<tr><td class="flag-cell"><code>--no-xml</code></td><td class="desc-cell">Skip Rekordbox XML export.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Override the music root directory for all output paths.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py playlists --dry-run
+python3 pipeline.py playlists
+python3 pipeline.py playlists --no-xml
+python3 pipeline.py playlists --no-key --no-route
+python3 pipeline.py playlists --path /mnt/music_ssd/</code></pre>
+</div>
+
+
+<div id="rekordbox-export" class="command-block">
+  <h3 class="command-name">rekordbox-export</h3>
+  <p class="command-desc">Export library as Rekordbox-ready M3U playlists for Windows (Linux→Windows path mapping).</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py rekordbox-export [FLAGS]</code></div>
+  <div class="notes"><pre>MIK-FIRST POLICY:
+  Rekordbox XML is owned by Rekordbox + Mixed In Key.
+  XML export is DISABLED by default to prevent data loss.
+  Use --force-xml only if you are not using Mixed In Key.
+
+Path mapping (defaults):
+  Linux root  : /mnt/music_ssd   (= root of M: drive on Windows)
+  Windows     : M:\
+
+Environment overrides:
+  RB_LINUX_ROOT   Linux path that is the root of the Windows drive
+  RB_WIN_DRIVE    Windows drive letter (e.g. M)</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Preview what would be exported. Tag warnings still shown.</td></tr>
+<tr><td class="flag-cell"><code>--force-xml</code></td><td class="desc-cell">Enable Rekordbox XML generation. NOT RECOMMENDED when using Mixed In Key — toolkit XML will overwrite MIK cue data on next Rekordbox import.</td></tr>
+<tr><td class="flag-cell"><code>--no-xml</code></td><td class="desc-cell">[No-op] XML is disabled by default. Use --force-xml to enable.</td></tr>
+<tr><td class="flag-cell"><code>--no-m3u</code></td><td class="desc-cell">Skip M3U playlist generation.</td></tr>
+<tr><td class="flag-cell"><code>--win-drive <span class="meta">LETTER</span></code></td><td class="desc-cell">Windows drive letter for path mapping. <span class="default">(default: M (from RB_WIN_DRIVE env or config))</span></td></tr>
+<tr><td class="flag-cell"><code>--linux-root <span class="meta">PATH</span></code></td><td class="desc-cell">Linux path corresponding to the root of the Windows drive. <span class="default">(default: /mnt/music_ssd)</span></td></tr>
+<tr><td class="flag-cell"><code>--export-root <span class="meta">PATH</span></code></td><td class="desc-cell">Override the export output root directory.</td></tr>
+<tr><td class="flag-cell"><code>--recover-missing-analysis</code></td><td class="desc-cell">Run inline BPM/key analysis for tracks missing those values before deciding to exclude them. For large libraries, prefer running analyze-missing separately.</td></tr>
+<tr><td class="flag-cell"><code>--recover-limit <span class="meta">N</span></code></td><td class="desc-cell">Maximum tracks to analyse inline when --recover-missing-analysis is active. <span class="default">(default: unlimited)</span></td></tr>
+<tr><td class="flag-cell"><code>--recover-timeout-sec <span class="meta">N</span></code></td><td class="desc-cell">Stop inline analysis after N seconds when --recover-missing-analysis is active.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py rekordbox-export --dry-run
+python3 pipeline.py rekordbox-export
+python3 pipeline.py rekordbox-export --no-m3u
+python3 pipeline.py rekordbox-export --force-xml       # NOT recommended with MIK
+python3 pipeline.py rekordbox-export --recover-missing-analysis
+python3 pipeline.py rekordbox-export \
+    --recover-missing-analysis \
+    --recover-limit 50 \
+    --recover-timeout-sec 300</code></pre>
+</div>
+
+</section>
+<section id="cues-and-sets" class="section"><h2 class="section-title">CUES AND SETS</h2>
+
+<div id="cue-suggest" class="command-block">
+  <h3 class="command-name">cue-suggest</h3>
+  <p class="command-desc">Auto-detect cue points (intro / drop / outro) and store in the DB.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py cue-suggest [FLAGS]</code></div>
+  <div class="notes"><pre>NOTE: These are SUGGESTED positions only. Native Rekordbox hot-cues are NOT written.
+Review all cues in Rekordbox after analysis.
+
+MIK-FIRST POLICY:
+  Cue data is owned by Mixed In Key / Rekordbox.
+  This subcommand is safe to use explicitly, but cue-suggest is
+  DISABLED inside the main pipeline by default.
+  Use `python3 pipeline.py --force-cue-suggest` to enable it there.
+
+Cue types detected:
+  intro_start   bar 1 (always present, confidence 1.0)
+  mix_in        first stable DJ entry point
+  groove_start  first full-arrangement section
+  drop          main energy arrival / impact
+  breakdown     energy/density reduction after peak
+  outro_start   beginning of mix-out section
+
+Output files:
+  logs/cue_suggest/cue_suggestions.json     (master, all tracks)
+  logs/cue_suggest/cue_suggestions.csv      (wide format, 1 row/track)
+  logs/cue_suggest/runs/cues_TIMESTAMP.csv  (per-run detail log)</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Analyse and print cue points. No DB writes.</td></tr>
+<tr><td class="flag-cell"><code>--min-confidence <span class="meta">FLOAT</span></code></td><td class="desc-cell">Minimum confidence score to store a cue point. <span class="default">(default: 0.4)</span></td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Stop after analysing this many tracks.</td></tr>
+<tr><td class="flag-cell"><code>--track <span class="meta">NAME</span></code></td><td class="desc-cell">Only analyse tracks whose artist, title, or filename contains NAME (case-insensitive).</td></tr>
+<tr><td class="flag-cell"><code>--export-format <span class="meta">FMT</span></code></td><td class="desc-cell">Comma-separated output formats: json, csv. <span class="default">(default: both)</span></td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Analyse audio files in this directory instead of the library DB.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py cue-suggest --dry-run
+python3 pipeline.py cue-suggest
+python3 pipeline.py cue-suggest --limit 20 --track &#x27;Black Coffee&#x27;
+python3 pipeline.py cue-suggest --export-format json
+python3 pipeline.py cue-suggest --path /music/inbox/</code></pre>
+</div>
+
+
+<div id="set-builder" class="command-block">
+  <h3 class="command-name">set-builder</h3>
+  <p class="command-desc">Build an energy-curve DJ set from the library database and export as M3U + CSV.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py set-builder [FLAGS]</code></div>
+  <div class="notes"><pre>Phases (always in this order):
+  warmup   gentle intro, Chill/Mid energy
+  build    rising energy
+  peak     high-energy section
+  release  brief energy drop after peak
+  outro    wind-down / closing
+
+Output files:
+  SET_BUILDER_OUTPUT_DIR/&lt;name&gt;.m3u8   playable playlist
+  SET_BUILDER_OUTPUT_DIR/&lt;name&gt;.csv    full metadata + transition notes
+
+Default output location: /mnt/music_ssd/KKDJ/_SETS/</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Preview the set. Write no files.</td></tr>
+<tr><td class="flag-cell"><code>--vibe <span class="meta">VIBE</span></code></td><td class="desc-cell">Phase-weight preset: warm, peak, deep, driving. <span class="default">(default: peak)</span></td></tr>
+<tr><td class="flag-cell"><code>--duration <span class="meta">MINS</span></code></td><td class="desc-cell">Target set duration in minutes. <span class="default">(default: 60)</span></td></tr>
+<tr><td class="flag-cell"><code>--genre <span class="meta">GENRE</span></code></td><td class="desc-cell">Restrict track selection to this genre (substring match).</td></tr>
+<tr><td class="flag-cell"><code>--strategy <span class="meta">STRATEGY</span></code></td><td class="desc-cell">Harmonic transition ranking strategy: safest, energy_lift, smooth_blend, best_warmup, best_late_set. <span class="default">(default: safest)</span></td></tr>
+<tr><td class="flag-cell"><code>--structure <span class="meta">STRUCTURE</span></code></td><td class="desc-cell">Phase structure: full, simple, peak_only. <span class="default">(default: full)</span></td></tr>
+<tr><td class="flag-cell"><code>--max-bpm-jump <span class="meta">BPM</span></code></td><td class="desc-cell">Maximum allowed absolute BPM difference between consecutive tracks. Set to 0 to disable. <span class="default">(default: 3)</span></td></tr>
+<tr><td class="flag-cell"><code>--no-strict-harmonic</code></td><td class="desc-cell">Disable strict Camelot key validation — falls back to scoring only.</td></tr>
+<tr><td class="flag-cell"><code>--artist-repeat-window <span class="meta">N</span></code></td><td class="desc-cell">Hard-reject any candidate whose primary artist appeared within the last N tracks. <span class="default">(default: 3)</span></td></tr>
+<tr><td class="flag-cell"><code>--start-energy <span class="meta">TIER</span></code></td><td class="desc-cell">Preferred energy tier for the first track: Chill, Mid, Peak.</td></tr>
+<tr><td class="flag-cell"><code>--end-energy <span class="meta">TIER</span></code></td><td class="desc-cell">Preferred energy tier for the last track: Chill, Mid, Peak.</td></tr>
+<tr><td class="flag-cell"><code>--name <span class="meta">NAME</span></code></td><td class="desc-cell">Base name for output files (no extension). <span class="default">(default: auto-generated timestamp)</span></td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py set-builder --dry-run
+python3 pipeline.py set-builder --vibe peak --duration 90
+python3 pipeline.py set-builder --vibe deep --genre &#x27;afro house&#x27;
+python3 pipeline.py set-builder --strategy energy_lift --name friday_night
+python3 pipeline.py set-builder \
+    --vibe peak --duration 120 --genre &#x27;amapiano&#x27; \
+    --start-energy Mid --end-energy Peak --name amapiano_set</code></pre>
+</div>
+
+
+<div id="harmonic-suggest" class="command-block">
+  <h3 class="command-name">harmonic-suggest</h3>
+  <p class="command-desc">Suggest the best next tracks using harmonic + BPM + energy scoring.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py harmonic-suggest [--track PATH | --key KEY --bpm BPM] [FLAGS]</code></div>
+  <div class="notes"><pre>Scoring factors:
+  Camelot compatibility  35%   Camelot wheel distance
+  BPM compatibility      30%   tempo delta, halftime/doubletime aware
+  Energy compatibility   20%   Peak / Mid / Chill tier match
+  Genre compatibility    15%   exact / related / different
+
+Input modes (choose one):
+  --track PATH           suggest from a specific file in the library DB
+  --key KEY --bpm BPM    suggest from a virtual track (key + BPM only)</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--track <span class="meta">PATH</span></code></td><td class="desc-cell">Path to a track already in the library DB to suggest from. Mutually exclusive with --key/--bpm.</td></tr>
+<tr><td class="flag-cell"><code>--key <span class="meta">KEY</span></code></td><td class="desc-cell">Camelot key of the current track (e.g. 8A, 5B). Used together with --bpm.</td></tr>
+<tr><td class="flag-cell"><code>--bpm <span class="meta">BPM</span></code></td><td class="desc-cell">BPM of the current track. Used together with --key.</td></tr>
+<tr><td class="flag-cell"><code>--strategy <span class="meta">STRATEGY</span></code></td><td class="desc-cell">Ranking strategy: safest, energy_lift, smooth_blend, best_warmup, best_late_set. <span class="default">(default: safest)</span></td></tr>
+<tr><td class="flag-cell"><code>--top-n <span class="meta">N</span></code></td><td class="desc-cell">Number of suggestions to return. <span class="default">(default: 10)</span></td></tr>
+<tr><td class="flag-cell"><code>--energy <span class="meta">TIER</span></code></td><td class="desc-cell">Treat the current track as this energy tier: Chill, Mid, Peak (used with --key/--bpm).</td></tr>
+<tr><td class="flag-cell"><code>--genre <span class="meta">GENRE</span></code></td><td class="desc-cell">Genre of the current track (used with --key/--bpm for genre scoring).</td></tr>
+<tr><td class="flag-cell"><code>--json</code></td><td class="desc-cell">Write suggestions to a JSON file in HARMONIC_SUGGEST_OUTPUT_DIR.</td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Print suggestions only — do not write JSON output.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py harmonic-suggest --track &quot;/music/sorted/Artist/track.mp3&quot;
+python3 pipeline.py harmonic-suggest --key 8A --bpm 128
+python3 pipeline.py harmonic-suggest --key 5B --bpm 124 --top-n 20 --json
+python3 pipeline.py harmonic-suggest \
+    --track &quot;/music/sorted/Artist/track.mp3&quot; \
+    --strategy energy_lift</code></pre>
+</div>
+
+</section>
+<section id="label-intelligence" class="section"><h2 class="section-title">LABEL INTELLIGENCE</h2>
+
+<div id="label-intel" class="command-block">
+  <h3 class="command-name">label-intel</h3>
+  <p class="command-desc">Scrape label metadata from Beatport / Traxsource and export to JSON/CSV/TXT/SQLite.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py label-intel [FLAGS]</code></div>
+  <div class="notes"><pre>Output files (under --label-output):
+  labels.json    full metadata
+  labels.csv     spreadsheet-friendly
+  labels.txt     one name per line (copy to known_labels.txt for parser blocklist)
+  labels.db      SQLite for ad-hoc queries</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--label-seeds <span class="meta">FILE</span></code></td><td class="desc-cell">Seeds file with one label name per line. <span class="default">(default: $DJ_MUSIC_ROOT/data/labels/seeds.txt)</span></td></tr>
+<tr><td class="flag-cell"><code>--label-output <span class="meta">DIR</span></code></td><td class="desc-cell">Output directory for exported files. <span class="default">(default: $DJ_MUSIC_ROOT/data/labels/output/)</span></td></tr>
+<tr><td class="flag-cell"><code>--label-cache <span class="meta">DIR</span></code></td><td class="desc-cell">HTTP cache directory. <span class="default">(default: $DJ_MUSIC_ROOT/.cache/label_intel/)</span></td></tr>
+<tr><td class="flag-cell"><code>--label-sources <span class="meta">SOURCE [SOURCE ...]</span></code></td><td class="desc-cell">Sources to scrape: beatport, traxsource. <span class="default">(default: beatport traxsource)</span></td></tr>
+<tr><td class="flag-cell"><code>--label-delay <span class="meta">SECS</span></code></td><td class="desc-cell">Per-host request delay in seconds. <span class="default">(default: 2.0)</span></td></tr>
+<tr><td class="flag-cell"><code>--label-skip-enrich</code></td><td class="desc-cell">Skip label page enrichment (faster; search results only).</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py label-intel
+python3 pipeline.py label-intel --label-sources beatport
+python3 pipeline.py label-intel \
+    --label-seeds /music/data/labels/seeds.txt \
+    --label-delay 3.0</code></pre>
+</div>
+
+
+<div id="label-clean" class="command-block">
+  <h3 class="command-name">label-clean</h3>
+  <p class="command-desc">Detect, normalize, and optionally write back label metadata (Phase 1: local).</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py label-clean [FLAGS]</code></div>
+  <div class="notes"><pre>Detection order (confidence shown):
+  1. organization/TPUB embedded tag     0.95
+  2. grouping tag fallback              0.75
+  3. comment tag fallback               0.60
+  4. filename pattern parsing           0.55-0.70
+  5. unresolved                         0.00
+
+Write-back only applies when confidence &gt;= threshold (default 0.85).
+At the default threshold, only embedded-tag results are auto-written.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Scan and report only — make no file changes (default behavior).</td></tr>
+<tr><td class="flag-cell"><code>--write-tags</code></td><td class="desc-cell">Write high-confidence labels (&gt;= threshold) back to the organization/TPUB tag.</td></tr>
+<tr><td class="flag-cell"><code>--review-only</code></td><td class="desc-cell">Only export the review file (unresolved / low-confidence tracks).</td></tr>
+<tr><td class="flag-cell"><code>--confidence-threshold <span class="meta">FLOAT</span></code></td><td class="desc-cell">Minimum confidence for write-back. <span class="default">(default: 0.85)</span></td></tr>
+<tr><td class="flag-cell"><code>--use-discogs</code></td><td class="desc-cell">[Phase 2 — not yet implemented] Match via Discogs API.</td></tr>
+<tr><td class="flag-cell"><code>--use-beatport</code></td><td class="desc-cell">[Phase 2 — not yet implemented] Match via Beatport.</td></tr>
+<tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan audio files in this directory instead of pulling from the database.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py label-clean
+python3 pipeline.py label-clean --write-tags
+python3 pipeline.py label-clean --review-only
+python3 pipeline.py label-clean --write-tags --confidence-threshold 0.75
+python3 pipeline.py label-clean --path /mnt/music_ssd/KKDJ/</code></pre>
+</div>
+
+</section>
+<section id="metadata-intelligence" class="section"><h2 class="section-title">METADATA INTELLIGENCE</h2>
+
+<div id="metadata-sanitize" class="command-block">
+  <h3 class="command-name">metadata-sanitize</h3>
+  <p class="command-desc">Deterministic offline cleaning of all metadata fields. Removes URL watermarks, promo artifacts, DJ pool tags, malformed ISRCs, and BPM/key comment noise.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py metadata-sanitize --input DIR [FLAGS]</code></div>
+  <div class="notes"><pre>Fully deterministic — no AI, no network calls.
+Idempotent — re-running a clean file produces no further changes.
+Workflow position: run before ai-normalize / artist-intelligence / metadata-enrich-online.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--input <span class="meta">DIR</span></code></td><td class="desc-cell">Directory of audio files to scan (recursive). Required.</td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Maximum number of files to process in this run. <span class="default">(default: no limit)</span></td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Write changes to audio file tags. Without this flag, changes are only previewed.</td></tr>
+<tr><td class="flag-cell"><code>--output-json <span class="meta">FILE</span></code></td><td class="desc-cell">Save the full change log to this JSON file.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging and show unmodified corrupt files.</td></tr>
+<tr><td class="flag-cell"><code>--log-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Directory for run logs. <span class="default">(default: logs/metadata-sanitize/)</span></td></tr>
+<tr><td class="flag-cell"><code>--force</code></td><td class="desc-cell">Reprocess all files, ignoring processed-state tracking.</td></tr>
+<tr><td class="flag-cell"><code>--reset-stage</code></td><td class="desc-cell">Clear processed-state tracking for this stage before running.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py metadata-sanitize --input ~/Music/inbox
+python3 pipeline.py metadata-sanitize --input ~/Music/inbox --apply</code></pre>
+</div>
+
+
+<div id="artist-intelligence" class="command-block">
+  <h3 class="command-name">artist-intelligence</h3>
+  <p class="command-desc">Deterministic artist normalization, alias resolution, and identity consistency across the library.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py artist-intelligence --input DIR [FLAGS]</code></div>
+  <div class="notes"><pre>Alias store  : data/intelligence/artist_aliases.json
+Review queue : data/intelligence/artist_review_queue.json
+Never rewrites the title field or moves &#x27;(feat ...)&#x27; from title into artist.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--input <span class="meta">DIR</span></code></td><td class="desc-cell">Directory of audio files to process (scanned recursively). Required.</td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Maximum number of files to process in this run. <span class="default">(default: no limit)</span></td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Parse and show diffs — write no files.</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Write high-confidence changes to audio file tags. Cannot be combined with --dry-run.</td></tr>
+<tr><td class="flag-cell"><code>--min-confidence <span class="meta">FLOAT</span></code></td><td class="desc-cell">Minimum confidence (0.0-1.0) required to apply a change. <span class="default">(default: 0.90)</span></td></tr>
+<tr><td class="flag-cell"><code>--output-json <span class="meta">FILE</span></code></td><td class="desc-cell">Save the full diff preview to this JSON file.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr>
+<tr><td class="flag-cell"><code>--log-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Directory for run logs. <span class="default">(default: logs/artist-intelligence/)</span></td></tr>
+<tr><td class="flag-cell"><code>--force</code></td><td class="desc-cell">Reprocess all files, ignoring processed-state tracking.</td></tr>
+<tr><td class="flag-cell"><code>--reset-stage</code></td><td class="desc-cell">Clear processed-state tracking for this stage before running.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py artist-intelligence --input ~/Music/inbox
+python3 pipeline.py artist-intelligence --input ~/Music/inbox --apply</code></pre>
+</div>
+
+
+<div id="ai-normalize" class="command-block">
+  <h3 class="command-name">ai-normalize</h3>
+  <p class="command-desc">Local AI (Ollama) metadata proposals for artist, title, version, label, remixers, and featured artists. Preview by default; --apply to write. BPM, key, and cues are never touched.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py ai-normalize --input DIR [FLAGS]</code></div>
+  <div class="notes"><pre>Requirements: Ollama must be running locally (ollama serve) and the model must be pulled.
+Only writes artist, title (+ version), label. Never touches BPM, key, cue points, or genre.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--input <span class="meta">DIR</span></code></td><td class="desc-cell">Directory of audio files to normalize (scanned recursively). Required.</td></tr>
+<tr><td class="flag-cell"><code>--model <span class="meta">MODEL</span></code></td><td class="desc-cell">Ollama model name to use. <span class="default">(default: OLLAMA_DEFAULT_MODEL env)</span></td></tr>
+<tr><td class="flag-cell"><code>--ollama-url <span class="meta">URL</span></code></td><td class="desc-cell">Ollama server base URL. <span class="default">(default: OLLAMA_BASE_URL env)</span></td></tr>
+<tr><td class="flag-cell"><code>--timeout <span class="meta">SECS</span></code></td><td class="desc-cell">Per-request timeout in seconds. <span class="default">(default: OLLAMA_TIMEOUT env)</span></td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Maximum number of files to process in this run. <span class="default">(default: 50)</span></td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Run AI inference and show diffs — write no files.</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Write high-confidence changes to audio file tags. Cannot be combined with --dry-run.</td></tr>
+<tr><td class="flag-cell"><code>--min-confidence <span class="meta">FLOAT</span></code></td><td class="desc-cell">Minimum model confidence (0.0-1.0) required to apply a change. <span class="default">(default: 0.80)</span></td></tr>
+<tr><td class="flag-cell"><code>--output-json <span class="meta">FILE</span></code></td><td class="desc-cell">Save the full diff preview to this JSON file.</td></tr>
+<tr><td class="flag-cell"><code>--pre-sanitize</code></td><td class="desc-cell">Run metadata-sanitize before AI normalization (recommended).</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr>
+<tr><td class="flag-cell"><code>--log-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Directory for run logs. <span class="default">(default: logs/ai-normalize/)</span></td></tr>
+<tr><td class="flag-cell"><code>--force</code></td><td class="desc-cell">Reprocess all files, ignoring processed-state tracking.</td></tr>
+<tr><td class="flag-cell"><code>--reset-stage</code></td><td class="desc-cell">Clear processed-state tracking for this stage before running.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py ai-normalize --input ~/Music/inbox
 python3 pipeline.py ai-normalize --input ~/Music/inbox --apply
 python3 pipeline.py ai-normalize --input ~/Music/inbox --pre-sanitize --apply
-python3 pipeline.py ai-normalize --input ~/Music/inbox --min-confidence 0.80 --apply</code></pre>
-</section>
+python3 pipeline.py ai-normalize --input ~/Music/inbox --min-confidence 0.85 --apply</code></pre>
+</div>
 
-<section id="artist-intelligence" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>artist-intelligence</code></h2>
-  <p class="text-muted">Deterministic artist normalization, alias resolution, and identity consistency across the library. Builds an alias store for consistent downstream processing.</p>
-  <div class="alert alert-warning py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Package: intelligence/artist/</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3"><li>Resolves artist name variants to a single canonical form across the library</li>
-<li>Stores aliases persistently for consistent cross-run identity resolution</li>
-<li>Handles collab/feat suffixes without corrupting the primary artist name</li>
-<li>Deterministic — same input always produces the same output</li></ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py artist-intelligence --input ~/Music/inbox --apply</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="text-nowrap"><code>--input DIR</code></td><td class="small text-muted">Directory or library path to process.</td></tr>
-<tr><td class="text-nowrap"><code>--apply</code></td><td class="small text-muted">Write normalized artist tags to files.</td></tr>
-<tr><td class="text-nowrap"><code>--verbose</code></td><td class="small text-muted">Enable debug logging.</td></tr></tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py artist-intelligence --input ~/Music/inbox
-python3 pipeline.py artist-intelligence --input ~/Music/inbox --apply</code></pre>
-</section>
 
-<section id="metadata-enrich-online" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>metadata-enrich-online</code></h2>
-  <p class="text-muted">Fill missing album, label, and ISRC via Spotify + Deezer matching with confidence scoring. Preview by default; --apply to write. Artist field is never proposed.</p>
-  <div class="alert alert-warning py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Operational states per track:
-  APPLY   conf &gt;= 0.80; all safety rules pass -&gt; written with --apply
-  REVIEW  0.70 &lt;= conf &lt; 0.80 -&gt; added to review queue
-  SKIP    hard safety block fires -&gt; moved to IGNORED with --move-ignored
-
-IGNORED path: /home/koolkatdj/Music/music/IGNORED/</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3"><li>Queries Spotify, Deezer, and Traxsource to fill missing album, label, and ISRC</li>
-<li>Routes each result to APPLY, REVIEW, or SKIP based on confidence and safety rules</li>
-<li>Artist field is never proposed; version mismatches block auto-apply</li>
-<li>Use <code>--move-ignored</code> to quarantine unresolvable files automatically</li></ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply --move-ignored</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="text-nowrap"><code>--input DIR</code></td><td class="small text-muted">Directory of audio files to enrich.</td></tr>
-<tr><td class="text-nowrap"><code>--apply</code></td><td class="small text-muted">Write APPLY-state changes to files.</td></tr>
-<tr><td class="text-nowrap"><code>--min-confidence 0.80</code></td><td class="small text-muted">Minimum confidence to apply. Default: 0.80.</td></tr>
-<tr><td class="text-nowrap"><code>--move-ignored</code></td><td class="small text-muted">Move all hard-rejected files to the IGNORED quarantine directory.</td></tr>
-<tr><td class="text-nowrap"><code>--verbose</code></td><td class="small text-muted">Enable debug logging.</td></tr></tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py metadata-enrich-online --input ~/Music/inbox
+<div id="metadata-enrich-online" class="command-block">
+  <h3 class="command-name">metadata-enrich-online</h3>
+  <p class="command-desc">Fill missing album, label, and ISRC via Spotify + Deezer matching with confidence scoring. Preview by default; --apply to write. Artist field is never proposed.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py metadata-enrich-online --input DIR [FLAGS]</code></div>
+  <div class="notes"><pre>Sources: Spotify Web API (ISRC lookup, then artist+title search), then Deezer as fallback.
+Requires SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET for Spotify lookups; Deezer needs no credentials.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--input <span class="meta">DIR</span></code></td><td class="desc-cell">Directory of audio files to enrich (scanned recursively). Required.</td></tr>
+<tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Run API lookups and show diffs — write no files.</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Write high-confidence changes to audio file tags. Cannot be combined with --dry-run.</td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Maximum number of files to process in this run. <span class="default">(default: 50)</span></td></tr>
+<tr><td class="flag-cell"><code>--min-confidence <span class="meta">FLOAT</span></code></td><td class="desc-cell">Minimum confidence (0.0-1.0) required to apply a change. <span class="default">(default: 0.80)</span></td></tr>
+<tr><td class="flag-cell"><code>--spotify-client-id <span class="meta">ID</span></code></td><td class="desc-cell">Spotify API client ID (overrides SPOTIFY_CLIENT_ID env var).</td></tr>
+<tr><td class="flag-cell"><code>--spotify-client-secret <span class="meta">SECRET</span></code></td><td class="desc-cell">Spotify API client secret (overrides SPOTIFY_CLIENT_SECRET env var).</td></tr>
+<tr><td class="flag-cell"><code>--output-json <span class="meta">FILE</span></code></td><td class="desc-cell">Save full results to this JSON file for offline review.</td></tr>
+<tr><td class="flag-cell"><code>--enable-traxsource</code></td><td class="desc-cell">Enable Traxsource as a dance-music specialist fallback source. Disabled by default.</td></tr>
+<tr><td class="flag-cell"><code>--clean-junk-only</code></td><td class="desc-cell">Run only the junk metadata cleaner — no API calls.</td></tr>
+<tr><td class="flag-cell"><code>--move-ignored</code></td><td class="desc-cell">Move low-confidence files to the IGNORED quarantine directory. review and matched files are never moved.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Enable debug logging.</td></tr>
+<tr><td class="flag-cell"><code>--log-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Directory for run logs. <span class="default">(default: logs/metadata-enrich-online/)</span></td></tr>
+<tr><td class="flag-cell"><code>--force</code></td><td class="desc-cell">Reprocess all files, ignoring processed-state tracking.</td></tr>
+<tr><td class="flag-cell"><code>--reset-stage</code></td><td class="desc-cell">Clear processed-state tracking for this stage before running.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py metadata-enrich-online --input ~/Music/inbox
 python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply
 python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply --move-ignored
 python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --min-confidence 0.85</code></pre>
-</section>
-
-<section id="review-queue" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>review-queue</code></h2>
-  <p class="text-muted">Review and resolve medium-confidence enrichment results interactively. Reads entries populated by metadata-enrich-online (REVIEW state: 0.70 &lt;= conf &lt; 0.80).</p>
-  <div class="alert alert-warning py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Queue file: data/intelligence/enrichment_review_queue.json
-Actions: a=apply  s=skip  d=delete  n=next  q=quit</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3"><li>Opens an interactive session to resolve REVIEW-state enrichment results</li>
-<li>Each entry shows proposed changes with before/after field values</li>
-<li>Accepted entries are written immediately; skipped entries stay in the queue</li>
-<li>Use <code>--list-only</code> to audit the queue without making any changes</li></ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py review-queue</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="text-nowrap"><code>--list-only</code></td><td class="small text-muted">Print all pending entries without entering interactive mode.</td></tr></tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py review-queue
-python3 pipeline.py review-queue --list-only</code></pre>
-</section>
-
-<section id="filename-normalize" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>filename-normalize</code></h2>
-  <p class="text-muted">Rename audio files to <code>{artist} - {title} ({version}).ext</code> using embedded tags. Preview by default; <code>--apply</code> to commit.</p>
-  <div class="alert alert-info py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Version deduplication: if version is already in the title, it is not appended again.
-No overwrite: collisions get a safe suffix ' (1)', ' (2)', ...
-Tags are never modified. BPM, key, and cues are untouched.</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3"><li>Renames files whose filename encodes genre/BPM/key rather than artist/title</li>
-<li>Reads artist, title, and version from embedded tags (ID3, Vorbis, MP4)</li>
-<li>Skips files missing artist or title tags — never guesses</li>
-<li>Preserves directory structure — only renames, never moves folders</li></ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py filename-normalize --input ~/Music/inbox --apply</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="text-nowrap"><code>--input DIR</code></td><td class="small text-muted">Directory of audio files to process. Required.</td></tr><tr><td class="text-nowrap"><code>--apply</code></td><td class="small text-muted">Commit renames. Without this flag, preview only.</td></tr><tr><td class="text-nowrap"><code>--verbose</code></td><td class="small text-muted">Show skipped and no-change files; enable debug logging.</td></tr></tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py filename-normalize --input ~/Music/inbox
-python3 pipeline.py filename-normalize --input ~/Music/inbox --apply
-python3 pipeline.py filename-normalize --input /mnt/music_ssd/KKDJ/sorted --apply</code></pre>
-</section>
-
-<section id="library-organize" class="mb-5 pb-3 border-bottom">
-  <h2 class="h4 mb-1"><code>library-organize</code></h2>
-  <p class="text-muted">Deterministic folder reorganization using embedded artist tags. Moves each audio file into <code>&lt;sorted_root&gt;/&lt;first-letter&gt;/&lt;primary-artist&gt;/&lt;filename&gt;</code>. Preview by default; <code>--apply</code> to commit.</p>
-  <div class="alert alert-info py-2 px-3 mt-3" role="alert"><pre class="mb-0 small">Primary artist = part of the artist tag before the first collaboration separator
-  (feat. / ft. / &amp; / , / ; / x / vs. / with / pres.).
-Tags are never modified. BPM, key, and cues are untouched.
-No overwrite: collisions get a safe suffix ' (1)', ' (2)', …</pre></div>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Purpose</h6><ul class="small mb-3">
-    <li>Merges fragmented artist folders (<code>Papik</code>, <code>Papik &amp; Bengi</code>, <code>Papik feat. X</code>) under a single <code>Papik/</code> directory</li>
-    <li>Determines the sorted root automatically — point <code>--input</code> at <code>sorted/</code> or any sub-folder</li>
-    <li>Skips files missing an artist tag or whose artist looks like concatenated names without a separator</li>
-  </ul>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Common usage</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply</code></pre>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Primary artist extraction</h6>
-  <table class="table table-sm table-bordered small mb-3">
-    <thead class="table-light"><tr><th>Artist tag</th><th>Primary artist</th><th>Target folder</th></tr></thead>
-    <tbody>
-      <tr><td><code>Papik feat. Michele Ranieri</code></td><td><code>Papik</code></td><td><code>sorted/P/Papik/</code></td></tr>
-      <tr><td><code>Papik &amp; Bengi</code></td><td><code>Papik</code></td><td><code>sorted/P/Papik/</code></td></tr>
-      <tr><td><code>Black Coffee, Bucie</code></td><td><code>Black Coffee</code></td><td><code>sorted/B/Black Coffee/</code></td></tr>
-      <tr><td><code>Black Motion</code></td><td><code>Black Motion</code></td><td><code>sorted/B/Black Motion/</code></td></tr>
-      <tr><td><code>&amp;ME</code></td><td><code>&amp;ME</code></td><td><code>sorted/#/&amp;ME/</code></td></tr>
-      <tr><td><code>2Point1</code></td><td><code>2Point1</code></td><td><code>sorted/#/2Point1/</code></td></tr>
-    </tbody>
-  </table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Flags</h6><table class="table table-sm table-bordered small mb-3"><thead class="table-light"><tr><th>Flag</th><th>Description</th></tr></thead><tbody>
-    <tr><td class="text-nowrap"><code>--input DIR</code></td><td class="small text-muted">Directory of audio files to organize. Required.</td></tr>
-    <tr><td class="text-nowrap"><code>--apply</code></td><td class="small text-muted">Commit moves. Without this flag, preview only.</td></tr>
-    <tr><td class="text-nowrap"><code>--verbose</code></td><td class="small text-muted">Show already-correct files; enable debug logging.</td></tr>
-    <tr><td class="text-nowrap"><code>--limit N</code></td><td class="small text-muted">Process at most N files (useful for spot-checking).</td></tr>
-    <tr><td class="text-nowrap"><code>--force</code></td><td class="small text-muted">Reprocess all files, ignoring processed-state tracking.</td></tr>
-    <tr><td class="text-nowrap"><code>--reset-stage</code></td><td class="small text-muted">Clear processed-state tracking for this stage before running.</td></tr>
-    <tr><td class="text-nowrap"><code>--move-unsafe-artists</code></td><td class="small text-muted">Move files with unsafe concatenated artist names to <code>.BIN/CHKARTISTNAMES/</code> for manual review. Requires <code>--apply</code> to execute; preview shows <code>WOULD MOVE TO CHKARTISTNAMES</code>.</td></tr>
-    <tr><td class="text-nowrap"><code>--flatten-collab-folders</code></td><td class="small text-muted">Repair mode: collapse nested collaborator sub-folders back to the primary artist level. Does not read tags.</td></tr>
-  </tbody></table>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Unsafe artist review</h6>
-  <p class="small mb-2">If the artist tag has no recognized separator <strong>and</strong> contains 2+ CamelCase transitions (e.g. <code>Prince KaybeeLaSoulMatesTNS</code>), the organizer cannot safely determine the primary artist. Without <code>--move-unsafe-artists</code> the file is left in place. With <code>--move-unsafe-artists --apply</code> it moves to <code>.BIN/CHKARTISTNAMES/</code>, preserving relative directory structure.</p>
-  <pre class="bg-light border rounded p-3 small"><code>FROM: /mnt/music_ssd/KKDJ/sorted/_compilations/Zakes BantwiniKasango - Osama.mp3
-TO  : /mnt/music_ssd/KKDJ/.BIN/CHKARTISTNAMES/_compilations/Zakes BantwiniKasango - Osama.mp3</code></pre>
-  <p class="small text-muted mb-3"><strong>Quarantine dir:</strong> <code>.BIN/CHKARTISTNAMES/</code> — auto-excluded from all future scans. Fix the artist tag, then rerun with <code>--force</code>.</p>
-  <h6 class="text-uppercase text-muted small fw-bold mt-3 mb-1">Examples</h6><pre class="bg-light border rounded p-3 small"><code>python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply --move-unsafe-artists
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --flatten-collab-folders
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --flatten-collab-folders --apply</code></pre>
-</section>
-
-    </main>
-  </div>
 </div>
 
-<script
-  src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"
-  integrity="sha384-C6RzsynM9kWDrMNeT87bh95OGNyZPhcTNXj1NW7RuBCsyN/o0jlpcV8Qyq46cDfL"
-  crossorigin="anonymous"
-></script>
+
+<div id="review-queue" class="command-block">
+  <h3 class="command-name">review-queue</h3>
+  <p class="command-desc">Review and resolve medium-confidence enrichment results interactively. Reads entries populated by metadata-enrich-online.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py review-queue [FLAGS]</code></div>
+  <div class="notes"><pre>Queue file: data/intelligence/enrichment_review_queue.json
+Actions (interactive mode): a=apply  s=skip  d=delete  n=next  q=quit</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--list-only</code></td><td class="desc-cell">Print all queued items and exit — do not prompt for actions.</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Enable interactive queue changes. Without this flag, list-only dry-run mode is used.</td></tr>
+<tr><td class="flag-cell"><code>--yes</code></td><td class="desc-cell">Confirm queue/tag writes when used with --apply.</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py review-queue
+python3 pipeline.py review-queue --list-only</code></pre>
+</div>
+
+
+<div id="filename-normalize" class="command-block">
+  <h3 class="command-name">filename-normalize</h3>
+  <p class="command-desc">Rename audio files to {artist} - {title} ({version}).ext using embedded tags. Preview by default; --apply to commit.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py filename-normalize --input DIR [FLAGS]</code></div>
+  <div class="notes"><pre>No overwrite — collisions get a safe suffix: &#x27; (1)&#x27;, &#x27; (2)&#x27;, ...
+Tags are never modified. BPM, key, and cues are untouched.
+Skipped if artist or title tag is missing.</pre></div>
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--input <span class="meta">DIR</span></code></td><td class="desc-cell">Directory of audio files to process. Required.</td></tr>
+<tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Commit renames. Without this flag, preview only.</td></tr>
+<tr><td class="flag-cell"><code>--verbose / -v</code></td><td class="desc-cell">Show skipped and no-change files; enable debug logging.</td></tr>
+<tr><td class="flag-cell"><code>--limit <span class="meta">N</span></code></td><td class="desc-cell">Process at most N files.</td></tr>
+<tr><td class="flag-cell"><code>--force</code></td><td class="desc-cell">Reprocess all files, ignoring processed-state tracking.</td></tr>
+<tr><td class="flag-cell"><code>--reset-stage</code></td><td class="desc-cell">Clear processed-state tracking for this stage before running.</td></tr>
+<tr><td class="flag-cell"><code>--move-artist-review</code></td><td class="desc-cell">Move unsafe-artist files to .BIN/ARTIST_REVIEW/ (requires --apply).</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py filename-normalize --input ~/Music/inbox
+python3 pipeline.py filename-normalize --input ~/Music/inbox --apply</code></pre>
+</div>
+
+</section>
+<section id="docs" class="section"><h2 class="section-title">DOCS</h2>
+
+<div id="generate-docs" class="command-block">
+  <h3 class="command-name">generate-docs</h3>
+  <p class="command-desc">Regenerate COMMANDS.txt, README.md command sections, and COMMANDS.html from the command registry.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py generate-docs [FLAGS]</code></div>
+  
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Preview generated output to stdout — write no files.</td></tr>
+<tr><td class="flag-cell"><code>--output-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Write generated files here instead of the project root.</td></tr>
+<tr><td class="flag-cell"><code>--format <span class="meta">FORMATS</span></code></td><td class="desc-cell">Comma-separated list of formats to generate: txt, md, html. <span class="default">(default: txt,md,html)</span></td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py generate-docs
+python3 pipeline.py generate-docs --dry-run
+python3 pipeline.py generate-docs --format txt,html
+python3 pipeline.py generate-docs --output-dir /tmp/docs</code></pre>
+</div>
+
+
+<div id="validate-docs" class="command-block">
+  <h3 class="command-name">validate-docs</h3>
+  <p class="command-desc">Check that COMMANDS.txt is in sync with the command registry — reports missing or stale entries.</p>
+  <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py validate-docs [FLAGS]</code></div>
+  
+  <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--strict</code></td><td class="desc-cell">Exit with code 1 if any mismatches are found (useful in CI/pre-commit).</td></tr></tbody></table>
+  <h4>Examples</h4><pre><code>python3 pipeline.py validate-docs
+python3 pipeline.py validate-docs --strict</code></pre>
+</div>
+
+</section>
+</main>
+
+<script>
+  // Highlight active nav link on scroll
+  const sections = document.querySelectorAll('[id]');
+  const navLinks = document.querySelectorAll('#nav a');
+  const observer = new IntersectionObserver(entries => {
+    entries.forEach(e => {
+      if (e.isIntersecting) {
+        navLinks.forEach(a => a.classList.remove('active'));
+        const link = document.querySelector('#nav a[href="#' + e.target.id + '"]');
+        if (link) link.classList.add('active');
+      }
+    });
+  }, { rootMargin: '-20% 0px -75% 0px' });
+  sections.forEach(s => observer.observe(s));
+</script>
+
 </body>
 </html>

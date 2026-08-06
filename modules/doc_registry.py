@@ -17,7 +17,7 @@ Structure of each entry (dict):
     notes       — optional multi-line string shown below the flags table
 """
 
-VERSION = "1.6.0"
+VERSION = "1.7.0"
 
 REGISTRY = [
 
@@ -974,6 +974,196 @@ REGISTRY = [
             "  5. unresolved                         0.00\n\n"
             "Write-back only applies when confidence >= threshold (default 0.85).\n"
             "At the default threshold, only embedded-tag results are auto-written."
+        ),
+    },
+
+    # -----------------------------------------------------------------------
+    # METADATA INTELLIGENCE
+    # -----------------------------------------------------------------------
+    {
+        "name": "metadata-sanitize",
+        "category": "METADATA INTELLIGENCE",
+        "description": (
+            "Deterministic offline cleaning of all metadata fields. Removes URL "
+            "watermarks, promo artifacts, DJ pool tags, malformed ISRCs, and "
+            "BPM/key comment noise."
+        ),
+        "usage": "python3 pipeline.py metadata-sanitize --input DIR [FLAGS]",
+        "flags": [
+            {"flag": "--input", "meta": "DIR", "description": "Directory of audio files to scan (recursive). Required."},
+            {"flag": "--limit", "meta": "N", "description": "Maximum number of files to process in this run.", "default": "no limit"},
+            {"flag": "--apply", "description": "Write changes to audio file tags. Without this flag, changes are only previewed."},
+            {"flag": "--output-json", "meta": "FILE", "description": "Save the full change log to this JSON file."},
+            {"flag": "--verbose / -v", "description": "Enable debug logging and show unmodified corrupt files."},
+            {"flag": "--log-dir", "meta": "DIR", "description": "Directory for run logs.", "default": "logs/metadata-sanitize/"},
+            {"flag": "--force", "description": "Reprocess all files, ignoring processed-state tracking."},
+            {"flag": "--reset-stage", "description": "Clear processed-state tracking for this stage before running."},
+        ],
+        "examples": [
+            "python3 pipeline.py metadata-sanitize --input ~/Music/inbox",
+            "python3 pipeline.py metadata-sanitize --input ~/Music/inbox --apply",
+        ],
+        "notes": (
+            "Fully deterministic — no AI, no network calls.\n"
+            "Idempotent — re-running a clean file produces no further changes.\n"
+            "Workflow position: run before ai-normalize / artist-intelligence / "
+            "metadata-enrich-online."
+        ),
+    },
+    {
+        "name": "artist-intelligence",
+        "category": "METADATA INTELLIGENCE",
+        "description": (
+            "Deterministic artist normalization, alias resolution, and identity "
+            "consistency across the library."
+        ),
+        "usage": "python3 pipeline.py artist-intelligence --input DIR [FLAGS]",
+        "flags": [
+            {"flag": "--input", "meta": "DIR", "description": "Directory of audio files to process (scanned recursively). Required."},
+            {"flag": "--limit", "meta": "N", "description": "Maximum number of files to process in this run.", "default": "no limit"},
+            {"flag": "--dry-run", "description": "Parse and show diffs — write no files."},
+            {"flag": "--apply", "description": "Write high-confidence changes to audio file tags. Cannot be combined with --dry-run."},
+            {"flag": "--min-confidence", "meta": "FLOAT", "description": "Minimum confidence (0.0-1.0) required to apply a change.", "default": "0.90"},
+            {"flag": "--output-json", "meta": "FILE", "description": "Save the full diff preview to this JSON file."},
+            {"flag": "--verbose / -v", "description": "Enable debug logging."},
+            {"flag": "--log-dir", "meta": "DIR", "description": "Directory for run logs.", "default": "logs/artist-intelligence/"},
+            {"flag": "--force", "description": "Reprocess all files, ignoring processed-state tracking."},
+            {"flag": "--reset-stage", "description": "Clear processed-state tracking for this stage before running."},
+        ],
+        "examples": [
+            "python3 pipeline.py artist-intelligence --input ~/Music/inbox",
+            "python3 pipeline.py artist-intelligence --input ~/Music/inbox --apply",
+        ],
+        "notes": (
+            "Alias store  : data/intelligence/artist_aliases.json\n"
+            "Review queue : data/intelligence/artist_review_queue.json\n"
+            "Never rewrites the title field or moves '(feat ...)' from title into artist."
+        ),
+    },
+    {
+        "name": "ai-normalize",
+        "category": "METADATA INTELLIGENCE",
+        "description": (
+            "Local AI (Ollama) metadata proposals for artist, title, version, "
+            "label, remixers, and featured artists. Preview by default; --apply "
+            "to write. BPM, key, and cues are never touched."
+        ),
+        "usage": "python3 pipeline.py ai-normalize --input DIR [FLAGS]",
+        "flags": [
+            {"flag": "--input", "meta": "DIR", "description": "Directory of audio files to normalize (scanned recursively). Required."},
+            {"flag": "--model", "meta": "MODEL", "description": "Ollama model name to use.", "default": "OLLAMA_DEFAULT_MODEL env"},
+            {"flag": "--ollama-url", "meta": "URL", "description": "Ollama server base URL.", "default": "OLLAMA_BASE_URL env"},
+            {"flag": "--timeout", "meta": "SECS", "description": "Per-request timeout in seconds.", "default": "OLLAMA_TIMEOUT env"},
+            {"flag": "--limit", "meta": "N", "description": "Maximum number of files to process in this run.", "default": "50"},
+            {"flag": "--dry-run", "description": "Run AI inference and show diffs — write no files."},
+            {"flag": "--apply", "description": "Write high-confidence changes to audio file tags. Cannot be combined with --dry-run."},
+            {"flag": "--min-confidence", "meta": "FLOAT", "description": "Minimum model confidence (0.0-1.0) required to apply a change.", "default": "0.80"},
+            {"flag": "--output-json", "meta": "FILE", "description": "Save the full diff preview to this JSON file."},
+            {"flag": "--pre-sanitize", "description": "Run metadata-sanitize before AI normalization (recommended)."},
+            {"flag": "--verbose / -v", "description": "Enable debug logging."},
+            {"flag": "--log-dir", "meta": "DIR", "description": "Directory for run logs.", "default": "logs/ai-normalize/"},
+            {"flag": "--force", "description": "Reprocess all files, ignoring processed-state tracking."},
+            {"flag": "--reset-stage", "description": "Clear processed-state tracking for this stage before running."},
+        ],
+        "examples": [
+            "python3 pipeline.py ai-normalize --input ~/Music/inbox",
+            "python3 pipeline.py ai-normalize --input ~/Music/inbox --apply",
+            "python3 pipeline.py ai-normalize --input ~/Music/inbox --pre-sanitize --apply",
+            "python3 pipeline.py ai-normalize --input ~/Music/inbox --min-confidence 0.85 --apply",
+        ],
+        "notes": (
+            "Requirements: Ollama must be running locally (ollama serve) and the "
+            "model must be pulled.\n"
+            "Only writes artist, title (+ version), label. Never touches BPM, key, "
+            "cue points, or genre."
+        ),
+    },
+    {
+        "name": "metadata-enrich-online",
+        "category": "METADATA INTELLIGENCE",
+        "description": (
+            "Fill missing album, label, and ISRC via Spotify + Deezer matching "
+            "with confidence scoring. Preview by default; --apply to write. "
+            "Artist field is never proposed."
+        ),
+        "usage": "python3 pipeline.py metadata-enrich-online --input DIR [FLAGS]",
+        "flags": [
+            {"flag": "--input", "meta": "DIR", "description": "Directory of audio files to enrich (scanned recursively). Required."},
+            {"flag": "--dry-run", "description": "Run API lookups and show diffs — write no files."},
+            {"flag": "--apply", "description": "Write high-confidence changes to audio file tags. Cannot be combined with --dry-run."},
+            {"flag": "--limit", "meta": "N", "description": "Maximum number of files to process in this run.", "default": "50"},
+            {"flag": "--min-confidence", "meta": "FLOAT", "description": "Minimum confidence (0.0-1.0) required to apply a change.", "default": "0.80"},
+            {"flag": "--spotify-client-id", "meta": "ID", "description": "Spotify API client ID (overrides SPOTIFY_CLIENT_ID env var)."},
+            {"flag": "--spotify-client-secret", "meta": "SECRET", "description": "Spotify API client secret (overrides SPOTIFY_CLIENT_SECRET env var)."},
+            {"flag": "--output-json", "meta": "FILE", "description": "Save full results to this JSON file for offline review."},
+            {"flag": "--enable-traxsource", "description": "Enable Traxsource as a dance-music specialist fallback source. Disabled by default."},
+            {"flag": "--clean-junk-only", "description": "Run only the junk metadata cleaner — no API calls."},
+            {"flag": "--move-ignored", "description": "Move low-confidence files to the IGNORED quarantine directory. review and matched files are never moved."},
+            {"flag": "--verbose / -v", "description": "Enable debug logging."},
+            {"flag": "--log-dir", "meta": "DIR", "description": "Directory for run logs.", "default": "logs/metadata-enrich-online/"},
+            {"flag": "--force", "description": "Reprocess all files, ignoring processed-state tracking."},
+            {"flag": "--reset-stage", "description": "Clear processed-state tracking for this stage before running."},
+        ],
+        "examples": [
+            "python3 pipeline.py metadata-enrich-online --input ~/Music/inbox",
+            "python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply",
+            "python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply --move-ignored",
+            "python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --min-confidence 0.85",
+        ],
+        "notes": (
+            "Sources: Spotify Web API (ISRC lookup, then artist+title search), "
+            "then Deezer as fallback.\n"
+            "Requires SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET for Spotify lookups; "
+            "Deezer needs no credentials."
+        ),
+    },
+    {
+        "name": "review-queue",
+        "category": "METADATA INTELLIGENCE",
+        "description": (
+            "Review and resolve medium-confidence enrichment results "
+            "interactively. Reads entries populated by metadata-enrich-online."
+        ),
+        "usage": "python3 pipeline.py review-queue [FLAGS]",
+        "flags": [
+            {"flag": "--list-only", "description": "Print all queued items and exit — do not prompt for actions."},
+            {"flag": "--apply", "description": "Enable interactive queue changes. Without this flag, list-only dry-run mode is used."},
+            {"flag": "--yes", "description": "Confirm queue/tag writes when used with --apply."},
+        ],
+        "examples": [
+            "python3 pipeline.py review-queue",
+            "python3 pipeline.py review-queue --list-only",
+        ],
+        "notes": (
+            "Queue file: data/intelligence/enrichment_review_queue.json\n"
+            "Actions (interactive mode): a=apply  s=skip  d=delete  n=next  q=quit"
+        ),
+    },
+    {
+        "name": "filename-normalize",
+        "category": "METADATA INTELLIGENCE",
+        "description": (
+            "Rename audio files to {artist} - {title} ({version}).ext using "
+            "embedded tags. Preview by default; --apply to commit."
+        ),
+        "usage": "python3 pipeline.py filename-normalize --input DIR [FLAGS]",
+        "flags": [
+            {"flag": "--input", "meta": "DIR", "description": "Directory of audio files to process. Required."},
+            {"flag": "--apply", "description": "Commit renames. Without this flag, preview only."},
+            {"flag": "--verbose / -v", "description": "Show skipped and no-change files; enable debug logging."},
+            {"flag": "--limit", "meta": "N", "description": "Process at most N files."},
+            {"flag": "--force", "description": "Reprocess all files, ignoring processed-state tracking."},
+            {"flag": "--reset-stage", "description": "Clear processed-state tracking for this stage before running."},
+            {"flag": "--move-artist-review", "description": "Move unsafe-artist files to .BIN/ARTIST_REVIEW/ (requires --apply)."},
+        ],
+        "examples": [
+            "python3 pipeline.py filename-normalize --input ~/Music/inbox",
+            "python3 pipeline.py filename-normalize --input ~/Music/inbox --apply",
+        ],
+        "notes": (
+            "No overwrite — collisions get a safe suffix: ' (1)', ' (2)', ...\n"
+            "Tags are never modified. BPM, key, and cues are untouched.\n"
+            "Skipped if artist or title tag is missing."
         ),
     },
 

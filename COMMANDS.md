@@ -1,321 +1,797 @@
 # CrateIQ Commands
 
-A reference for the CrateIQ intelligence pipeline CLI.
+Version 1.7.0 &nbsp;·&nbsp; Updated 2026-08-06
 
-Version 2.0.0 &nbsp;·&nbsp; Updated 2026-04-20
-
----
-
-## Table of Contents
-
-- [Core Pipeline](#core-pipeline)
-- [Operational States](#operational-states)
-- [Safety Guarantees](#safety-guarantees)
-- [metadata-sanitize](#metadata-sanitize)
-- [artist-repair](#artist-repair)
-- [ai-normalize](#ai-normalize)
-- [artist-intelligence](#artist-intelligence)
-- [metadata-enrich-online](#metadata-enrich-online)
-- [review-queue](#review-queue)
-- [filename-normalize](#filename-normalize)
-- [library-organize](#library-organize)
+> Generated from `modules/doc_registry.py`.  
+> Run `python3 pipeline.py generate-docs` to refresh.
 
 ---
 
-## Core Pipeline
+## Main Pipeline
 
-`metadata-sanitize` → `artist-repair` → `artist-intelligence` → `ai-normalize` → `metadata-enrich-online` → `filename-normalize` → `library-organize`
+### `MAIN`
 
-Each stage is standalone. Run one, or compose the full pipeline.  
-Preview by default — nothing writes without `--apply`.
+Run the full 9-step inbox pipeline: QC → dedupe → organize → sanitize → analyze → tag → cue-suggest → playlists → report.
 
----
+```bash
+python3 pipeline.py [FLAGS]
+```
 
-## Operational States
-
-Applies to `metadata-enrich-online` results:
-
-| State | Condition | Action |
-|---|---|---|
-| **APPLY** | conf ≥ 0.80, all safety rules pass | Written with `--apply` |
-| **REVIEW** | 0.70 ≤ conf < 0.80 | Added to review queue |
-| **SKIP** | Hard safety block fires | Moved to IGNORED with `--move-ignored` |
-
----
-
-## Safety Guarantees
-
-- Artist field: **never proposed or modified**
-- BPM, key, and cues: **never modified** — Mixed In Key owns these
-- Version mismatch: conflicting version tokens → confidence capped at 0.74
-- Low artist similarity (< 0.90, no ISRC anchor): confidence capped at 0.74
-- ISRC exact match: overrides all formula limits → confidence 0.98
-- Preview by default on every command — nothing writes without `--apply`
-
----
-
-## Incremental Processing
-
-All processing stages (`metadata-sanitize`, `artist-repair`, `ai-normalize`, `artist-intelligence`, `metadata-enrich-online`, `filename-normalize`, `library-organize`) track processed state in the SQLite database.
-
-On repeated runs, files whose path, size, and modification time haven't changed are automatically skipped — no reprocessing, no API calls, no prompts.
-
-**Skipped statuses** (auto-skipped on re-run):
-
-| Status | Meaning |
-|---|---|
-| `success` | Changes were applied or file was renamed |
-| `no_change` | Analysed; nothing needed changing |
-| `skipped` | Skipped for a deterministic reason (missing tags, hard reject) |
-| `ignored` | File moved to IGNORED quarantine |
-
-**Always reprocessed** (never auto-skipped): `error` (retried each run), `review` (re-evaluated in case alias store changed).
-
-### Flags (available on all five stages)
+> MIK-FIRST POLICY:
+>   Mixed In Key is the authoritative source for BPM, key, and cue data.
+>   The pipeline NEVER overwrites existing BPM, key, or cue values.
+>   Analysis only runs for tracks where those values are absent.
+> 
+> IDEMPOTENCY:
+>   Already-processed tracks (TXXX:PROCESSED=1 + status=ok in DB) are
+>   skipped automatically — safe to re-run at any time.
+> 
+> Supported audio formats: .mp3 .flac .wav .aiff .aif .m4a .ogg .opus
 
 | Flag | Description |
 |---|---|
-| `--force` | Reprocess all files, ignoring processed-state tracking. |
-| `--reset-stage` | Clear all processed-state records for this stage before running. |
+| `--dry-run` | Run all detection and analysis but make no file changes. Does not write tags, move files, or modify the DB. |
+| `--skip-beets` | Skip Beets/MusicBrainz lookup. Uses the Python filename-parser fallback for organizing files. Useful when Beets is slow, unavailable, or gives wrong results. |
+| `--skip-analysis` | [Legacy — rarely needed] Force-skip all BPM/key analysis even for tracks missing those values. The pipeline is MIK-first and only fills gaps by default; use this only to skip analysis entirely. |
+| `--reanalyze` | Re-run BPM+key analysis on sorted library tracks that are missing BPM or key in the DB. Does not process new inbox files. |
+| `--force-cue-suggest` | Enable cue point suggestion after tag writing. DISABLED by default (MIK-first policy: cue data is owned by MIK). Only use this if you are not using Mixed In Key. |
+| `--label-enrich-from-library` | Enrich the label database using real BPM/genre data from all processed tracks. Reads the TPUB/organization tag from every status=ok track in the DB — no audio re-analysis. |
+| `--path DIR` | Override the music root directory for this run. Replaces DJ_MUSIC_ROOT and all derived paths (inbox, library, playlists, logs, DB) with paths relative to DIR. |
+| `--verbose / -v` | Enable debug-level logging. |
 
-### Recommended workflow
+**Examples**
 
 ```bash
-# First run — processes everything
-python3 pipeline.py metadata-sanitize --input ~/Music/sorted --apply
-
-# Subsequent runs — unchanged files skipped automatically
-python3 pipeline.py metadata-sanitize --input ~/Music/sorted --apply
-
-# Force full reprocessing after a rule update
-python3 pipeline.py metadata-sanitize --input ~/Music/sorted --apply --force
-
-# Reset tracking and reprocess from scratch
-python3 pipeline.py metadata-sanitize --input ~/Music/sorted --apply --reset-stage
+python3 pipeline.py
+python3 pipeline.py --dry-run
+python3 pipeline.py --skip-beets
+python3 pipeline.py --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py --reanalyze
+python3 pipeline.py --force-cue-suggest
+python3 pipeline.py --label-enrich-from-library
 ```
 
 ---
 
-## metadata-sanitize
+## Library Maintenance
+
+### `dedupe`
+
+Detect and quarantine duplicate audio files across the library.
+
+```bash
+python3 pipeline.py dedupe [FLAGS]
+```
+
+> Detection cases:
+>   Case A  Exact duplicate (same SHA-256 hash)       -> quarantine all but one
+>   Case B  Same track, different quality/format       -> quarantine lower quality
+>   Case C  Different versions (Extended vs Radio)     -> report only, never moved
+> 
+> Quality priority (highest first):
+>   WAV/AIFF > FLAC > MP3 320 > MP3 256 > M4A > MP3 192 > OGG/OPUS > MP3 128
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview duplicate groups — move no files. |
+| `--path DIR` | Scan this directory instead of pulling tracks from the database. |
+| `--quarantine-dir DIR` | Directory to move duplicate files into. Default: `library/sorted/_duplicates`. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py dedupe --dry-run
+python3 pipeline.py dedupe
+python3 pipeline.py dedupe --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py dedupe --quarantine-dir /music/review/dupes/
+```
+
+### `metadata-clean`
+
+Strip URL watermarks and promo junk from all metadata fields across the library.
+
+```bash
+python3 pipeline.py metadata-clean [FLAGS]
+```
+
+> Fields cleaned: title, artist, album, albumartist, genre, comment,
+>   organization/label (TPUB), grouping (TIT1), catalog number
+> 
+> What is removed:
+>   URLs/domains      https://djsoundtop.com, TraxCrate.com, www.djcity.com
+>   DJ pool phrases   fordjonly, djcity, zipdj, musicafresca, promo only
+>   Promo phrases     official audio, free download, downloaded from
+>   Comment noise     Camelot keys, BPM strings (e.g. 6A | Gm | 121 BPM)
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview all field changes — make no file writes. |
+| `--path DIR` | Scan audio files in this directory instead of pulling from the DB. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py metadata-clean --dry-run
+python3 pipeline.py metadata-clean
+python3 pipeline.py metadata-clean --path /mnt/music_ssd/KKDJ/
+```
+
+### `tag-normalize`
+
+Standardize MP3 ID3 tag format for Rekordbox (ID3v2.4 → ID3v2.3, remove ID3v1).
+
+```bash
+python3 pipeline.py tag-normalize [FLAGS]
+```
+
+> Non-MP3 files (FLAC, WAV, AIFF, M4A, OGG, OPUS) are always skipped.
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Detect issues without writing any files. |
+| `--path DIR` | Scan this directory instead of the default sorted library. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py tag-normalize --dry-run
+python3 pipeline.py tag-normalize
+python3 pipeline.py tag-normalize --path /mnt/music_ssd/KKDJ/sorted/
+```
+
+### `analyze-missing`
+
+Detect BPM and key for tracks missing that data — writes to DB and audio tags.
+
+```bash
+python3 pipeline.py analyze-missing [FLAGS]
+```
+
+> Safe to run multiple times — will not overwrite valid existing values.
+> This is the MIK-first analysis: only fills gaps left by Mixed In Key.
+
+| Flag | Description |
+|---|---|
+| `--path PATH` | Restrict analysis to tracks under this directory. Default: `entire library`. |
+| `--dry-run` | Run detection but do not write to DB or audio file tags. |
+| `--limit N` | Maximum number of tracks to process in this run. |
+| `--timeout-sec N` | Stop processing after this many seconds. Default: `no timeout`. |
+| `--min-confidence FLOAT` | Minimum BPM confidence score to accept a result. Default: `0.0 (accept all)`. |
+| `--file-timeout-sec N` | Hard per-file wall-clock timeout in seconds. Default: `10`. |
+| `--no-isolate-corrupt` | Disable automatic corrupt-file isolation (isolation is ON by default). |
+| `--corrupt-dir PATH` | Base directory for quarantined corrupt files. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py analyze-missing
+python3 pipeline.py analyze-missing --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py analyze-missing --limit 50 --timeout-sec 300
+python3 pipeline.py analyze-missing --dry-run --verbose
+python3 pipeline.py analyze-missing --file-timeout-sec 20
+```
+
+### `audit-quality`
+
+Audit library for codec/bitrate quality — classify into LOSSLESS/HIGH/MEDIUM/LOW/UNKNOWN.
+
+```bash
+python3 pipeline.py audit-quality [FLAGS]
+```
+
+> Quality tiers:
+>   LOSSLESS  FLAC / ALAC / WAV / AIFF (codec-based; bitrate irrelevant)
+>   HIGH      lossy codec (MP3/AAC) >= 256 kbps
+>   MEDIUM    lossy codec 192-255 kbps
+>   LOW       lossy codec < 192 kbps  (threshold: --min-lossy-kbps)
+>   UNKNOWN   ffprobe could not read file or codec/bitrate unrecognized
+> 
+> QUALITY tag locations:
+>   MP3  : TXXX:QUALITY  (ID3v2.3 custom text frame)
+>   FLAC : QUALITY       (Vorbis comment)
+>   M4A  : ----:com.apple.iTunes:QUALITY  (MP4 freeform atom)
+>   AIFF/WAV : skipped safely (tagging unreliable; no error raised)
+
+| Flag | Description |
+|---|---|
+| `--path DIR` | Scan this directory. Default: `library/sorted`. |
+| `--dry-run` | Probe and classify; log intended actions; write no files. |
+| `--move-low-quality DIR` | Move only LOW quality files to DIR (folder structure preserved). |
+| `--write-tags` | Write a QUALITY tag to each file. UNKNOWN files are skipped. |
+| `--report-format FORMATS` | Comma-separated list of output formats: csv, json. Default: `csv,json`. |
+| `--min-lossy-kbps N` | Bitrate threshold (kbps) separating LOW from MEDIUM. Default: `192`. |
+| `--verbose / -v` | Enable debug logging and per-file output. |
+
+**Examples**
+
+```bash
+python3 pipeline.py audit-quality
+python3 pipeline.py audit-quality --path /mnt/music_ssd/KKDJ/
+python3 pipeline.py audit-quality --dry-run --verbose
+python3 pipeline.py audit-quality --move-low-quality /music/_low_quality
+python3 pipeline.py audit-quality --write-tags
+python3 pipeline.py audit-quality --report-format csv
+python3 pipeline.py audit-quality --min-lossy-kbps 160
+```
+
+### `artist-folder-clean`
+
+Fix bad artist folder names across the library (Camelot prefixes, URL junk, symbols).
+
+```bash
+python3 pipeline.py artist-folder-clean [FLAGS]
+```
+
+> Detection rules:
+>   pure_camelot    e.g. '10B', '1A'               -> review
+>   camelot_prefix  e.g. '1A - Afrikan Roots'       -> rename/merge
+>   bracket_junk    e.g. '[HouseGrooveSA]'          -> review
+>   url_junk        e.g. 'djcity.com'               -> review
+>   symbol_heavy    < 40% alphanumeric chars        -> review
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Scan and report only. No file moves (same as default). |
+| `--apply` | Apply all recoverable renames and merges. Unrecoverable folders go to the review report only. |
+| `--path DIR` | Scan this directory instead of the default sorted library. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py artist-folder-clean --dry-run
+python3 pipeline.py artist-folder-clean --apply
+python3 pipeline.py artist-folder-clean --apply --path /mnt/music_ssd/KKDJ/
+```
+
+### `artist-merge`
+
+Merge artist folder spelling variants into a single canonical folder.
+
+```bash
+python3 pipeline.py artist-merge [FLAGS]
+```
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Scan and report only. No file moves. |
+| `--apply` | Apply safe merges. Uncertain merges go to the review report. |
+| `--path DIR` | Scan this directory instead of the default sorted library. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py artist-merge --dry-run
+python3 pipeline.py artist-merge --apply
+python3 pipeline.py artist-merge --apply --path /mnt/music_ssd/KKDJ/
+```
+
+### `db-prune-stale`
+
+Mark DB rows stale when the file no longer exists on disk.
+
+```bash
+python3 pipeline.py db-prune-stale [FLAGS]
+```
+
+> Stale rows are marked status='stale' — they are NEVER deleted.
+> After pruning, rekordbox-export will no longer warn about them.
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Report stale rows without marking them. |
+| `--path DIR` | Library root to search for files. Default: `RB_LINUX_ROOT from config (/mnt/music_ssd)`. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py db-prune-stale --dry-run
+python3 pipeline.py db-prune-stale
+python3 pipeline.py db-prune-stale --path /mnt/music_ssd/KKDJ/
+```
+
+---
+
+## Audio Conversion
+
+### `convert-audio`
+
+Convert .m4a files to .aiff with parallel ffmpeg, preserving metadata and archiving originals.
+
+```bash
+python3 pipeline.py convert-audio --src PATH --dst PATH --archive PATH [FLAGS]
+```
+
+> Workflow per file:
+>   1. ffprobe validates source (corrupt files skipped)
+>   2. ffmpeg converts with metadata copied (-map_metadata 0)
+>   3. Output verified: ffprobe check + duration delta <= tolerance
+>   4. On success: original .m4a moved to --archive
+>   5. On failure: original left untouched; broken output removed
+> 
+> Output codec: pcm_s16be (16-bit big-endian PCM AIFF).
+> 
+> Environment overrides:
+>   FFMPEG_BIN   path to ffmpeg binary (default: ffmpeg)
+>   FFPROBE_BIN  path to ffprobe binary (default: ffprobe)
+
+| Flag | Description |
+|---|---|
+| `--src PATH` | Root directory containing .m4a files (scanned recursively). REQUIRED. |
+| `--dst PATH` | Root directory for output .aiff files. REQUIRED. |
+| `--archive PATH` | Root directory where original .m4a files are moved after success. REQUIRED. |
+| `--workers N` | Number of parallel ffmpeg workers. Default: `4`. |
+| `--overwrite` | Re-convert files that already have a .aiff output in --dst. |
+| `--verify-tolerance-sec SECS` | Maximum allowed duration difference (seconds) between source and output. Default: `1.0`. |
+| `--dry-run` | Probe sources and show what would be converted. Write no files. |
+| `--no-progress` | Disable the tqdm progress bar even when tqdm is installed. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py convert-audio \
+    --src /downloads/m4a \
+    --dst /mnt/music_ssd/KKDJ/inbox \
+    --archive /mnt/music_ssd/originals_m4a
+python3 pipeline.py convert-audio \
+    --src /downloads --dst /music --archive /archive \
+    --workers 8 --verify-tolerance-sec 2.0 --dry-run
+```
+
+---
+
+## Playlists And Export
+
+### `playlists`
+
+Generate all M3U playlists and Rekordbox XML from the library DB.
+
+```bash
+python3 pipeline.py playlists [FLAGS]
+```
+
+> Output structure:
+>   M3U_DIR/              letter playlists (A.m3u8...Z.m3u8) + _all_tracks.m3u8
+>   M3U_DIR/Genre/        Afro House.m3u8, Amapiano.m3u8 ...
+>   M3U_DIR/Energy/       Peak.m3u8, Mid.m3u8, Chill.m3u8
+>   M3U_DIR/Combined/     Peak Afro House.m3u8, Chill Deep House.m3u8 ...
+>   M3U_DIR/Key/          1A.m3u8 ... 12B.m3u8
+>   M3U_DIR/Route/        Acapella.m3u8, Tool.m3u8, Vocal.m3u8
+>   XML_DIR/              rekordbox_library.xml
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Show what would be written — create no files. |
+| `--no-genre` | Skip Genre/ playlists. |
+| `--no-energy` | Skip Energy/ playlists. |
+| `--no-combined` | Skip Combined/ playlists. |
+| `--no-key` | Skip Key/ (Camelot) playlists. |
+| `--no-route` | Skip Route/ playlists (Acapella, Tool, Vocal). |
+| `--no-xml` | Skip Rekordbox XML export. |
+| `--path DIR` | Override the music root directory for all output paths. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py playlists --dry-run
+python3 pipeline.py playlists
+python3 pipeline.py playlists --no-xml
+python3 pipeline.py playlists --no-key --no-route
+python3 pipeline.py playlists --path /mnt/music_ssd/
+```
+
+### `rekordbox-export`
+
+Export library as Rekordbox-ready M3U playlists for Windows (Linux→Windows path mapping).
+
+```bash
+python3 pipeline.py rekordbox-export [FLAGS]
+```
+
+> MIK-FIRST POLICY:
+>   Rekordbox XML is owned by Rekordbox + Mixed In Key.
+>   XML export is DISABLED by default to prevent data loss.
+>   Use --force-xml only if you are not using Mixed In Key.
+> 
+> Path mapping (defaults):
+>   Linux root  : /mnt/music_ssd   (= root of M: drive on Windows)
+>   Windows     : M:\
+> 
+> Environment overrides:
+>   RB_LINUX_ROOT   Linux path that is the root of the Windows drive
+>   RB_WIN_DRIVE    Windows drive letter (e.g. M)
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview what would be exported. Tag warnings still shown. |
+| `--force-xml` | Enable Rekordbox XML generation. NOT RECOMMENDED when using Mixed In Key — toolkit XML will overwrite MIK cue data on next Rekordbox import. |
+| `--no-xml` | [No-op] XML is disabled by default. Use --force-xml to enable. |
+| `--no-m3u` | Skip M3U playlist generation. |
+| `--win-drive LETTER` | Windows drive letter for path mapping. Default: `M (from RB_WIN_DRIVE env or config)`. |
+| `--linux-root PATH` | Linux path corresponding to the root of the Windows drive. Default: `/mnt/music_ssd`. |
+| `--export-root PATH` | Override the export output root directory. |
+| `--recover-missing-analysis` | Run inline BPM/key analysis for tracks missing those values before deciding to exclude them. For large libraries, prefer running analyze-missing separately. |
+| `--recover-limit N` | Maximum tracks to analyse inline when --recover-missing-analysis is active. Default: `unlimited`. |
+| `--recover-timeout-sec N` | Stop inline analysis after N seconds when --recover-missing-analysis is active. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py rekordbox-export --dry-run
+python3 pipeline.py rekordbox-export
+python3 pipeline.py rekordbox-export --no-m3u
+python3 pipeline.py rekordbox-export --force-xml       # NOT recommended with MIK
+python3 pipeline.py rekordbox-export --recover-missing-analysis
+python3 pipeline.py rekordbox-export \
+    --recover-missing-analysis \
+    --recover-limit 50 \
+    --recover-timeout-sec 300
+```
+
+---
+
+## Cues And Sets
+
+### `cue-suggest`
+
+Auto-detect cue points (intro / drop / outro) and store in the DB.
+
+```bash
+python3 pipeline.py cue-suggest [FLAGS]
+```
+
+> NOTE: These are SUGGESTED positions only. Native Rekordbox hot-cues are NOT written.
+> Review all cues in Rekordbox after analysis.
+> 
+> MIK-FIRST POLICY:
+>   Cue data is owned by Mixed In Key / Rekordbox.
+>   This subcommand is safe to use explicitly, but cue-suggest is
+>   DISABLED inside the main pipeline by default.
+>   Use `python3 pipeline.py --force-cue-suggest` to enable it there.
+> 
+> Cue types detected:
+>   intro_start   bar 1 (always present, confidence 1.0)
+>   mix_in        first stable DJ entry point
+>   groove_start  first full-arrangement section
+>   drop          main energy arrival / impact
+>   breakdown     energy/density reduction after peak
+>   outro_start   beginning of mix-out section
+> 
+> Output files:
+>   logs/cue_suggest/cue_suggestions.json     (master, all tracks)
+>   logs/cue_suggest/cue_suggestions.csv      (wide format, 1 row/track)
+>   logs/cue_suggest/runs/cues_TIMESTAMP.csv  (per-run detail log)
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Analyse and print cue points. No DB writes. |
+| `--min-confidence FLOAT` | Minimum confidence score to store a cue point. Default: `0.4`. |
+| `--limit N` | Stop after analysing this many tracks. |
+| `--track NAME` | Only analyse tracks whose artist, title, or filename contains NAME (case-insensitive). |
+| `--export-format FMT` | Comma-separated output formats: json, csv. Default: `both`. |
+| `--path DIR` | Analyse audio files in this directory instead of the library DB. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py cue-suggest --dry-run
+python3 pipeline.py cue-suggest
+python3 pipeline.py cue-suggest --limit 20 --track 'Black Coffee'
+python3 pipeline.py cue-suggest --export-format json
+python3 pipeline.py cue-suggest --path /music/inbox/
+```
+
+### `set-builder`
+
+Build an energy-curve DJ set from the library database and export as M3U + CSV.
+
+```bash
+python3 pipeline.py set-builder [FLAGS]
+```
+
+> Phases (always in this order):
+>   warmup   gentle intro, Chill/Mid energy
+>   build    rising energy
+>   peak     high-energy section
+>   release  brief energy drop after peak
+>   outro    wind-down / closing
+> 
+> Output files:
+>   SET_BUILDER_OUTPUT_DIR/<name>.m3u8   playable playlist
+>   SET_BUILDER_OUTPUT_DIR/<name>.csv    full metadata + transition notes
+> 
+> Default output location: /mnt/music_ssd/KKDJ/_SETS/
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Preview the set. Write no files. |
+| `--vibe VIBE` | Phase-weight preset: warm, peak, deep, driving. Default: `peak`. |
+| `--duration MINS` | Target set duration in minutes. Default: `60`. |
+| `--genre GENRE` | Restrict track selection to this genre (substring match). |
+| `--strategy STRATEGY` | Harmonic transition ranking strategy: safest, energy_lift, smooth_blend, best_warmup, best_late_set. Default: `safest`. |
+| `--structure STRUCTURE` | Phase structure: full, simple, peak_only. Default: `full`. |
+| `--max-bpm-jump BPM` | Maximum allowed absolute BPM difference between consecutive tracks. Set to 0 to disable. Default: `3`. |
+| `--no-strict-harmonic` | Disable strict Camelot key validation — falls back to scoring only. |
+| `--artist-repeat-window N` | Hard-reject any candidate whose primary artist appeared within the last N tracks. Default: `3`. |
+| `--start-energy TIER` | Preferred energy tier for the first track: Chill, Mid, Peak. |
+| `--end-energy TIER` | Preferred energy tier for the last track: Chill, Mid, Peak. |
+| `--name NAME` | Base name for output files (no extension). Default: `auto-generated timestamp`. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py set-builder --dry-run
+python3 pipeline.py set-builder --vibe peak --duration 90
+python3 pipeline.py set-builder --vibe deep --genre 'afro house'
+python3 pipeline.py set-builder --strategy energy_lift --name friday_night
+python3 pipeline.py set-builder \
+    --vibe peak --duration 120 --genre 'amapiano' \
+    --start-energy Mid --end-energy Peak --name amapiano_set
+```
+
+### `harmonic-suggest`
+
+Suggest the best next tracks using harmonic + BPM + energy scoring.
+
+```bash
+python3 pipeline.py harmonic-suggest [--track PATH | --key KEY --bpm BPM] [FLAGS]
+```
+
+> Scoring factors:
+>   Camelot compatibility  35%   Camelot wheel distance
+>   BPM compatibility      30%   tempo delta, halftime/doubletime aware
+>   Energy compatibility   20%   Peak / Mid / Chill tier match
+>   Genre compatibility    15%   exact / related / different
+> 
+> Input modes (choose one):
+>   --track PATH           suggest from a specific file in the library DB
+>   --key KEY --bpm BPM    suggest from a virtual track (key + BPM only)
+
+| Flag | Description |
+|---|---|
+| `--track PATH` | Path to a track already in the library DB to suggest from. Mutually exclusive with --key/--bpm. |
+| `--key KEY` | Camelot key of the current track (e.g. 8A, 5B). Used together with --bpm. |
+| `--bpm BPM` | BPM of the current track. Used together with --key. |
+| `--strategy STRATEGY` | Ranking strategy: safest, energy_lift, smooth_blend, best_warmup, best_late_set. Default: `safest`. |
+| `--top-n N` | Number of suggestions to return. Default: `10`. |
+| `--energy TIER` | Treat the current track as this energy tier: Chill, Mid, Peak (used with --key/--bpm). |
+| `--genre GENRE` | Genre of the current track (used with --key/--bpm for genre scoring). |
+| `--json` | Write suggestions to a JSON file in HARMONIC_SUGGEST_OUTPUT_DIR. |
+| `--dry-run` | Print suggestions only — do not write JSON output. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py harmonic-suggest --track "/music/sorted/Artist/track.mp3"
+python3 pipeline.py harmonic-suggest --key 8A --bpm 128
+python3 pipeline.py harmonic-suggest --key 5B --bpm 124 --top-n 20 --json
+python3 pipeline.py harmonic-suggest \
+    --track "/music/sorted/Artist/track.mp3" \
+    --strategy energy_lift
+```
+
+---
+
+## Label Intelligence
+
+### `label-intel`
+
+Scrape label metadata from Beatport / Traxsource and export to JSON/CSV/TXT/SQLite.
+
+```bash
+python3 pipeline.py label-intel [FLAGS]
+```
+
+> Output files (under --label-output):
+>   labels.json    full metadata
+>   labels.csv     spreadsheet-friendly
+>   labels.txt     one name per line (copy to known_labels.txt for parser blocklist)
+>   labels.db      SQLite for ad-hoc queries
+
+| Flag | Description |
+|---|---|
+| `--label-seeds FILE` | Seeds file with one label name per line. Default: `$DJ_MUSIC_ROOT/data/labels/seeds.txt`. |
+| `--label-output DIR` | Output directory for exported files. Default: `$DJ_MUSIC_ROOT/data/labels/output/`. |
+| `--label-cache DIR` | HTTP cache directory. Default: `$DJ_MUSIC_ROOT/.cache/label_intel/`. |
+| `--label-sources SOURCE [SOURCE ...]` | Sources to scrape: beatport, traxsource. Default: `beatport traxsource`. |
+| `--label-delay SECS` | Per-host request delay in seconds. Default: `2.0`. |
+| `--label-skip-enrich` | Skip label page enrichment (faster; search results only). |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py label-intel
+python3 pipeline.py label-intel --label-sources beatport
+python3 pipeline.py label-intel \
+    --label-seeds /music/data/labels/seeds.txt \
+    --label-delay 3.0
+```
+
+### `label-clean`
+
+Detect, normalize, and optionally write back label metadata (Phase 1: local).
+
+```bash
+python3 pipeline.py label-clean [FLAGS]
+```
+
+> Detection order (confidence shown):
+>   1. organization/TPUB embedded tag     0.95
+>   2. grouping tag fallback              0.75
+>   3. comment tag fallback               0.60
+>   4. filename pattern parsing           0.55-0.70
+>   5. unresolved                         0.00
+> 
+> Write-back only applies when confidence >= threshold (default 0.85).
+> At the default threshold, only embedded-tag results are auto-written.
+
+| Flag | Description |
+|---|---|
+| `--dry-run` | Scan and report only — make no file changes (default behavior). |
+| `--write-tags` | Write high-confidence labels (>= threshold) back to the organization/TPUB tag. |
+| `--review-only` | Only export the review file (unresolved / low-confidence tracks). |
+| `--confidence-threshold FLOAT` | Minimum confidence for write-back. Default: `0.85`. |
+| `--use-discogs` | [Phase 2 — not yet implemented] Match via Discogs API. |
+| `--use-beatport` | [Phase 2 — not yet implemented] Match via Beatport. |
+| `--path DIR` | Scan audio files in this directory instead of pulling from the database. |
+| `--verbose / -v` | Enable debug logging. |
+
+**Examples**
+
+```bash
+python3 pipeline.py label-clean
+python3 pipeline.py label-clean --write-tags
+python3 pipeline.py label-clean --review-only
+python3 pipeline.py label-clean --write-tags --confidence-threshold 0.75
+python3 pipeline.py label-clean --path /mnt/music_ssd/KKDJ/
+```
+
+---
+
+## Metadata Intelligence
+
+### `metadata-sanitize`
 
 Deterministic offline cleaning of all metadata fields. Removes URL watermarks, promo artifacts, DJ pool tags, malformed ISRCs, and BPM/key comment noise.
 
-> Idempotent — re-running a clean file produces no further changes.
-> Safe to run before any AI or enrichment step.
-
-### Purpose
-
-- Strips URL watermarks, promo tags, and DJ pool artifacts from every metadata field
-- Removes malformed ISRCs and BPM/key noise embedded in comment fields
-- Runs fully offline — no network, no AI, no external dependencies
-- Safe to repeat — already-clean files produce no further changes
-
-### Common usage
-
 ```bash
-python3 pipeline.py metadata-sanitize --input ~/Music/inbox --apply
+python3 pipeline.py metadata-sanitize --input DIR [FLAGS]
 ```
 
-### Flags
+> Fully deterministic — no AI, no network calls.
+> Idempotent — re-running a clean file produces no further changes.
+> Workflow position: run before ai-normalize / artist-intelligence / metadata-enrich-online.
 
 | Flag | Description |
 |---|---|
-| `--input DIR` | Directory of audio files to process. |
-| `--apply` | Write changes to files. Without this flag, preview only. |
-| `--verbose` | Enable debug logging. |
+| `--input DIR` | Directory of audio files to scan (recursive). Required. |
+| `--limit N` | Maximum number of files to process in this run. Default: `no limit`. |
+| `--apply` | Write changes to audio file tags. Without this flag, changes are only previewed. |
+| `--output-json FILE` | Save the full change log to this JSON file. |
+| `--verbose / -v` | Enable debug logging and show unmodified corrupt files. |
+| `--log-dir DIR` | Directory for run logs. Default: `logs/metadata-sanitize/`. |
 | `--force` | Reprocess all files, ignoring processed-state tracking. |
 | `--reset-stage` | Clear processed-state tracking for this stage before running. |
 
-### Examples
+**Examples**
 
 ```bash
 python3 pipeline.py metadata-sanitize --input ~/Music/inbox
 python3 pipeline.py metadata-sanitize --input ~/Music/inbox --apply
 ```
 
----
+### `artist-intelligence`
 
-## artist-repair
-
-Detects merged/concatenated artist names before artist-intelligence runs. Uses a [a-z][A-Z] mid-word boundary scan with country-suffix and prefix guards. Confidence-gated: HIGH (both split halves found in the known-artist set) is write-eligible; MEDIUM/LOW go to review queue only.
-
-> Safe to run before artist-intelligence — operates on raw artist tags, no alias store dependency.
-> Preview by default — nothing writes or moves without explicit flags.
-
-### Purpose
-
-- Detects "African RootsLebo" → proposes "African Roots, Lebo" before AI stages see the bad data
-- Builds a known-artist dict from folder hierarchy, sampled audio tags, and the alias store
-- Queues LOW/MEDIUM confidence splits for human review; auto-applies only HIGH confidence with `--apply`
-- Country suffix guard: (IT), (De), (UK), (ZA) stripped before analysis, restored in output
-- Prefix guard: boundaries in first 3 chars of a word skipped (Mc, De, La, mOat-at-word-start)
-
-### Common usage
+Deterministic artist normalization, alias resolution, and identity consistency across the library.
 
 ```bash
-python3 pipeline.py artist-repair --input ~/Music/sorted
-python3 pipeline.py artist-repair --input ~/Music/sorted --apply
+python3 pipeline.py artist-intelligence --input DIR [FLAGS]
 ```
 
-### Flags
+> Alias store  : data/intelligence/artist_aliases.json
+> Review queue : data/intelligence/artist_review_queue.json
+> Never rewrites the title field or moves '(feat ...)' from title into artist.
 
 | Flag | Description |
 |---|---|
-| `--input DIR` | Directory of audio files to scan. |
-| `--apply` | Write HIGH-confidence repairs to files. |
-| `--move-artist-review` | Move LOW/MEDIUM-confidence flagged files to `.BIN/CHKARTISTNAMES/`. |
-| `--limit N` | Cap files processed (useful for spot checks). |
-| `--verbose` | Enable debug logging. |
-| `--force` | Reprocess all files, ignoring processed-state tracking. |
-| `--reset-stage` | Clear processed-state tracking for this stage before running. |
-| `--log-dir DIR` | Write run log/summary JSON to this directory. |
-
-### Review queue
-
-Flagged files are written to `data/intelligence/artist_repair_queue.json`. Each entry includes:
-- `original` — the raw artist tag value
-- `proposed` — the comma-separated split
-- `confidence` — 0.45 / 0.65 / 0.85
-- `country_suffix` — any stripped suffix (e.g. `(UK)`)
-- `apply_blocked` — `true` for LOW/MEDIUM (never auto-applied)
-
-### Examples
-
-```bash
-# Preview all potential merges
-python3 pipeline.py artist-repair --input /mnt/music_ssd/KKDJ/sorted/A
-
-# Preview a small sample
-python3 pipeline.py artist-repair --input /mnt/music_ssd/KKDJ/sorted --limit 50
-
-# Apply HIGH confidence only
-python3 pipeline.py artist-repair --input /mnt/music_ssd/KKDJ/sorted --apply
-
-# Quarantine LOW/MEDIUM for manual review
-python3 pipeline.py artist-repair --input /mnt/music_ssd/KKDJ/sorted --move-artist-review
-```
-
----
-
-## ai-normalize
-
-Local AI (Ollama) metadata proposals for artist, title, version, label, remixers, and featured artists. Preview by default; --apply to write. BPM, key, and cues are never touched.
-
-> Min confidence: 0.75 — proposals below threshold are skipped, not applied.
-> --pre-sanitize: runs metadata-sanitize before inference (recommended).
-
-### Purpose
-
-- Proposes improved artist, title, version, label, and remixer values via a local LLM
-- Uses Ollama — all inference runs on your machine, no data sent externally
-- Skips proposals below 0.75 confidence; BPM, key, and cues are never touched
-- Use `--pre-sanitize` to clean fields before inference in a single pass
-
-### Common usage
-
-```bash
-python3 pipeline.py ai-normalize --input ~/Music/inbox --pre-sanitize --apply
-```
-
-### Flags
-
-| Flag | Description |
-|---|---|
-| `--input DIR` | Directory of audio files to process. |
-| `--apply` | Write accepted proposals to files. |
-| `--pre-sanitize` | Run metadata-sanitize before AI inference. |
-| `--min-confidence 0.75` | Minimum confidence to accept a proposal. |
-| `--model MODEL` | Ollama model to use. Default: OLLAMA_DEFAULT_MODEL env. |
-| `--verbose` | Enable debug logging. |
+| `--input DIR` | Directory of audio files to process (scanned recursively). Required. |
+| `--limit N` | Maximum number of files to process in this run. Default: `no limit`. |
+| `--dry-run` | Parse and show diffs — write no files. |
+| `--apply` | Write high-confidence changes to audio file tags. Cannot be combined with --dry-run. |
+| `--min-confidence FLOAT` | Minimum confidence (0.0-1.0) required to apply a change. Default: `0.90`. |
+| `--output-json FILE` | Save the full diff preview to this JSON file. |
+| `--verbose / -v` | Enable debug logging. |
+| `--log-dir DIR` | Directory for run logs. Default: `logs/artist-intelligence/`. |
 | `--force` | Reprocess all files, ignoring processed-state tracking. |
 | `--reset-stage` | Clear processed-state tracking for this stage before running. |
 
-### Examples
-
-```bash
-python3 pipeline.py ai-normalize --input ~/Music/inbox
-python3 pipeline.py ai-normalize --input ~/Music/inbox --apply
-python3 pipeline.py ai-normalize --input ~/Music/inbox --pre-sanitize --apply
-python3 pipeline.py ai-normalize --input ~/Music/inbox --min-confidence 0.80 --apply
-```
-
----
-
-## artist-intelligence
-
-Deterministic artist normalization, alias resolution, and identity consistency across the library. Builds an alias store for consistent downstream processing.
-
-> Package: intelligence/artist/
-
-### Purpose
-
-- Resolves artist name variants to a single canonical form across the library
-- Stores aliases persistently for consistent cross-run identity resolution
-- Handles collab/feat suffixes without corrupting the primary artist name
-- Deterministic — same input always produces the same output
-
-### Common usage
-
-```bash
-python3 pipeline.py artist-intelligence --input ~/Music/inbox --apply
-```
-
-### Flags
-
-| Flag | Description |
-|---|---|
-| `--input DIR` | Directory or library path to process. |
-| `--apply` | Write normalized artist tags to files. |
-| `--verbose` | Enable debug logging. |
-| `--force` | Reprocess all files, ignoring processed-state tracking. |
-| `--reset-stage` | Clear processed-state tracking for this stage before running. |
-
-### Examples
+**Examples**
 
 ```bash
 python3 pipeline.py artist-intelligence --input ~/Music/inbox
 python3 pipeline.py artist-intelligence --input ~/Music/inbox --apply
 ```
 
----
+### `ai-normalize`
 
-## metadata-enrich-online
-
-Fill missing album, label, and ISRC via Spotify + Deezer matching with confidence scoring. Preview by default; --apply to write. Artist field is never proposed.
-
-> Operational states per track:
->   APPLY   conf >= 0.80; all safety rules pass -> written with --apply
->   REVIEW  0.70 <= conf < 0.80 -> added to review queue
->   SKIP    hard safety block fires -> moved to IGNORED with --move-ignored
-> 
-> IGNORED path: /home/koolkatdj/Music/music/IGNORED/
-
-### Purpose
-
-- Queries Spotify, Deezer, and Traxsource to fill missing album, label, and ISRC
-- Routes each result to APPLY, REVIEW, or SKIP based on confidence and safety rules
-- Artist field is never proposed; version mismatches block auto-apply
-- Use `--move-ignored` to quarantine unresolvable files automatically
-
-### Common usage
+Local AI (Ollama) metadata proposals for artist, title, version, label, remixers, and featured artists. Preview by default; --apply to write. BPM, key, and cues are never touched.
 
 ```bash
-python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply --move-ignored
+python3 pipeline.py ai-normalize --input DIR [FLAGS]
 ```
 
-### Flags
+> Requirements: Ollama must be running locally (ollama serve) and the model must be pulled.
+> Only writes artist, title (+ version), label. Never touches BPM, key, cue points, or genre.
 
 | Flag | Description |
 |---|---|
-| `--input DIR` | Directory of audio files to enrich. |
-| `--apply` | Write APPLY-state changes to files. |
-| `--min-confidence 0.80` | Minimum confidence to apply. Default: 0.80. |
-| `--move-ignored` | Move all hard-rejected files to the IGNORED quarantine directory. |
-| `--verbose` | Enable debug logging. |
+| `--input DIR` | Directory of audio files to normalize (scanned recursively). Required. |
+| `--model MODEL` | Ollama model name to use. Default: `OLLAMA_DEFAULT_MODEL env`. |
+| `--ollama-url URL` | Ollama server base URL. Default: `OLLAMA_BASE_URL env`. |
+| `--timeout SECS` | Per-request timeout in seconds. Default: `OLLAMA_TIMEOUT env`. |
+| `--limit N` | Maximum number of files to process in this run. Default: `50`. |
+| `--dry-run` | Run AI inference and show diffs — write no files. |
+| `--apply` | Write high-confidence changes to audio file tags. Cannot be combined with --dry-run. |
+| `--min-confidence FLOAT` | Minimum model confidence (0.0-1.0) required to apply a change. Default: `0.80`. |
+| `--output-json FILE` | Save the full diff preview to this JSON file. |
+| `--pre-sanitize` | Run metadata-sanitize before AI normalization (recommended). |
+| `--verbose / -v` | Enable debug logging. |
+| `--log-dir DIR` | Directory for run logs. Default: `logs/ai-normalize/`. |
 | `--force` | Reprocess all files, ignoring processed-state tracking. |
 | `--reset-stage` | Clear processed-state tracking for this stage before running. |
 
-### Examples
+**Examples**
+
+```bash
+python3 pipeline.py ai-normalize --input ~/Music/inbox
+python3 pipeline.py ai-normalize --input ~/Music/inbox --apply
+python3 pipeline.py ai-normalize --input ~/Music/inbox --pre-sanitize --apply
+python3 pipeline.py ai-normalize --input ~/Music/inbox --min-confidence 0.85 --apply
+```
+
+### `metadata-enrich-online`
+
+Fill missing album, label, and ISRC via Spotify + Deezer matching with confidence scoring. Preview by default; --apply to write. Artist field is never proposed.
+
+```bash
+python3 pipeline.py metadata-enrich-online --input DIR [FLAGS]
+```
+
+> Sources: Spotify Web API (ISRC lookup, then artist+title search), then Deezer as fallback.
+> Requires SPOTIFY_CLIENT_ID + SPOTIFY_CLIENT_SECRET for Spotify lookups; Deezer needs no credentials.
+
+| Flag | Description |
+|---|---|
+| `--input DIR` | Directory of audio files to enrich (scanned recursively). Required. |
+| `--dry-run` | Run API lookups and show diffs — write no files. |
+| `--apply` | Write high-confidence changes to audio file tags. Cannot be combined with --dry-run. |
+| `--limit N` | Maximum number of files to process in this run. Default: `50`. |
+| `--min-confidence FLOAT` | Minimum confidence (0.0-1.0) required to apply a change. Default: `0.80`. |
+| `--spotify-client-id ID` | Spotify API client ID (overrides SPOTIFY_CLIENT_ID env var). |
+| `--spotify-client-secret SECRET` | Spotify API client secret (overrides SPOTIFY_CLIENT_SECRET env var). |
+| `--output-json FILE` | Save full results to this JSON file for offline review. |
+| `--enable-traxsource` | Enable Traxsource as a dance-music specialist fallback source. Disabled by default. |
+| `--clean-junk-only` | Run only the junk metadata cleaner — no API calls. |
+| `--move-ignored` | Move low-confidence files to the IGNORED quarantine directory. review and matched files are never moved. |
+| `--verbose / -v` | Enable debug logging. |
+| `--log-dir DIR` | Directory for run logs. Default: `logs/metadata-enrich-online/`. |
+| `--force` | Reprocess all files, ignoring processed-state tracking. |
+| `--reset-stage` | Clear processed-state tracking for this stage before running. |
+
+**Examples**
 
 ```bash
 python3 pipeline.py metadata-enrich-online --input ~/Music/inbox
@@ -324,214 +800,103 @@ python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --apply --move-
 python3 pipeline.py metadata-enrich-online --input ~/Music/inbox --min-confidence 0.85
 ```
 
----
+### `review-queue`
 
-## review-queue
-
-Review and resolve medium-confidence enrichment results interactively. Reads entries populated by metadata-enrich-online (REVIEW state: 0.70 <= conf < 0.80).
-
-> Queue file: data/intelligence/enrichment_review_queue.json
-> Actions: a=apply  s=skip  d=delete  n=next  q=quit
-
-### Purpose
-
-- Opens an interactive session to resolve REVIEW-state enrichment results
-- Each entry shows proposed changes with before/after field values
-- Accepted entries are written immediately; skipped entries stay in the queue
-- Use `--list-only` to audit the queue without making any changes
-
-### Common usage
+Review and resolve medium-confidence enrichment results interactively. Reads entries populated by metadata-enrich-online.
 
 ```bash
-python3 pipeline.py review-queue
+python3 pipeline.py review-queue [FLAGS]
 ```
 
-### Flags
+> Queue file: data/intelligence/enrichment_review_queue.json
+> Actions (interactive mode): a=apply  s=skip  d=delete  n=next  q=quit
 
 | Flag | Description |
 |---|---|
-| `--list-only` | Print all pending entries without entering interactive mode. |
+| `--list-only` | Print all queued items and exit — do not prompt for actions. |
+| `--apply` | Enable interactive queue changes. Without this flag, list-only dry-run mode is used. |
+| `--yes` | Confirm queue/tag writes when used with --apply. |
 
-### Examples
+**Examples**
 
 ```bash
 python3 pipeline.py review-queue
 python3 pipeline.py review-queue --list-only
 ```
 
----
+### `filename-normalize`
 
-## filename-normalize
-
-Deterministic filename normalization using embedded tags. Renames audio files to `{artist} - {title} ({version}).ext`. Preview by default; `--apply` to commit.
-
-> Version deduplication: if version is already in the title, it is not appended again.
-> No overwrite: collisions get a safe suffix ` (1)`, ` (2)`, …
-> Tags are never modified. BPM, key, and cues are untouched.
-
-### Purpose
-
-- Renames files whose filename encodes genre/BPM/key rather than artist/title
-- Reads artist, title, and version from embedded tags (ID3, Vorbis, MP4)
-- Skips files missing artist or title tags — never guesses
-- Preserves directory structure — only renames, never moves folders
-
-### Common usage
+Rename audio files to {artist} - {title} ({version}).ext using embedded tags. Preview by default; --apply to commit.
 
 ```bash
-python3 pipeline.py filename-normalize --input ~/Music/inbox --apply
+python3 pipeline.py filename-normalize --input DIR [FLAGS]
 ```
 
-### Flags
+> No overwrite — collisions get a safe suffix: ' (1)', ' (2)', ...
+> Tags are never modified. BPM, key, and cues are untouched.
+> Skipped if artist or title tag is missing.
 
 | Flag | Description |
 |---|---|
 | `--input DIR` | Directory of audio files to process. Required. |
 | `--apply` | Commit renames. Without this flag, preview only. |
-| `--verbose` | Show skipped and no-change files; enable debug logging. |
-| `--limit N` | Process at most N files (useful for spot-checking). |
+| `--verbose / -v` | Show skipped and no-change files; enable debug logging. |
+| `--limit N` | Process at most N files. |
 | `--force` | Reprocess all files, ignoring processed-state tracking. |
 | `--reset-stage` | Clear processed-state tracking for this stage before running. |
-| `--move-artist-review` | Move unsafe-artist files to `.BIN/ARTIST_REVIEW/` (requires `--apply`). |
+| `--move-artist-review` | Move unsafe-artist files to .BIN/ARTIST_REVIEW/ (requires --apply). |
 
-### Unsafe Artist Review
-
-Files whose artist tag looks like concatenated names (e.g. `Prince KaybeeShimzaBlack`) are **never renamed** — the tag must be corrected manually first. Every such file is:
-
-1. Logged to `data/review/artist_review_queue.jsonl` (appended each run).
-2. Optionally moved to `.BIN/ARTIST_REVIEW/` when `--move-artist-review --apply` is passed (relative directory structure preserved).
-
-After correcting the tag, rerun with `--force` to re-evaluate the file.
-
-```bash
-# Preview — see which files are flagged
-python3 pipeline.py filename-normalize --input ~/Music/inbox
-
-# Apply renames and move review files in one pass
-python3 pipeline.py filename-normalize --input ~/Music/inbox --apply --move-artist-review
-
-# Re-evaluate a previously skipped file after tag correction
-python3 pipeline.py filename-normalize --input ~/Music/inbox --apply --force
-```
-
-**Review queue path:** `data/review/artist_review_queue.jsonl`
-**Quarantine dir:** `.BIN/ARTIST_REVIEW/` (auto-excluded from all scans)
-
-### Examples
+**Examples**
 
 ```bash
 python3 pipeline.py filename-normalize --input ~/Music/inbox
 python3 pipeline.py filename-normalize --input ~/Music/inbox --apply
-python3 pipeline.py filename-normalize --input ~/Music/inbox --limit 50
-python3 pipeline.py filename-normalize --input /mnt/music_ssd/KKDJ/sorted --apply
-python3 pipeline.py filename-normalize --input ~/Music/inbox --apply --move-artist-review
 ```
 
 ---
 
-## library-organize
+## Docs
 
-Deterministic folder reorganization using embedded artist tags. Moves each audio file into `<sorted_root>/<first-letter>/<primary-artist>/<filename>`. Preview by default; `--apply` to commit.
+### `generate-docs`
 
-> Primary artist = the part of the artist tag before the first collaboration separator (`feat.`, `ft.`, `&`, `,`, `;`, `x`, `vs.`, `with`, `pres.`).
-> Tags are never modified. BPM, key, and cues are untouched.
-> No overwrite: collisions get a safe suffix ` (1)`, ` (2)`, …
+Regenerate COMMANDS.txt, README.md command sections, and COMMANDS.html from the command registry.
 
-### Purpose
-
-- Merges fragmented artist folders (`Papik`, `Papik & Bengi`, `Papik feat. X`) under a single `Papik/` directory
-- Determines the sorted root automatically — point `--input` at `sorted/` or any sub-folder
-- Skips files missing an artist tag or whose artist looks like concatenated names without a separator
-
-### Primary artist extraction
-
-| Artist tag | Primary artist | Target folder |
-|---|---|---|
-| `Papik feat. Michele Ranieri` | `Papik` | `sorted/P/Papik/` |
-| `Papik & Bengi` | `Papik` | `sorted/P/Papik/` |
-| `Black Coffee, Bucie` | `Black Coffee` | `sorted/B/Black Coffee/` |
-| `Black Motion` | `Black Motion` | `sorted/B/Black Motion/` |
-| `&ME` | `&ME` | `sorted/#/&ME/` |
-| `2Point1` | `2Point1` | `sorted/#/2Point1/` |
-
-### Unsafe artist skip
-
-If the artist tag has no recognized separator AND contains 2+ CamelCase transitions (e.g. `KaybeeShimzaBlack`), the file is skipped with `unsafe_primary_artist`. Fix the tag manually, then rerun with `--force`.
-
-### Flags
+```bash
+python3 pipeline.py generate-docs [FLAGS]
+```
 
 | Flag | Description |
 |---|---|
-| `--input DIR` | Directory of audio files to organize. Required. |
-| `--apply` | Commit moves. Without this flag, preview only. |
-| `--verbose` | Show already-correct files; enable debug logging. |
-| `--limit N` | Process at most N files (useful for spot-checking). |
-| `--force` | Reprocess all files, ignoring processed-state tracking. |
-| `--reset-stage` | Clear processed-state tracking for this stage before running. |
-| `--move-unsafe-artists` | Move unsafe concatenated-name files to `.BIN/CHKARTISTNAMES/` for manual review. Requires `--apply` to execute; preview shows `WOULD MOVE TO CHKARTISTNAMES`. |
-| `--flatten-collab-folders` | Repair mode: collapse nested collaborator folders back to the primary artist level. Does not read tags. |
+| `--dry-run` | Preview generated output to stdout — write no files. |
+| `--output-dir DIR` | Write generated files here instead of the project root. |
+| `--format FORMATS` | Comma-separated list of formats to generate: txt, md, html. Default: `txt,md,html`. |
 
-### Unsafe Artist Review
-
-If the artist tag has no recognized separator **and** contains 2 or more CamelCase transitions (e.g. `Prince KaybeeLaSoulMatesTNS`), the organizer cannot safely determine the primary artist.
-
-Without `--move-unsafe-artists` these files are left in place and counted as **Left in place** in the summary.  
-With `--move-unsafe-artists --apply` they are moved to `.BIN/CHKARTISTNAMES/`, preserving the relative directory structure from `--input`.
-
-```
-FROM: /mnt/music_ssd/KKDJ/sorted/_compilations/Zakes BantwiniKasango - Osama.mp3
-TO  : /mnt/music_ssd/KKDJ/.BIN/CHKARTISTNAMES/_compilations/Zakes BantwiniKasango - Osama.mp3
-```
-
-`.BIN/CHKARTISTNAMES/` is automatically excluded from all future scans (dot-prefix rule). Fix the artist tag manually, then re-run with `--force` to re-evaluate.
-
-**Review queue path:** `.BIN/CHKARTISTNAMES/` (relative to sorted-root parent)
-
-### Rebuild order
-
-Run `library-organize` **after** filename-normalize and metadata-sanitize so artist tags and filenames are already clean when folder structure is decided.
-
-```
-1. filename-normalize    — clean filenames from tags
-2. metadata-sanitize     — clean tags (remove watermarks, promo noise)
-3. dedupe                — remove exact/quality duplicates
-4. library-organize      — sort into letter/artist folders   ← this stage
-5. ai-normalize          — AI-assisted tag proposals
-6. artist-intelligence   — deterministic artist normalization
-7. metadata-enrich-online — online label/ISRC enrichment
-8. analyze-missing       — fill missing BPM / key
-9. rekordbox-export      — export XML + M3U for Rekordbox
-```
-
-### Examples
+**Examples**
 
 ```bash
-# Preview — see what would move (no files touched)
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted
+python3 pipeline.py generate-docs
+python3 pipeline.py generate-docs --dry-run
+python3 pipeline.py generate-docs --format txt,html
+python3 pipeline.py generate-docs --output-dir /tmp/docs
+```
 
-# Spot-check first 50 files in P/ subfolder
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted/P --limit 50
+### `validate-docs`
 
-# Apply to full library
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply
+Check that COMMANDS.txt is in sync with the command registry — reports missing or stale entries.
 
-# Re-evaluate after fixing a tag
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply --force
+```bash
+python3 pipeline.py validate-docs [FLAGS]
+```
 
-# Reset tracking and reprocess from scratch
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply --reset-stage
+| Flag | Description |
+|---|---|
+| `--strict` | Exit with code 1 if any mismatches are found (useful in CI/pre-commit). |
 
-# Preview which files have unsafe artist names (no files touched)
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --move-unsafe-artists
+**Examples**
 
-# Move unsafe-artist files to .BIN/CHKARTISTNAMES for manual review
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --apply --move-unsafe-artists
-
-# Repair existing nested collaborator folders (preview)
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --flatten-collab-folders
-
-# Repair existing nested collaborator folders (apply)
-python3 pipeline.py library-organize --input /mnt/music_ssd/KKDJ/sorted --flatten-collab-folders --apply
+```bash
+python3 pipeline.py validate-docs
+python3 pipeline.py validate-docs --strict
 ```
 
 ---

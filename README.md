@@ -387,3 +387,106 @@ Keep changes local-first and reviewable. Do not introduce automatic file/tag
 writes, overwrite Mixed In Key values, or write live Serato/Rekordbox
 databases. Run focused checks for the surface you change, avoid committing local
 databases and `.run/` data, and document any behavior change.
+
+<!-- COMMANDS:START -->
+## Subcommands
+
+> Auto-generated from `modules/doc_registry.py`.  Run `python3 pipeline.py generate-docs` to refresh.
+
+### Library Maintenance
+
+```bash
+# Detect and quarantine duplicate audio files across the library.
+python3 pipeline.py dedupe --dry-run
+
+# Strip URL watermarks and promo junk from all metadata fields across the library.
+python3 pipeline.py metadata-clean --dry-run
+
+# Standardize MP3 ID3 tag format for Rekordbox (ID3v2.4 → ID3v2.3, remove ID3v1).
+python3 pipeline.py tag-normalize --dry-run
+
+# Detect BPM and key for tracks missing that data — writes to DB and audio tags.
+python3 pipeline.py analyze-missing
+
+# Audit library for codec/bitrate quality — classify into LOSSLESS/HIGH/MEDIUM/LOW/UNKNOWN.
+python3 pipeline.py audit-quality
+
+# Fix bad artist folder names across the library (Camelot prefixes, URL junk, symbols).
+python3 pipeline.py artist-folder-clean --dry-run
+
+# Merge artist folder spelling variants into a single canonical folder.
+python3 pipeline.py artist-merge --dry-run
+
+# Mark DB rows stale when the file no longer exists on disk.
+python3 pipeline.py db-prune-stale --dry-run
+
+```
+
+### Audio Conversion
+
+```bash
+# Convert .m4a files to .aiff with parallel ffmpeg, preserving metadata and archiving originals.
+python3 pipeline.py convert-audio --src PATH --dst PATH --archive PATH [FLAGS]
+
+```
+
+### Playlists And Export
+
+```bash
+# Generate all M3U playlists and Rekordbox XML from the library DB.
+python3 pipeline.py playlists --dry-run
+
+# Export library as Rekordbox-ready M3U playlists for Windows (Linux→Windows path mapping).
+python3 pipeline.py rekordbox-export --dry-run
+
+```
+
+### Cues And Sets
+
+```bash
+# Auto-detect cue points (intro / drop / outro) and store in the DB.
+python3 pipeline.py cue-suggest --dry-run
+
+# Build an energy-curve DJ set from the library database and export as M3U + CSV.
+python3 pipeline.py set-builder --dry-run
+
+# Suggest the best next tracks using harmonic + BPM + energy scoring.
+python3 pipeline.py harmonic-suggest --track "/music/sorted/Artist/track.mp3"
+
+```
+
+### Label Intelligence
+
+```bash
+# Scrape label metadata from Beatport / Traxsource and export to JSON/CSV/TXT/SQLite.
+python3 pipeline.py label-intel
+
+# Detect, normalize, and optionally write back label metadata (Phase 1: local).
+python3 pipeline.py label-clean
+
+```
+
+### Metadata Intelligence
+
+```bash
+# Deterministic offline cleaning of all metadata fields. Removes URL watermarks, promo artifacts, DJ pool tags, malformed ISRCs, and BPM/key comment noise.
+python3 pipeline.py metadata-sanitize --input ~/Music/inbox
+
+# Deterministic artist normalization, alias resolution, and identity consistency across the library.
+python3 pipeline.py artist-intelligence --input ~/Music/inbox
+
+# Local AI (Ollama) metadata proposals for artist, title, version, label, remixers, and featured artists. Preview by default; --apply to write. BPM, key, and cues are never touched.
+python3 pipeline.py ai-normalize --input ~/Music/inbox
+
+# Fill missing album, label, and ISRC via Spotify + Deezer matching with confidence scoring. Preview by default; --apply to write. Artist field is never proposed.
+python3 pipeline.py metadata-enrich-online --input ~/Music/inbox
+
+# Review and resolve medium-confidence enrichment results interactively. Reads entries populated by metadata-enrich-online.
+python3 pipeline.py review-queue
+
+# Rename audio files to {artist} - {title} ({version}).ext using embedded tags. Preview by default; --apply to commit.
+python3 pipeline.py filename-normalize --input ~/Music/inbox
+
+```
+
+<!-- COMMANDS:END -->

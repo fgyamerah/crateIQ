@@ -2,6 +2,25 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Synchronize CLI command reference (validate-docs --strict fix)
+
+- Fixed the pre-existing `validate-docs --strict` failure. The six flagged
+  entries (ai-normalize, artist-intelligence, filename-normalize,
+  metadata-enrich-online, metadata-sanitize, review-queue) are real, active
+  pipeline.py subcommands that were simply missing from
+  modules/doc_registry.py, the source of truth for generated docs.
+  COMMANDS.txt was also stale against the registry for 18 already-registered
+  commands.
+- Added registry entries for the six commands (new "METADATA INTELLIGENCE"
+  category), with flags/examples sourced from each command's argparse
+  definition in pipeline.py, and bumped doc_registry.VERSION to 1.7.0.
+- Regenerated COMMANDS.txt, COMMANDS.md, COMMANDS.html, and the README.md
+  commands section via `python3 pipeline.py generate-docs` — no generated
+  file was hand-edited.
+- Files affected: modules/doc_registry.py, COMMANDS.txt, COMMANDS.md,
+  COMMANDS.html, README.md, NEXT_TASKS.txt.
+- No migration needed; documentation-only change.
+
 [2026-08-06] — Waveform W8 documentation, safety, and merge-readiness audit
 
 - Final audit phase. NO PRODUCTION CODE CHANGED. A source-level,

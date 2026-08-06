@@ -187,7 +187,7 @@ CURRENT FOCUS
     Remaining-item classification:
     | Item | Class | Note |
     |---|---|---|
-    | validate-docs --strict (6 stale COMMANDS.txt entries) | NON-BLOCKING FOLLOW-UP | Pre-existing, unrelated to this branch; see the P2 entry below |
+    | validate-docs --strict (6 stale COMMANDS.txt entries) | RESOLVED (2026-08-06) | Pre-existing, unrelated to this branch; see the P2 entry below |
     | >11:06 real-media duration untested | NON-BLOCKING FOLLOW-UP | Covered by synthetic tests + hard ceilings (32,768 pairs, MAX_TIMEOUT_SECONDS); no real file that long exists in the test library |
     | Touch verified only via CDP emulation | NON-BLOCKING FOLLOW-UP | Behaviorally correct (pan-y proven); physical hardware unverified |
     | Non-Chrome browser unverified | NON-BLOCKING FOLLOW-UP | Standard canvas/range-input APIs used throughout; no browser-specific code path exists to diverge |
@@ -204,16 +204,21 @@ CURRENT FOCUS
     browser. W7's touch verification used CDP touch emulation in headless
     Chrome; Firefox/Safari and real hardware remain unmeasured.
 
-[ ] (P2) Resolve pre-existing `validate-docs --strict` failure in COMMANDS.txt
-    Noticed during W7 and confirmed to pre-date it (reproduced on a clean
-    worktree at de92151, before any W7 change). Six COMMANDS.txt entries are
-    not in the pipeline subcommand registry: ai-normalize,
-    artist-intelligence, filename-normalize, metadata-enrich-online,
-    metadata-sanitize, review-queue. Unrelated to waveforms, so it was left
-    alone rather than dragging regenerated CLI docs into a verification
-    commit. Fix by confirming which are real subcommands vs flags, then
-    running `python3 pipeline.py generate-docs` as its own change.
-    Note: `scripts/pre_commit_validate_docs.sh` also needs DJ_MUSIC_ROOT set,
+[x] (P2) Resolve pre-existing `validate-docs --strict` failure in COMMANDS.txt (2026-08-06)
+    Root cause: the six entries (ai-normalize, artist-intelligence,
+    filename-normalize, metadata-enrich-online, metadata-sanitize,
+    review-queue) were, and still are, real active pipeline.py subcommands —
+    they were simply never added to modules/doc_registry.py, the source of
+    truth generate-docs/validate-docs reads. COMMANDS.txt itself was also
+    stale against the registry for 18 other already-registered commands.
+    Fix: added registry entries for all six under a new "METADATA
+    INTELLIGENCE" category (flags/examples sourced from each command's
+    argparse definition in pipeline.py), bumped doc_registry.VERSION to
+    1.7.0, then regenerated COMMANDS.txt/COMMANDS.md/COMMANDS.html/README.md
+    via `python3 pipeline.py generate-docs` — no generated file was hand-
+    edited. `validate-docs --strict` and
+    scripts/pre_commit_validate_docs.sh now pass.
+    Note: `scripts/pre_commit_validate_docs.sh` still needs DJ_MUSIC_ROOT set,
     or it defaults to `/music` and dies with a PermissionError before it can
     validate anything. No pre-commit hook is currently installed.
 
