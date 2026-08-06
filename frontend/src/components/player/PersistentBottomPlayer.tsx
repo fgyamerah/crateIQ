@@ -1,4 +1,5 @@
 import {
+  AudioWaveform,
   ChevronDown,
   ChevronUp,
   Loader2,
@@ -11,7 +12,10 @@ import {
   VolumeX,
   X,
 } from 'lucide-react'
+import { useTrackWaveform } from '../../hooks/useTrackWaveform'
 import ThreeBandWaveform from './ThreeBandWaveform'
+import TrackWaveform from './TrackWaveform'
+import { presentWaveformState } from './waveformGeometry'
 import { usePersistentPlayer } from './usePersistentPlayer'
 
 function formatTime(seconds: number): string {
@@ -26,10 +30,21 @@ function displayTitle(title: string | null, filename: string | null): string {
 export default function PersistentBottomPlayer() {
   const player = usePersistentPlayer()
   const track = player.currentTrack
+  // Called before the early return so hook order stays stable across tracks.
+  const waveform = useTrackWaveform(track?.id ?? null)
   if (!track) return null
 
   const resolvedDuration = player.duration || track.duration_sec || 0
   const sourceDetail = track.relativePath || track.sourceLabel || track.filename || 'Local browser preview'
+
+  const waveformState = waveform.waveform
+  const isReady = waveformState?.status === 'ready'
+  const presentation = presentWaveformState(
+    waveform.loading || !waveformState ? 'loading' : waveformState.status,
+    !waveform.generationUnavailable,
+  )
+  const waveformMessage = waveform.actionError ?? presentation.message
+  const showWaveformState = Boolean(waveformMessage) || presentation.canGenerate || presentation.canCancel
 
   return (
     <section
@@ -90,7 +105,50 @@ export default function PersistentBottomPlayer() {
 
       {!player.minimized && (
         <div className="persistent-player-waveform">
-          <ThreeBandWaveform seed={track.id} inactive={!player.playing} compact />
+          {isReady && waveformState.status === 'ready' ? (
+            <TrackWaveform
+              peaks={waveformState.peaks}
+              scale={waveformState.scale}
+              currentTime={player.currentTime}
+              duration={resolvedDuration}
+              inactive={!player.playing}
+            />
+          ) : (
+            <ThreeBandWaveform seed={track.id} inactive={!player.playing} compact />
+          )}
+
+          {showWaveformState && (
+            <div
+              className={`persistent-player-wave-state${presentation.degraded || waveform.actionError ? ' is-degraded' : ''}`}
+              aria-live="polite"
+            >
+              {presentation.busy && <Loader2 className="spin" size={11} aria-hidden="true" />}
+              <span title={waveformMessage}>{waveformMessage}</span>
+              {presentation.canGenerate && (
+                <button
+                  type="button"
+                  className="persistent-player-wave-action"
+                  onClick={waveform.generate}
+                  disabled={waveform.generating}
+                  aria-label="Generate waveform for the current track"
+                >
+                  <AudioWaveform size={11} aria-hidden="true" />
+                  Generate waveform
+                </button>
+              )}
+              {presentation.canCancel && (
+                <button
+                  type="button"
+                  className="persistent-player-wave-action"
+                  onClick={waveform.cancel}
+                  aria-label="Cancel waveform generation"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          )}
+
           <div className="persistent-player-timeline">
             <span>{formatTime(player.currentTime)}</span>
             <input
@@ -117,7 +175,13 @@ export default function PersistentBottomPlayer() {
                 <button type="button" onClick={player.retry}><RotateCcw size={12} /> Retry</button>
               </>
             ) : (
-              <span>{player.status === 'loading' ? 'Loading browser preview…' : 'Browser preview · visual waveform only'}</span>
+              <span>
+                {player.status === 'loading'
+                  ? 'Loading browser preview…'
+                  : isReady
+                    ? 'Browser preview · real waveform'
+                    : 'Browser preview · placeholder visual'}
+              </span>
             )}
           </div>
           <label className="persistent-player-volume">

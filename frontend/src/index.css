@@ -306,6 +306,59 @@ textarea {
 .persistent-player-waveform .three-band-waveform-segments { height: 10px; }
 .persistent-player-waveform .three-band-waveform-label { font-size: 7.5px; }
 
+/* Real backend-generated waveform. Height matches the decorative three-band
+   block so swapping between them never shifts the player layout. */
+.track-waveform {
+  min-width: 0;
+  height: 46px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.018);
+  overflow: hidden;
+}
+
+.track-waveform canvas { display: block; width: 100%; height: 100%; }
+.track-waveform--inactive { opacity: .62; }
+
+.persistent-player-wave-state {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 9.5px;
+  line-height: 1.3;
+}
+
+.persistent-player-wave-state.is-degraded { color: #ffd7dd; }
+.persistent-player-wave-state > span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.persistent-player-wave-action {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 7px;
+  border: 1px solid rgba(32,212,216,.3);
+  border-radius: 5px;
+  color: var(--brand-cyan);
+  background: rgba(32,212,216,.08);
+  font-size: 9.5px;
+  cursor: pointer;
+}
+
+.persistent-player-wave-action:hover:not(:disabled) {
+  border-color: rgba(32,212,216,.55);
+  background: rgba(32,212,216,.15);
+  color: #d8fbff;
+}
+
+.persistent-player-wave-action:focus-visible {
+  outline: 2px solid var(--brand-cyan);
+  outline-offset: 1px;
+}
+
+.persistent-player-wave-action:disabled { opacity: .5; cursor: not-allowed; }
+
 .persistent-player-timeline {
   display: grid;
   grid-template-columns: 34px minmax(80px, 1fr) 34px;

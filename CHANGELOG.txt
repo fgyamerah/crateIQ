@@ -2,6 +2,53 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W4 frontend rendering
+
+- The persistent bottom player now draws the real backend-generated waveform
+  on a `<canvas>`: signed min/max peaks around a centre line, with a
+  played/unplayed progress overlay driven by the existing player clock. The
+  canvas is device-pixel-ratio aware and resizes via `ResizeObserver`.
+- Added `frontend/src/api/waveforms.ts`, a typed client for the W3 contract
+  whose discriminated union exposes peaks/duration/scale only on the `ready`
+  variant, so no renderer can read peak data off a state that has none.
+- Added `hooks/useTrackWaveform.ts`: automatic read-only retrieval, explicit
+  generation, bounded job polling, and cancellation. Track changes bump a
+  monotonic request token and abort the previous `AbortController`, so a late
+  response for a previous track can never overwrite the current one. Polling
+  is a self-cancelling 1.5s chain that stops on terminal job states, track
+  change, and unmount.
+- Added `components/player/TrackWaveform.tsx` (pure renderer — no fetching,
+  job state, or audio ownership) and `waveformGeometry.ts` (pure
+  extrema-preserving peak reduction, progress clamping, and lifecycle-to-UI
+  mapping). Column geometry is memoized so ~4 Hz time updates redraw without
+  rebuilding it; there is no animation loop.
+- Generation is explicit-only. Mounting, route changes, track changes,
+  playback, and a `not_generated` or `stale` read never issue a generation
+  request. `ThreeBandWaveform` remains the fallback for loading,
+  not_generated, queued, processing, failed, unsupported, stale, and
+  cancelled, each with distinct non-technical copy.
+- The waveform stays passive in this phase: the canvas is `role="img"` and
+  non-focusable, and the existing labelled range input remains the accessible
+  seek control. Waveform actions carry explicit accessible names so
+  cancelling generation can never be confused with stopping playback.
+- `api/client.ts` gained an additive optional `AbortSignal` parameter on
+  `get`/`post`/`delete`.
+- Files affected: `frontend/src/api/waveforms.ts`,
+  `frontend/src/api/client.ts`, `frontend/src/hooks/useTrackWaveform.ts`,
+  `frontend/src/components/player/TrackWaveform.tsx`,
+  `frontend/src/components/player/waveformGeometry.ts`,
+  `frontend/src/components/player/PersistentBottomPlayer.tsx`,
+  `frontend/src/index.css`, waveform ADR, README, PROJECT_CONTEXT,
+  NEXT_TASKS, changelog.
+- Migration notes: none. Frontend-only — no backend file changed, no
+  dependency added, and no music/tag/MIK/crate/review/DJ-database write
+  exists. No waveform was generated from the real music library during
+  verification and no audio was decoded, probed, or analyzed; ready and
+  degraded states were verified with browser-level stubbed responses. Real
+  end-to-end media verification remains W7. Frontend typecheck and build pass;
+  the repository still has no frontend test framework, so W4 logic was kept in
+  pure helpers and verified in headless Chrome.
+
 [2026-08-06] — Waveform W3 generation lifecycle, cache, and API
 
 - Connected W1's state foundation to W2's extractor with an explicit,

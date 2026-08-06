@@ -63,7 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Waveform generation (backend) | W1–W3 implemented | Explicit, demand-driven backend generation: `POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, and ETag support. Verified only against fixture libraries and mocked processes. Frontend rendering is not implemented yet. |
+| Real waveforms | W1–W4 implemented | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with progress overlay and a decorative fallback for every non-ready state. Waveform click/drag seeking is not implemented yet. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -241,6 +241,24 @@ deduplicates concurrent requests for the same source generation, and supports
 cancellation. A backend restart closes out interrupted jobs and never resumes
 analysis on its own. Reading a cached waveform keeps working even if FFmpeg
 later disappears; only new generation requires the toolchain.
+
+### Waveform in the player (W4)
+
+The persistent bottom player draws the real waveform on a `<canvas>` when one
+is available, with a played/unplayed progress overlay driven by the existing
+player clock. Every other state — checking, not generated, queued, generating,
+failed, unsupported, out of date, cancelled — keeps the decorative three-band
+placeholder and adds a short status line.
+
+Generation is always an explicit click on **Generate waveform**. Opening the
+app, changing route, selecting a track, starting playback, or reading waveform
+state never generates anything. While a job runs, the player offers **Cancel**,
+which cancels waveform generation only and never affects audio playback.
+
+The waveform is a passive visual in this release: the labelled position slider
+remains the seek control, and the canvas is exposed as an image rather than a
+slider. Click and drag seeking on the waveform is planned for a later phase.
+A waveform failure never disables play, pause, next, previous, or the queue.
 
 ## Development
 

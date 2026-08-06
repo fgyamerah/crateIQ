@@ -80,14 +80,16 @@ async function request<T>(
 // ---------------------------------------------------------------------------
 
 export const apiFetch = {
-  get<T>(path: string): Promise<T> {
-    return request<T>(path)
+  /** `signal` lets callers abort in-flight reads (e.g. on track change). */
+  get<T>(path: string, signal?: AbortSignal): Promise<T> {
+    return request<T>(path, signal ? { signal } : {})
   },
 
-  post<T>(path: string, body: unknown): Promise<T> {
+  post<T>(path: string, body: unknown, signal?: AbortSignal): Promise<T> {
     return request<T>(path, {
       method: 'POST',
       body: JSON.stringify(body),
+      ...(signal ? { signal } : {}),
     })
   },
 
@@ -98,8 +100,8 @@ export const apiFetch = {
     })
   },
 
-  delete<T>(path: string): Promise<T> {
-    return request<T>(path, { method: 'DELETE' })
+  delete<T>(path: string, signal?: AbortSignal): Promise<T> {
+    return request<T>(path, { method: 'DELETE', ...(signal ? { signal } : {}) })
   },
 
   /** Fetch plain-text response (used for job logs). */

@@ -1,7 +1,8 @@
 # CrateIQ Waveform Architecture and Safety Design
 
 **Status:** accepted design; Phases W1 (foundation), W2 (safe extraction
-wrapper), and W3 (generation lifecycle, cache, and API) implemented
+wrapper), W3 (generation lifecycle, cache, and API), and W4 (frontend
+retrieval and canvas rendering) implemented
 
 **Date:** 2026-08-05
 
@@ -1363,20 +1364,72 @@ there would spawn two processes on every readiness call and break that
 guarantee. Promoting `detected` to `ready` is revisited in W6 alongside
 resource and lifecycle hardening.
 
-### Phase W4 — frontend real waveform presentation
+### Phase W4 — frontend real waveform presentation (implemented 2026-08-06)
 
-**Files/components:** `frontend/src/api/waveforms.ts`, waveform types/hook,
-`TrackWaveform.tsx`, scoped CSS, persistent bottom player, Library inspector,
-Music Review tests.
+**Files/components:** `frontend/src/api/waveforms.ts` (typed client with a
+discriminated union over lifecycle states), `frontend/src/hooks/
+useTrackWaveform.ts` (retrieval, race protection, explicit generation, bounded
+job polling, cancellation), `frontend/src/components/player/TrackWaveform.tsx`
+(canvas renderer), `frontend/src/components/player/waveformGeometry.ts` (pure
+peak/progress/state helpers), `PersistentBottomPlayer.tsx` integration,
+`index.css`, and an additive optional `AbortSignal` on `api/client.ts`.
 
-**Scope:** canvas render, all loading/ready/fallback states, stale response guard,
-responsive LOD, Night Deck styling. No seeking changes yet.
+**Scope:** canvas render, all loading/ready/fallback states, stale response
+guard, responsive resize, Night Deck styling. No seeking changes.
 
 **Safety gate:** playback provider and audio element are unchanged; failure does
-not disable playback.
+not disable playback. Met — every verified lifecycle state kept the transport
+controls and the existing accessible range control fully functional.
 
 **Complete when:** ready peaks render and every failure retains the current
-decorative fallback honestly labeled.
+decorative fallback honestly labeled. Met.
+
+#### W4 frontend contract
+
+- **Retrieval only is automatic.** The waveform `GET` runs on track change;
+  the generation `POST` is reachable *only* from the explicit "Generate
+  waveform" control. Browser verification recorded zero generation requests
+  across mount, route change, playback, track change, and every
+  `not_generated` / `stale` / `failed` / `cancelled` state.
+- **Resolution:** the player requests `player` (1,024 pairs) only. `detail` is
+  never fetched for the bottom player.
+- **Race protection:** each track change bumps a monotonic request token and
+  aborts the previous `AbortController`. A response commits only if both the
+  token and the active track still match, so a late reply for a previous track
+  can never overwrite the current one.
+- **Job polling:** a self-cancelling 1.5s timeout chain, never `setInterval`.
+  It stops on any terminal job state, on track change, and on unmount.
+  Verified: poll count stopped increasing once the job succeeded.
+- **Deduplication:** an in-flight `generating` guard plus W3's server-side
+  deduplication. Verified: six rapid activations produced exactly one POST.
+- **Rendering:** `<canvas>` sized from a `ResizeObserver`, backing store scaled
+  by `devicePixelRatio`, drawn in CSS pixels via `setTransform`. Column
+  geometry is memoized on `[peaks, columnCount]` so ~4 Hz playback time updates
+  redraw without rebuilding geometry; no `requestAnimationFrame` loop exists.
+- **Peak mapping:** signed `min`/`max` pairs are reduced to columns with the
+  same extrema-preserving rule the backend uses (min of minima, max of maxima —
+  never averaged), normalized against the documented int16 scale. No per-track
+  loudness normalization.
+- **Fallback:** `ThreeBandWaveform` remains for loading, `not_generated`,
+  `queued`, `processing`, `failed`, `unsupported`, `stale`, and `cancelled`.
+  The real canvas replaces it only on `ready`.
+- **Accessibility:** the canvas is `role="img"` and non-focusable
+  (`tabIndex -1`) because W4 is passive. The pre-existing labelled range input
+  remains the accessible progress control. Waveform actions carry explicit
+  accessible names ("Generate waveform for the current track", "Cancel waveform
+  generation") so cancellation can never be confused with stopping playback.
+- **Privacy:** no response field, message, or log carries a source path, cache
+  path, or executable name. Error copy is user-facing only — no FFmpeg,
+  ffprobe, cache, SQLite, or traceback detail reaches the UI.
+
+#### W4 verification boundary
+
+W4 was verified against the live backend for read-only states, and with
+browser-level stubbed responses for `ready`, `queued`, `processing`, `failed`,
+`unsupported`, `stale`, and `cancelled`. **No waveform was generated from the
+user's music library**, and no audio was decoded, probed, or analyzed. Real
+end-to-end generation against actual media remains W7's controlled
+verification.
 
 ### Phase W5 — waveform seeking and accessibility
 

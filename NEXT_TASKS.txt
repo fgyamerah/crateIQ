@@ -99,12 +99,22 @@ CURRENT FOCUS
     (~372ms -> ~15ms per commit). 139 new tests; suite 1191 passed. No waveform
     was generated from the real music library and no audio path reached an
     external executable. Full-content SHA-256 remains deferred.
-[ ] (P2) Implement Waveform Phase W4 — frontend real waveform presentation
-    Add `frontend/src/api/waveforms.ts`, a waveform data hook, and a canvas
-    `TrackWaveform.tsx` consuming the W3 API. Render ready peaks, keep the
-    decorative fallback for every non-ready state, guard stale responses on
-    track change, and choose the LOD responsively. No seeking changes yet
-    (that is W5). Do not proceed until W3 review is accepted.
+[x] (P2) Implement Waveform Phase W4 — frontend real waveform presentation
+    (2026-08-06). Added `frontend/src/api/waveforms.ts` (typed discriminated
+    union), `hooks/useTrackWaveform.ts`, `components/player/TrackWaveform.tsx`
+    (DPR-aware canvas + ResizeObserver), and `waveformGeometry.ts` pure helpers.
+    The persistent player renders real min/max peaks with a progress overlay and
+    falls back to `ThreeBandWaveform` for every non-ready state. Generation is
+    explicit-only (verified zero automatic POSTs; six rapid clicks produced one
+    POST), track changes abort/ignore stale responses, and job polling stops on
+    terminal states. No waveform seeking (W5). No waveform was generated from the
+    real music library; ready-state rendering was verified with stubbed peaks.
+[ ] (P2) Implement Waveform Phase W5 — waveform seeking and accessibility
+    Make the waveform an interactive seek surface driven by the persistent
+    player's existing `seek(seconds)` action: pointer down/drag preview,
+    commit on release, Escape to cancel, keyboard Arrow/Shift+Arrow/Home/End,
+    and real slider semantics (`role="slider"`, aria-valuemin/max/now/text).
+    Keep the existing range input. Do not proceed until W4 review is accepted.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

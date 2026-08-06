@@ -6,6 +6,37 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Implemented Waveform Phase W4, the frontend real-waveform
+  surface. Added `frontend/src/api/waveforms.ts` (typed client whose
+  discriminated union exposes peaks/duration only on the `ready` variant),
+  `hooks/useTrackWaveform.ts` (retrieval, race protection, explicit
+  generation, bounded job polling, cancellation),
+  `components/player/TrackWaveform.tsx` (canvas renderer), and
+  `components/player/waveformGeometry.ts` (pure peak/progress/state helpers).
+  `api/client.ts` gained an additive optional `AbortSignal`.
+  The persistent bottom player now draws real min/max peaks on a
+  device-pixel-ratio-aware canvas with a played/unplayed progress overlay
+  driven by the existing player clock, and keeps `ThreeBandWaveform` as the
+  fallback for loading, not_generated, queued, processing, failed,
+  unsupported, stale, and cancelled. Generation is reachable only from an
+  explicit control: browser verification recorded zero generation requests
+  across mount, route change, playback, track change, and every non-ready
+  state, and six rapid activations produced exactly one POST. Track changes
+  bump a monotonic request token and abort the previous controller so a late
+  response cannot overwrite the current track; job polling is a self-cancelling
+  1.5s chain that stops on terminal states, track change, and unmount.
+  The canvas is `role="img"` and non-focusable — the existing labelled range
+  input remains the accessible seek control, and waveform seeking stays W5.
+  Verified in headless Chrome via the DevTools Protocol (no new dependency;
+  the already-present `websockets` package plus the system Chrome) at 1440x900
+  and 760x900 with no horizontal overflow and no W4-attributable console
+  errors. No waveform was generated from the real music library and no audio
+  was decoded, probed, or analyzed; the ready/queued/processing/failed/
+  unsupported/stale/cancelled paths were exercised with browser-level stubbed
+  responses. Real end-to-end media verification remains W7. Backend code was
+  unchanged. Audited the W3 `synchronous=NORMAL` change and confirmed it is
+  correctly scoped to backend-owned `jobs.db` only.
+
 - 2026-08-06: Implemented Waveform Phase W3, the explicit generation
   lifecycle connecting W1's state foundation to W2's extractor. Added
   `waveform_identity.py` (a `generation_key` = SHA-256 of a small canonical
