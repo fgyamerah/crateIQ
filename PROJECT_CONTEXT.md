@@ -6,6 +6,26 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Advanced the local-only enrichment review foundation into a
+  genuine multi-source comparison. Added a second candidate source,
+  `local_tags` (reads a track's own embedded ID3/Vorbis/MP4 tags read-only
+  via the existing `modules.metadata_clean._read_tags`; no new dependency,
+  no tag writes), alongside the existing `filename_hints` source, so a
+  track can surface two independently-sourced, potentially-differing
+  candidates for the same field. No real external provider was called —
+  Spotify/Deezer/Discogs/MusicBrainz/etc. remain settings-only/planned.
+  `apply_selected`'s existing per-field never-overwrite check already made
+  same-field conflicts between sources safe without any change. Frontend
+  `EnrichmentReview.tsx` detail panel is now a Current/Source-A/Source-B
+  comparison table (CSS `display:table` for a variable column count); only
+  the selected suggestion's column is editable, reusing the existing
+  single-suggestion PATCH/apply flow unchanged. Files:
+  `enrichment_review_service.py`, `EnrichmentReview.tsx`, `index.css`,
+  `test_backend_api.py`. 1329 backend tests pass (1327 baseline + 2 new
+  targeted tests: provenance/comparison/conflict-safety/persistence/
+  missing-file degrade), typecheck/build pass, `git diff --check` clean.
+  Live Chrome verification not performed — extension unavailable.
+
 - 2026-08-06: Library/Track Inspector polish pass (code+CSS audit; Chrome
   MCP unavailable this session). Fixed a real player-overlap bug (sticky
   `.lib-inspector` max-height now subtracts the fixed persistent player's

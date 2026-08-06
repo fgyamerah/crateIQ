@@ -296,10 +296,24 @@ CURRENT FOCUS
 
 [x] Add Metadata Sources settings foundation with local-only masked credential
     storage and disabled-by-default external source registry.
-[ ] Design multi-source enrichment comparison/review after safe, explicit
-    provider matching contracts are defined; do not add automatic lookup.
 [x] Add local-only multi-source enrichment review foundation; defer provider
     connectors and matching until each has an explicit review contract.
+[x] Design multi-source enrichment comparison/review using safe local-only
+    candidate data (2026-08-06). Added a second candidate source,
+    `local_tags` (reads a track's own embedded file tags read-only via the
+    existing `modules.metadata_clean._read_tags`), alongside the existing
+    `filename_hints` source, so tracks can now show two independently
+    sourced candidates for the same field. Frontend detail panel is now a
+    field-by-field Current/Source A/Source B comparison table; only the
+    selected suggestion's column is editable. No real external provider
+    (Spotify/Deezer/Discogs/etc.) is called — those remain settings-only
+    placeholders as decided. `apply_selected`'s existing never-overwrite
+    check already made same-field conflicts safe without changes. Added
+    targeted tests: provenance, comparison, conflict/no-overwrite, apply
+    safety, persistence, missing-file degrade. Files:
+    enrichment_review_service.py, EnrichmentReview.tsx, index.css,
+    test_backend_api.py. 1329 backend tests pass, typecheck/build pass.
+    Live Chrome verification not performed — extension unavailable.
 
 [x] (P1) Selected-field Beets enrichment review (2026-08-05)
          `/beets-review` now records review state and applies only explicitly

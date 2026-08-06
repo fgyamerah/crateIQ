@@ -2,6 +2,53 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Add multi-source enrichment comparison
+
+- Advanced the existing local-only enrichment review foundation
+  (enrichment_review_service.py) into a genuine multi-source comparison:
+  added a second candidate source, `local_tags`, which reads a track's own
+  embedded ID3/Vorbis/MP4 tags (via the existing, already-used
+  `modules.metadata_clean._read_tags` read-only helper — no new dependency,
+  no tag writes) and proposes a missing artist/title/genre value only when
+  the file's own tag already has it. This sits alongside the existing
+  `filename_hints` source (unchanged), so a track can now surface two
+  independently-sourced candidates with potentially different values for
+  the same field — real "Current | Source A | Source B" comparison, not a
+  single guess.
+- No real external provider (Spotify/Deezer/Discogs/MusicBrainz/etc.) was
+  touched or called; all of them remain `settings_only`/`planned` per
+  Metadata Sources. Per the task's own constraint, this stage explicitly
+  uses only existing local/deterministic candidate data.
+- `apply_selected`'s existing per-field "never overwrite a non-empty value"
+  check already made a same-field conflict between two sources safe by
+  construction (whichever gets confirmed first wins; the second is skipped
+  with a warning, not silently dropped or corrupted) — no change was needed
+  there.
+- Frontend: reworked `EnrichmentReview.tsx`'s detail panel from a single
+  "suggested fields from {one source}" checklist into a field-by-field
+  comparison table (Current column + one column per candidate source for
+  the selected track). Only the column matching the currently-selected
+  suggestion is editable (checkboxes); other sources' cells are read-only
+  values with an "Edit from here" link that switches the active suggestion
+  to that source — so exactly one suggestion is ever being edited/saved/
+  applied at a time, reusing the existing single-suggestion PATCH/apply
+  flow completely unchanged. The candidates list also now shows a "+N other
+  sources" hint per track.
+- Files affected: backend/app/services/enrichment_review_service.py,
+  frontend/src/pages/EnrichmentReview.tsx, frontend/src/index.css,
+  tests/test_backend_api.py.
+- Added targeted backend tests covering provenance (two source_ids for one
+  track), field-level comparison (identical current_fields, differing
+  suggested values), explicit field selection, no-implicit-overwrite on a
+  same-field conflict, apply safety (confirm required, unsaved-selection
+  rejected), persistence across a fresh GET, and a truthful "missing value"
+  degrade when the source file doesn't exist on disk (no fabricated
+  candidate). 1329 backend tests pass (1327 baseline + 2 new), frontend
+  typecheck and build pass, `git diff --check` clean. Live Chrome
+  verification was not performed this session — extension unavailable.
+- No migration needed; the snapshot/decision tables are an additive local
+  cache, not authoritative data.
+
 [2026-08-06] — Refine library and track inspector
 
 - Focused polish pass on Library/Track Inspector, found via source+CSS audit

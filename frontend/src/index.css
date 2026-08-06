@@ -8463,6 +8463,46 @@ tr.row--selected td {
 .beets-review-apply .form-check { color: var(--text); font-size: 12px; }
 .beets-review-apply small { color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 
+/* Current | Source A | Source B field-level comparison. Uses CSS table
+   display so the column count can vary per track (1-N candidate sources)
+   without hand-computing a grid-template-columns for every possible width. */
+.enrichment-compare { display: grid; gap: 6px; }
+.enrichment-compare > strong { font-size: 13px; }
+.enrichment-compare > p { color: var(--text-muted); font-size: 12px; line-height: 1.45; margin: -3px 0 2px; }
+.enrichment-compare-scroll { overflow-x: auto; border: 1px solid rgba(67,77,108,.58); border-radius: 10px; }
+.enrichment-compare-table { display: table; width: 100%; border-collapse: collapse; font-size: 12px; }
+.enrichment-compare-row { display: table-row; }
+.enrichment-compare-row > [role='columnheader'],
+.enrichment-compare-row > [role='cell'] {
+  display: table-cell;
+  padding: 8px 10px;
+  border-bottom: 1px solid rgba(67,77,108,.3);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.enrichment-compare-row--head { background: rgba(8,12,19,.5); }
+.enrichment-compare-row--head > [role='columnheader'] {
+  color: var(--text-muted);
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.enrichment-compare-pick { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; color: var(--brand-cyan); }
+.enrichment-compare-alt { display: inline-flex; align-items: center; gap: 8px; color: var(--text); }
+.enrichment-compare-alt button {
+  flex-shrink: 0;
+  background: none;
+  border: 0;
+  padding: 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 10.5px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+.enrichment-compare-alt button:hover { color: var(--brand-cyan); }
+
 /* Secondary operational routes share the Library's compact panel and table
    rhythm without changing any review or apply behavior. */
 .secondary-deck-page {

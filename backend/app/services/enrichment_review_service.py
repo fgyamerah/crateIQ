@@ -4,6 +4,7 @@ import json, sqlite3, uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from modules.metadata_clean import _read_tags as _read_embedded_tags
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 from . import analysis_jobs_service, settings_service
 
@@ -55,18 +56,39 @@ def get_review():
             try:return _response(conn,_latest(conn))
             except LookupError:return _empty('No multi-source preview is saved. Refresh local suggestions to begin review.')
     except ValueError:return _empty('Initialize and import the local library before refreshing enrichment suggestions.')
+def _local_tag_suggestion(candidate: dict[str, Any], missing: list[str], root: Path) -> dict[str, str]:
+    """Read-only: propose a missing field only if the file's own embedded tag already has it. Never writes tags."""
+    try:
+        path = assert_path_under_root(candidate.get('filepath'), root)
+    except (KeyError, TypeError, ValueError):
+        return {}
+    if not path.is_file(): return {}
+    tags = _read_embedded_tags(path)
+    if not tags: return {}
+    result = {}
+    for field in missing:
+        value = str(tags.get(field) or '').strip()
+        if value: result[field] = value
+    return result
 def refresh_preview():
+    root = selected_library_root()
     candidates=analysis_jobs_service.beets_enrichment_candidates(); items=[]
     for candidate in candidates:
         current={field:candidate.get(field) for field in _ALLOWED}; missing=[field for field in candidate.get('missing_fields',[]) if field in _ALLOWED]
         if not missing: continue
-        filename=str(candidate.get('filename') or 'Track'); suggestion={}
+        filename=str(candidate.get('filename') or 'Track')
+
+        suggestion={}
         if ' - ' in filename:
             artist,title=filename.rsplit('.',1)[0].split(' - ',1)
             if 'artist' in missing: suggestion['artist']=artist.strip()
             if 'title' in missing: suggestion['title']=title.strip()
-        if not suggestion: continue
-        items.append({'suggestion_id':f'sug-{uuid.uuid4().hex[:12]}','track_id':candidate['track_id'],'source_id':'filename_hints','confidence':'low','reason':'Conservative Artist - Title filename hint; review before applying.','filename':filename,'relative_path':candidate.get('relative_path'),'current_fields':current,'suggested_fields':suggestion,'allowed_fields':list(suggestion)})
+        if suggestion:
+            items.append({'suggestion_id':f'sug-{uuid.uuid4().hex[:12]}','track_id':candidate['track_id'],'source_id':'filename_hints','confidence':'low','reason':'Conservative Artist - Title filename hint; review before applying.','filename':filename,'relative_path':candidate.get('relative_path'),'current_fields':current,'suggested_fields':suggestion,'allowed_fields':list(suggestion)})
+
+        tag_suggestion=_local_tag_suggestion(candidate,missing,root)
+        if tag_suggestion:
+            items.append({'suggestion_id':f'sug-{uuid.uuid4().hex[:12]}','track_id':candidate['track_id'],'source_id':'local_tags','confidence':'high','reason':"Already present in the file's own embedded tags but missing from CrateIQ's local index.",'filename':filename,'relative_path':candidate.get('relative_path'),'current_fields':current,'suggested_fields':tag_suggestion,'allowed_fields':list(tag_suggestion)})
     warnings=['No external API calls, Beets subprocess execution, tag writes, or file operations were performed.','External sources are settings-only placeholders in this foundation.']
     with sqlite3.connect(_path()) as conn:
         conn.row_factory=sqlite3.Row; _ensure(conn); cursor=conn.execute('INSERT INTO enrichment_review_snapshots(created_at,items_json,warnings_json) VALUES(?,?,?)',(_now(),json.dumps(items),json.dumps(warnings))); snapshot=conn.execute('SELECT id,created_at,items_json,warnings_json FROM enrichment_review_snapshots WHERE id=?',(cursor.lastrowid,)).fetchone(); return _response(conn,snapshot)

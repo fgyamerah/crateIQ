@@ -2223,6 +2223,136 @@ def test_multisource_enrichment_review_is_local_only_and_rejects_forbidden_field
         assert forbidden.status_code == 422
 
 
+class _FakeEasyTags:
+    def __init__(self, values: dict[str, str]):
+        self._values = values
+
+    def get(self, key: str):
+        value = self._values.get(key)
+        return [value] if value is not None else None
+
+    @property
+    def tags(self):
+        return self
+
+
+def _insert_track(root: Path, *, filepath: Path, filename: str, artist, title, genre) -> int:
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        cursor = conn.execute(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, status) VALUES (?, ?, ?, ?, ?, 'ok')",
+            (str(filepath), filename, artist, title, genre),
+        )
+        return cursor.lastrowid
+
+
+def test_multisource_enrichment_review_shows_provenance_and_never_double_applies(client, monkeypatch):
+    """Two independent local sources (filename parsing, embedded file tags) proposing
+    different values for the same field is the actual "multi-source comparison" this
+    foundation exists for: both must appear with clear provenance, only one may ever
+    be written, and the field left unselected on the winning suggestion must survive
+    untouched. No external API is involved anywhere in this test."""
+    test_client, root = client
+    track_path = root / "library" / "hints" / "Nu Disco - Midnight.mp3"
+    track_path.parent.mkdir(parents=True, exist_ok=True)
+    track_path.write_bytes(b"fixture-audio")
+    track_id = _insert_track(
+        root, filepath=track_path, filename="Nu Disco - Midnight.mp3",
+        artist=None, title="Midnight", genre=None,
+    )
+
+    import mutagen
+
+    def fake_file(path, easy=False):
+        if str(Path(path)) == str(track_path):
+            return _FakeEasyTags({"artist": "DJ Real", "genre": "Deep House"})
+        raise OSError("unreadable")
+
+    monkeypatch.setattr(mutagen, "File", fake_file)
+
+    preview = test_client.post("/api/enrichment/review/preview-refresh")
+    assert preview.status_code == 200
+    items = [item for item in preview.json()["items"] if item["track_id"] == track_id]
+    by_source = {item["source_id"]: item for item in items}
+    assert set(by_source) == {"filename_hints", "local_tags"}, "both local sources must contribute provenance-tagged candidates"
+
+    # Provenance: both rows describe the same current DB state, but disagree on artist.
+    assert by_source["filename_hints"]["current_fields"] == by_source["local_tags"]["current_fields"] == {"artist": None, "title": "Midnight", "genre": None}
+    assert by_source["filename_hints"]["suggested_fields"]["artist"] == "Nu Disco"
+    assert by_source["local_tags"]["suggested_fields"] == {"artist": "DJ Real", "genre": "Deep House"}
+    assert by_source["local_tags"]["allowed_fields"] == ["artist", "genre"]
+
+    # Explicit, field-level selection: only artist from local_tags, not genre.
+    local_tags_id = by_source["local_tags"]["suggestion_id"]
+    saved = test_client.patch(
+        f"/api/enrichment/review/tracks/{track_id}/suggestions/{local_tags_id}",
+        json={"decision": "pending", "selected_fields": {"artist": "DJ Real"}},
+    )
+    assert saved.status_code == 200
+    saved_item = next(item for item in saved.json()["items"] if item["suggestion_id"] == local_tags_id)
+    assert saved_item["selected_fields"] == {"artist": "DJ Real"}
+
+    applied = test_client.post(
+        "/api/enrichment/review/apply",
+        json={"confirm": True, "items": [{"track_id": track_id, "suggestion_id": local_tags_id, "fields": {"artist": "DJ Real"}}]},
+    )
+    assert applied.status_code == 200
+    result = applied.json()
+    assert result["applied"] == 1 and result["skipped"] == 0 and result["failed"] == 0
+
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        row = conn.execute("SELECT artist, title, genre, enrichment_source FROM tracks WHERE id = ?", (track_id,)).fetchone()
+    assert row == ("DJ Real", "Midnight", None, "local_tags")
+
+    # The unselected genre field must remain untouched by the apply above.
+    assert row[2] is None
+
+    # A second source proposing a different value for the now-filled field must
+    # never silently overwrite it — this is the "no implicit overwrite" guarantee.
+    filename_id = by_source["filename_hints"]["suggestion_id"]
+    test_client.patch(
+        f"/api/enrichment/review/tracks/{track_id}/suggestions/{filename_id}",
+        json={"decision": "pending", "selected_fields": {"artist": "Nu Disco"}},
+    )
+    conflict = test_client.post(
+        "/api/enrichment/review/apply",
+        json={"confirm": True, "items": [{"track_id": track_id, "suggestion_id": filename_id, "fields": {"artist": "Nu Disco"}}]},
+    )
+    assert conflict.status_code == 200
+    conflict_result = conflict.json()
+    assert conflict_result["applied"] == 0 and conflict_result["skipped"] == 1
+    assert any("never overwritten" in warning for warning in conflict_result["warnings"])
+
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        unchanged = conn.execute("SELECT artist FROM tracks WHERE id = ?", (track_id,)).fetchone()
+    assert unchanged == ("DJ Real",), "the losing source must never overwrite the already-applied value"
+
+    # Persistence: the decision survives a fresh GET, independent of the snapshot cache.
+    persisted = test_client.get("/api/enrichment/review").json()
+    persisted_item = next(item for item in persisted["items"] if item["suggestion_id"] == local_tags_id)
+    assert persisted_item["decision"] == "applied"
+
+
+def test_multisource_enrichment_review_skips_local_tags_when_file_is_unreadable(client, monkeypatch):
+    """Missing/unreadable audio must degrade to filename_hints only, never fabricate a
+    local_tags candidate — a truthful "missing value" state, not a guessed one."""
+    test_client, root = client
+    missing_path = root / "library" / "hints" / "Ghost Artist - Ghost Title.mp3"
+    track_id = _insert_track(
+        root, filepath=missing_path, filename="Ghost Artist - Ghost Title.mp3",
+        artist=None, title=None, genre=None,
+    )
+
+    import mutagen
+    monkeypatch.setattr(mutagen, "File", lambda path, easy=False: (_ for _ in ()).throw(OSError("unreadable")))
+
+    preview = test_client.post("/api/enrichment/review/preview-refresh")
+    assert preview.status_code == 200
+    items = [item for item in preview.json()["items"] if item["track_id"] == track_id]
+    source_ids = {item["source_id"] for item in items}
+    assert "local_tags" not in source_ids, "the file does not exist on disk, so no embedded-tag candidate should be fabricated"
+    assert source_ids == {"filename_hints"}, "filename parsing depends only on the DB row and must still work"
+
+
 def test_listening_review_is_db_only_and_validates_review_fields(client):
     test_client, root = client
     with sqlite3.connect(root / "logs" / "processed.db") as conn:
