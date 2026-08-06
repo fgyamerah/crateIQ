@@ -1752,7 +1752,7 @@ The one-off SHA-256 comparison was a verification measurement only; no
 application-level content hashing was introduced, so the deferred
 content-identity decision in section 8.2 stands.
 
-### Phase W8 — documentation and safety audit
+### Phase W8 — documentation and safety audit (audited 2026-08-06)
 
 **Files/components:** README, local tooling, project context, changelog, next
 tasks, this ADR, safety documentation as applicable.
@@ -1761,10 +1761,88 @@ tasks, this ADR, safety documentation as applicable.
 measured limits, browser compatibility, exact non-write guarantees.
 
 **Safety gate:** docs never imply cloud upload, source ownership, broad automatic
-analysis, or support beyond measured codecs/platforms.
+analysis, or support beyond measured codecs/platforms. Met — reviewed line by
+line against source; no stale claim found.
 
 **Complete when:** docs and implementation agree and the waveform cache can be
-deleted/rebuilt without any source or trusted metadata change.
+deleted/rebuilt without any source or trusted metadata change. Met — W7 already
+demonstrated the delete/rebuild half directly against real artifacts; W8
+re-verified the containment code that makes it structurally true.
+
+#### W8 audit result
+
+A source-level, non-generative audit of the full persistent-player + waveform
+arc (`988ac08..254c688`, 16 commits, 62 files, +15,011/−106). No production
+code changed. Findings, each traced to source:
+
+- **Source safety:** every filesystem write/delete in the waveform stack
+  (`waveform_artifact_service.publish_artifact`/`_safe_unlink`,
+  `waveform_cache_service._delete_contained`) is gated through
+  `assert_waveform_cleanup_candidate` before touching disk, and every deletion
+  candidate traces back to `scan_cache_entries()` — a walk of the cache root
+  itself — never to a track or source filename. Grepping the whole waveform
+  stack for `os.rename`/`os.replace`/`unlink`/`rmdir`/`shutil.*` surfaced no
+  path outside this single choke point.
+- **Extraction:** `waveform_process.py` is the only subprocess entry point in
+  the waveform stack (confirmed by grep across every `waveform_*.py`); no
+  `shell=True` exists anywhere in `backend/app`. `rsync_runner.py`,
+  `toolkit_runner.py`, and `analysis_jobs_service.py` also spawn subprocesses
+  but are pre-existing, unrelated subsystems this branch does not touch.
+- **Path validation:** a single implementation,
+  `track_source_service.validated_track_source`, is used by every consumer
+  (`api/routes/tracks.py` preview-audio, `api/routes/waveforms.py`,
+  `waveform_scheduler.py`, `waveform_extractor.py`'s post-extraction
+  re-check) — no duplicate or weaker path ever exists. It resolves symlinks
+  before the containment check (`Path.resolve(strict=False)` then
+  `relative_to`), so a symlinked escape is rejected, not silently followed.
+- **API surface:** every waveform route parameter is `track_id: int` or
+  `job_id: str`; no route accepts a filesystem path. `get_waveform_readiness`
+  is a plain synchronous function with no subprocess call in its body,
+  confirmed by both source inspection and the existing regression test
+  `test_readiness_get_never_spawns_a_subprocess`.
+- **Database:** `synchronous=NORMAL` in `core/db.py:get_conn()` is hardcoded
+  to `JOBS_DB_PATH`, which cannot resolve to `processed.db`. The trusted
+  pipeline database is opened elsewhere, in `core/pipeline_db.py`, at
+  `mode=ro` (SQLite read-only URI), and that file has zero diff anywhere in
+  this branch's arc.
+- **Generation identity:** `compute_generation_key` hashes only a small stat
+  + version JSON structure — confirmed by re-reading its docstring and body,
+  which explicitly separates it from `source_sha256` (nullable, and never
+  assigned anywhere outside a pass-through DB-row read).
+- **Frontend:** `generate()` in `useTrackWaveform.ts` is wired to exactly one
+  `onClick` in `PersistentBottomPlayer.tsx` and nowhere else; the only
+  `useEffect` that runs on track change performs a read (`GET`), never a
+  `POST`. Exactly one seek `<input type="range">` exists
+  (`aria-label="Seek audio preview position"`); the canvas and the fallback
+  are both `role="img"` with `pointer-events: none`, so neither competes with
+  the seek surface. Exactly one `<audio>` element is mounted app-wide, by
+  `PersistentPlayerProvider` in `App.tsx`. A separate, pre-existing
+  `AudioPreviewPlayer` used only on the unrelated Crates/Smart Crates preview
+  pages has zero diff in this branch and is out of this audit's scope.
+- **Privacy:** none of the 31 `log.*` calls across the waveform backend
+  reference a path, filepath, or root variable; frontend waveform code
+  contains no path-shaped string literal.
+- **Dependencies:** no `requirements.txt`, `requirements-dev.txt`, or
+  frontend `package.json`/`package-lock.json` change anywhere in the arc.
+- **Branch hygiene:** all 62 changed files are source, tests, or docs — no
+  binary, no media, no cache artifact, no secret pattern, no hardcoded
+  `/home/paak` path in application code. `backend/data/` (which holds the
+  real waveform cache) is `.gitignore`d and untracked.
+- **`validate-docs --strict`:** fails on 6 stale `COMMANDS.txt` entries
+  (`ai-normalize`, `artist-intelligence`, `filename-normalize`,
+  `metadata-enrich-online`, `metadata-sanitize`, `review-queue`). Reproduced
+  identically in an isolated worktree at this arc's base commit, before any
+  persistent-player or waveform work began; neither `COMMANDS.txt` nor
+  `pipeline.py` has any diff anywhere in the arc. This is a **pre-existing,
+  unrelated repository issue**, not a defect introduced by this branch.
+
+Four cosmetic `# type: ignore[arg-type]` annotations exist (dict-unpacking a
+`dict[str, object]` cache-status payload into a typed Pydantic response, and
+passing `object`-typed dict values into a `str | None` parameter) — type
+narrowing only, no safety implication.
+
+**No blocker was found.** See NEXT_TASKS.txt for the full classification and
+merge-readiness decision.
 
 ## 24. Architecture Decision Record
 

@@ -162,14 +162,38 @@ CURRENT FOCUS
     (size/mtime_ns/ctime/dev/ino/SHA-256), no sidecars, trusted metadata
     unchanged, logs privacy-clean. 1327 tests still pass.
 
-[ ] (P2) Implement Waveform Phase W8 — documentation and safety audit
-    Reconcile README/local tooling/project context/changelog/ADR/safety docs
-    with the measured W7 reality. Docs must not imply cloud upload, source
-    ownership, broad automatic analysis, or support beyond the codecs and
-    platforms actually measured (MP3 and FLAC on Linux/Chrome). Complete when
-    docs and implementation agree and the cache can be deleted and rebuilt
-    with no source or trusted-metadata change — W7 already demonstrated the
-    delete/rebuild half of that gate.
+[x] (P2) Implement Waveform Phase W8 — documentation and safety audit
+    (2026-08-06). Source-level, non-generative audit of the full
+    persistent-player + waveform arc (988ac08..254c688, 16 commits, 62 files).
+    No production code changed. Zero blockers found: every cache delete
+    traces through one containment gate, ffmpeg/ffprobe execution has one
+    entry point with no shell=True anywhere in backend, path validation is a
+    single symlink-resolving implementation used everywhere, jobs.db/
+    processed.db separation and synchronous=NORMAL scoping are both correct,
+    generation_key vs source_sha256 naming is unambiguous, the API surface
+    takes only track_id/job_id (never a path), frontend generation is
+    single-onClick-only, exactly one seek slider and one app-wide <audio>
+    element exist, no waveform log line carries a path, no dependency changed,
+    and no secret/binary/media/hardcoded-path was found in the 62-file diff.
+    `validate-docs --strict` fails on 6 stale COMMANDS.txt entries, confirmed
+    pre-existing (reproduced at the arc's base commit in an isolated
+    worktree; neither COMMANDS.txt nor pipeline.py has any diff in the arc) —
+    classified as an unrelated repository issue, not a branch blocker.
+    1327 tests + 402 waveform tests pass; typecheck and build pass.
+    GO — ready to merge after normal human review. See the classification
+    table and decision recorded in this file and in the waveform ADR
+    (Phase W8 section) for full detail.
+
+    Remaining-item classification:
+    | Item | Class | Note |
+    |---|---|---|
+    | validate-docs --strict (6 stale COMMANDS.txt entries) | NON-BLOCKING FOLLOW-UP | Pre-existing, unrelated to this branch; see the P2 entry below |
+    | >11:06 real-media duration untested | NON-BLOCKING FOLLOW-UP | Covered by synthetic tests + hard ceilings (32,768 pairs, MAX_TIMEOUT_SECONDS); no real file that long exists in the test library |
+    | Touch verified only via CDP emulation | NON-BLOCKING FOLLOW-UP | Behaviorally correct (pan-y proven); physical hardware unverified |
+    | Non-Chrome browser unverified | NON-BLOCKING FOLLOW-UP | Standard canvas/range-input APIs used throughout; no browser-specific code path exists to diverge |
+    | Cache-clear manual action has no UI | OPTIONAL | API-only by design; already confirmation-gated |
+    | source_sha256 / strong content hash | OPTIONAL | Deliberately deferred since W1; nullable, never written |
+    | 4x `# type: ignore[arg-type]` | OPTIONAL | Cosmetic type-narrowing only, no safety implication |
 
 [ ] (P3) Represent long-form DJ mixes in a future waveform sample
     The W7 sample topped out at 11:06. Multi-hour behavior is still covered

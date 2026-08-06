@@ -6,6 +6,36 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Completed Waveform Phase W8, the final documentation/safety/
+  merge-readiness audit. **No production code changed.** Source-level,
+  non-generative audit of the full persistent-player + waveform arc
+  (`988ac08..254c688`, 16 commits, 62 files, +15,011/-106) — this repository
+  has no `main` branch; `feat/crateiq-foundation-audit` is itself the
+  project's single/main branch per its own git remote state. Verified from
+  source: every cache delete traces through one containment gate
+  (`assert_waveform_cleanup_candidate`) fed only by a walk of the cache root
+  itself, never a track filename; FFmpeg/ffprobe execution has exactly one
+  entry point (`waveform_process.py`) with zero `shell=True` anywhere in
+  `backend/app`; path validation is one symlink-resolving implementation
+  (`track_source_service.validated_track_source`) shared by every consumer;
+  `synchronous=NORMAL` is hardcoded to `jobs.db` only, `processed.db` opens
+  `mode=ro` elsewhere and has zero diff in the arc; `generation_key` vs
+  `source_sha256` naming is unambiguous and the latter is never written;
+  every waveform API route takes only `track_id`/`job_id`, never a path;
+  frontend `generate()` is wired to exactly one `onClick`, exactly one seek
+  slider and one app-wide `<audio>` element exist; no waveform log line
+  carries a path; no dependency file changed anywhere in the arc; no secret,
+  binary, media file, or hardcoded `/home/paak` path exists in the diff.
+  `validate-docs --strict` fails on 6 stale `COMMANDS.txt` entries, confirmed
+  **pre-existing** by reproducing it in an isolated worktree at the arc's
+  base commit — neither `COMMANDS.txt` nor `pipeline.py` has any diff in the
+  arc — classified as an unrelated repository issue, not a branch blocker.
+  1327 backend tests (402 waveform) pass, frontend typecheck and build pass,
+  `git diff --check` clean. **Decision: GO — ready to merge after normal
+  human review.** No blockers; six items classified NON-BLOCKING FOLLOW-UP
+  or OPTIONAL (see NEXT_TASKS.txt). Not merged; branch left as-is per
+  instruction.
+
 - 2026-08-06: Completed Waveform Phase W7, the first controlled real-media
   end-to-end verification. Verification only — **no production code changed**;
   the 1327-test W6 baseline still passes and the engine ADR was not reopened.

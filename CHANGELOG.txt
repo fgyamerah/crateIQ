@@ -2,6 +2,76 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W8 documentation, safety, and merge-readiness audit
+
+- Final audit phase. NO PRODUCTION CODE CHANGED. A source-level,
+  non-generative audit of the full persistent-player + waveform arc
+  (988ac08..254c688, 16 commits, 62 files, +15,011/-106 lines). No additional
+  music was analyzed; this phase is inspection, not generation.
+- Repository-structure finding: no `main` branch exists locally or on
+  origin — `origin/HEAD` points at `feat/crateiq-foundation-audit`, and the
+  session's own git status confirms it is the project's main branch. The
+  audit therefore scoped "the branch" to the 16-commit feature arc rather
+  than a nonexistent main-branch diff.
+- Source safety: every filesystem write/delete in the waveform stack passes
+  through one containment gate (assert_waveform_cleanup_candidate) before
+  touching disk, and every deletion candidate is derived from walking the
+  cache root itself (scan_cache_entries), never from a track or source
+  filename. Confirmed by grepping the whole waveform stack for
+  rename/replace/unlink/rmdir/shutil calls.
+- Extraction safety: waveform_process.py is the only subprocess entry point
+  in the waveform stack; zero `shell=True` exists anywhere in backend/app.
+  Other subprocess users (rsync, pipeline runner, key/BPM analysis) are
+  pre-existing, unrelated subsystems this branch does not touch.
+- Path validation: one implementation (track_source_service
+  .validated_track_source) is used by every consumer — preview-audio, the
+  waveform routes, the scheduler, and the extractor's post-extraction
+  re-check. It canonicalizes via Path.resolve() before the containment
+  check, so a symlink escape is rejected rather than silently followed.
+- API surface: every waveform route takes only track_id or job_id, never a
+  filesystem path. get_waveform_readiness is a plain synchronous function
+  with no subprocess call in its body.
+- Database separation: synchronous=NORMAL is hardcoded to JOBS_DB_PATH only;
+  processed.db opens elsewhere at mode=ro and has zero diff in this arc.
+- Generation identity: compute_generation_key hashes only stat + version
+  metadata; source_sha256 remains nullable and is never assigned anywhere
+  outside a pass-through DB-row read. Naming is documented unambiguously.
+- Frontend: generate() is wired to exactly one onClick and nowhere else;
+  the track-change effect only reads. Exactly one seek <input type="range">
+  and one app-wide <audio> element exist. A separate, pre-existing
+  AudioPreviewPlayer used only on unrelated Crates/Smart Crates pages has
+  zero diff in this branch and is out of scope.
+- Privacy: none of the 31 waveform-backend log calls reference a path,
+  filepath, or root variable; no path-shaped string exists in waveform
+  frontend code.
+- Dependencies: zero requirements.txt/requirements-dev.txt/package.json/
+  package-lock.json changes anywhere in the arc.
+- Branch hygiene: all 62 changed files are source/tests/docs — no binary,
+  media, cache artifact, secret pattern, or hardcoded /home/paak path.
+  backend/data/ (the real waveform cache location) is gitignored and
+  untracked. Four cosmetic `# type: ignore[arg-type]` annotations found;
+  type-narrowing only, no safety implication.
+- `validate-docs --strict` fails on 6 stale COMMANDS.txt entries
+  (ai-normalize, artist-intelligence, filename-normalize,
+  metadata-enrich-online, metadata-sanitize, review-queue). Reproduced
+  identically in an isolated worktree at this arc's base commit — before any
+  persistent-player or waveform work began — and neither COMMANDS.txt nor
+  pipeline.py has any diff in the arc. Classified as a pre-existing,
+  unrelated repository issue, not a branch blocker; left unfixed per the
+  no-unrelated-cleanup instruction and logged as its own P2 follow-up.
+- Verified: 1327 backend tests (402 waveform) pass; frontend typecheck and
+  build pass; git diff --check clean.
+- DECISION: GO — ready to merge after normal human review. Zero blockers.
+  Six items classified NON-BLOCKING FOLLOW-UP or OPTIONAL (validate-docs
+  staleness, >11:06 real-media gap, CDP-only touch verification, Chrome-only
+  browser verification, cache-clear UI, deferred content hash) — none of
+  them required by the architecture's own W7/W8 safety gates.
+- Files affected: documentation only — waveform ADR, README, PROJECT_CONTEXT,
+  NEXT_TASKS, and this changelog.
+- Migration notes: none. Branch was NOT merged to main and NOT pushed to any
+  new branch; feat/crateiq-foundation-audit remains as the repository's only
+  branch, per instruction not to merge.
+
 [2026-08-06] — Waveform W7 real-media end-to-end verification
 
 - Verification phase only. NO PRODUCTION CODE CHANGED. The 1327-test W6
