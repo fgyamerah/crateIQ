@@ -6,6 +6,43 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Implemented Waveform Phase W3, the explicit generation
+  lifecycle connecting W1's state foundation to W2's extractor. Added
+  `waveform_identity.py` (a `generation_key` = SHA-256 of a small canonical
+  structure of library-identity digest + track ID + source stat identity +
+  schema/algorithm/analysis parameters — never audio content),
+  `waveform_artifact_service.py` (versioned gzip-JSON artifacts under
+  `<cache>/v1/<algorithm>/<ab>/<key>.json.gz`, built/validated/atomically
+  published via a temp file plus `os.replace()`, with a 4 MiB decompressed
+  bound and full schema/pair-count/int16-range validation on every read),
+  `waveform_job_service.py` (BEGIN IMMEDIATE submission with dedup,
+  supersede-on-changed-source, queue-full, claim, publish-complete, fail,
+  cancel, and restart recovery), `waveform_scheduler.py` (one bounded
+  asyncio queue, 1 worker by default and 2 maximum, cancellation-token
+  registry, injectable runner, plus the production runner), and
+  `api/routes/waveforms.py` (four endpoints). Added a `generation_key`
+  column with migration to `waveform_jobs` and an additive `cache_key`
+  parameter to `transition_track_state`.
+  Generation is only ever started by an explicit
+  `POST /api/tracks/{id}/waveform/generate`; the waveform `GET` is strictly
+  side-effect free and never enqueues, extracts, runs FFmpeg/ffprobe, hashes
+  a source, or writes cache. Repeated or concurrent POSTs — including
+  `force=true` — reuse the single active job, guarded transactionally by
+  W1's partial unique index. A forced regeneration keeps the previous ready
+  artifact readable until the replacement is atomically published, and the
+  cancellation cutoff is that publication. Backend restart marks interrupted
+  jobs terminal and never resumes analysis. Ready responses carry a
+  `"<generation_key>-<resolution>"` ETag honoring `If-None-Match` with 304.
+  Reading cached waveforms stays available even when FFmpeg disappears.
+  Also fixed a pre-existing `jobs.db` performance defect: WAL was paired with
+  `synchronous=FULL`, costing ~372 ms of fsync per commit; it now uses the
+  documented WAL pairing `synchronous=NORMAL` (~15 ms), which cannot corrupt
+  the database and only risks the most recent transactions on power loss.
+  139 new tests; the full suite is 1191 passed (1052 W2 baseline + 139), zero
+  regressions. No waveform was generated from the user's real music library,
+  no audio path reached an external executable, and full-content SHA-256
+  remains deferred. W4 (frontend rendering) is next.
+
 - 2026-08-06: Implemented Waveform Phase W2, a safe internal extraction
   engine only. Added `backend/app/core/waveform_limits.py` (size/duration/
   timeout/resolution policy constants and formulas), `waveform_process.py`

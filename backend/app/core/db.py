@@ -95,7 +95,9 @@ CREATE INDEX IF NOT EXISTS idx_waveform_track_status
 CREATE INDEX IF NOT EXISTS idx_waveform_track_cache_key
     ON waveform_track_state(cache_key);
 
--- W1 persists job records only.  No worker or automatic queue producer exists.
+-- W1 persisted job records only.  W3 adds the explicit generation lifecycle:
+-- generation_key is the stat-based signature digest used for active-job
+-- deduplication and cache naming.  It is never a source content hash.
 CREATE TABLE IF NOT EXISTS waveform_jobs (
     id                  TEXT    PRIMARY KEY,
     library_id          TEXT    NOT NULL,
@@ -110,7 +112,8 @@ CREATE TABLE IF NOT EXISTS waveform_jobs (
     finished_at         TEXT,
     cancel_requested    INTEGER NOT NULL DEFAULT 0
                                 CHECK (cancel_requested IN (0, 1)),
-    error_code          TEXT
+    error_code          TEXT,
+    generation_key      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_waveform_jobs_status
@@ -132,6 +135,12 @@ def get_conn() -> Iterator[sqlite3.Connection]:
     conn = sqlite3.connect(str(JOBS_DB_PATH), check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    # WAL + synchronous=NORMAL is SQLite's documented pairing: it cannot
+    # corrupt the database and only risks the most recent transactions on a
+    # power loss. jobs.db holds disposable operational state (job rows,
+    # progress, waveform lifecycle), never trusted library metadata, so the
+    # full fsync per commit that synchronous=FULL imposes is not warranted.
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     try:
         yield conn
@@ -183,5 +192,8 @@ def init_db() -> None:
             ("progress_message", "TEXT"),
         ]:
             _add_column_safe(conn, "jobs", col, defn)
+
+        # Migrate W1-era waveform job rows to the W3 generation lifecycle.
+        _add_column_safe(conn, "waveform_jobs", "generation_key", "TEXT")
 
     log.info("Backend operational DB ready")

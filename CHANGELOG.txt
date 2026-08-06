@@ -2,6 +2,67 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W3 generation lifecycle, cache, and API
+
+- Connected W1's state foundation to W2's extractor with an explicit,
+  demand-driven generation workflow. New endpoints:
+  `GET /api/tracks/{id}/waveform` (read-only state/peaks, ETag + 304),
+  `POST /api/tracks/{id}/waveform/generate` (the only way to create work),
+  `GET /api/waveform-jobs/{id}` and `DELETE /api/waveform-jobs/{id}`.
+- Waveforms are never generated automatically. Starting CrateIQ, selecting or
+  scanning a library, opening Library or Music Review, selecting a track,
+  starting playback, and calling the waveform GET all create no work. The GET
+  never enqueues, extracts, runs FFmpeg/ffprobe, reads source audio content,
+  or writes a cache artifact.
+- Added `waveform_identity.py`: a `generation_key` computed as SHA-256 of a
+  small canonical structure (library-identity digest, track ID, source stat
+  identity, schema/algorithm versions, analysis parameters). No music file is
+  hashed; full-content `source_sha256` stays nullable and deferred.
+- Added `waveform_artifact_service.py`: versioned gzip-JSON artifacts at
+  `<cache>/v1/<algorithm>/<ab>/<key>.json.gz`, published atomically through a
+  temp file inside the cache root plus `os.replace()`, with a 4 MiB
+  decompressed bound and schema/pair-count/int16-range validation on every
+  read. Artifact paths derive only from a validated 64-char hex key, so
+  traversal and symlink escape are structurally impossible.
+- Added `waveform_job_service.py` (BEGIN IMMEDIATE submission with
+  deduplication, supersede-on-changed-source, queue-full, claim, complete,
+  fail, cancel, restart recovery) and `waveform_scheduler.py` (one bounded
+  asyncio queue, 1 worker by default and 2 maximum, cancellation tokens,
+  injectable runner, production runner). No transaction is held across
+  extraction.
+- Repeated or concurrent POSTs — including `force=true` — reuse the single
+  active job, guarded by W1's partial unique index. A forced regeneration
+  keeps the previous ready artifact readable until the replacement is
+  atomically published; the cancellation cutoff is that publication, and a
+  cancellation arriving afterwards is a no-op that never deletes a published
+  waveform. Backend restart marks interrupted jobs terminal and never resumes
+  analysis.
+- Reading a cached waveform stays available even when FFmpeg disappears; only
+  new generation requires the toolchain.
+- Fixed a pre-existing `jobs.db` defect: WAL was paired with
+  `synchronous=FULL`, costing ~372 ms of fsync per commit. It now uses
+  SQLite's documented WAL pairing `synchronous=NORMAL` (~15 ms), which cannot
+  corrupt the database and only risks the most recent transactions on power
+  loss. jobs.db holds disposable operational state, never trusted metadata.
+- Added 139 tests across `tests/test_waveform_artifact.py`,
+  `tests/test_waveform_scheduler.py`, and `tests/test_waveform_api.py`. The
+  API module raises on any subprocess spawn, proving the HTTP surface never
+  reaches FFmpeg or ffprobe.
+- Files affected: new `waveform_identity.py`, `waveform_artifact_service.py`,
+  `waveform_job_service.py`, `waveform_scheduler.py`,
+  `api/routes/waveforms.py`; modified `core/db.py` (generation_key column +
+  migration, synchronous pragma), `schemas/waveform.py`,
+  `services/waveform_readiness_service.py` (runtime resolution helpers),
+  `services/waveform_state_service.py` (additive cache_key), `main.py`
+  (router + lifespan recovery/scheduler); three new test files; ADR, README,
+  PROJECT_CONTEXT, NEXT_TASKS, changelog.
+- Migration notes: backend startup adds one nullable `generation_key` column
+  to `waveform_jobs` in ignored `backend/data/jobs.db`. No frontend change and
+  no dependency was added. No waveform was generated from the user's real
+  music library during verification, no audio path reached an external
+  executable, and no music/tag/MIK/crate/review/DJ-database write exists.
+  Full suite: 1191 passed (1052 W2 baseline + 139 new), zero regressions.
+
 [2026-08-06] — Waveform W2 safe extraction engine
 
 - Added a callable internal waveform extraction engine that a future W3 can

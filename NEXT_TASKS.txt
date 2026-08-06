@@ -88,11 +88,23 @@ CURRENT FOCUS
     synthetic-PCM tests. No generation API, job worker, or cache artifact was
     wired. Strong content-identity/cache-key strategy remains deferred to W3+
     exactly as W1 already decided — W2 never reads source contents to hash them.
-[ ] (P2) Implement Waveform Phase W3 — cache and API
-    Wire the W2 extractor into an explicit generation POST, a read-only GET,
-    job status/cancel endpoints, deduplication, atomic cache publish, gzip
-    JSON artifacts, and ETag support, reusing W1's jobs.db schema and W2's
-    extraction engine unchanged. Do not proceed until W2 review is accepted.
+[x] (P2) Implement Waveform Phase W3 — cache and API (2026-08-06)
+    Wired the W2 extractor into an explicit generation POST, a side-effect-free
+    GET, job status/cancel endpoints, active-job deduplication, atomic gzip-JSON
+    cache publication, and ETag/304 support. Added a stat-based `generation_key`
+    (SHA-256 of a small metadata structure, never audio content), a bounded
+    single-worker scheduler with a 32-job queue, supersede-on-changed-source,
+    a publication cancellation cutoff, and restart recovery that never resumes
+    analysis. Also fixed a pre-existing jobs.db WAL/synchronous=FULL fsync cost
+    (~372ms -> ~15ms per commit). 139 new tests; suite 1191 passed. No waveform
+    was generated from the real music library and no audio path reached an
+    external executable. Full-content SHA-256 remains deferred.
+[ ] (P2) Implement Waveform Phase W4 — frontend real waveform presentation
+    Add `frontend/src/api/waveforms.ts`, a waveform data hook, and a canvas
+    `TrackWaveform.tsx` consuming the W3 API. Render ready peaks, keep the
+    decorative fallback for every non-ready state, guard stale responses on
+    track change, and choose the LOD responsively. No seeking changes yet
+    (that is W5). Do not proceed until W3 review is accepted.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

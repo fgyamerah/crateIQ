@@ -63,7 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Waveform foundation | W1 cache/config/state foundation + W2 extraction engine | W1: safe cache/config/state/readiness contracts. W2: an internal, unwired extraction engine (bounded ffprobe + FFmpeg decode + min/max peak accumulator) verified only against mocked processes and synthetic PCM. No API, worker, cache artifact, source hashing, or frontend rendering yet. |
+| Waveform generation (backend) | W1–W3 implemented | Explicit, demand-driven backend generation: `POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, and ETag support. Verified only against fixture libraries and mocked processes. Frontend rendering is not implemented yet. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -207,16 +207,40 @@ unverified. `ready` is reserved for a future verified extractor contract.
 Waveform operational state is stored only in backend `jobs.db`; the trusted
 library `processed.db` is not extended or written by this foundation.
 
-Phase W2 adds an internal extraction engine
+Phase W2 adds the internal extraction engine
 (`backend/app/services/waveform_extractor.py` and supporting
-`waveform_probe.py`/`waveform_peaks.py`/`waveform_process.py` modules) that a
-future phase can call: a bounded, read-only ffprobe policy check, a fixed
-argument-vector FFmpeg decode command with no shell and no output file, and a
-bounded streaming min/max peak accumulator with extrema-preserving
-downsampling. It is not reachable from any API route, job worker, or
-application startup path, and every W2 test runs against fake process objects
-and synthetic PCM — no real audio tool ever decodes a file in this repository
-as part of W2.
+`waveform_probe.py`/`waveform_peaks.py`/`waveform_process.py` modules): a
+bounded, read-only ffprobe policy check, a fixed argument-vector FFmpeg decode
+command with no shell and no output file, and a bounded streaming min/max peak
+accumulator with extrema-preserving downsampling.
+
+### Waveform generation API (W3)
+
+Phase W3 connects that engine to an explicit, demand-driven lifecycle.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /api/tracks/{id}/waveform?resolution=compact\|player\|detail` | Read-only state; returns peaks only when `ready`. Sends an `ETag` and honors `If-None-Match` with `304`. |
+| `POST /api/tracks/{id}/waveform/generate` | The only way to create work. Body `{"force": false}`. Returns `202` queued, `200` when already ready, `429` when the queue is full, `503` when unavailable. |
+| `GET /api/waveform-jobs/{job_id}` | Privacy-safe job status. |
+| `DELETE /api/waveform-jobs/{job_id}` | Best-effort cancellation; idempotent, and never deletes an already-published waveform. |
+
+Waveforms are **never** generated automatically — not by starting CrateIQ,
+selecting or scanning a library, opening Library or Music Review, selecting a
+track, starting playback, or calling the waveform `GET`. Generation is always
+an explicit request.
+
+Artifacts are disposable gzip JSON under the app-owned cache root, named only
+by a `generation_key`: the SHA-256 of a small structure of `stat` identity plus
+schema/algorithm versions. **No music file is ever hashed** — full-content
+SHA-256 remains deferred. Deleting the entire waveform cache has no effect on
+playback, tags, metadata, crates, reviews, exports, or DJ software.
+
+Generation runs on one bounded worker (maximum two) with a 32-job queue,
+deduplicates concurrent requests for the same source generation, and supports
+cancellation. A backend restart closes out interrupted jobs and never resumes
+analysis on its own. Reading a cached waveform keeps working even if FFmpeg
+later disappears; only new generation requires the toolchain.
 
 ## Development
 
@@ -225,6 +249,7 @@ as part of W2.
 .venv/bin/python -m pytest -q tests/test_backend_api.py -k "analysis or jobs"
 .venv/bin/python -m pytest -q tests/test_waveform_foundation.py tests/test_preflight.py
 .venv/bin/python -m pytest -q tests/test_waveform_peaks.py tests/test_waveform_process.py tests/test_waveform_probe.py tests/test_waveform_extractor.py
+.venv/bin/python -m pytest -q tests/test_waveform_artifact.py tests/test_waveform_scheduler.py tests/test_waveform_api.py
 .venv/bin/python -m pytest -q tests/test_supported_route_contracts.py
 
 # Frontend checks

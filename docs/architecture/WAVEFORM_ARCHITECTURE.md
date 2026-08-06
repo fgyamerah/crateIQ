@@ -1,7 +1,7 @@
 # CrateIQ Waveform Architecture and Safety Design
 
-**Status:** accepted design; Phase W1 foundation and Phase W2 safe extraction
-wrapper implemented
+**Status:** accepted design; Phases W1 (foundation), W2 (safe extraction
+wrapper), and W3 (generation lifecycle, cache, and API) implemented
 
 **Date:** 2026-08-05
 
@@ -1279,18 +1279,89 @@ validated internal `WaveformExtractionResult` or a narrow typed
 92 new focused tests pass alongside the unchanged 960-test W1 baseline (1052
 total).
 
-### Phase W3 — cache and API
+### Phase W3 — cache and API (implemented 2026-08-06)
 
-**Files/components:** waveform cache/state service, new waveform routes,
-`main.py` router registration, backend integration tests.
+**Files/components:** `backend/app/services/waveform_identity.py` (stat-based
+generation key), `waveform_artifact_service.py` (gzip-JSON build/validate/
+atomic publish/bounded read), `waveform_job_service.py` (transactional job
+lifecycle), `waveform_scheduler.py` (bounded queue, workers, production
+runner), `backend/app/api/routes/waveforms.py` (four endpoints), extended
+`schemas/waveform.py`, a `generation_key` column plus migration in
+`core/db.py`, an additive `cache_key` parameter on
+`waveform_state_service.transition_track_state`, and `main.py` router and
+lifespan wiring. Tests: `tests/test_waveform_artifact.py`,
+`tests/test_waveform_scheduler.py`, `tests/test_waveform_api.py`.
 
 **Scope:** explicit generation POST, read-only GET, job status/cancel,
 deduplication, atomic publish, gzip JSON, ETag, privacy-safe errors.
 
-**Safety gate:** GET cannot invoke hash/extractor; API contains no paths; preview-
-audio regression tests pass unchanged.
+**Safety gate:** GET cannot invoke hash/extractor; API contains no paths;
+preview-audio regression tests pass unchanged. Met — the API test module
+raises on any `subprocess.run`/`Popen`/`create_subprocess_exec` call, so the
+whole HTTP surface is proven never to reach FFmpeg or ffprobe.
 
 **Complete when:** cache hit/miss/stale/restart/dedup/cancel contracts pass.
+Met: 139 new tests pass alongside the unchanged 1052-test W2 baseline (1191
+total).
+
+#### W3 content-identity decision
+
+W3 introduces `generation_key`: the SHA-256 of a small canonical JSON
+structure containing the library identity digest, track ID, source `stat`
+identity (size, `mtime_ns`, `ctime_ns`, device, inode), schema and algorithm
+versions, and the analysis parameters. **It never hashes audio content**, so
+no multi-gigabyte file is read merely to identify it. The key both
+deduplicates active work and names the cache artifact, and contains no
+absolute path, filename, or tag value.
+
+`source_sha256` remains nullable and reserved for a future true content
+hash. A stat signature is a cache-invalidation mechanism, not cryptographic
+proof of identical audio: a pathological in-place edit preserving size, both
+timestamps, device, and inode would evade it. Solving that would require a
+full-file read on every request, which this architecture rejects. Strong
+content identity therefore remains deferred.
+
+#### W3 lifecycle notes
+
+- **Scheduler:** one bounded `asyncio.Queue` plus 1 worker by default
+  (maximum 2), never a task per request. Queue capacity is 32 and is
+  enforced against persisted `queued` rows, so `429` is deterministic.
+- **Deduplication:** an active job with the *same* generation key is reused
+  even when `force=true`, so repeated POSTs can never launch a second
+  decoder. A different generation key means the source changed underneath an
+  in-flight job, which is then superseded and replaced. W1's partial unique
+  index `idx_waveform_one_active_track` is the transactional race guard, with
+  `IntegrityError` handling for concurrent submissions.
+- **Force semantics:** `force=false` short-circuits on a valid ready artifact
+  for the same generation key; `force=true` queues regeneration but leaves
+  the track in `ready` state so the previous artifact stays servable until
+  the replacement is atomically published.
+- **Cancellation cutoff:** the last cancellation check happens immediately
+  before atomic publication. A cancellation accepted before that point
+  publishes nothing; one arriving after finds a succeeded job and is a
+  deterministic no-op that never deletes the published artifact.
+- **Transactions:** no SQLite transaction is held across extraction. The
+  worker persists the transition to `processing`, releases the connection,
+  extracts, then performs short publication/state transactions.
+- **Restart policy:** on startup, interrupted `processing` jobs become
+  `failed` and leftover `queued` jobs become `cancelled`, both with
+  `BACKEND_RESTARTED`. Nothing is re-enqueued, so a backend restart can never
+  resume music-library analysis. Deeper resume policy remains W6.
+- **ETag:** `"<generation_key>-<resolution>"`, derived only from immutable
+  derived identity with no filesystem detail. `If-None-Match` returns `304`
+  with an empty body.
+- **Read vs. generate capability:** reading a cached artifact requires only a
+  valid, contained cache root, so a disappeared FFmpeg never blocks an
+  already-generated waveform. Only generation requires the toolchain.
+
+#### W3 deferral: runtime version verification
+
+W2's `verify_extractor_versions` remains unwired and readiness stays at
+`detected`. `GET /api/runtime/readiness` is inside the route-contract smoke
+surface that asserts no subprocess is ever spawned; wiring version checks
+there would spawn two processes on every readiness call and break that
+guarantee. Promoting `detected` to `ready` is revisited in W6 alongside
+resource and lifecycle hardening.
 
 ### Phase W4 — frontend real waveform presentation
 
@@ -1484,3 +1555,26 @@ extractor module does not import `waveform_state_service` or
 `waveform_cache`. Runtime FFmpeg/ffprobe version verification exists only as
 an unwired primitive (`waveform_probe.verify_extractor_versions`); readiness
 stays at `detected`, deliberately not upgraded to `ready` in this phase.
+
+## 27. Explicit W3 non-actions
+
+W3 wires the explicit generation lifecycle, cache publication, scheduling,
+and the read/generate/status/cancel API. It adds **no** automatic generation:
+nothing is analyzed because CrateIQ or the backend starts, a library is
+selected or scanned, Library or Music Review loads, a track becomes visible
+or is selected, playback begins, the queue advances, or a waveform `GET` is
+issued. Only an explicit `POST .../waveform/generate` can create work.
+
+`GET` is strictly side-effect free: it performs a database lookup, a cheap
+`stat` for staleness, and a bounded read of an already-published artifact. It
+never enqueues a job, runs FFmpeg or ffprobe, reads source audio content,
+hashes a source, or writes a cache artifact.
+
+W3 adds no frontend code; real waveform rendering remains W4. It performs no
+full-source SHA-256 and reads no music file merely to identify it.
+
+**During W3 verification no waveform was generated from the user's real music
+library.** Every test uses a temporary fixture library, a temporary
+`jobs.db`, a temporary cache directory, mocked extractor results, and fake
+process objects. The API test module fails outright if any subprocess is
+spawned, so no audio path ever reached an external executable.

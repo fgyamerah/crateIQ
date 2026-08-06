@@ -92,6 +92,7 @@ def transition_track_state(
     library_id: str | None = None,
     snapshot: SourceStatSnapshot | None = None,
     error_code: str | None = None,
+    cache_key: str | None = None,
 ) -> WaveformTrackState:
     identity = library_id or (snapshot.library_id if snapshot else library_identity())
     target = WaveformArtifactStatus(status)
@@ -108,12 +109,14 @@ def transition_track_state(
         if target in {WaveformArtifactStatus.FAILED, WaveformArtifactStatus.UNSUPPORTED}
         else None
     )
+    # cache_key holds the W3 stat-based generation key, never a content hash.
+    resolved_cache_key = cache_key if cache_key is not None else current.cache_key
     with get_conn() as conn:
         conn.execute(
             """UPDATE waveform_track_state
                SET status = ?, source_size_bytes = ?, source_mtime_ns = ?,
                    source_ctime_ns = ?, source_device = ?, source_inode = ?,
-                   generated_at = ?, last_error_code = ?, updated_at = ?
+                   cache_key = ?, generated_at = ?, last_error_code = ?, updated_at = ?
                WHERE library_id = ? AND track_id = ?""",
             (
                 target.value,
@@ -122,6 +125,7 @@ def transition_track_state(
                 snapshot.source_ctime_ns if snapshot else current.source_ctime_ns,
                 snapshot.source_device if snapshot else current.source_device,
                 snapshot.source_inode if snapshot else current.source_inode,
+                resolved_cache_key,
                 generated_at,
                 retained_error,
                 now,

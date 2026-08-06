@@ -41,9 +41,12 @@ from .api.routes import settings as settings_router
 from .api.routes import sync as sync_router
 from .api.routes import smart_crates as smart_crates_router
 from .api.routes import tracks as tracks_router
+from .api.routes import waveforms as waveforms_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
 from .services import read_only as read_only_service
+from .services import waveform_job_service
+from .services.waveform_scheduler import get_scheduler
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -78,9 +81,30 @@ async def lifespan(app: FastAPI):
 
     init_db()
 
+    # Close out waveform jobs left active by a previous process. A restart
+    # must never silently resume music-library analysis, so interrupted work
+    # is marked terminal and requires a renewed explicit request. This only
+    # rewrites operational rows in jobs.db; no audio is read.
+    try:
+        waveform_job_service.recover_interrupted_jobs()
+    except Exception:  # pragma: no cover - recovery must never block startup
+        log.exception("waveform job recovery skipped")
+
+    # Start idle waveform workers. The in-memory queue starts empty and no
+    # persisted job is re-enqueued, so nothing is analyzed automatically.
+    scheduler = get_scheduler()
+    try:
+        await scheduler.start()
+    except Exception:  # pragma: no cover - optional feature must never block startup
+        log.exception("waveform scheduler did not start")
+
     yield
 
     # --- shutdown ---
+    try:
+        await scheduler.stop()
+    except Exception:  # pragma: no cover - shutdown must never raise
+        log.exception("waveform scheduler shutdown error")
     log.info("CrateIQ backend shutting down")
 
 
@@ -140,6 +164,7 @@ app.include_router(settings_router.router,   prefix=API_PREFIX)
 app.include_router(jobs_router.router,       prefix=API_PREFIX)
 app.include_router(library_router.router,    prefix=API_PREFIX)
 app.include_router(tracks_router.router,     prefix=API_PREFIX)
+app.include_router(waveforms_router.router,  prefix=API_PREFIX)
 app.include_router(insights_router.router,    prefix=API_PREFIX)
 app.include_router(analysis_router.router,   prefix=API_PREFIX)
 app.include_router(beets_review_router.router, prefix=API_PREFIX)
