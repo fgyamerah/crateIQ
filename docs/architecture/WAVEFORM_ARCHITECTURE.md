@@ -578,6 +578,15 @@ W1 job states are `queued`, `processing`, `succeeded`, `failed`, and
 Cross-database foreign keys are intentionally absent. W2/W3 may add bounded
 progress fields additively when real work exists.
 
+Additive columns since W1, both applied by idempotent migrations in
+`backend/app/core/db.py`:
+
+- W3 — `waveform_jobs.generation_key TEXT`, the stat-based key that both
+  deduplicates active work and names the cache artifact;
+- W6 — `waveform_track_state.last_accessed_at TEXT`, the application-owned
+  LRU ordering key. Filesystem `atime` is not usable for this: `relatime` and
+  `noatime` mounts defer or disable it entirely.
+
 ## 10. API contract
 
 ### 10.1 Read waveform state/data
@@ -696,7 +705,29 @@ sets the cancellation flag, terminates the process group, and deletes only its
 temporary cache artifact. A completed immutable artifact is not deleted by job
 cancellation.
 
-### 10.4 Capability
+### 10.4 Cache footprint and manual clear (W6)
+
+```text
+GET  /api/waveform-cache
+POST /api/waveform-cache/clear
+```
+
+The GET is read-only and reports `current_cache_bytes`, `max_cache_bytes`,
+`artifact_count`, `temp_count`, `superseded_count`, `over_limit`,
+`algorithm_version`, and `ready_track_count`. It doubles as the preview for
+the clear action.
+
+The POST requires `{"confirm": true}`; an unconfirmed or empty body returns
+`400 WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED` and deletes nothing. A confirmed
+clear removes only CrateIQ-owned artifact/temp files under the validated cache
+root, resets affected tracks to `stale`, queues no replacement work, and
+returns `removed_files`, `freed_bytes`, `reset_track_states`,
+`remaining_files`, and `current_cache_bytes`.
+
+Neither response contains a cache path, source path, library root, filename,
+or content hash.
+
+### 10.5 Capability
 
 Extend existing responses rather than inventing a disconnected health system:
 
@@ -716,7 +747,7 @@ Capability states established by W1:
 | `cache_unavailable` | safe cache root cannot currently be written/created |
 | `extractor_unavailable` | FFmpeg or ffprobe was not passively detected |
 | `detected` | both tools found without execution; version is not verified |
-| `ready` | reserved for a future runtime-verified extractor contract |
+| `ready` | both tools passed W6's startup `-version` runtime verification |
 
 No capability response returns executable paths, cache paths, source paths, or
 library roots.
@@ -1048,19 +1079,31 @@ No remote telemetry is introduced.
 Cleanup may delete only files that pass canonical containment under the
 configured CrateIQ waveform cache root.
 
-Policy:
+Policy (implemented in W6 unless noted):
 
 - startup: remove `.tmp.*` older than 24 hours and mark interrupted jobs;
 - lazy: when a track's source fingerprint changes, unlink the track state from
   the old artifact; do not synchronously delete a possibly shared artifact;
-- daily or on size pressure: remove unreferenced artifacts least-recently used;
+- on size pressure and after each publication: remove unreferenced artifacts
+  least-recently used;
 - size pressure: at 2 GiB, prune to 80% (1.6 GiB);
-- removed tracks: state/artifact becomes eligible after 30 days without access;
-- failed/cancelled job rows: retain 30 days, then delete rows only;
+- removed tracks: an artifact-less, non-active track state with no access or
+  update in 30 days is forgotten; it reads back as `not_generated`, which is
+  also its state before any waveform is requested;
+- failed/cancelled job rows: retain 30 days, then delete rows only. Succeeded
+  rows are kept as the record of what produced an artifact that may still be
+  on disk;
 - old schema/algorithm directories: immediately regeneration-eligible and
-  cleanup-eligible after 7 days;
+  cleanup-eligible after 7 days, independently of size pressure, since a
+  version mismatch is always a cache miss. Directories emptied this way are
+  removed with `rmdir` only, so one holding any other file survives;
 - manual “Clear waveform cache” action: preview count/bytes, require explicit
-  confirmation, and affect only the validated waveform cache root.
+  confirmation, and affect only the validated waveform cache root. See
+  section 10.4.
+
+A scheduled daily pass is intentionally *not* implemented. Cleanup runs at
+startup, after each publication, and on the manual action; a background timer
+would be the only component in this feature that acts without a trigger.
 
 Do not scan source directories for sidecars. Do not remove any file based on a
 track path. If cache-root validation fails, cleanup stops without deleting.
@@ -1502,19 +1545,84 @@ stubbed waveform response so no backend generation was involved:
   (`f`/`m`/`r`/`x`/`w`/arrow keys) correctly no-op while the seek control is
   focused, verified live against the existing focus/typing guard.
 
-### Phase W6 — lifecycle, cleanup, and resource controls
+### Phase W6 — lifecycle, cleanup, and resource controls (implemented 2026-08-06)
 
-**Files/components:** worker lifecycle, startup recovery, cleanup service/manual
-preview, observability, tests.
+**Files/components:** new
+`backend/app/services/waveform_cache_service.py` (accounting, tiered cleanup,
+LRU eviction, reconciliation, manual preview/clear); extended
+`waveform_job_service.py` (access bookkeeping, eviction support, shutdown
+reconciliation, operational-row retention), `waveform_scheduler.py`
+(deterministic drain-then-cancel shutdown, worker fault containment,
+post-publication cleanup), `waveform_readiness_service.py` (cached runtime
+extractor verification), `api/routes/waveforms.py` (LRU touch plus two cache
+routes), `schemas/waveform.py`, a `last_accessed_at` column and migration in
+`core/db.py`, and `main.py` startup reconciliation/verification wiring. Tests:
+`tests/test_waveform_operations.py`, `tests/test_waveform_cache_cleanup.py`,
+extended `tests/test_waveform_api.py`, and a shared verification-cache reset in
+`tests/conftest.py`. No frontend file changed.
 
 **Scope:** queue bound, one worker, process group cancellation, temp cleanup,
 LRU size cleanup, safe local logs, restart recovery.
 
 **Safety gate:** cleanup containment tests prove no source/library deletion is
-possible.
+possible. Met — every deletion path is proven to refuse a source file, the
+cache root, the library root, a traversal path, a symlinked file, a symlinked
+directory, an unknown filename, and a cache root that overlaps the library.
 
 **Complete when:** interruption/storage-pressure/multiple-tab scenarios are
-deterministic and bounded.
+deterministic and bounded. Met: 1327 tests pass twice against the 1191-test W3
+baseline (W4/W5 were frontend-only).
+
+#### W6 lifecycle notes
+
+- **Shutdown** is ordered and idempotent: stop accepting work, cancel every
+  in-flight job's token so W2's supervisor can TERM/KILL and reap the child
+  process group, wait a bounded grace period, then cancel the worker tasks.
+  Jobs still active afterwards are recorded as `BACKEND_SHUTDOWN`, which is
+  deliberately distinct from a user cancellation, and are never resumed.
+- **Worker fault containment:** an unexpected runner exception marks the job
+  `failed` with `WAVEFORM_WORKER_FAILED` instead of stranding it in
+  `processing`, which would permanently occupy that track's active-job index
+  and block every future request for it.
+- **Startup reconciliation** sweeps abandoned temp files, repairs tracks
+  claiming a `ready` artifact whose file is gone, and applies row retention.
+  It decodes nothing, hashes nothing, scans no source directory, and
+  regenerates nothing.
+- **Cleanup tiers**, in ascending order of regret: abandoned temp files, then
+  aged-out superseded layouts, then orphan artifacts nothing references, then
+  artifacts whose track state is no longer `ready`, and only then
+  least-recently-used ready artifacts. The first two tiers run unconditionally
+  because neither can ever be served; the rest run only under size pressure.
+  A just-published artifact is protected so a publication cannot immediately
+  evict itself, and eviction always unlinks the track's `ready` claim so
+  jobs.db can never advertise a file that is gone.
+- **LRU ordering** uses an application-owned `last_accessed_at` column, not
+  filesystem `atime`, which `relatime`/`noatime` mounts defer or disable
+  entirely. Writes are rate-limited to at most one per track per hour so
+  polling from several tabs cannot amplify into a write per request.
+- **Maintenance serialization:** cleanup and clear share one asyncio lock,
+  created per running loop so a process that runs a second event loop does
+  not hit a bound-loop error.
+
+#### W6 runtime extractor verification
+
+W3 deferred promoting readiness from `detected` to `ready` because
+`GET /api/runtime/readiness` is inside the smoke surface that asserts no
+subprocess is ever spawned. W6 resolves this by separating the two: a bounded
+`ffmpeg -version` / `ffprobe -version` check runs **once at startup**, caches
+its result process-wide, and the readiness report only ever *reads* that
+cache. No media path is passed to either binary, only a plausible
+`<tool> version …` first line is accepted, and the whole check is skipped when
+the feature is disabled or the binaries were never detected.
+
+#### W6 manual cache action
+
+`GET /api/waveform-cache` reports counts and bytes and previews what a clear
+would remove; `POST /api/waveform-cache/clear` requires `{"confirm": true}`
+and is rejected otherwise. Both are scoped to the validated cache root and to
+CrateIQ's own artifact/temp naming, so a confirmed clear can do nothing worse
+than require explicit regeneration. Cleared tracks become `stale`; nothing is
+re-queued.
 
 ### Phase W7 — controlled browser and performance verification
 
@@ -1688,3 +1796,35 @@ library.** Every test uses a temporary fixture library, a temporary
 `jobs.db`, a temporary cache directory, mocked extractor results, and fake
 process objects. The API test module fails outright if any subprocess is
 spawned, so no audio path ever reached an external executable.
+
+## 28. Explicit W6 non-actions
+
+W6 hardens lifecycle, cleanup, and resource controls. It adds **no** automatic
+generation. Startup reconciliation, cleanup, eviction, retention, and the
+manual clear all leave the "explicit `POST .../waveform/generate` only" rule
+intact: nothing is re-enqueued after a restart, after an eviction, after a
+reconciliation repair, or after a confirmed cache clear. A track whose
+artifact disappears becomes `stale` and stays that way until someone asks for
+it again.
+
+W6 deletes nothing outside the validated waveform cache root. It does not scan
+the music library, does not walk source directories, does not resolve a
+deletion candidate from a track path, and does not follow a symlink out of the
+cache. It reads no source audio, computes no content hash, and writes nothing
+to `processed.db`, tags, playlists, crates, review state, or any DJ database.
+The one destructive route requires explicit confirmation and can do nothing
+worse than force explicit regeneration.
+
+Startup runs `ffmpeg -version` and `ffprobe -version` once. Those are the only
+executions W6 introduces, they receive no media path, and they are skipped
+entirely when the feature is disabled or the binaries were never detected. The
+readiness `GET` remains a pure read of the cached result and still spawns
+nothing.
+
+W6 adds no frontend code, no scheduled/background timer, no new dependency,
+and no remote telemetry.
+
+**During W6 verification no waveform was generated from the user's real music
+library and no real cache directory was cleared.** Every test runs against a
+temporary fixture library, a temporary `jobs.db`, and a temporary cache root;
+the only files any test can delete are fixtures it created itself.

@@ -123,11 +123,46 @@ CURRENT FOCUS
     keyboard controls, fallback-state seeking, track-change mid-gesture
     safety, zero generation traffic from seeking, responsive at three widths,
     and Music Review shortcut guarding. No backend change.
-[ ] (P2) Implement Waveform Phase W6 — lifecycle, cleanup, and resource controls
-    Add worker lifecycle/startup recovery hardening, a cleanup service with a
-    manual preview action, LRU cache-size cleanup, process-group cancellation
-    hardening, and safe local observability, reusing W1-W5 unchanged. Do not
-    proceed until W5 review is accepted.
+[x] (P2) Implement Waveform Phase W6 — lifecycle, cleanup, and resource controls
+    (2026-08-06). Added `backend/app/services/waveform_cache_service.py` with
+    bounded accounting, tiered cleanup (abandoned temps >24h, superseded
+    schema/algorithm layouts >7d, orphans, non-ready artifacts, then LRU ready
+    artifacts), 2 GiB -> 80% pruning with just-published protection, and
+    startup reconciliation. LRU ordering uses a new app-owned
+    `last_accessed_at` column instead of unreliable filesystem atime, with
+    access writes rate-limited to once per track per hour. Scheduler shutdown
+    is now ordered and idempotent (cancel tokens, bounded drain, then task
+    cancel) and records `BACKEND_SHUTDOWN` rather than a user cancellation; a
+    crashed runner now fails its job instead of stranding it in `processing`.
+    Added 30-day retention for failed/cancelled job rows and quiet
+    artifact-less track states (rows only). Completed W3's deferred
+    `detected` -> `ready` transition via a startup-only, cached
+    `ffmpeg/ffprobe -version` check, keeping the readiness GET a pure read.
+    Added `GET /api/waveform-cache` and a confirmation-gated
+    `POST /api/waveform-cache/clear`. Also fixed a latent import-time
+    `asyncio.Lock` loop-binding hazard in the shared maintenance lock.
+    1327 tests pass twice; frontend typecheck unchanged; no frontend file
+    changed. No waveform was generated from the real music library and no real
+    cache directory was cleared.
+
+[ ] (P2) Implement Waveform Phase W7 — controlled browser and performance
+    verification. Use explicitly selected read-only test-library files to
+    verify all baseline playback behaviors, the section 22 measurements, and
+    failure/recovery/restart. Requires explicit test-library selection and no
+    source mutation, generated audio, metadata write, or DJ-database write.
+    Do not proceed until W6 review is accepted.
+
+[ ] (P3) Add a Settings surface for the waveform cache
+    The W6 footprint/preview and confirmation-gated clear exist only as API
+    routes. A UI panel would make the manual action discoverable, but it must
+    keep the explicit confirmation step and must not present clearing as
+    routine maintenance.
+
+[ ] (P3) Decide whether waveform cleanup ever needs a scheduled pass
+    W6 deliberately runs cleanup only at startup, after each publication, and
+    on the manual action. A daily timer would be the only part of this feature
+    that acts without a trigger; revisit only if real usage shows the cache
+    growing between publications.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

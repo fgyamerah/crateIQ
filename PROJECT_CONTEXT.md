@@ -6,6 +6,35 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Implemented Waveform Phase W6, lifecycle/cleanup/resource
+  controls. Added `backend/app/services/waveform_cache_service.py`: bounded
+  cache accounting, tiered cleanup (abandoned temps >24h, superseded
+  schema/algorithm layouts >7d, orphans, non-ready artifacts, then LRU ready
+  artifacts), 2 GiB -> 80% pruning that never evicts the artifact just
+  published, startup reconciliation of tracks claiming a missing file, and a
+  manual preview/clear action. Deletion is structurally contained: candidates
+  are derived internally from the validated cache root and CrateIQ's own
+  artifact/temp naming, the walk never follows symlinks, and each candidate
+  must still pass W1's containment assertion. LRU ordering uses a new
+  application-owned `waveform_track_state.last_accessed_at` column instead of
+  filesystem atime (`relatime`/`noatime` defer or disable it), written at most
+  once per track per hour so multi-tab polling cannot amplify into a write per
+  request. Scheduler shutdown is ordered and idempotent — cancel tokens so
+  W2's supervisor can TERM/KILL and reap the child process group, bounded
+  drain, then task cancel — and records `BACKEND_SHUTDOWN`, distinct from a
+  user cancellation; a crashed runner now fails its job instead of stranding
+  it in `processing` and permanently blocking that track. Added 30-day
+  retention for failed/cancelled job rows and quiet artifact-less track states
+  (rows only). Completed W3's deferred `detected` -> `ready` readiness
+  transition with a startup-only cached `ffmpeg/ffprobe -version` check, so
+  `GET /api/runtime/readiness` stays a pure read that spawns nothing. Added
+  `GET /api/waveform-cache` and a confirmation-gated
+  `POST /api/waveform-cache/clear`. Fixed a latent import-time `asyncio.Lock`
+  loop-binding hazard in the shared maintenance lock. 1327 tests pass twice;
+  frontend typecheck unchanged; no frontend file changed. No waveform was
+  generated from the real music library and no real cache directory was
+  cleared.
+
 - 2026-08-06: Implemented Waveform Phase W5, interactive waveform seeking.
   The existing native `<input type="range">` seek control moved from a
   separate row below the waveform into a transparent, full-box overlay

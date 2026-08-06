@@ -9,6 +9,8 @@ import shutil
 import tempfile
 from pathlib import Path
 
+import pytest
+
 
 _TEST_MUSIC_ROOT = Path(tempfile.mkdtemp(prefix="crateiq-pytest-"))
 
@@ -20,6 +22,21 @@ os.environ["CRATEIQ_LIBRARY_ROOT"] = str(_TEST_MUSIC_ROOT)
 
 def pytest_sessionfinish() -> None:
     shutil.rmtree(_TEST_MUSIC_ROOT, ignore_errors=True)
+
+
+@pytest.fixture(autouse=True)
+def _reset_waveform_extractor_verification():
+    """Keep W6's process-wide extractor verification out of other tests.
+
+    The verification result is cached in a module global so the readiness GET
+    never spawns anything. That global would otherwise leak between tests and
+    silently change readiness assertions in unrelated modules.
+    """
+    from backend.app.services import waveform_readiness_service
+
+    waveform_readiness_service.reset_extractor_verification()
+    yield
+    waveform_readiness_service.reset_extractor_verification()
 
 
 def async_test(fn):

@@ -196,4 +196,9 @@ def init_db() -> None:
         # Migrate W1-era waveform job rows to the W3 generation lifecycle.
         _add_column_safe(conn, "waveform_jobs", "generation_key", "TEXT")
 
+        # W6 LRU support: application-owned access timestamp. Filesystem atime
+        # is unreliable (relatime/noatime mounts defer or disable it), so cache
+        # eviction ordering uses this column instead.
+        _add_column_safe(conn, "waveform_track_state", "last_accessed_at", "TEXT")
+
     log.info("Backend operational DB ready")

@@ -23,7 +23,12 @@ from ..models.waveform_extraction import (
     WaveformExtractionError,
     WaveformExtractionErrorCode,
 )
-from . import track_source_service, waveform_artifact_service, waveform_job_service
+from . import (
+    track_source_service,
+    waveform_artifact_service,
+    waveform_cache_service,
+    waveform_job_service,
+)
 from .waveform_extractor import extract_waveform
 from .waveform_readiness_service import (
     WaveformRuntimeError,
@@ -77,10 +82,32 @@ class WaveformScheduler:
         log.info("waveform scheduler started workers=%d queue_capacity=%d",
                  self.max_concurrency, self.max_queue_size)
 
-    async def stop(self) -> None:
+    async def stop(self, *, drain_grace_seconds: float = 5.0) -> None:
+        """Deterministic shutdown. Idempotent — a second call is a no-op.
+
+        Order matters: stop accepting work, signal every in-flight job's
+        cancellation token so W2's supervisor can TERM/KILL and reap its child
+        process group, give workers a bounded moment to unwind, then cancel the
+        tasks. Jobs still active afterwards are recorded as BACKEND_SHUTDOWN
+        rather than as a user cancellation, and are never resumed on restart.
+        """
         if not self._started:
             return
-        self._started = False
+        self._started = False  # stop accepting new work immediately
+
+        # Let running extractions tear their child processes down cleanly.
+        for token in list(self._tokens.values()):
+            token.cancel()
+
+        if self._tokens and drain_grace_seconds > 0:
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._workers, return_exceptions=True),
+                    timeout=drain_grace_seconds,
+                )
+            except (asyncio.TimeoutError, Exception):  # noqa: B014 - shutdown must not raise
+                pass
+
         for worker in self._workers:
             worker.cancel()
         for worker in self._workers:
@@ -92,7 +119,13 @@ class WaveformScheduler:
                 log.exception("waveform worker raised during shutdown")
         self._workers.clear()
         self._tokens.clear()
-        log.info("waveform scheduler stopped")
+
+        try:
+            closed = waveform_job_service.fail_active_jobs_for_shutdown()
+        except Exception:  # pragma: no cover - shutdown must never raise
+            log.exception("waveform shutdown job reconciliation failed")
+            closed = 0
+        log.info("waveform scheduler stopped closed_active_jobs=%d", closed)
 
     @property
     def is_running(self) -> bool:
@@ -131,7 +164,7 @@ class WaveformScheduler:
                 await self._execute(job_id)
             except asyncio.CancelledError:
                 raise
-            except Exception:  # pragma: no cover - defensive; a worker must never die
+            except Exception:  # a single bad job must never kill the worker
                 log.exception("waveform worker %d failed job_id=%s", index, job_id)
             finally:
                 self._queue.task_done()
@@ -147,6 +180,24 @@ class WaveformScheduler:
         started = time.monotonic()
         try:
             await self._runner(job_id, token)
+        except asyncio.CancelledError:
+            # Shutdown or task cancellation: leave the row active so the
+            # shutdown reconciliation records BACKEND_SHUTDOWN for it.
+            raise
+        except Exception:
+            # An unexpected runner fault must not strand the job in
+            # `processing`, which would permanently occupy this track's
+            # active-job index and block every future request for it.
+            log.exception("waveform job runner failed job_id=%s", job_id)
+            try:
+                waveform_job_service.finish_job_unsuccessfully(
+                    job_id,
+                    job_status=WaveformJobStatus.FAILED,
+                    track_status=WaveformArtifactStatus.FAILED,
+                    error_code=waveform_job_service.ERROR_WORKER_FAILED,
+                )
+            except Exception:  # pragma: no cover - never mask the original fault
+                log.exception("waveform job failure bookkeeping failed job_id=%s", job_id)
         finally:
             self._tokens.pop(job_id, None)
             log.info(
@@ -254,6 +305,18 @@ async def run_generation_job(job_id: str, token: CancellationToken) -> None:
         "waveform ready job_id=%s track_id=%s duration_ms=%d detail_pairs=%d",
         job_id, job.track_id, result.duration_ms, len(result.resolutions.get("detail", [])) // 2,
     )
+
+    # Bound cache growth right after a publication. The artifact just made
+    # ready is protected so a publication can never immediately evict itself.
+    # Cleanup failure must never turn a successful generation into a failure.
+    try:
+        await waveform_cache_service.cleanup_cache_locked(
+            validated_cache,
+            max_cache_bytes=_config.max_cache_bytes,
+            protect_generation_key=generation_key,
+        )
+    except Exception:  # pragma: no cover - cleanup is best-effort
+        log.exception("waveform cache cleanup after publication failed job_id=%s", job_id)
 
 
 def _finish_extraction_failure(job_id: str, exc: WaveformExtractionError) -> None:

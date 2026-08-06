@@ -15,7 +15,7 @@ import logging
 import sqlite3
 import uuid
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from ..core.db import get_conn
@@ -33,7 +33,33 @@ log = logging.getLogger(__name__)
 ACTIVE_JOB_STATUSES = (WaveformJobStatus.QUEUED.value, WaveformJobStatus.PROCESSING.value)
 
 ERROR_BACKEND_RESTARTED = "BACKEND_RESTARTED"
+ERROR_BACKEND_SHUTDOWN = "BACKEND_SHUTDOWN"
 ERROR_SUPERSEDED = "SUPERSEDED_BY_NEW_SOURCE_GENERATION"
+ERROR_WORKER_FAILED = "WAVEFORM_WORKER_FAILED"
+ERROR_CACHE_EVICTED = "WAVEFORM_CACHE_EVICTED"
+ERROR_ARTIFACT_MISSING = "WAVEFORM_ARTIFACT_MISSING"
+ERROR_CACHE_CLEARED = "WAVEFORM_CACHE_CLEARED"
+
+# Minimum age before a ready track's access timestamp is rewritten. Waveform
+# reads are infrequent, but a player can poll the same track repeatedly; this
+# keeps LRU ordering meaningful without a DB write per request.
+ACCESS_TOUCH_MIN_INTERVAL_SECONDS = 3600.0
+
+# Operational-row retention, per the waveform ADR section 19. Only CrateIQ's
+# own bookkeeping rows in jobs.db expire; the trusted pipeline DB is never
+# touched and no cache artifact is deleted by these passes.
+JOB_ROW_RETENTION_DAYS = 30
+TRACK_STATE_RETENTION_DAYS = 30
+
+# Track states safe to forget once they have gone quiet: none of them holds a
+# cache artifact and none is part of an in-flight generation.
+_EXPIRABLE_TRACK_STATUSES = (
+    WaveformArtifactStatus.NOT_GENERATED.value,
+    WaveformArtifactStatus.FAILED.value,
+    WaveformArtifactStatus.CANCELLED.value,
+    WaveformArtifactStatus.UNSUPPORTED.value,
+    WaveformArtifactStatus.STALE.value,
+)
 
 SubmitOutcome = Literal["queued", "deduplicated", "already_ready", "queue_full"]
 
@@ -387,6 +413,219 @@ def get_job(job_id: str) -> WaveformJobRecord | None:
     with get_conn() as conn:
         row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
     return _job_from_row(row) if row else None
+
+
+# ---------------------------------------------------------------------------
+# W6 cache-eviction support
+#
+# These helpers give the cache service the operational metadata it needs to
+# order eviction and to keep jobs.db consistent when an artifact is removed.
+# They never touch source audio and never read the trusted pipeline DB.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CachedArtifactRef:
+    """One ready cache artifact as jobs.db currently understands it."""
+
+    library_id: str
+    track_id: int
+    generation_key: str
+    last_used_at: str
+    status: str
+
+
+def _parse_timestamp(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError:
+        return None
+    return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+
+
+def touch_artifact_access(library_id: str, track_id: int) -> bool:
+    """Record that a ready artifact was served. Returns True when written.
+
+    Rate-limited by ``ACCESS_TOUCH_MIN_INTERVAL_SECONDS`` so repeated reads of
+    the same track do not amplify into a write per request.
+    """
+    now = datetime.now(timezone.utc)
+    with get_conn() as conn:
+        row = conn.execute(
+            "SELECT last_accessed_at, generated_at FROM waveform_track_state "
+            "WHERE library_id = ? AND track_id = ?",
+            (library_id, track_id),
+        ).fetchone()
+        if row is None:
+            return False
+        previous = _parse_timestamp(row["last_accessed_at"]) or _parse_timestamp(row["generated_at"])
+        if previous is not None and (now - previous).total_seconds() < ACCESS_TOUCH_MIN_INTERVAL_SECONDS:
+            return False
+        conn.execute(
+            "UPDATE waveform_track_state SET last_accessed_at = ? WHERE library_id = ? AND track_id = ?",
+            (now.isoformat(), library_id, track_id),
+        )
+    return True
+
+
+def list_referenced_generation_keys() -> set[str]:
+    """Every generation key any track state currently points at, ready or not."""
+    with get_conn() as conn:
+        rows = conn.execute(
+            "SELECT DISTINCT cache_key FROM waveform_track_state WHERE cache_key IS NOT NULL"
+        ).fetchall()
+    return {row["cache_key"] for row in rows if row["cache_key"]}
+
+
+def list_cached_artifacts() -> list[CachedArtifactRef]:
+    """Return referenced artifacts ordered least-recently-used first.
+
+    Ordering key is ``last_accessed_at`` when present, else ``generated_at``,
+    else ``updated_at`` — so an artifact that has never been read still has a
+    deterministic position rather than being treated as infinitely recent.
+    """
+    with get_conn() as conn:
+        rows = conn.execute(
+            """SELECT library_id, track_id, cache_key, status,
+                      COALESCE(last_accessed_at, generated_at, updated_at) AS last_used_at
+               FROM waveform_track_state
+               WHERE cache_key IS NOT NULL
+               ORDER BY last_used_at ASC"""
+        ).fetchall()
+    return [
+        CachedArtifactRef(
+            library_id=row["library_id"],
+            track_id=row["track_id"],
+            generation_key=row["cache_key"],
+            last_used_at=row["last_used_at"] or "",
+            status=row["status"],
+        )
+        for row in rows
+    ]
+
+
+def mark_artifact_unavailable(
+    library_id: str,
+    track_id: int,
+    *,
+    error_code: str = ERROR_CACHE_EVICTED,
+) -> None:
+    """Drop a track's claim on a cache artifact that no longer exists.
+
+    Called when W6 evicts or reconciles away an artifact so jobs.db can never
+    keep advertising ``ready`` for a file that is gone. The track becomes
+    ``stale``; nothing is regenerated automatically.
+    """
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """UPDATE waveform_track_state
+               SET status = ?, cache_key = NULL, generated_at = NULL,
+                   last_error_code = ?, updated_at = ?
+               WHERE library_id = ? AND track_id = ? AND status = ?""",
+            (
+                WaveformArtifactStatus.STALE.value,
+                error_code,
+                now,
+                library_id,
+                track_id,
+                WaveformArtifactStatus.READY.value,
+            ),
+        )
+
+
+def list_ready_states() -> list[CachedArtifactRef]:
+    """Only tracks currently advertising a ready artifact."""
+    return [ref for ref in list_cached_artifacts() if ref.status == WaveformArtifactStatus.READY.value]
+
+
+def fail_active_jobs_for_shutdown() -> int:
+    """Close out jobs still active when the backend is shutting down.
+
+    Distinct from a user cancellation: the operator did not cancel anything,
+    the process stopped. Nothing is resumed on the next start.
+    """
+    now = _now()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        rows = conn.execute(
+            "SELECT id, library_id, track_id FROM waveform_jobs WHERE status IN (?, ?)",
+            ACTIVE_JOB_STATUSES,
+        ).fetchall()
+        for row in rows:
+            conn.execute(
+                "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? WHERE id = ?",
+                (WaveformJobStatus.FAILED.value, now, ERROR_BACKEND_SHUTDOWN, row["id"]),
+            )
+            conn.execute(
+                """UPDATE waveform_track_state
+                   SET status = ?, last_error_code = ?, updated_at = ?
+                   WHERE library_id = ? AND track_id = ? AND status IN (?, ?)""",
+                (
+                    WaveformArtifactStatus.FAILED.value,
+                    ERROR_BACKEND_SHUTDOWN,
+                    now,
+                    row["library_id"],
+                    row["track_id"],
+                    WaveformArtifactStatus.QUEUED.value,
+                    WaveformArtifactStatus.PROCESSING.value,
+                ),
+            )
+    if rows:
+        log.info("waveform shutdown closed active_jobs=%d", len(rows))
+    return len(rows)
+
+
+def purge_expired_job_rows(retention_days: int = JOB_ROW_RETENTION_DAYS) -> int:
+    """Delete aged-out failed/cancelled job rows. Rows only, never artifacts.
+
+    Succeeded rows are kept: they are the record of what produced a cache
+    artifact that may still be on disk. A job row carries no path, no source
+    identity, and no audio, so removing it loses nothing but history.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.execute(
+            """DELETE FROM waveform_jobs
+               WHERE status IN (?, ?)
+                 AND finished_at IS NOT NULL
+                 AND finished_at < ?""",
+            (WaveformJobStatus.FAILED.value, WaveformJobStatus.CANCELLED.value, cutoff),
+        )
+        deleted = cursor.rowcount or 0
+    if deleted:
+        log.info("waveform job row retention deleted_rows=%d retention_days=%d", deleted, retention_days)
+    return deleted
+
+
+def purge_expired_track_states(retention_days: int = TRACK_STATE_RETENTION_DAYS) -> int:
+    """Forget track states that hold no artifact and have gone quiet.
+
+    Guarded so a row is only removed when it cannot matter: it must hold no
+    ``cache_key``, be in a non-active, non-ready status, and have had no
+    update or access within the retention window. A forgotten track simply
+    reads back as ``not_generated``, which is also its state before any
+    waveform is ever requested.
+    """
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=retention_days)).isoformat()
+    placeholders = ", ".join("?" for _ in _EXPIRABLE_TRACK_STATUSES)
+    with get_conn() as conn:
+        conn.execute("BEGIN IMMEDIATE")
+        cursor = conn.execute(
+            f"""DELETE FROM waveform_track_state
+                WHERE cache_key IS NULL
+                  AND status IN ({placeholders})
+                  AND COALESCE(last_accessed_at, updated_at) < ?""",
+            (*_EXPIRABLE_TRACK_STATUSES, cutoff),
+        )
+        deleted = cursor.rowcount or 0
+    if deleted:
+        log.info("waveform track state retention deleted_rows=%d retention_days=%d", deleted, retention_days)
+    return deleted
 
 
 def recover_interrupted_jobs() -> int:

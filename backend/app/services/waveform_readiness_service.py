@@ -1,8 +1,16 @@
-"""Passive, privacy-safe waveform readiness evaluation for W1."""
+"""Passive, privacy-safe waveform readiness evaluation (W1, W6).
+
+The readiness report itself never executes anything. W6 adds a bounded
+``-version`` runtime check that runs once from the backend lifespan and caches
+its outcome here; the report only reads that cache.
+"""
 from __future__ import annotations
 
+import logging
 import os
+import re
 import shutil
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Mapping, Sequence
 
@@ -15,6 +23,8 @@ from ..core.waveform_cache import (
 )
 from ..core.waveform_config import WaveformConfig, WaveformConfigurationError, load_waveform_config
 from ..models.waveform import WaveformCapabilityStatus
+
+log = logging.getLogger(__name__)
 
 
 def _check_status(checks: Sequence[dict[str, Any]], name: str) -> bool | None:
@@ -64,6 +74,7 @@ def _response(
     ffmpeg_detected: bool,
     ffprobe_detected: bool,
     message: str,
+    version_verified: bool = False,
 ) -> dict[str, Any]:
     return {
         "enabled": enabled,
@@ -74,7 +85,7 @@ def _response(
             "detected": ffmpeg_detected and ffprobe_detected,
             "ffmpeg_detected": ffmpeg_detected,
             "ffprobe_detected": ffprobe_detected,
-            "version_verified": False,
+            "version_verified": version_verified,
         },
         "message": message,
     }
@@ -149,6 +160,28 @@ def get_waveform_readiness(
             ffmpeg_detected=ffmpeg_detected,
             ffprobe_detected=ffprobe_detected,
             message="The optional waveform extractor toolchain is unavailable.",
+        )
+    # Report the cached runtime verification if one has been performed. This
+    # is a pure read: the readiness endpoint never executes a subprocess.
+    verification = cached_extractor_verification()
+    if verification is not None and verification.verified:
+        return _response(
+            enabled=True,
+            status=WaveformCapabilityStatus.READY,
+            cache_ready=True,
+            ffmpeg_detected=True,
+            ffprobe_detected=True,
+            version_verified=True,
+            message="Waveform extraction is configured and the toolchain was runtime-verified.",
+        )
+    if verification is not None and not verification.verified:
+        return _response(
+            enabled=True,
+            status=WaveformCapabilityStatus.EXTRACTOR_UNAVAILABLE,
+            cache_ready=True,
+            ffmpeg_detected=verification.ffmpeg_verified,
+            ffprobe_detected=verification.ffprobe_verified,
+            message="The waveform extractor toolchain failed runtime verification.",
         )
     return _response(
         enabled=True,
@@ -249,3 +282,111 @@ def resolve_extractor_binaries(validated: ValidatedWaveformCacheRoot) -> tuple[s
             "The optional waveform extractor toolchain is unavailable.",
         )
     return ffmpeg, ffprobe
+
+
+# ---------------------------------------------------------------------------
+# W6 runtime extractor verification
+#
+# W2 shipped `verify_extractor_versions` as an unwired primitive. W6 completes
+# the deferred `detected -> ready` transition, with one hard constraint:
+#
+#   the readiness GET must never spawn a subprocess.
+#
+# `/api/runtime/readiness` is part of the read-only smoke surface, and a
+# passive status report is the wrong place to execute anything. Verification
+# therefore runs once from the backend lifespan (see `main.py`) and caches its
+# result process-wide; the readiness report only ever *reads* that cache.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class ExtractorVerification:
+    """Cached outcome of a bounded, non-media `-version` check."""
+
+    verified: bool
+    ffmpeg_verified: bool
+    ffprobe_verified: bool
+    ffmpeg_version: str | None
+    ffprobe_version: str | None
+
+
+_verification_cache: ExtractorVerification | None = None
+
+# FFmpeg/ffprobe identify themselves on the first line of `-version`. Anything
+# that does not look like that is treated as unverified rather than parsed
+# optimistically.
+_VERSION_LINE_RE = re.compile(r"^(ffmpeg|ffprobe)\s+version\s+\S+", re.IGNORECASE)
+
+
+def _normalize_version(tool: str, raw: str | None) -> str | None:
+    """Accept only a plausible `<tool> version <something>` first line."""
+    if not raw or not isinstance(raw, str):
+        return None
+    line = raw.strip()
+    if not line or len(line) > 200:
+        return None
+    match = _VERSION_LINE_RE.match(line)
+    if not match or match.group(1).lower() != tool.lower():
+        return None
+    return line
+
+
+def cached_extractor_verification() -> ExtractorVerification | None:
+    """Read the cached verification. Never executes anything."""
+    return _verification_cache
+
+
+def reset_extractor_verification() -> None:
+    """Clear the cache. Used by tests and by explicit re-verification."""
+    global _verification_cache
+    _verification_cache = None
+
+
+async def verify_extractor_runtime(
+    *,
+    library_root: Path | None = None,
+    force: bool = False,
+    supervisor: object | None = None,
+) -> ExtractorVerification | None:
+    """Run `ffmpeg -version` / `ffprobe -version` once and cache the outcome.
+
+    Returns ``None`` when verification is not applicable (feature disabled,
+    cache unsafe, or the binaries were not even detected) — in that case
+    nothing is executed. No media path is ever passed to either executable.
+    """
+    global _verification_cache
+    if _verification_cache is not None and not force:
+        return _verification_cache
+
+    from ..core.waveform_process import ProcessSupervisor
+    from .waveform_probe import verify_extractor_versions
+
+    try:
+        _config, validated = resolve_cache_runtime(library_root=library_root)
+        ffmpeg_bin, ffprobe_bin = resolve_extractor_binaries(validated)
+    except WaveformRuntimeError:
+        return None
+
+    raw = await verify_extractor_versions(
+        ffmpeg_bin=ffmpeg_bin,
+        ffprobe_bin=ffprobe_bin,
+        supervisor=supervisor or ProcessSupervisor(),
+    )
+    ffmpeg_version = _normalize_version("ffmpeg", raw.get("ffmpeg_version"))  # type: ignore[arg-type]
+    ffprobe_version = _normalize_version("ffprobe", raw.get("ffprobe_version"))  # type: ignore[arg-type]
+    verification = ExtractorVerification(
+        verified=bool(ffmpeg_version and ffprobe_version),
+        ffmpeg_verified=ffmpeg_version is not None,
+        ffprobe_verified=ffprobe_version is not None,
+        ffmpeg_version=ffmpeg_version,
+        ffprobe_version=ffprobe_version,
+    )
+    _verification_cache = verification
+    if verification.verified:
+        log.info("waveform extractor verified engine=ffmpeg")
+    else:
+        log.info(
+            "waveform extractor unverified ffmpeg_ok=%s ffprobe_ok=%s",
+            verification.ffmpeg_verified, verification.ffprobe_verified,
+        )
+    return verification

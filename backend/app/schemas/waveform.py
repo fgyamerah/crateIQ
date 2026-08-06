@@ -82,3 +82,38 @@ class WaveformJobResponse(BaseModel):
     finished_at: Optional[str] = None
     cancel_requested: bool = False
     error_code: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# W6 cache lifecycle
+#
+# Counts and byte totals only. No cache path, library root, filename, track
+# title, or content hash appears in any of these models.
+# ---------------------------------------------------------------------------
+
+
+class WaveformCacheStatusResponse(BaseModel):
+    """Current cache footprint plus a preview of what a clear would remove."""
+
+    current_cache_bytes: int
+    max_cache_bytes: int
+    artifact_count: int
+    temp_count: int
+    superseded_count: int
+    over_limit: bool
+    algorithm_version: str
+    ready_track_count: int
+
+
+class WaveformCacheClearRequest(BaseModel):
+    """Explicit confirmation is required; there is no implicit clear."""
+
+    confirm: bool = False
+
+
+class WaveformCacheClearResponse(BaseModel):
+    removed_files: int
+    freed_bytes: int
+    reset_track_states: int
+    remaining_files: int
+    current_cache_bytes: int

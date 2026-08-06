@@ -9,6 +9,7 @@ From the project root (crateIQ/):
 """
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import sys
@@ -45,7 +46,12 @@ from .api.routes import waveforms as waveforms_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
 from .services import read_only as read_only_service
-from .services import waveform_job_service
+from .services import waveform_cache_service, waveform_job_service
+from .services.waveform_readiness_service import (
+    WaveformRuntimeError,
+    resolve_cache_runtime,
+    verify_extractor_runtime,
+)
 from .services.waveform_scheduler import get_scheduler
 
 # ---------------------------------------------------------------------------
@@ -59,6 +65,11 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 log = logging.getLogger(__name__)
+
+# Hard ceiling for the optional extractor `-version` check at startup. The
+# supervisor already caps each call at VERSION_CHECK_TIMEOUT_SECONDS; this is
+# the outer guarantee that a wedged binary cannot delay the backend.
+_EXTRACTOR_VERIFY_TIMEOUT = 10.0
 
 
 # ---------------------------------------------------------------------------
@@ -89,6 +100,32 @@ async def lifespan(app: FastAPI):
         waveform_job_service.recover_interrupted_jobs()
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("waveform job recovery skipped")
+
+    # Lightweight cache reconciliation: sweep abandoned temp files and repair
+    # tracks claiming a `ready` artifact whose file is gone. This touches only
+    # CrateIQ-owned cache/jobs state — no audio is decoded, hashed, scanned, or
+    # regenerated.
+    try:
+        _config, _validated = resolve_cache_runtime()
+        waveform_cache_service.startup_reconcile(
+            _validated, max_cache_bytes=_config.max_cache_bytes
+        )
+    except WaveformRuntimeError:
+        pass  # feature disabled or cache unsafe: nothing to reconcile
+    except Exception:  # pragma: no cover - maintenance must never block startup
+        log.exception("waveform cache reconciliation skipped")
+
+    # Verify the optional extractor toolchain once, here, so the readiness GET
+    # stays a pure read and never spawns anything. This runs `ffmpeg -version`
+    # and `ffprobe -version` only: no media path is passed to either binary.
+    # It is skipped entirely when the feature is disabled or the binaries were
+    # never detected, and it is bounded so it can never stall startup.
+    try:
+        await asyncio.wait_for(verify_extractor_runtime(), timeout=_EXTRACTOR_VERIFY_TIMEOUT)
+    except asyncio.TimeoutError:
+        log.warning("waveform extractor verification timed out")
+    except Exception:  # pragma: no cover - optional feature must never block startup
+        log.exception("waveform extractor verification skipped")
 
     # Start idle waveform workers. The in-memory queue starts empty and no
     # persisted job is re-enqueued, so nothing is analyzed automatically.

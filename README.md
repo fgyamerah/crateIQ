@@ -63,7 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Real waveforms | W1–W5 implemented | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with click/drag/touch/keyboard seeking, a played/unplayed progress overlay, a decorative fallback for every non-ready state, and full native accessible slider semantics. |
+| Real waveforms | W1–W6 implemented | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with click/drag/touch/keyboard seeking, a played/unplayed progress overlay, a decorative fallback for every non-ready state, and full native accessible slider semantics. The cache is bounded and self-maintaining, with a confirmation-gated manual clear. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -266,6 +266,43 @@ ring; there is exactly one accessible seek slider per player, not two. A
 waveform failure never disables play, pause, next, previous, or the queue,
 and seeking never issues a waveform-generation request.
 
+### Waveform cache lifecycle (W6)
+
+The waveform cache is derived, disposable, CrateIQ-owned data. It is bounded
+and maintains itself; it is never allowed to grow without limit and never
+requires manual attention to stay correct.
+
+| Endpoint | Behavior |
+| --- | --- |
+| `GET /api/waveform-cache` | Read-only footprint: bytes used, the configured limit, artifact/temp/superseded counts, and how many tracks currently hold a ready waveform. Also the preview for the clear action. |
+| `POST /api/waveform-cache/clear` | Requires `{"confirm": true}`. Without it the request returns `400 WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED` and deletes nothing. |
+
+Automatic maintenance runs at startup and after each publication:
+
+- abandoned `.tmp.*` files older than 24 hours are swept;
+- artifacts under a superseded schema/algorithm layout are removed after 7
+  days, since a version mismatch can never be served;
+- above the configured limit (2 GiB by default) the cache prunes to 80% of it,
+  removing orphans and non-ready artifacts before touching least-recently-used
+  ready ones, and never evicting the artifact that was just published;
+- tracks claiming a waveform whose file has disappeared are repaired to
+  `stale` rather than left advertising a missing file;
+- failed/cancelled job rows and quiet, artifact-less track states expire after
+  30 days. Rows only — no artifact and nothing in `processed.db`.
+
+Clearing the cache, by hand or by eviction, **cannot** affect source audio,
+tags, BPM/key/cue values, playlists, crates, review state, exports, or any DJ
+database. Affected tracks simply return to a non-ready state until a waveform
+is explicitly regenerated; nothing is re-queued automatically. Deletion is
+confined to CrateIQ's own artifact/temp filenames inside the validated cache
+root, symlinks are never followed out of it, and unknown files are left alone.
+
+A backend restart closes out interrupted jobs, repairs cache state, and
+verifies the extractor toolchain once with `ffmpeg -version` / `ffprobe
+-version` — no media path is passed to either binary. Readiness reports
+`ready` only after that check passes; `GET /api/runtime/readiness` itself
+never spawns anything.
+
 ## Development
 
 ```bash
@@ -274,6 +311,7 @@ and seeking never issues a waveform-generation request.
 .venv/bin/python -m pytest -q tests/test_waveform_foundation.py tests/test_preflight.py
 .venv/bin/python -m pytest -q tests/test_waveform_peaks.py tests/test_waveform_process.py tests/test_waveform_probe.py tests/test_waveform_extractor.py
 .venv/bin/python -m pytest -q tests/test_waveform_artifact.py tests/test_waveform_scheduler.py tests/test_waveform_api.py
+.venv/bin/python -m pytest -q tests/test_waveform_operations.py tests/test_waveform_cache_cleanup.py
 .venv/bin/python -m pytest -q tests/test_supported_route_contracts.py
 
 # Frontend checks

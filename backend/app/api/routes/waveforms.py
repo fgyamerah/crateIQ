@@ -1,14 +1,20 @@
-"""Waveform generation lifecycle routes (W3).
+"""Waveform generation and cache lifecycle routes (W3, W6).
 
   GET    /api/tracks/{track_id}/waveform          — read-only state/peaks
   POST   /api/tracks/{track_id}/waveform/generate — explicit generation
   GET    /api/waveform-jobs/{job_id}              — job status
   DELETE /api/waveform-jobs/{job_id}              — best-effort cancellation
+  GET    /api/waveform-cache                      — footprint + clear preview
+  POST   /api/waveform-cache/clear                — confirmed cache clear (W6)
 
-The GET endpoint is strictly side-effect free: it never enqueues a job, runs
-FFmpeg or ffprobe, reads source audio content, or writes a cache artifact. It
-performs only a database lookup, a cheap ``stat`` for staleness, and a bounded
-read of an already-published artifact.
+The GET endpoints are strictly side-effect free: they never enqueue a job, run
+FFmpeg or ffprobe, read source audio content, or write a cache artifact. The
+track GET performs only a database lookup, a cheap ``stat`` for staleness, and
+a bounded read of an already-published artifact.
+
+The only destructive route is the cache clear, and it requires explicit
+confirmation. It can delete nothing but CrateIQ's own derived cache files
+inside the validated waveform cache root.
 
 No response here contains a source path, cache path, library root, executable
 path, raw subprocess output, or a content hash.
@@ -25,6 +31,9 @@ from ...models.waveform import (
     WaveformArtifactStatus,
 )
 from ...schemas.waveform import (
+    WaveformCacheClearRequest,
+    WaveformCacheClearResponse,
+    WaveformCacheStatusResponse,
     WaveformGenerateRequest,
     WaveformGenerateResponse,
     WaveformJobResponse,
@@ -35,6 +44,7 @@ from ...schemas.waveform import (
 from ...services import (
     track_source_service,
     waveform_artifact_service,
+    waveform_cache_service,
     waveform_identity,
     waveform_job_service,
     waveform_state_service,
@@ -144,6 +154,14 @@ async def get_waveform(
         log.info("waveform artifact unusable track_id=%s reason=cache_invalid", track_id)
         _mark_stale(track_id, library_id)
         return _state_response(track_id, WaveformArtifactStatus.STALE.value, job_id=job_id)
+
+    # Record the read for cache-eviction ordering. This is rate-limited inside
+    # the service so repeated polling of one track does not amplify into a
+    # write per request, and a failure here must never break a read.
+    try:
+        waveform_job_service.touch_artifact_access(library_id, track_id)
+    except Exception:  # pragma: no cover - LRU bookkeeping is best-effort
+        log.debug("waveform access bookkeeping skipped track_id=%s", track_id)
 
     response.headers["ETag"] = etag
     response.headers["Cache-Control"] = "private, no-cache"
@@ -311,4 +329,71 @@ def _job_response(job) -> WaveformJobResponse:
         finished_at=job.finished_at,
         cancel_requested=job.cancel_requested,
         error_code=job.error_code,
+    )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/waveform-cache
+# ---------------------------------------------------------------------------
+
+@router.get("/waveform-cache", response_model=WaveformCacheStatusResponse)
+async def get_waveform_cache_status() -> WaveformCacheStatusResponse:
+    """Report the cache footprint and preview what a clear would remove.
+
+    Read-only: this counts files and bytes under the validated cache root and
+    never deletes, generates, decodes, or hashes anything.
+    """
+    try:
+        config, validated_cache = resolve_cache_runtime()
+    except WaveformRuntimeError as exc:
+        raise HTTPException(status_code=503, detail=exc.code) from exc
+
+    status = waveform_cache_service.cache_status(
+        validated_cache, max_cache_bytes=config.max_cache_bytes
+    )
+    preview = waveform_cache_service.preview_clear_cache(validated_cache)
+    return WaveformCacheStatusResponse(
+        **status, ready_track_count=preview.ready_track_count  # type: ignore[arg-type]
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/waveform-cache/clear
+# ---------------------------------------------------------------------------
+
+@router.post("/waveform-cache/clear", response_model=WaveformCacheClearResponse)
+async def clear_waveform_cache(
+    body: WaveformCacheClearRequest | None = None,
+) -> WaveformCacheClearResponse:
+    """Delete every CrateIQ-owned waveform cache file, on explicit confirmation.
+
+    Requires ``{"confirm": true}``; an unconfirmed request is rejected and
+    deletes nothing. The waveform cache is derived, disposable data: clearing
+    it cannot affect source audio, tags, BPM/key/cue values, playlists,
+    crates, review state, or any DJ database. Every affected track simply
+    returns to a non-ready state until a waveform is explicitly regenerated.
+    """
+    request_body = body or WaveformCacheClearRequest()
+    if not request_body.confirm:
+        raise HTTPException(status_code=400, detail="WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED")
+
+    try:
+        config, validated_cache = resolve_cache_runtime()
+    except WaveformRuntimeError as exc:
+        raise HTTPException(status_code=503, detail=exc.code) from exc
+
+    outcome = await waveform_cache_service.clear_cache_locked(validated_cache)
+    status = waveform_cache_service.cache_status(
+        validated_cache, max_cache_bytes=config.max_cache_bytes
+    )
+    log.info(
+        "waveform cache clear confirmed removed_files=%d reset_track_states=%d",
+        outcome.removed_files, outcome.reset_track_states,
+    )
+    return WaveformCacheClearResponse(
+        removed_files=outcome.removed_files,
+        freed_bytes=outcome.freed_bytes,
+        reset_track_states=outcome.reset_track_states,
+        remaining_files=outcome.remaining_files,
+        current_cache_bytes=int(status["current_cache_bytes"]),  # type: ignore[arg-type]
     )

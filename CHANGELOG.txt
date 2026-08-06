@@ -2,6 +2,73 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W6 lifecycle, cleanup, and resource controls
+
+- Added `backend/app/services/waveform_cache_service.py`: bounded cache
+  accounting, tiered cleanup, LRU eviction, startup reconciliation, and the
+  manual preview/clear action. Every deletion is structurally contained —
+  candidates are derived internally from the validated cache root and
+  CrateIQ's own artifact/temp naming, the walk never follows symlinks, and
+  each candidate must still pass W1's containment assertion.
+- Cleanup runs in ascending order of regret: abandoned temp files (>24h),
+  then aged-out superseded schema/algorithm layouts (>7d), then orphan
+  artifacts nothing references, then artifacts whose track is no longer
+  `ready`, and only then least-recently-used ready artifacts. The first two
+  tiers run unconditionally because neither can ever be served; the rest run
+  only above the 2 GiB limit and prune to 80% of it. A just-published
+  artifact is protected so a publication cannot immediately evict itself.
+- LRU ordering uses a new application-owned `waveform_track_state
+  .last_accessed_at` column rather than filesystem `atime`, which
+  `relatime`/`noatime` mounts defer or disable. The waveform GET records
+  access at most once per track per hour, so polling from several tabs cannot
+  amplify into a write per request.
+- Scheduler shutdown is now ordered and idempotent: stop accepting work,
+  cancel every in-flight cancellation token so W2's supervisor can TERM/KILL
+  and reap the child process group, wait a bounded grace period, then cancel
+  the worker tasks. Jobs still active are recorded as `BACKEND_SHUTDOWN`,
+  distinct from a user cancellation, and are never resumed.
+- An unexpected runner exception now marks the job `failed` with
+  `WAVEFORM_WORKER_FAILED` instead of stranding it in `processing`, which
+  would have permanently occupied that track's active-job index and blocked
+  every future request for it.
+- Added operational-row retention: failed/cancelled job rows and quiet,
+  artifact-less track states expire after 30 days. Rows only — no artifact,
+  source, or trusted pipeline row is touched. Succeeded job rows are kept.
+- Completed W3's deferred `detected` -> `ready` readiness transition without
+  breaking the no-subprocess guarantee on `GET /api/runtime/readiness`. A
+  bounded `ffmpeg -version` / `ffprobe -version` check runs once at startup
+  and caches its result; the readiness report only reads that cache. No media
+  path is passed to either binary.
+- Added `GET /api/waveform-cache` (read-only footprint plus clear preview)
+  and `POST /api/waveform-cache/clear`, which requires `{"confirm": true}`
+  and returns `400 WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED` otherwise. A confirmed
+  clear removes only CrateIQ-owned cache files, resets affected tracks to
+  `stale`, and queues no replacement work.
+- Fixed a latent hazard in the shared maintenance lock: an `asyncio.Lock`
+  created at import binds to the first loop that awaits it and refuses any
+  other. The lock is now created per running loop, matching the scheduler's
+  existing tolerance for being restarted under a new loop.
+- Verified: 1327 tests pass, twice, against the 1191-test W3 baseline
+  (W4/W5 were frontend-only). `npm --prefix frontend run typecheck` passes
+  unchanged. Containment is proven against a source file, the cache root, the
+  library root, traversal paths, a symlinked file, a symlinked directory, an
+  unknown filename, a directory holding a foreign file, and a cache root
+  overlapping the library.
+- Files affected: `backend/app/services/waveform_cache_service.py` (new),
+  `waveform_job_service.py`, `waveform_scheduler.py`,
+  `waveform_readiness_service.py`, `backend/app/api/routes/waveforms.py`,
+  `backend/app/schemas/waveform.py`, `backend/app/core/db.py`,
+  `backend/app/main.py`, `tests/test_waveform_cache_cleanup.py` (new),
+  `tests/test_waveform_operations.py` (new), `tests/test_waveform_api.py`,
+  `tests/conftest.py`, the waveform ADR, README, PROJECT_CONTEXT, NEXT_TASKS,
+  and this changelog. No frontend source file changed.
+- Migration notes: `waveform_track_state.last_accessed_at` is added by an
+  idempotent additive migration in backend `jobs.db`; existing rows fall back
+  to `generated_at`, then `updated_at`, for LRU ordering. No manual step is
+  required and no downgrade path is needed — the waveform cache is
+  disposable. No new dependency. No music/tag/MIK/crate/review/DJ-database
+  write exists anywhere in this phase.
+
 [2026-08-06] — Waveform W5 interactive seeking
 
 - The waveform is now the seek control. The existing native

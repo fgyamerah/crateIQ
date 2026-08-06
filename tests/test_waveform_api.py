@@ -1,4 +1,4 @@
-"""W3 API tests for the waveform generation lifecycle.
+"""API tests for the waveform generation lifecycle (W3) and cache actions (W6).
 
 Every test runs against a temporary fixture library, a temporary jobs.db, and
 a temporary cache directory. A module-wide autouse guard makes any attempt to
@@ -31,6 +31,7 @@ from backend.app.services import (
     waveform_artifact_service,
     waveform_identity,
     waveform_job_service,
+    waveform_readiness_service,
     waveform_scheduler,
     waveform_state_service,
 )
@@ -108,6 +109,17 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(
         "backend.app.services.waveform_probe.resolve_executable",
         lambda name, env_var, **kw: f"/usr/bin/{name}",
+    )
+    # Pre-seed W6's startup extractor verification so lifespan has nothing to
+    # verify. The subprocess guard above must stay meaningful for the request
+    # surface, which is what these tests are actually about.
+    monkeypatch.setattr(
+        waveform_readiness_service,
+        "_verification_cache",
+        waveform_readiness_service.ExtractorVerification(
+            verified=True, ffmpeg_verified=True, ffprobe_verified=True,
+            ffmpeg_version="ffmpeg version 6.0", ffprobe_version="ffprobe version 6.0",
+        ),
     )
 
     scheduler = _InertScheduler()
@@ -623,3 +635,142 @@ def test_source_outside_the_library_root_is_rejected(client, env):
     with sqlite3.connect(env["library"] / "logs" / "processed.db") as conn:
         conn.execute("UPDATE tracks SET filepath = ? WHERE id = ?", (str(outside), TRACK_ID))
     assert client.post(f"/api/tracks/{TRACK_ID}/waveform/generate").status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# W6 — cache status and the manual clear action
+# ---------------------------------------------------------------------------
+
+
+def test_cache_status_reports_an_empty_cache(client):
+    body = client.get("/api/waveform-cache").json()
+    assert body["artifact_count"] == 0
+    assert body["temp_count"] == 0
+    assert body["current_cache_bytes"] == 0
+    assert body["ready_track_count"] == 0
+    assert body["over_limit"] is False
+    assert body["max_cache_bytes"] > 0
+
+
+def test_cache_status_counts_a_published_artifact(client, env):
+    _publish_ready(env)
+    body = client.get("/api/waveform-cache").json()
+    assert body["artifact_count"] == 1
+    assert body["ready_track_count"] == 1
+    assert body["current_cache_bytes"] > 0
+
+
+def test_cache_status_exposes_no_paths(client, env):
+    _publish_ready(env)
+    raw = client.get("/api/waveform-cache").text
+    assert str(env["tmp_path"]) not in raw
+    assert "/usr/bin" not in raw
+    assert ".mp3" not in raw
+    assert "library" not in raw.lower()
+
+
+def test_cache_status_is_read_only(client, env):
+    key = _publish_ready(env)
+    artifact = waveform_artifact_service.artifact_path(env["cache"], key)
+    client.get("/api/waveform-cache")
+    assert artifact.exists()
+    assert env["scheduler"].enqueued == []
+
+
+def test_clear_requires_explicit_confirmation(client, env):
+    key = _publish_ready(env)
+    artifact = waveform_artifact_service.artifact_path(env["cache"], key)
+    response = client.post("/api/waveform-cache/clear", json={"confirm": False})
+    assert response.status_code == 400
+    assert response.json()["detail"] == "WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED"
+    assert artifact.exists(), "an unconfirmed clear must delete nothing"
+
+
+def test_clear_with_an_empty_body_is_rejected(client, env):
+    key = _publish_ready(env)
+    assert client.post("/api/waveform-cache/clear").status_code == 400
+    assert waveform_artifact_service.artifact_path(env["cache"], key).exists()
+
+
+def test_confirmed_clear_removes_the_artifact_and_resets_state(client, env):
+    key = _publish_ready(env)
+    artifact = waveform_artifact_service.artifact_path(env["cache"], key)
+    body = client.post("/api/waveform-cache/clear", json={"confirm": True}).json()
+    assert body["removed_files"] == 1
+    assert body["reset_track_states"] == 1
+    assert body["remaining_files"] == 0
+    assert body["current_cache_bytes"] == 0
+    assert not artifact.exists()
+    state = client.get(f"/api/tracks/{TRACK_ID}/waveform").json()
+    assert state["status"] == "stale"
+
+
+def test_confirmed_clear_never_touches_source_audio(client, env):
+    before = env["source"].read_bytes()
+    _publish_ready(env)
+    client.post("/api/waveform-cache/clear", json={"confirm": True})
+    assert env["source"].exists()
+    assert env["source"].read_bytes() == before
+    assert env["library"].exists()
+
+
+def test_confirmed_clear_never_writes_to_processed_db(client, env):
+    processed = env["library"] / "logs" / "processed.db"
+    _publish_ready(env)
+    before = processed.read_bytes()
+    client.post("/api/waveform-cache/clear", json={"confirm": True})
+    assert processed.read_bytes() == before
+
+
+def test_confirmed_clear_regenerates_nothing_on_its_own(client, env):
+    _publish_ready(env)
+    env["scheduler"].enqueued.clear()
+    client.post("/api/waveform-cache/clear", json={"confirm": True})
+    assert env["scheduler"].enqueued == [], "clearing must never queue replacement work"
+
+
+def test_a_cleared_track_can_be_explicitly_regenerated(client, env):
+    _publish_ready(env)
+    client.post("/api/waveform-cache/clear", json={"confirm": True})
+    response = client.post(f"/api/tracks/{TRACK_ID}/waveform/generate")
+    assert response.status_code == 202
+    assert response.json()["job_id"]
+
+
+def test_confirmed_clear_is_idempotent(client, env):
+    _publish_ready(env)
+    first = client.post("/api/waveform-cache/clear", json={"confirm": True}).json()
+    second = client.post("/api/waveform-cache/clear", json={"confirm": True}).json()
+    assert first["removed_files"] == 1
+    assert second["removed_files"] == 0
+    assert second["reset_track_states"] == 0
+
+
+def test_clear_response_exposes_no_paths(client, env):
+    _publish_ready(env)
+    raw = client.post("/api/waveform-cache/clear", json={"confirm": True}).text
+    assert str(env["tmp_path"]) not in raw
+    assert ".mp3" not in raw
+
+
+def test_startup_verifies_the_extractor_toolchain_once(env, monkeypatch):
+    """Runtime verification belongs to startup, not to the readiness GET."""
+    calls: list[int] = []
+
+    async def _record(*args, **kwargs):
+        calls.append(1)
+        return None
+
+    monkeypatch.setattr(backend_main, "verify_extractor_runtime", _record)
+    with TestClient(backend_main.app):
+        pass
+    assert calls == [1]
+
+
+def test_startup_survives_a_failing_extractor_verification(env, monkeypatch):
+    async def _explode(*args, **kwargs):
+        raise RuntimeError("toolchain check blew up")
+
+    monkeypatch.setattr(backend_main, "verify_extractor_runtime", _explode)
+    with TestClient(backend_main.app) as started:
+        assert started.get("/api/waveform-cache").status_code == 200
