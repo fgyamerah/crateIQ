@@ -1,6 +1,7 @@
 # CrateIQ Waveform Architecture and Safety Design
 
-**Status:** accepted design; Phase W1 foundation implemented
+**Status:** accepted design; Phase W1 foundation and Phase W2 safe extraction
+wrapper implemented
 
 **Date:** 2026-08-05
 
@@ -1241,21 +1242,42 @@ FFmpeg/ffprobe detection, and optional readiness states are implemented. No
 extractor, artifact, worker, automatic queue producer, or waveform endpoint was
 added.
 
-### Phase W2 — safe extraction wrapper
+### Phase W2 — safe extraction wrapper (implemented 2026-08-06)
 
-**Files/components:** new `backend/app/services/waveform_extractor.py`, fingerprint
-helper, fake-process tests.
+**Files/components:** `backend/app/core/waveform_limits.py` (policy constants
+and timeout/detail-pair formulas), `backend/app/core/waveform_process.py`
+(subprocess supervisor), `backend/app/models/waveform_extraction.py` (error
+taxonomy, `ProbeResult`, `WaveformExtractionResult`, `CancellationToken`),
+`backend/app/services/waveform_probe.py` (ffprobe wrapper + executable
+resolution + unwired version-check primitive), `backend/app/services/
+waveform_peaks.py` (PCM framing + bounded accumulator + downsampling),
+`backend/app/services/waveform_extractor.py` (orchestrator), plus
+`tests/test_waveform_peaks.py`, `tests/test_waveform_process.py`,
+`tests/test_waveform_probe.py`, `tests/test_waveform_extractor.py`, and a
+small `async_test` helper added to `tests/conftest.py` (avoids adding a
+pytest-asyncio dependency for this handful of `async`/`await` tests).
 
-**Scope:** read-only descriptor handling, ffprobe validation contract, FFmpeg
-stdout stream, min/max accumulator, LOD generation, timeout/cancel/output caps,
-and the approved non-redundant content-identity decision. Do not wire an API
-yet.
+**Scope:** read-only descriptor handling (reuses W1's `track_source_service`
+unchanged), a bounded ffprobe validation contract, a fixed-argv FFmpeg stdout
+decode command, a bounded doubling-merge min/max accumulator that serves both
+known- and unknown-duration input from one algorithm, extrema-preserving
+compact/player downsampling, cooperative cancellation, duration-aware
+timeouts, and pre/post source-change detection. Strong content identity
+(full-file SHA-256 / cache key) remains explicitly deferred to W3+, as W1
+already decided — W2 does not read source contents for hashing anywhere in
+this pipeline. No API, job-queue, or cache-artifact wiring was added.
 
-**Safety gate:** exact command-array tests prove no shell, source/output write,
-tag/metadata option, or unbounded buffer.
+**Safety gate:** exact command-array tests prove no shell, no output-media
+path, no tag/metadata option, and bounded stdout/stderr; the accumulator has
+dedicated tests proving peak storage never grows with simulated stream length.
 
-**Complete when:** mocked MP3/FLAC/WAV/AAC metadata paths and every failure mode
-produce validated canonical artifacts or safe errors.
+**Complete when:** mocked ffprobe/FFmpeg metadata and PCM paths, and every
+failure mode (probe/decode failure, invalid probe, unsupported codec, policy
+rejection, source-changed, timeout, cancellation, launch failure), produce a
+validated internal `WaveformExtractionResult` or a narrow typed
+`WaveformExtractionError` — never a raw exception or a fabricated peak. Met:
+92 new focused tests pass alongside the unchanged 960-test W1 baseline (1052
+total).
 
 ### Phase W3 — cache and API
 
@@ -1444,3 +1466,21 @@ artifact generation, benchmark, source media operation, tag/metadata operation,
 DJ database operation, or external metadata lookup. W1 creates no cache during
 ordinary startup/readiness; its initialization primitive may create only a
 validated empty application cache directory when explicitly called.
+
+## 26. Explicit W2 non-actions
+
+W2 adds a callable internal extraction engine only: a bounded ffprobe
+wrapper, a fixed-argv FFmpeg decode command builder, a subprocess supervisor,
+and a bounded PCM/peak accumulator with extrema-preserving downsampling. It
+adds no waveform generation API, no job-queue consumer, no background worker,
+no application-startup subprocess call, and no cache artifact writer. It never
+decodes, probes, or analyzes any track in the user's actual configured
+library — every test uses fake process objects, synthetic in-memory PCM, or
+temporary fixture files that are never opened by a real audio tool. It never
+reads source file contents (no hashing, no content-based cache key); strong
+content identity remains deferred to W3+ exactly as W1 already decided. It
+never reads or writes `waveform_track_state` or `waveform_jobs` — the
+extractor module does not import `waveform_state_service` or
+`waveform_cache`. Runtime FFmpeg/ffprobe version verification exists only as
+an unwired primitive (`waveform_probe.verify_extractor_versions`); readiness
+stays at `detected`, deliberately not upgraded to `ready` in this phase.

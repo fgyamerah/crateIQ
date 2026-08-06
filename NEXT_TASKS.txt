@@ -79,12 +79,20 @@ CURRENT FOCUS
     source content was hashed. No audio tool was executed, no artifact/worker/
     endpoint/frontend was added, and trusted `processed.db` remains untouched.
 
-[ ] (P2) Implement Waveform Phase W2 — safe extractor wrapper only
-    Add the fixed read-only descriptor/probe/decode wrapper, bounded peak
-    accumulator, resource/cancellation guards, and fake-process tests without
-    wiring generation APIs. Resolve the deferred strong content-identity/cache-
-    key strategy without requiring redundant immediate full-file reads. Do not
-    proceed until W1 review is accepted.
+[x] (P2) Implement Waveform Phase W2 — safe extractor wrapper only (2026-08-06)
+    Added the fixed read-only descriptor/probe/decode wrapper
+    (`waveform_probe.py`, `waveform_extractor.py`), a bounded doubling-merge
+    peak accumulator with extrema-preserving downsampling (`waveform_peaks.py`),
+    an argv-only no-shell subprocess supervisor with cancellation/timeout/
+    process-group termination (`waveform_process.py`), and 92 fake-process/
+    synthetic-PCM tests. No generation API, job worker, or cache artifact was
+    wired. Strong content-identity/cache-key strategy remains deferred to W3+
+    exactly as W1 already decided — W2 never reads source contents to hash them.
+[ ] (P2) Implement Waveform Phase W3 — cache and API
+    Wire the W2 extractor into an explicit generation POST, a read-only GET,
+    job status/cancel endpoints, deduplication, atomic cache publish, gzip
+    JSON artifacts, and ETag support, reusing W1's jobs.db schema and W2's
+    extraction engine unchanged. Do not proceed until W2 review is accepted.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

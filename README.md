@@ -63,7 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Waveform foundation | W1 backend foundation | Safe cache/config/state/readiness contracts only; no extraction, source hashing, peaks, artifacts, worker, or frontend rendering yet. |
+| Waveform foundation | W1 cache/config/state foundation + W2 extraction engine | W1: safe cache/config/state/readiness contracts. W2: an internal, unwired extraction engine (bounded ffprobe + FFmpeg decode + min/max peak accumulator) verified only against mocked processes and synthetic PCM. No API, worker, cache artifact, source hashing, or frontend rendering yet. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -207,12 +207,24 @@ unverified. `ready` is reserved for a future verified extractor contract.
 Waveform operational state is stored only in backend `jobs.db`; the trusted
 library `processed.db` is not extended or written by this foundation.
 
+Phase W2 adds an internal extraction engine
+(`backend/app/services/waveform_extractor.py` and supporting
+`waveform_probe.py`/`waveform_peaks.py`/`waveform_process.py` modules) that a
+future phase can call: a bounded, read-only ffprobe policy check, a fixed
+argument-vector FFmpeg decode command with no shell and no output file, and a
+bounded streaming min/max peak accumulator with extrema-preserving
+downsampling. It is not reachable from any API route, job worker, or
+application startup path, and every W2 test runs against fake process objects
+and synthetic PCM — no real audio tool ever decodes a file in this repository
+as part of W2.
+
 ## Development
 
 ```bash
 # Focused backend coverage for the current safe analysis workflows
 .venv/bin/python -m pytest -q tests/test_backend_api.py -k "analysis or jobs"
 .venv/bin/python -m pytest -q tests/test_waveform_foundation.py tests/test_preflight.py
+.venv/bin/python -m pytest -q tests/test_waveform_peaks.py tests/test_waveform_process.py tests/test_waveform_probe.py tests/test_waveform_extractor.py
 .venv/bin/python -m pytest -q tests/test_supported_route_contracts.py
 
 # Frontend checks

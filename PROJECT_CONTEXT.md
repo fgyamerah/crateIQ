@@ -1,10 +1,36 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-08-05
+**Updated:** 2026-08-06
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
 ## Latest Milestone
+
+- 2026-08-06: Implemented Waveform Phase W2, a safe internal extraction
+  engine only. Added `backend/app/core/waveform_limits.py` (size/duration/
+  timeout/resolution policy constants and formulas), `waveform_process.py`
+  (an argv-only, no-shell subprocess supervisor with bounded streaming
+  stdout, a bounded stderr tail, cooperative cancellation, duration-aware
+  timeout, and TERM-then-grace-then-KILL process-group termination),
+  `backend/app/models/waveform_extraction.py` (a narrow internal error
+  taxonomy plus `ProbeResult`/`WaveformExtractionResult`/
+  `CancellationToken`), `backend/app/services/waveform_probe.py` (a bounded,
+  read-only ffprobe wrapper with full validation of duration/channels/sample
+  rate/codec, plus an executable-resolution helper and an unwired
+  `-version`-only verification primitive), `waveform_peaks.py` (arbitrary-
+  chunk-boundary PCM framing and one bounded doubling-merge min/max
+  accumulator that serves both known- and unknown-duration streams from a
+  single algorithm, plus extrema-preserving compact/player downsampling),
+  and `waveform_extractor.py` (the orchestrator: reuses W1's
+  `track_source_service` unchanged, enforces the 8 GiB source-size policy
+  before any subprocess is spawned, and detects source changes via a
+  pre/post stat comparison — never a content hash). The extractor never
+  imports `waveform_state_service` or `waveform_cache`, so it cannot write
+  `jobs.db` state or a cache artifact even by accident. 92 new tests run
+  entirely against fake process objects and synthetic in-memory PCM; the
+  full suite is 1052 passed (960 W1 baseline + 92 new), with zero
+  regressions. No real audio file was decoded, probed, or hashed; no API,
+  job worker, or frontend change was added. W3 (cache + API) is next.
 
 - 2026-08-05: Implemented Waveform Phase W1 backend foundation only. Added
   environment-backed conservative limits, a canonical CrateIQ-owned cache-root

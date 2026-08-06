@@ -2,6 +2,43 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W2 safe extraction engine
+
+- Added a callable internal waveform extraction engine that a future W3 can
+  wire up: `backend/app/core/waveform_limits.py` (source size/duration caps,
+  the duration-aware timeout formula, and compact/player/detail resolution
+  policy), `backend/app/core/waveform_process.py` (an argv-only, no-shell
+  subprocess supervisor with bounded streaming stdout, a bounded stderr tail,
+  cooperative cancellation, and TERM-then-grace-then-KILL process-group
+  termination), `backend/app/models/waveform_extraction.py` (a narrow
+  internal error taxonomy plus `ProbeResult`/`WaveformExtractionResult`/
+  `CancellationToken`), `backend/app/services/waveform_probe.py` (a bounded,
+  read-only ffprobe wrapper validating duration/channels/sample rate/codec,
+  plus an unwired `-version`-only verification primitive),
+  `backend/app/services/waveform_peaks.py` (arbitrary-chunk PCM framing and
+  one bounded doubling-merge min/max accumulator serving both known- and
+  unknown-duration streams, plus extrema-preserving downsampling), and
+  `backend/app/services/waveform_extractor.py` (the orchestrator, reusing
+  W1's `track_source_service` unchanged).
+- The extractor enforces the 8 GiB source-size policy before any subprocess
+  is spawned and detects source changes via a pre/post stat comparison —
+  never a content hash. It never imports `waveform_state_service` or
+  `waveform_cache`, so it cannot write jobs.db state or a cache artifact.
+- Added 92 new tests across `tests/test_waveform_peaks.py`,
+  `tests/test_waveform_process.py`, `tests/test_waveform_probe.py`, and
+  `tests/test_waveform_extractor.py`, all running against fake process
+  objects and synthetic in-memory PCM. Added a small `async_test` helper to
+  `tests/conftest.py` to run these `async`/`await` tests via `asyncio.run`
+  without adding a pytest-asyncio dependency.
+- Files affected: the six new backend modules above, four new test files,
+  `tests/conftest.py`, `docs/architecture/WAVEFORM_ARCHITECTURE.md`,
+  `README.md`, `PROJECT_CONTEXT.md`, `NEXT_TASKS.txt`, and this changelog.
+- Migration notes: none. No API route, job worker, cache artifact, frontend
+  change, or dependency was added. No real audio file was decoded, probed,
+  or hashed — every test uses mocked subprocesses or temporary fixture files
+  that are never opened by a real audio tool. Full suite: 1052 passed (960
+  W1 baseline + 92 new), zero regressions.
+
 [2026-08-05] — Waveform W1 backend foundation
 
 - Added validated waveform configuration with conservative defaults, canonical
