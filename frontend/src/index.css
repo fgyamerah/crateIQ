@@ -6847,11 +6847,6 @@ tr.row--selected td {
   background: rgba(251,113,133,0.1);
 }
 
-.lib-pill--saved:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 .lib-filter-bar-hint {
   align-self: flex-start;
   display: inline-flex;
@@ -7169,6 +7164,19 @@ tr.row--selected td {
   max-height: calc(100vh - 74px);
   overflow-y: auto;
   box-shadow: 0 18px 42px rgba(0,0,0,0.28);
+}
+
+/* The sticky inspector's max-height must leave room for the fixed persistent
+   player, or its own bottom sections (e.g. Compatible tracks) render behind
+   it. Mirrors the .app-main padding-bottom reserved for the same player.
+   Scoped to the width range where the inspector is actually sticky/scrolled
+   (see the max-width: 1180px rule below, which already drops max-height to
+   none for the stacked mobile layout). */
+@media (min-width: 1181px) {
+  .app-shell--player-active .lib-inspector { max-height: calc(100vh - 74px - 126px); }
+  .app-shell--player-active:has(.persistent-bottom-player--minimized) .lib-inspector {
+    max-height: calc(100vh - 74px - 70px);
+  }
 }
 
 .lib-inspector-kicker {

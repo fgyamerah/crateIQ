@@ -1,4 +1,4 @@
-import { Bookmark, ListFilter, X } from 'lucide-react'
+import { ListFilter, X } from 'lucide-react'
 import type { LibraryOverview } from '../../api/library'
 import type { LibraryUiState } from './libraryUtils'
 
@@ -61,14 +61,6 @@ export default function LibraryFilters({ overview, ui, expanded, onChange, onTog
           ))}
           <button type="button" className="lib-pill lib-pill--clear" onClick={clearAll}>
             Clear all
-          </button>
-          <button
-            type="button"
-            className="lib-pill lib-pill--saved"
-            disabled
-            title="Saved filters are not implemented yet"
-          >
-            <Bookmark size={11} /> Save filter
           </button>
         </div>
       )}

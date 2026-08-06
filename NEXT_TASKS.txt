@@ -209,6 +209,22 @@ CURRENT FOCUS
     frontend/src/index.css. typecheck/build/git diff --check pass. Live
     Chrome verification was not run this session (extension not connected).
 
+[x] (P2) Refine Library and Track Inspector polish pass (2026-08-06)
+    Source+CSS audit (Chrome MCP unavailable this session) found and fixed
+    four genuine issues: (1) player overlap — sticky Track Inspector
+    max-height didn't subtract the fixed persistent player's height, now
+    width-scoped `@media (min-width: 1181px)` overrides account for
+    active/minimized player height; (2) duplicate-looking status UI — the
+    Library status strip and runtime readiness strip stacked with identical
+    AlertOctagon+rose styling for their worst state, Library status now uses
+    AlertTriangle (also a better severity match); (3) removed the always-
+    visible disabled "Save filter" pill (no backing feature, dead-feature
+    clutter); (4) added aria-label/aria-expanded to two icon-only buttons
+    that only had `title`, matching the rest of the codebase. Files:
+    LibraryView.tsx, LibraryToolbar.tsx, LibraryFilters.tsx, index.css.
+    typecheck/build/git diff --check pass. Live Chrome verification
+    (1440x900/~760x900/phone-width) not performed — extension unavailable.
+
 [ ] (P3) Represent long-form DJ mixes in a future waveform sample
     The W7 sample topped out at 11:06. Multi-hour behavior is still covered
     only by synthetic tests and the timeout/pair ceilings, not by a measured

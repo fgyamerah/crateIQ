@@ -6,6 +6,17 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Library/Track Inspector polish pass (code+CSS audit; Chrome
+  MCP unavailable this session). Fixed a real player-overlap bug (sticky
+  `.lib-inspector` max-height now subtracts the fixed persistent player's
+  height above 1180px width), reduced duplicate-looking status UI (Library
+  status strip vs. runtime readiness strip no longer share the same
+  AlertOctagon+rose treatment for their worst state), removed the dead
+  always-disabled "Save filter" pill, and added aria-label/aria-expanded to
+  two icon-only buttons that only had `title`. Files: `LibraryView.tsx`,
+  `LibraryToolbar.tsx`, `LibraryFilters.tsx`, `index.css`. typecheck/build/
+  `git diff --check` pass; live Chrome verification not performed.
+
 - 2026-08-06: Replaced the Track Inspector's decorative "Three-band signal
   preview" with the real-waveform lifecycle (`useTrackWaveform` +
   `TrackWaveform`, same as the persistent player), keeping `ThreeBandWaveform`

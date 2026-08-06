@@ -2,6 +2,42 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Refine library and track inspector
+
+- Focused polish pass on Library/Track Inspector, found via source+CSS audit
+  (Chrome MCP was unavailable this session; no live-browser check was done).
+- Fixed a real player-overlap bug: the sticky Track Inspector's
+  `max-height: calc(100vh - 74px)` never subtracted the fixed persistent
+  player's height, so its bottom sections (e.g. Compatible tracks) could
+  scroll to a region hidden behind the player. Added width-scoped overrides
+  (`@media (min-width: 1181px)`, matching the breakpoint where the inspector
+  is actually sticky rather than stacked) that subtract 126px when the
+  player is active and 70px when it's minimized, mirroring the existing
+  `.app-main` padding-bottom convention.
+- Reduced duplicate-looking status UI: the Library status strip and the
+  runtime readiness strip stack directly on top of each other and both used
+  the same `AlertOctagon` icon + rose color for their most severe state,
+  reading as one repeated banner instead of two distinct signals (system
+  readiness vs. library data quality). Swapped the Library status strip's
+  "degraded" icon to `AlertTriangle`, which is also a better severity match
+  since "degraded" here means "some metadata issues detected," not a hard
+  stop.
+- Removed the always-visible, permanently-`disabled` "Save filter" pill from
+  the filter bar. It had no backing feature (title said "not implemented
+  yet") and cluttered the active-filters row with a dead control; deleted
+  the now-unused `.lib-pill--saved` CSS rule and `Bookmark` icon import
+  alongside it.
+- Added `aria-label`/`aria-expanded` to two icon-only toggle buttons (the
+  status-strip collapse chevron, the toolbar "More" menu button) that only
+  had a `title` attribute, matching the `aria-label` convention already used
+  on every other icon-only button in this codebase.
+- Files affected: frontend/src/components/library/LibraryView.tsx,
+  LibraryToolbar.tsx, LibraryFilters.tsx, frontend/src/index.css.
+- No backend change, no business-logic change. `npm run typecheck`,
+  `npm run build`, and `git diff --check` all pass. Live Chrome
+  verification (1440x900 / ~760x900 / phone-width, focus/accessibility
+  sanity) was not performed this session — extension unavailable.
+
 [2026-08-06] — Use real waveform in track inspector
 
 - Replaced the Track Inspector's "Three-band signal preview" (the decorative

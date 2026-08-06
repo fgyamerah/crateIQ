@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { AlertOctagon, CheckCircle2, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
+import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { fetchLibraryOverview } from '../../api/library'
 import { fetchReviewSummary } from '../../api/reviews'
 import type { ReviewSummary } from '../../api/reviews'
@@ -49,7 +49,7 @@ function LibraryStatusStrip({
     <div className={`lib-status-strip${degraded ? ' lib-status-strip--degraded' : ' lib-status-strip--good'}`} role="status">
       <div className="lib-status-strip-main">
         <span className="lib-status-dot" aria-hidden="true">
-          {degraded ? <AlertOctagon size={14} /> : <CheckCircle2 size={14} />}
+          {degraded ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
         </span>
         <strong>Library status: {statusLabel}</strong>
         {!collapsed && (
@@ -79,6 +79,8 @@ function LibraryStatusStrip({
           className="lib-status-strip-collapse"
           onClick={onToggleCollapsed}
           title={collapsed ? 'Expand status strip' : 'Collapse status strip'}
+          aria-label={collapsed ? 'Expand status strip' : 'Collapse status strip'}
+          aria-expanded={!collapsed}
         >
           {collapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
         </button>

@@ -98,7 +98,14 @@ export default function LibraryToolbar({
       </button>
 
       <div className="lib-toolbar-more" ref={moreMenuRef}>
-        <button type="button" className="lib-toolbar-btn lib-toolbar-btn--icon" onClick={onToggleMore} title="More">
+        <button
+          type="button"
+          className="lib-toolbar-btn lib-toolbar-btn--icon"
+          onClick={onToggleMore}
+          title="More"
+          aria-label="More actions"
+          aria-expanded={moreMenuOpen}
+        >
           <MoreHorizontal size={16} />
         </button>
         {moreMenuOpen && (
