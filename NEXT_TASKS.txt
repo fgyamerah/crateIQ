@@ -109,12 +109,25 @@ CURRENT FOCUS
     POST), track changes abort/ignore stale responses, and job polling stops on
     terminal states. No waveform seeking (W5). No waveform was generated from the
     real music library; ready-state rendering was verified with stubbed peaks.
-[ ] (P2) Implement Waveform Phase W5 — waveform seeking and accessibility
-    Make the waveform an interactive seek surface driven by the persistent
-    player's existing `seek(seconds)` action: pointer down/drag preview,
-    commit on release, Escape to cancel, keyboard Arrow/Shift+Arrow/Home/End,
-    and real slider semantics (`role="slider"`, aria-valuemin/max/now/text).
-    Keep the existing range input. Do not proceed until W4 review is accepted.
+[x] (P2) Implement Waveform Phase W5 — waveform seeking and accessibility
+    (2026-08-06). Moved the existing native range input from a separate row
+    into a transparent full-box overlay directly on the waveform visual (real
+    canvas or ThreeBandWaveform fallback), so pointer/drag/touch/keyboard all
+    come from the browser's native range implementation with no custom
+    slider code. Replaced the old control rather than duplicating it (one
+    accessible seek slider, not two); restyled the thumb into a cyan playhead
+    needle visible over both real and fallback waveforms; raised step to 5s
+    for usable arrow-key seeking; added formatted aria-valuetext. Verified
+    with real CDP-dispatched mouse/keyboard events: click/drag/boundary seeks,
+    play/pause preservation across seek+resume, real-Tab focus ring, native
+    keyboard controls, fallback-state seeking, track-change mid-gesture
+    safety, zero generation traffic from seeking, responsive at three widths,
+    and Music Review shortcut guarding. No backend change.
+[ ] (P2) Implement Waveform Phase W6 — lifecycle, cleanup, and resource controls
+    Add worker lifecycle/startup recovery hardening, a cleanup service with a
+    manual preview action, LRU cache-size cleanup, process-group cancellation
+    hardening, and safe local observability, reusing W1-W5 unchanged. Do not
+    proceed until W5 review is accepted.
 
 [ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
     Prioritize observed usability defects and responsive behavior; preserve the

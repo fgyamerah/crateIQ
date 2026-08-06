@@ -2,6 +2,58 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W5 interactive seeking
+
+- The waveform is now the seek control. The existing native
+  `<input type="range">` seek input moved from a separate row below the
+  waveform into a transparent, full-box overlay directly on the waveform
+  visual (real canvas or the `ThreeBandWaveform` fallback), so the entire
+  ~46px-tall waveform is the seek target. Pointer, drag, touch, and keyboard
+  behavior all come from the browser's native range element — no hand-rolled
+  pointer-capture or ARIA-slider implementation was written.
+- This replaces the old separate control rather than adding a second one, so
+  the player exposes exactly one accessible seek slider, not two duplicate
+  screen-reader controls.
+- The thumb is restyled into a thin cyan playhead needle spanning the box
+  height, visible over both the real waveform (which has its own
+  played/unplayed color split) and the decorative fallback (which has no
+  progress color of its own).
+- `step` rose from 0.1s to 5s so arrow-key seeking moves a usable amount;
+  this does not affect the live position display, which is driven by the
+  controlled `value` prop on every player time update, not by `step`.
+  `aria-valuetext` now reports a formatted `"m:ss of m:ss"` position via the
+  existing `formatTime()` helper, and the accessible name changed to "Seek
+  audio preview position".
+- Every seek still calls the unchanged `usePersistentPlayer().seek(seconds)`
+  — no new audio element, no competing playback clock, no change to
+  play/pause ownership.
+- Verified in headless Chrome via the DevTools Protocol with real
+  CDP-dispatched mouse and keyboard events (not synthetic DOM events),
+  against a browser-level stubbed waveform response: click seek at
+  25/50/75%, drag in both directions, partial drag, release outside the
+  element bounds, and boundary seeks all land correctly; seeking while
+  playing stays playing and seeking while paused stays paused, with resume
+  continuing from the sought position rather than zero; real Tab-key
+  navigation reaches the control and shows the custom `2px solid #22d3ee`
+  focus ring (confirmed via computed style, not just code inspection);
+  Arrow Left/Right/Home/End/PageUp all work via native range behavior;
+  seeking works identically with a `not_generated` fallback waveform and
+  triggers zero generation requests; a drag interrupted by switching tracks
+  mid-gesture lands cleanly on the new track with no stale-coordinate
+  contamination; a full sequence of clicks and drags produced zero waveform
+  GET, generate POST, or job-status traffic; 1440x900, 760x900, and
+  390x844 all show no horizontal overflow with a fully working seek surface;
+  clicking Generate/Cancel does not also seek; and Music Review's
+  single-letter shortcuts correctly no-op while the seek control is focused.
+- Files affected: `frontend/src/components/player/PersistentBottomPlayer.tsx`,
+  `frontend/src/index.css`, waveform ADR, README, PROJECT_CONTEXT,
+  NEXT_TASKS, changelog. No other frontend file and no backend file changed.
+- Migration notes: none. Frontend-only, no dependency added, no new backend
+  route or schema. No new real waveform generation was required or performed;
+  verification used a browser-level stubbed waveform response and the
+  existing not_generated state. No music/tag/MIK/crate/review/DJ-database
+  write exists.
+
 [2026-08-06] — Waveform W4 frontend rendering
 
 - The persistent bottom player now draws the real backend-generated waveform

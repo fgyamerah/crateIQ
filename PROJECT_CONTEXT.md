@@ -6,6 +6,40 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Implemented Waveform Phase W5, interactive waveform seeking.
+  The existing native `<input type="range">` seek control moved from a
+  separate row below the waveform into a transparent, full-box overlay
+  directly on the waveform visual (real canvas or the `ThreeBandWaveform`
+  fallback), so the whole ~46px waveform becomes the seek target and pointer,
+  drag, touch, and keyboard behavior all come from the browser's native range
+  implementation — no hand-rolled pointer-capture or ARIA-slider code. This
+  replaces the old separate control rather than adding a second one, avoiding
+  duplicate accessible sliders. The thumb is restyled into a thin cyan
+  playhead needle visible over both real and fallback waveforms; `step` rose
+  from 0.1s to 5s for usable arrow-key seeking (this does not affect the live
+  position display, which is driven by the controlled `value` prop, not
+  `step`); `aria-valuetext` now reports `"m:ss of m:ss"`. Every seek still
+  goes through the unchanged `usePersistentPlayer().seek(seconds)` — no new
+  audio element, no competing playback clock. Only
+  `PersistentBottomPlayer.tsx` and `index.css` changed; `TrackWaveform.tsx`,
+  `waveformGeometry.ts`, `useTrackWaveform.ts`, and the entire backend were
+  untouched. Verified in headless Chrome with real CDP-dispatched mouse and
+  keyboard events (not synthetic DOM events) against a browser-level stubbed
+  waveform: click/drag/boundary seeks land correctly; play/pause intent is
+  preserved across a seek and resume continues from the sought position, not
+  zero; real Tab navigation reaches the control and shows the custom
+  `2px solid #22d3ee` focus ring (confirmed via computed style); Arrow
+  Left/Right/Home/End/PageUp all work natively; seeking works identically
+  with a `not_generated` fallback and triggers zero generation requests; a
+  drag interrupted by switching tracks mid-gesture lands cleanly on the new
+  track with no stale contamination; a full sequence of seeks produced zero
+  waveform GET/generate POST/job-status traffic; 1440x900/760x900/390x844 all
+  show no overflow; clicking Generate/Cancel does not also seek; and Music
+  Review's single-letter shortcuts correctly no-op while the seek control is
+  focused. No backend change, no new real waveform generation, and no music
+  file, tag, or trusted metadata was touched. W6 (cleanup/resource/restart
+  hardening) is next.
+
 - 2026-08-06: Implemented Waveform Phase W4, the frontend real-waveform
   surface. Added `frontend/src/api/waveforms.ts` (typed client whose
   discriminated union exposes peaks/duration only on the `ready` variant),

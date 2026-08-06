@@ -105,17 +105,39 @@ export default function PersistentBottomPlayer() {
 
       {!player.minimized && (
         <div className="persistent-player-waveform">
-          {isReady && waveformState.status === 'ready' ? (
-            <TrackWaveform
-              peaks={waveformState.peaks}
-              scale={waveformState.scale}
-              currentTime={player.currentTime}
-              duration={resolvedDuration}
-              inactive={!player.playing}
+          <div className="persistent-player-wave-surface">
+            {isReady && waveformState.status === 'ready' ? (
+              <TrackWaveform
+                peaks={waveformState.peaks}
+                scale={waveformState.scale}
+                currentTime={player.currentTime}
+                duration={resolvedDuration}
+                inactive={!player.playing}
+              />
+            ) : (
+              <ThreeBandWaveform seed={track.id} inactive={!player.playing} compact />
+            )}
+            {/* The waveform visual is presentation only (pointer-events: none in
+                CSS); this native range is the single seek control and interaction
+                surface, spanning the full waveform box so seeking works whether or
+                not a real waveform has been generated. */}
+            <input
+              type="range"
+              className="persistent-player-wave-seek"
+              min="0"
+              max={resolvedDuration || 0}
+              step={5}
+              value={Math.min(player.currentTime, resolvedDuration || 0)}
+              disabled={!resolvedDuration || player.status === 'unavailable'}
+              onChange={(event) => player.seek(Number(event.target.value))}
+              aria-label="Seek audio preview position"
+              aria-valuetext={
+                resolvedDuration
+                  ? `${formatTime(player.currentTime)} of ${formatTime(resolvedDuration)}`
+                  : undefined
+              }
             />
-          ) : (
-            <ThreeBandWaveform seed={track.id} inactive={!player.playing} compact />
-          )}
+          </div>
 
           {showWaveformState && (
             <div
@@ -151,16 +173,6 @@ export default function PersistentBottomPlayer() {
 
           <div className="persistent-player-timeline">
             <span>{formatTime(player.currentTime)}</span>
-            <input
-              type="range"
-              min="0"
-              max={resolvedDuration || 0}
-              step="0.1"
-              value={Math.min(player.currentTime, resolvedDuration || 0)}
-              disabled={!resolvedDuration || player.status === 'unavailable'}
-              onChange={(event) => player.seek(Number(event.target.value))}
-              aria-label="Audio preview position"
-            />
             <span>{formatTime(resolvedDuration)}</span>
           </div>
         </div>

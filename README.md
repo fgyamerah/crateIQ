@@ -63,7 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Real waveforms | W1–W4 implemented | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with progress overlay and a decorative fallback for every non-ready state. Waveform click/drag seeking is not implemented yet. |
+| Real waveforms | W1–W5 implemented | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with click/drag/touch/keyboard seeking, a played/unplayed progress overlay, a decorative fallback for every non-ready state, and full native accessible slider semantics. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -255,10 +255,16 @@ app, changing route, selecting a track, starting playback, or reading waveform
 state never generates anything. While a job runs, the player offers **Cancel**,
 which cancels waveform generation only and never affects audio playback.
 
-The waveform is a passive visual in this release: the labelled position slider
-remains the seek control, and the canvas is exposed as an image rather than a
-slider. Click and drag seeking on the waveform is planned for a later phase.
-A waveform failure never disables play, pause, next, previous, or the queue.
+The waveform itself is now the seek control: click, drag, touch, and keyboard
+(Arrow Left/Right, Home, End, Page Up/Down) all work directly on the
+waveform box, whether or not a real waveform has been generated — seeking is
+an audio-player capability, not a waveform-generation capability. A thin
+cyan playhead needle marks the exact position over both the real waveform and
+the decorative fallback. The control has a clear accessible name ("Seek audio
+preview position"), an announced `m:ss of m:ss` position, and a visible focus
+ring; there is exactly one accessible seek slider per player, not two. A
+waveform failure never disables play, pause, next, previous, or the queue,
+and seeking never issues a waveform-generation request.
 
 ## Development
 

@@ -319,6 +319,79 @@ textarea {
 .track-waveform canvas { display: block; width: 100%; height: 100%; }
 .track-waveform--inactive { opacity: .62; }
 
+/* Seek surface: wraps whichever waveform visual is showing (real or
+   decorative fallback) with a transparent native range input stretched over
+   the full box. Seeking works identically for both, since it is fundamentally
+   a player capability, not a waveform-generation capability. The visuals are
+   pointer-events:none so the range is the sole interaction target — one
+   semantic seek control, not two duplicate accessible sliders. */
+.persistent-player-wave-surface { position: relative; min-width: 0; }
+.persistent-player-wave-surface .track-waveform,
+.persistent-player-wave-surface .three-band-waveform {
+  pointer-events: none;
+}
+
+.persistent-player-wave-seek {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-appearance: none;
+  appearance: none;
+  touch-action: pan-y;
+}
+
+.persistent-player-wave-seek::-webkit-slider-runnable-track { background: transparent; height: 100%; }
+.persistent-player-wave-seek::-moz-range-track { background: transparent; height: 100%; border: 0; }
+.persistent-player-wave-seek::-moz-focus-outer { border: 0; }
+
+/* The thumb doubles as a DJ-deck playhead needle spanning the full box
+   height, so position stays visible over both the real waveform and the
+   decorative fallback (which has no progress color of its own). */
+.persistent-player-wave-seek::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 2px;
+  height: 46px;
+  border-radius: 1px;
+  background: var(--brand-cyan);
+  box-shadow: 0 0 6px rgba(32,212,216,.75);
+  cursor: pointer;
+}
+
+.persistent-player-wave-seek::-moz-range-thumb {
+  width: 2px;
+  height: 46px;
+  border: 0;
+  border-radius: 1px;
+  background: var(--brand-cyan);
+  box-shadow: 0 0 6px rgba(32,212,216,.75);
+  cursor: pointer;
+}
+
+.persistent-player-wave-seek:hover:not(:disabled)::-webkit-slider-thumb,
+.persistent-player-wave-seek:active:not(:disabled)::-webkit-slider-thumb {
+  box-shadow: 0 0 9px rgba(32,212,216,.95);
+}
+
+.persistent-player-wave-seek:hover:not(:disabled)::-moz-range-thumb,
+.persistent-player-wave-seek:active:not(:disabled)::-moz-range-thumb {
+  box-shadow: 0 0 9px rgba(32,212,216,.95);
+}
+
+.persistent-player-wave-seek:focus-visible {
+  outline: 2px solid var(--brand-cyan);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+.persistent-player-wave-seek:disabled { cursor: not-allowed; }
+.persistent-player-wave-seek:disabled::-webkit-slider-thumb { opacity: .35; box-shadow: none; }
+.persistent-player-wave-seek:disabled::-moz-range-thumb { opacity: .35; box-shadow: none; }
+
 .persistent-player-wave-state {
   min-width: 0;
   display: flex;
@@ -360,8 +433,8 @@ textarea {
 .persistent-player-wave-action:disabled { opacity: .5; cursor: not-allowed; }
 
 .persistent-player-timeline {
-  display: grid;
-  grid-template-columns: 34px minmax(80px, 1fr) 34px;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
   gap: 6px;
   color: var(--text-subtle);
@@ -370,10 +443,7 @@ textarea {
   font-variant-numeric: tabular-nums;
 }
 
-.persistent-player-timeline span:last-child { text-align: right; }
-.persistent-player-timeline input,
 .persistent-player-volume input { width: 100%; accent-color: var(--brand-cyan); cursor: pointer; }
-.persistent-player-timeline input:disabled { cursor: not-allowed; opacity: .45; }
 
 .persistent-player-utility { min-width: 0; display: grid; gap: 8px; }
 .persistent-player-state { min-height: 28px; display: flex; align-items: center; gap: 7px; color: var(--text-muted); font-size: 10px; line-height: 1.35; }

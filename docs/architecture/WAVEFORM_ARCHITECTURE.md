@@ -1,8 +1,9 @@
 # CrateIQ Waveform Architecture and Safety Design
 
 **Status:** accepted design; Phases W1 (foundation), W2 (safe extraction
-wrapper), W3 (generation lifecycle, cache, and API), and W4 (frontend
-retrieval and canvas rendering) implemented
+wrapper), W3 (generation lifecycle, cache, and API), W4 (frontend retrieval
+and canvas rendering), and W5 (interactive seeking and accessibility)
+implemented
 
 **Date:** 2026-08-05
 
@@ -1431,19 +1432,75 @@ user's music library**, and no audio was decoded, probed, or analyzed. Real
 end-to-end generation against actual media remains W7's controlled
 verification.
 
-### Phase W5 — waveform seeking and accessibility
+### Phase W5 — waveform seeking and accessibility (implemented 2026-08-06)
 
-**Files/components:** `TrackWaveform`, thin persistent-player container, existing
-bottom-player timeline tests/CSS.
+**Files/components:** `PersistentBottomPlayer.tsx` (restructured seek
+surface) and `index.css` (overlay/playhead/focus styling). No changes to
+`TrackWaveform.tsx`, `waveformGeometry.ts`, `useTrackWaveform.ts`, or any
+backend file.
 
-**Scope:** provider-owned seek callback, pointer preview/commit, keyboard
-controls, roles/value text/focus, reduced-motion behavior, preserved range input.
+**Scope:** the existing native `<input type="range">` seek control moved from
+a separate row below the waveform into a transparent, full-box overlay
+directly on the waveform visual (canvas or the decorative fallback), so the
+whole ~46px-tall waveform becomes the seek target. Pointer, drag, touch, and
+keyboard behavior all come from the browser's native range implementation —
+no hand-rolled pointer-capture or ARIA-slider code was written. The thumb is
+restyled into a thin cyan playhead needle spanning the box height, visible
+over both the real waveform and the decorative fallback (which has no
+progress color of its own). `step` was raised from 0.1s to 5s so arrow-key
+seeking is usable; this does not affect the smoothness of the live position
+display, which is driven by the controlled `value` prop on every player
+timeupdate, not by `step`. `aria-valuetext` now reports a formatted
+`"m:ss of m:ss"` position via the existing `formatTime()` helper.
 
-**Safety gate:** no new audio element or playback clock; unknown duration cannot
-seek; route/queue behavior unchanged.
+**Interaction architecture decision:** Approach C from the inspection —
+replace the old separate below-waveform range with one overlay range on the
+waveform, rather than adding a second interactive layer. This avoids two
+duplicate accessible sliders controlling the same value. The waveform visual
+itself (`.track-waveform` / `.three-band-waveform`) is `pointer-events: none`
+so the native range is the sole interaction target; canvas remains
+presentation-only.
 
-**Complete when:** pointer, touch-equivalent pointer events, keyboard, screen-
-reader labels, and range fallback tests pass.
+**Safety gate:** no new audio element or playback clock — every seek goes
+through `usePersistentPlayer().seek(seconds)` unchanged; unknown duration
+disables the control exactly as before; route/queue behavior unchanged. Met.
+
+**Complete when:** pointer, drag, touch-action, keyboard, screen-reader
+labels/value, and fallback-state seeking all verified. Met — see the browser
+verification summary below.
+
+#### W5 verification summary
+
+Verified in headless Chrome via the DevTools Protocol with real CDP-dispatched
+mouse/keyboard events (not synthetic DOM events), against a browser-level
+stubbed waveform response so no backend generation was involved:
+
+- click seek at 25/50/75%, drag left-right/right-left/partial, release
+  outside the element bounds, and boundary seeks (start, near-end) all landed
+  at the expected position within the tolerance explained by 5s step
+  snapping, the native thumb-width edge correction, and continued playback
+  during the round trip;
+- seeking while playing stayed playing; seeking while paused stayed paused;
+  resuming continued from the sought position, not from zero;
+- real Tab-key navigation reached the control and showed the custom
+  `2px solid #22d3ee` focus ring (confirmed via `getComputedStyle`, not just
+  code inspection); ArrowLeft/ArrowRight/Home/End/PageUp all worked via native
+  range behavior;
+- seeking worked identically with a `not_generated` fallback waveform,
+  confirming seeking is independent of waveform-generation state, and
+  triggered zero `/waveform/generate` requests;
+- a drag started on track A, interrupted by clicking Next mid-gesture, and
+  released with stale coordinates correctly landed on track B with no
+  cross-track contamination;
+- a full sequence of clicks and drags produced zero waveform GET, generate
+  POST, or job-status requests — seeking is entirely local to the persistent
+  player;
+- 1440x900, 760x900, and 390x844 all showed no horizontal overflow and a
+  fully working seek surface;
+- clicking the Generate/Cancel buttons did not also seek (confirmed the
+  played time did not jump), and Music Review's single-letter shortcuts
+  (`f`/`m`/`r`/`x`/`w`/arrow keys) correctly no-op while the seek control is
+  focused, verified live against the existing focus/typing guard.
 
 ### Phase W6 — lifecycle, cleanup, and resource controls
 
