@@ -145,12 +145,53 @@ CURRENT FOCUS
     changed. No waveform was generated from the real music library and no real
     cache directory was cleared.
 
-[ ] (P2) Implement Waveform Phase W7 — controlled browser and performance
-    verification. Use explicitly selected read-only test-library files to
-    verify all baseline playback behaviors, the section 22 measurements, and
-    failure/recovery/restart. Requires explicit test-library selection and no
-    source mutation, generated audio, metadata write, or DJ-database write.
-    Do not proceed until W6 review is accepted.
+[x] (P2) Implement Waveform Phase W7 — controlled browser and performance
+    verification (2026-08-06). Verification only; no production code changed.
+    Ran the full pipeline against 7 of 88 files in the explicitly configured
+    isolated test library (5 MP3 + 2 FLAC), leaving 81 untouched. FFmpeg/
+    ffprobe 6.1.1. RTF 108x-178x; artifacts 389x-1256x smaller than source;
+    detail peaked at 10,420 of 32,768 pairs; cached GETs 11-30 ms with zero
+    subprocesses. Bounded memory proven on real media (RSS delta flat ~32 KB
+    regardless of duration). CPU ~59% of one core of four. Canvas pixels
+    correlated against the API's own peaks at r=0.998 for both formats.
+    Pointer, keyboard and touch seeking verified — touch closes the gap W5
+    left open, including pan-y vertical scroll passthrough. Real cancellation
+    killed the decoder in 46 ms inside the SIGTERM grace with no partial
+    artifact; restart resumed 0 jobs; LRU and the confirmation-gated clear
+    behaved exactly as specified. All 7 sources byte-identical afterwards
+    (size/mtime_ns/ctime/dev/ino/SHA-256), no sidecars, trusted metadata
+    unchanged, logs privacy-clean. 1327 tests still pass.
+
+[ ] (P2) Implement Waveform Phase W8 — documentation and safety audit
+    Reconcile README/local tooling/project context/changelog/ADR/safety docs
+    with the measured W7 reality. Docs must not imply cloud upload, source
+    ownership, broad automatic analysis, or support beyond the codecs and
+    platforms actually measured (MP3 and FLAC on Linux/Chrome). Complete when
+    docs and implementation agree and the cache can be deleted and rebuilt
+    with no source or trusted-metadata change — W7 already demonstrated the
+    delete/rebuild half of that gate.
+
+[ ] (P3) Represent long-form DJ mixes in a future waveform sample
+    The W7 sample topped out at 11:06. Multi-hour behavior is still covered
+    only by synthetic tests and the timeout/pair ceilings, not by a measured
+    real file.
+
+[ ] (P3) Verify waveform rendering on a physical touch device and a non-Chrome
+    browser. W7's touch verification used CDP touch emulation in headless
+    Chrome; Firefox/Safari and real hardware remain unmeasured.
+
+[ ] (P2) Resolve pre-existing `validate-docs --strict` failure in COMMANDS.txt
+    Noticed during W7 and confirmed to pre-date it (reproduced on a clean
+    worktree at de92151, before any W7 change). Six COMMANDS.txt entries are
+    not in the pipeline subcommand registry: ai-normalize,
+    artist-intelligence, filename-normalize, metadata-enrich-online,
+    metadata-sanitize, review-queue. Unrelated to waveforms, so it was left
+    alone rather than dragging regenerated CLI docs into a verification
+    commit. Fix by confirming which are real subcommands vs flags, then
+    running `python3 pipeline.py generate-docs` as its own change.
+    Note: `scripts/pre_commit_validate_docs.sh` also needs DJ_MUSIC_ROOT set,
+    or it defaults to `/music` and dies with a PermissionError before it can
+    validate anything. No pre-commit hook is currently installed.
 
 [ ] (P3) Add a Settings surface for the waveform cache
     The W6 footprint/preview and confirmation-gated clear exist only as API

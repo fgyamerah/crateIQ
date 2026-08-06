@@ -2,6 +2,76 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Waveform W7 real-media end-to-end verification
+
+- Verification phase only. NO PRODUCTION CODE CHANGED. The 1327-test W6
+  baseline still passes, frontend typecheck and build are unchanged, and the
+  engine architecture decision was not reopened.
+- Ran the complete waveform pipeline against real audio for the first time:
+  7 of the 88 files in the explicitly configured, isolated test library
+  (5 MP3 + 2 FLAC), chosen for coverage — shortest, longest, Unicode filename,
+  apostrophe filename, and both FLACs. The other 81 files were never opened.
+  Toolchain: FFmpeg / ffprobe 6.1.1.
+- Performance: real-time factor 108x-178x (an 11:06 MP3 decoded in 5.0s).
+  Artifacts are 389x-1256x smaller than their source (25-62 KB gzip). Detail
+  resolution peaked at 10,420 pairs against the 32,768 ceiling. Cached ready
+  GETs served in 11-30 ms and launched zero subprocesses.
+- Bounded memory confirmed against real media: backend RSS delta during
+  decoding was flat at ~32 KB regardless of duration (32 KB for 4:10, 32 KB
+  for 11:06, 36 KB for a 7:46 FLAC), versus 3.8/10.2/7.1 MB if analysis-rate
+  PCM were buffered. W2's O(target_pairs) claim holds.
+- CPU: 3.60s CPU over 6.07s wall — about 59% of one core on a 4-core machine.
+  `-threads 1` and `workers=1` were both confirmed at runtime.
+- Subprocess contract captured live from /proc: argv only, no shell, source
+  passed solely as an input argument, no output media path, PCM to stdout,
+  mono/8kHz/s16le. The child ran with PGID == SID == its own pid, so group
+  termination cannot reach the backend.
+- Browser: rendered canvas pixels correlated against the peaks the API
+  actually returned (replicating the renderer's bucket-extrema reduction) at
+  r=0.9978 for MP3 and r=0.9982 for FLAC, mean error 0.6 px and 0.21 px on a
+  46 px canvas. Progress overlay tracked playback to ~2 px of 388.
+- Verified live: pointer click/drag seeking (every landing on the 5s step,
+  within half a step), keyboard Arrow/Home/End, paused/playing preserved,
+  real Tab focus showing the 2px solid rgb(34,211,238) focus-visible ring,
+  route persistence across Library <-> Music Review, and playback continuing
+  uninterrupted through queued -> generating -> ready.
+- Touch is now verified, closing the gap W5 left open: taps and horizontal
+  drags seek, and a vertical drag starting on the waveform scrolls the page
+  instead of seeking — `touch-action: pan-y` proven behaviorally, not just by
+  computed style.
+- Request discipline counted at the network layer: 24 visible Library rows
+  produced 0 waveform API calls; track select produced exactly 1 state GET;
+  an explicit Generate click produced exactly 1 POST + 2 job polls + 1 GET;
+  polling then stopped; 4 seeks produced 0 requests; 0 console errors.
+- Lifecycle against real decoding: duplicate requests reused the same job with
+  deduplicated=true and never started a second FFmpeg; forced regeneration
+  kept the old artifact readable and replaced it atomically; a real
+  cancellation killed the child in 46 ms — far inside the 5s SIGTERM grace, so
+  SIGKILL never occurred — leaving no partial artifact or temp file.
+- A restart logged artifacts=7 temps=0 superseded=0, re-verified the
+  extractor, started workers=1 queue_capacity=32, and resumed 0 jobs.
+- Cleanup/LRU exercised in an isolated cache seeded with real artifacts:
+  pruned 370,390 -> 218,942 bytes under the 80% target, evicted exactly the
+  three least-recently-accessed entries as stale/WAVEFORM_CACHE_EVICTED, and
+  left the fixture source byte-identical. The manual clear rejected an empty
+  body and confirm:false with 400 WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED, then on
+  confirmation removed all 7 artifacts, reset 7 states, and triggered 0
+  regeneration; a fresh load fell back to the placeholder with audio intact.
+- SOURCE INTEGRITY: all 7 analyzed files compared before/after by size,
+  mtime_ns, ctime, device, inode and full SHA-256 — every value identical,
+  including ctime. Library tree digest unchanged at 88 files, no sidecar
+  created beside any audio, nothing modified under the library. BPM, key,
+  Camelot, cue counts, review status and quality tier unchanged;
+  `processed.db` has no waveform table and was not written.
+- Logs carry job/track ids and timings but no source path, filename, cache
+  path, username, argv, or stderr.
+- Files affected: documentation only — waveform ADR, README, PROJECT_CONTEXT,
+  NEXT_TASKS, and this changelog.
+- Migration notes: none. The waveform cache was deliberately cleared at the
+  end of verification, returning it to the empty state it had before W7 — the
+  intended proof that it is disposable. No music/tag/MIK/crate/review/
+  DJ-database write exists anywhere in this phase.
+
 [2026-08-06] — Waveform W6 lifecycle, cleanup, and resource controls
 
 - Added `backend/app/services/waveform_cache_service.py`: bounded cache

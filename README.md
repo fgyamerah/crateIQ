@@ -63,7 +63,7 @@ file-writing workflow.
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Real waveforms | W1–W6 implemented | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with click/drag/touch/keyboard seeking, a played/unplayed progress overlay, a decorative fallback for every non-ready state, and full native accessible slider semantics. The cache is bounded and self-maintaining, with a confirmation-gated manual clear. |
+| Real waveforms | W1–W7 verified | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with click/drag/touch/keyboard seeking, a played/unplayed progress overlay, a decorative fallback for every non-ready state, and full native accessible slider semantics. The cache is bounded and self-maintaining, with a confirmation-gated manual clear. Verified end to end against real MP3 and FLAC in an isolated test library (see below). |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes
@@ -302,6 +302,49 @@ verifies the extractor toolchain once with `ffmpeg -version` / `ffprobe
 -version` — no media path is passed to either binary. Readiness reports
 `ready` only after that check passes; `GET /api/runtime/readiness` itself
 never spawns anything.
+
+### Measured waveform behavior (W7)
+
+These are measurements from a controlled end-to-end run against **7 real files
+(5 MP3, 2 FLAC) in an explicitly selected, isolated test library** — not
+projections. FFmpeg/ffprobe 6.1.1 on Linux, rendered in Chrome.
+
+| Track | Fmt | Duration | Source | Generate | gzip artifact | Detail pairs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| Short MP3 | MP3 | 4:10 | 9.7 MB | 2.3 s | 25.5 KB | 3914 |
+| Long MP3 | MP3 | 11:06 | 25.6 MB | 5.0 s | 62.1 KB | 10420 |
+| Unicode MP3 | MP3 | 9:42 | 22.5 MB | 5.3 s | 55.4 KB | 9101 |
+| Apostrophe MP3 | MP3 | 8:28 | 19.5 MB | 4.7 s | 49.3 KB | 7951 |
+| FLAC (large) | FLAC | 7:46 | 55.7 MB | 2.7 s | 45.4 KB | 7297 |
+| FLAC | FLAC | 7:27 | 49.0 MB | 2.5 s | 43.1 KB | 6988 |
+
+- **Speed:** 108x–178x real time. Generation is bounded by the timeout policy,
+  not open-ended.
+- **Size:** artifacts are 389x–1256x smaller than the source audio.
+- **Memory:** backend RSS grew by a flat ~32 KB while decoding, regardless of
+  whether the input was 4 minutes or 11 minutes long. Memory is bounded by the
+  number of output points, not by track length.
+- **CPU:** roughly 59% of a single core (one decoder thread, one worker), so a
+  generation does not take over the machine.
+- **Cached reads:** 11–30 ms, with no FFmpeg or ffprobe process launched.
+- **Rendering:** the on-screen canvas matched the peak data the API returned at
+  r≈0.998 for both formats.
+
+Verified interaction: pointer, keyboard, and touch seeking (a vertical touch
+drag on the waveform scrolls the page rather than seeking), route persistence,
+playback continuing uninterrupted while a waveform is generating, real
+mid-decode cancellation leaving no partial artifact, and a restart resuming no
+work.
+
+**Scope of these claims:** MP3 and FLAC, on Linux, in Chrome, up to an 11-minute
+track. Other codecs, browsers, platforms, and multi-hour mixes are supported by
+the design and by synthetic tests but were not measured here. Waveform data is
+generated and stored entirely on this machine; nothing is uploaded anywhere.
+
+**Source safety, verified:** every analyzed file was byte-for-byte identical
+afterwards (size, `mtime_ns`, `ctime`, device, inode, and SHA-256), no file was
+created beside any audio, and BPM, key, Camelot, cue counts, and review state
+were unchanged. The pipeline database was never written.
 
 ## Development
 

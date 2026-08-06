@@ -1624,16 +1624,133 @@ CrateIQ's own artifact/temp naming, so a confirmed clear can do nothing worse
 than require explicit regeneration. Cleared tracks become `stale`; nothing is
 re-queued.
 
-### Phase W7 — controlled browser and performance verification
+### Phase W7 — controlled browser and performance verification (verified 2026-08-06)
 
 **Scope:** representative existing read-only test-library files, all baseline
 playback behaviors, measurements from section 22, failure/recovery/restart.
 
 **Safety gate:** explicit test-library selection; no source mutation, generated
-audio, metadata write, or DJ-database write.
+audio, metadata write, or DJ-database write. Met — see the source-integrity
+result below.
 
 **Complete when:** acceptance gates pass or the engine ADR is reopened with
-recorded evidence.
+recorded evidence. Met: the engine ADR stands unchanged. **No production code
+was modified in W7**; the 1327-test W6 baseline still passes.
+
+#### W7 boundary
+
+Seven of the 88 files in the explicitly configured, isolated test library were
+analyzed — 5 MP3 and 2 FLAC. No other library was touched: the configured root
+is the only music directory present, and the sample was chosen for coverage
+(shortest, longest, Unicode filename, apostrophe filename, both FLACs) rather
+than by bulk selection. Toolchain: FFmpeg and ffprobe 6.1.1.
+
+#### W7 measured performance
+
+Real-time factor 108x–178x; a 11:06 MP3 decoded in 5.0 s wall clock.
+
+| Track | Fmt | Duration | Source | Generate | gzip | Decompressed | Detail pairs |
+| --- | --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Short MP3 | MP3 | 4:10 | 9.7 MB | 2.3 s | 25.5 KB | 60.6 KB | 3914 |
+| Long MP3 | MP3 | 11:06 | 25.6 MB | 5.0 s | 62.1 KB | 141.2 KB | 10420 |
+| Unicode MP3 | MP3 | 9:42 | 22.5 MB | 5.3 s | 55.4 KB | 130.3 KB | 9101 |
+| Apostrophe MP3 | MP3 | 8:28 | 19.5 MB | 4.7 s | 49.3 KB | 113.3 KB | 7951 |
+| FLAC (large) | FLAC | 7:46 | 55.7 MB | 2.7 s | 45.4 KB | 107.5 KB | 7297 |
+| FLAC | FLAC | 7:27 | 49.0 MB | 2.5 s | 43.1 KB | 102.2 KB | 6988 |
+
+Artifacts are 389x–1256x smaller than their source. `detail` never exceeded
+10,420 pairs against the 32,768 ceiling. Cached ready `GET` served in 11–30 ms
+with zero subprocess launches.
+
+**Bounded memory confirmed against real media.** Backend RSS delta during
+decoding was flat at ~32 KB regardless of input: 32 KB for a 4:10 MP3, 32 KB
+for an 11:06 MP3, 36 KB for a 7:46 FLAC. Buffering decoded PCM would have cost
+3.8 / 10.2 / 7.1 MB at analysis rate, or 42 / 112 / 78 MB at source rate. The
+doubling-merge accumulator is O(target_pairs), not O(samples), as W2 claimed.
+FFmpeg's own peak RSS was ~49 MB and is likewise duration-independent.
+
+**CPU:** 3.60 s CPU over 6.07 s wall on a 4-core workstation — about 59% of one
+core, ~15% of the machine. `-threads 1` and `workers=1` were both confirmed at
+runtime. The workstation stayed usable.
+
+#### W7 subprocess contract, observed
+
+Captured live from `/proc` during a real decode:
+
+```text
+ffprobe -v error -print_format json -show_format -show_streams -select_streams a:0 <source>
+ffmpeg  -nostdin -hide_banner -loglevel error -threads 1 -i <source>
+        -map 0:a:0 -vn -sn -dn -ac 1 -ar 8000 -f s16le pipe:1
+```
+
+argv only, no shell, source supplied solely as an input argument, no output
+media path, PCM to stdout, mono, 8 kHz, s16le. The child ran with
+`PGID == SID == its own pid`, so group termination can never reach the backend.
+
+#### W7 browser verification
+
+Rendered canvas pixels were correlated against the peaks the API actually
+returned, replicating the renderer's bucket-extrema reduction: **r = 0.9978**
+(MP3) and **r = 0.9982** (FLAC), mean absolute error 0.6 px and 0.21 px on a
+46 px-tall canvas. The progress overlay tracked playback to within ~2 px of 388.
+
+Verified live: pointer click/drag seeking (every landing a multiple of the 5 s
+step, all within half a step), keyboard Arrow/Home/End, paused-stays-paused and
+playing-stays-playing, real Tab focus reaching the slider with a
+`2px solid rgb(34,211,238)` `:focus-visible` ring, route persistence across
+Library ↔ Music Review, and playback continuing uninterrupted through the whole
+queued → generating → ready lifecycle.
+
+**Touch is now verified** (W5 left it open). With CDP touch emulation: taps and
+horizontal drags seek correctly, and a vertical drag starting on the waveform
+scrolls the page instead of seeking, confirming `touch-action: pan-y`
+behaviorally rather than by computed style alone.
+
+Request discipline, counted at the network layer: 24 visible Library rows
+produced **0** waveform API calls; selecting a track produced exactly 1 state
+`GET`; an explicit Generate click produced exactly 1 `POST` + 2 job polls + 1
+final `GET`; polling then stopped; four seeks produced **0** requests. No
+console errors or warnings were observed at any point.
+
+#### W7 lifecycle results
+
+Deduplication, force regeneration, and cancellation were exercised against real
+decoding. Two extra requests during an in-flight job returned the same job id
+with `deduplicated: true` and never started a second FFmpeg. A forced
+regeneration kept the previous artifact readable throughout and replaced it
+atomically. A real cancellation mid-decode terminated the child in **46 ms** —
+far inside the 5 s SIGTERM grace, so escalation to SIGKILL never occurred —
+left no partial artifact and no temp file, preserved the existing ready
+artifact, and still allowed explicit regeneration afterwards.
+
+A backend restart logged `artifacts=7 temps=0 superseded=0`, re-verified the
+extractor, started `workers=1 queue_capacity=32`, and resumed **0** jobs.
+
+Over-limit cleanup was exercised in an isolated cache root seeded with real
+artifacts: it pruned 370,390 → 218,942 bytes under the 80% target, evicted
+exactly the three least-recently-accessed entries, marked them `stale` with
+`WAVEFORM_CACHE_EVICTED`, and left the fixture source file byte-identical. The
+manual clear rejected both an empty body and `confirm: false` with
+`400 WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED`, then on confirmation removed all 7
+real artifacts, reset 7 track states, and triggered **0** regeneration. A fresh
+page load of a cleared track returned `stale` /`WAVEFORM_CACHE_CLEARED`, fell
+back to the decorative placeholder, offered an explicit Generate action, and
+kept audio playing.
+
+#### W7 source integrity
+
+All seven analyzed sources were compared before and after by size, `mtime_ns`,
+`ctime`, device, inode, **and full SHA-256**: every value identical, including
+`ctime`. The library file-tree digest was unchanged at 88 files, no sidecar of
+any kind was created beside audio, and no file under the library was modified.
+BPM, key, Camelot, cue counts, review status, and quality tier were unchanged,
+and `processed.db` contains no waveform table and was not written. Waveform
+`INFO` logs carried job/track ids and timings but no source path, filename,
+cache path, username, argv, or stderr.
+
+The one-off SHA-256 comparison was a verification measurement only; no
+application-level content hashing was introduced, so the deferred
+content-identity decision in section 8.2 stands.
 
 ### Phase W8 — documentation and safety audit
 
@@ -1828,3 +1945,32 @@ and no remote telemetry.
 library and no real cache directory was cleared.** Every test runs against a
 temporary fixture library, a temporary `jobs.db`, and a temporary cache root;
 the only files any test can delete are fixtures it created itself.
+
+## 29. Explicit W7 non-actions
+
+W7 is a verification phase. **It changed no production code**, added no
+feature, no endpoint, no schema field, no dependency, and no frontend file.
+The engine ADR in section 24 was not reopened.
+
+Real FFmpeg and ffprobe ran for the first time against real media, but only
+against seven explicitly chosen files inside the isolated, explicitly
+configured test library. The user's ordinary music collection was never
+analyzed — no such collection exists under the configured root, and no path
+outside that root was passed to any executable. No bulk or library-wide
+generation occurred: 7 of 88 files were analyzed and 81 were never opened.
+
+No source audio was modified, transcoded, renamed, moved, copied, deleted, or
+quarantined; no tag, BPM, key, Camelot, cue, artwork, ReplayGain, or comment
+was written; no sidecar was created beside any music file. No crate, Smart
+Crate, or Music Review state changed. No Serato, Rekordbox, or Mixed In Key
+database was read or written, and none of those applications was launched. No
+external metadata, fingerprint, or cloud service was contacted.
+
+W7 introduced no full-content SHA-256 into the application. A one-off
+`sha256sum` was used purely as an external verification measurement to prove
+the sources were byte-identical afterwards.
+
+The waveform cache was deliberately cleared at the end of verification, which
+returns it to the empty state it was in before W7 began. That is the intended
+proof of disposability: nothing about playback, tags, metadata, crates,
+reviews, or DJ software depends on it.

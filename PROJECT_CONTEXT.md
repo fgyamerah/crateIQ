@@ -6,6 +6,37 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Completed Waveform Phase W7, the first controlled real-media
+  end-to-end verification. Verification only — **no production code changed**;
+  the 1327-test W6 baseline still passes and the engine ADR was not reopened.
+  Ran the full pipeline against 7 of the 88 files in the explicitly configured
+  isolated test library (5 MP3 + 2 FLAC: shortest, longest, Unicode filename,
+  apostrophe filename, both FLACs); the other 81 were never opened. FFmpeg /
+  ffprobe 6.1.1. Real-time factor 108x-178x; artifacts 389x-1256x smaller than
+  source (25-62 KB gzip); detail peaked at 10,420 pairs against the 32,768
+  ceiling; cached ready GETs 11-30 ms with zero subprocesses. Bounded memory
+  confirmed against real media: backend RSS delta flat at ~32 KB regardless of
+  duration versus 3.8-10.2 MB if PCM were buffered. CPU ~59% of one core of
+  four; `-threads 1` and `workers=1` confirmed at runtime. Subprocess contract
+  captured from /proc: argv-only, no shell, no output media path, PCM to
+  stdout, mono/8kHz/s16le, child in its own process group (PGID == SID). In
+  the browser, rendered canvas pixels correlated against the API's own peaks
+  at r=0.9978 (MP3) and r=0.9982 (FLAC) with 0.2-0.6 px mean error; pointer,
+  keyboard, and — newly, closing W5's open item — **touch** seeking verified,
+  including `touch-action: pan-y` letting vertical drags scroll instead of
+  seek. Request discipline: 0 waveform calls for 24 Library rows, exactly 1
+  POST + 2 polls per explicit generate, polling stops, 0 requests from
+  seeking, 0 console errors. Real cancellation terminated the decoder in 46 ms
+  inside the 5s SIGTERM grace with no partial artifact; restart resumed 0
+  jobs; LRU pruned to the 80% target evicting exactly the least-recently-used
+  entries; the confirmation-gated clear rejected unconfirmed requests and then
+  removed all 7 artifacts with 0 regeneration. Source integrity: all 7 files
+  identical afterwards by size, mtime_ns, ctime, device, inode and full
+  SHA-256; 88-file tree digest unchanged; no sidecars; BPM/key/Camelot/cue/
+  review/quality unchanged; `processed.db` untouched and waveform-table-free.
+  The cache was deliberately cleared at the end, restoring its pre-W7 empty
+  state and proving disposability.
+
 - 2026-08-06: Implemented Waveform Phase W6, lifecycle/cleanup/resource
   controls. Added `backend/app/services/waveform_cache_service.py`: bounded
   cache accounting, tiered cleanup (abandoned temps >24h, superseded
