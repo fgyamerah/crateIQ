@@ -195,6 +195,20 @@ CURRENT FOCUS
     | source_sha256 / strong content hash | OPTIONAL | Deliberately deferred since W1; nullable, never written |
     | 4x `# type: ignore[arg-type]` | OPTIONAL | Cosmetic type-narrowing only, no safety implication |
 
+[x] (P2) Use real waveform in the Track Inspector (2026-08-06)
+    The Track Inspector's "Three-band signal preview" was the same decorative
+    `ThreeBandWaveform` used pre-W4, presented next to a "no waveform analysis
+    is performed" disclaimer even though the persistent player had real
+    waveforms since W4. Replaced it with the shared `useTrackWaveform` +
+    `TrackWaveform` real-waveform lifecycle (same hook/component the player
+    uses), keeping `ThreeBandWaveform` only as the non-ready-state fallback.
+    Generation remains explicit-only (inherited from the already-audited
+    hook); no new `<audio>` element or seek control was added — the inspector
+    waveform is display-only, and the persistent player stays playback
+    authority. Files: frontend/src/components/library/TrackInspector.tsx,
+    frontend/src/index.css. typecheck/build/git diff --check pass. Live
+    Chrome verification was not run this session (extension not connected).
+
 [ ] (P3) Represent long-form DJ mixes in a future waveform sample
     The W7 sample topped out at 11:06. Multi-hour behavior is still covered
     only by synthetic tests and the timeout/pair ceilings, not by a measured

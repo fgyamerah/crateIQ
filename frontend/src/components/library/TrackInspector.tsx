@@ -1,7 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { Pause, Play } from 'lucide-react'
+import { AudioWaveform, Loader2, Pause, Play } from 'lucide-react'
 import ThreeBandWaveform from '../player/ThreeBandWaveform'
+import TrackWaveform from '../player/TrackWaveform'
+import { presentWaveformState } from '../player/waveformGeometry'
+import { usePersistentPlayer } from '../player/usePersistentPlayer'
+import { useTrackWaveform } from '../../hooks/useTrackWaveform'
 import type { CompatibleTrack, CompatibleTracksResponse, TrackDetail } from '../../types/track'
 import { fetchCompatibleTracks } from '../../api/tracks'
 import { ApiError } from '../../api/client'
@@ -144,6 +148,22 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
     [compat],
   )
 
+  // Read-only: the waveform GET runs automatically, generation never does.
+  // Reuses the same lifecycle hook as the persistent player so the inspector
+  // never owns a second source of waveform truth.
+  const waveform = useTrackWaveform(track?.id ?? null)
+  const persistentPlayer = usePersistentPlayer()
+  const waveformState = track ? waveform.waveform : null
+  const isWaveformReady = waveformState?.status === 'ready'
+  const presentation = presentWaveformState(
+    (track && (waveform.loading || !waveformState)) ? 'loading' : (waveformState?.status ?? 'not_generated'),
+    !waveform.generationUnavailable,
+  )
+  const waveformMessage = waveform.actionError ?? presentation.message
+  const showWaveformState = Boolean(track) && (Boolean(waveformMessage) || presentation.canGenerate || presentation.canCancel)
+  const inspectorDuration = track ? (isCurrentTrack ? (persistentPlayer.duration || track.duration_sec || 0) : (track.duration_sec || 0)) : 0
+  const inspectorCurrentTime = isCurrentTrack ? persistentPlayer.currentTime : 0
+
   return (
     <aside className={`lib-card lib-inspector${placeholder ? ' lib-inspector--placeholder' : ''}`}>
       <div className="lib-inspector-kicker">
@@ -239,11 +259,54 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
       </section>
 
       <section className="lib-inspector-section">
-        <h3>Three-band signal preview</h3>
-        <ThreeBandWaveform seed={track?.id ?? 0} inactive={!track} compact />
-        <span className="lib-muted lib-inspector-note">
-          Equalizer-style visual placeholder only — no waveform analysis is performed.
-        </span>
+        <h3>Waveform</h3>
+        <div className="lib-inspector-waveform">
+          {track && isWaveformReady && waveformState?.status === 'ready' ? (
+            <TrackWaveform
+              peaks={waveformState.peaks}
+              scale={waveformState.scale}
+              currentTime={inspectorCurrentTime}
+              duration={inspectorDuration}
+              inactive={!(isCurrentTrack && isPlaying)}
+            />
+          ) : (
+            <ThreeBandWaveform seed={track?.id ?? 0} inactive={!track} compact />
+          )}
+        </div>
+        {showWaveformState && (
+          <div
+            className={`persistent-player-wave-state${presentation.degraded || waveform.actionError ? ' is-degraded' : ''}`}
+            aria-live="polite"
+          >
+            {presentation.busy && <Loader2 className="spin" size={11} aria-hidden="true" />}
+            <span title={waveformMessage}>{waveformMessage}</span>
+            {presentation.canGenerate && (
+              <button
+                type="button"
+                className="persistent-player-wave-action"
+                onClick={waveform.generate}
+                disabled={waveform.generating}
+                aria-label="Generate waveform for this track"
+              >
+                <AudioWaveform size={11} aria-hidden="true" />
+                Generate waveform
+              </button>
+            )}
+            {presentation.canCancel && (
+              <button
+                type="button"
+                className="persistent-player-wave-action"
+                onClick={waveform.cancel}
+                aria-label="Cancel waveform generation"
+              >
+                Cancel
+              </button>
+            )}
+          </div>
+        )}
+        {!track && (
+          <span className="lib-muted lib-inspector-note">Select a track to preview its waveform.</span>
+        )}
       </section>
 
       <CompatibleTracksSection

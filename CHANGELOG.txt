@@ -2,6 +2,34 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-06] — Use real waveform in track inspector
+
+- Replaced the Track Inspector's "Three-band signal preview" (the decorative
+  `ThreeBandWaveform` presented as if it were an analyzed signal) with the
+  same real-waveform lifecycle already used by the persistent bottom player:
+  `useTrackWaveform` for state/generation and `TrackWaveform` for rendering
+  ready peaks, via the shared `presentWaveformState` lifecycle mapping.
+- `ThreeBandWaveform` is kept, unchanged, as the decorative fallback for
+  every non-ready state (not_generated/queued/processing/failed/stale/
+  cancelled/unsupported/no track), exactly as the player already does.
+- Generation stays explicit-only: the inspector reuses the same hook whose
+  GET is automatic (read-only) and whose POST only fires from the existing
+  "Generate waveform" button's onClick, matching the already-audited
+  persistent-player wiring. No new `<audio>` element, no new seek control —
+  the inspector waveform is display-only; the persistent player remains the
+  sole playback/seek authority.
+- When the inspector's track is the one currently loaded in the persistent
+  player, waveform progress reads live `currentTime`/`duration` from the
+  shared `usePersistentPlayer` context; otherwise it renders at rest.
+- Files affected: frontend/src/components/library/TrackInspector.tsx,
+  frontend/src/index.css.
+- No backend change. No migration needed.
+- Verification: `npm run typecheck`, `npm run build`, and `git diff --check`
+  all pass. Live browser/UI verification could not be run this session
+  (Chrome MCP extension was not connected); the explicit-only generation
+  guarantee is inherited unchanged from the already-audited `useTrackWaveform`
+  hook (same POST-only-on-click wiring as the persistent player).
+
 [2026-08-06] — Synchronize CLI command reference (validate-docs --strict fix)
 
 - Fixed the pre-existing `validate-docs --strict` failure. The six flagged

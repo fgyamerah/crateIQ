@@ -6,6 +6,16 @@
 
 ## Latest Milestone
 
+- 2026-08-06: Replaced the Track Inspector's decorative "Three-band signal
+  preview" with the real-waveform lifecycle (`useTrackWaveform` +
+  `TrackWaveform`, same as the persistent player), keeping `ThreeBandWaveform`
+  only as the non-ready fallback. Generation stays explicit-only (inherited
+  from the existing hook, no new POST paths). Display-only in the inspector —
+  no new `<audio>` element or seek control; the persistent player remains
+  playback authority. Files: `TrackInspector.tsx`, `index.css`. typecheck/
+  build/`git diff --check` pass; live Chrome verification not run this
+  session (extension unavailable).
+
 - 2026-08-06: Completed Waveform Phase W8, the final documentation/safety/
   merge-readiness audit. **No production code changed.** Source-level,
   non-generative audit of the full persistent-player + waveform arc

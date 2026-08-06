@@ -7517,6 +7517,12 @@ tr.row--selected td {
   opacity: 0.42;
 }
 
+/* Keeps layout stable when swapping between the real waveform and the
+   decorative fallback, mirroring the persistent player's own sizing. */
+.lib-inspector-waveform { min-width: 0; }
+.lib-inspector-waveform .three-band-waveform { padding: 8px 9px; }
+.lib-inspector-waveform .three-band-waveform-segments { height: 13px; }
+
 .lib-inspector-note {
   display: block;
   margin-top: 6px;
