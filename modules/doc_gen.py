@@ -124,7 +124,7 @@ def generate_commands_txt(registry: list[dict], version: str = "1.5.0") -> str:
             notes = entry.get("notes")
             if notes:
                 for note_line in notes.splitlines():
-                    lines.append(f"  {note_line}")
+                    lines.append(f"  {note_line}" if note_line else "")
                 lines.append("")
 
             flags_txt = _fmt_flags_txt(entry.get("flags", []))
@@ -276,7 +276,7 @@ def generate_commands_md(registry: list[dict], version: str = "1.5.0") -> str:
         "",
         f"Version {version} &nbsp;·&nbsp; Updated {today}",
         "",
-        "> Generated from `modules/doc_registry.py`.  ",
+        "> Generated from `modules/doc_registry.py`.",
         "> Run `python3 pipeline.py generate-docs` to refresh.",
         "",
         "---",
@@ -297,7 +297,7 @@ def generate_commands_md(registry: list[dict], version: str = "1.5.0") -> str:
 
             if notes:
                 for note_line in notes.splitlines():
-                    lines.append(f"> {note_line}")
+                    lines.append(f"> {note_line}" if note_line else ">")
                 lines.append("")
 
             flags_md = _fmt_flags_md(flags)
@@ -409,16 +409,27 @@ def generate_commands_html(registry: list[dict], version: str = "1.5.0") -> str:
             flags_html = _flag_rows_html(flags)
             examples_html = _example_block_html(examples)
 
-            body_parts.append(f"""
-<div id="{cmd_id}" class="command-block">
-  <h3 class="command-name">{_esc(name)}</h3>
-  <p class="command-desc">{_esc(desc)}</p>
-  <div class="usage-line"><strong>Usage:</strong> <code>{_esc(usage)}</code></div>
-  {notes_html}
-  {"<h4>Flags</h4>" + flags_html if flags_html else ""}
-  {"<h4>Examples</h4>" + examples_html if examples_html else ""}
-</div>
-""")
+            optional_blocks = [
+                block for block in (
+                    notes_html,
+                    "<h4>Flags</h4>" + flags_html if flags_html else "",
+                    "<h4>Examples</h4>" + examples_html if examples_html else "",
+                )
+                if block
+            ]
+            optional_html = "\n  ".join(optional_blocks)
+
+            block_lines = [
+                f'<div id="{cmd_id}" class="command-block">',
+                f'  <h3 class="command-name">{_esc(name)}</h3>',
+                f'  <p class="command-desc">{_esc(desc)}</p>',
+                f'  <div class="usage-line"><strong>Usage:</strong> <code>{_esc(usage)}</code></div>',
+            ]
+            if optional_html:
+                block_lines.append(f"  {optional_html}")
+            block_lines.append("</div>")
+
+            body_parts.append("\n" + "\n".join(block_lines) + "\n")
         body_parts.append("</section>")
 
     nav = _nav_html(registry)

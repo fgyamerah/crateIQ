@@ -340,7 +340,6 @@ python3 pipeline.py artist-folder-clean --apply --path /mnt/music_ssd/KKDJ/</cod
   <h3 class="command-name">artist-merge</h3>
   <p class="command-desc">Merge artist folder spelling variants into a single canonical folder.</p>
   <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py artist-merge [FLAGS]</code></div>
-  
   <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Scan and report only. No file moves.</td></tr>
 <tr><td class="flag-cell"><code>--apply</code></td><td class="desc-cell">Apply safe merges. Uncertain merges go to the review report.</td></tr>
 <tr><td class="flag-cell"><code>--path <span class="meta">DIR</span></code></td><td class="desc-cell">Scan this directory instead of the default sorted library.</td></tr>
@@ -779,7 +778,6 @@ python3 pipeline.py filename-normalize --input ~/Music/inbox --apply</code></pre
   <h3 class="command-name">generate-docs</h3>
   <p class="command-desc">Regenerate COMMANDS.txt, README.md command sections, and COMMANDS.html from the command registry.</p>
   <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py generate-docs [FLAGS]</code></div>
-  
   <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--dry-run</code></td><td class="desc-cell">Preview generated output to stdout — write no files.</td></tr>
 <tr><td class="flag-cell"><code>--output-dir <span class="meta">DIR</span></code></td><td class="desc-cell">Write generated files here instead of the project root.</td></tr>
 <tr><td class="flag-cell"><code>--format <span class="meta">FORMATS</span></code></td><td class="desc-cell">Comma-separated list of formats to generate: txt, md, html. <span class="default">(default: txt,md,html)</span></td></tr></tbody></table>
@@ -794,7 +792,6 @@ python3 pipeline.py generate-docs --output-dir /tmp/docs</code></pre>
   <h3 class="command-name">validate-docs</h3>
   <p class="command-desc">Check that COMMANDS.txt is in sync with the command registry — reports missing or stale entries.</p>
   <div class="usage-line"><strong>Usage:</strong> <code>python3 pipeline.py validate-docs [FLAGS]</code></div>
-  
   <h4>Flags</h4><table class="flag-table"><thead><tr><th>Flag</th><th>Description</th></tr></thead><tbody><tr><td class="flag-cell"><code>--strict</code></td><td class="desc-cell">Exit with code 1 if any mismatches are found (useful in CI/pre-commit).</td></tr></tbody></table>
   <h4>Examples</h4><pre><code>python3 pipeline.py validate-docs
 python3 pipeline.py validate-docs --strict</code></pre>

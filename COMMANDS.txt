@@ -61,11 +61,11 @@ python3 pipeline.py [FLAGS]
     Mixed In Key is the authoritative source for BPM, key, and cue data.
     The pipeline NEVER overwrites existing BPM, key, or cue values.
     Analysis only runs for tracks where those values are absent.
-  
+
   IDEMPOTENCY:
     Already-processed tracks (TXXX:PROCESSED=1 + status=ok in DB) are
     skipped automatically — safe to re-run at any time.
-  
+
   Supported audio formats: .mp3 .flac .wav .aiff .aif .m4a .ogg .opus
 
 FLAGS
@@ -132,7 +132,7 @@ python3 pipeline.py dedupe [FLAGS]
     Case A  Exact duplicate (same SHA-256 hash)       -> quarantine all but one
     Case B  Same track, different quality/format       -> quarantine lower quality
     Case C  Different versions (Extended vs Radio)     -> report only, never moved
-  
+
   Quality priority (highest first):
     WAV/AIFF > FLAC > MP3 320 > MP3 256 > M4A > MP3 192 > OGG/OPUS > MP3 128
 
@@ -167,7 +167,7 @@ python3 pipeline.py metadata-clean [FLAGS]
 
   Fields cleaned: title, artist, album, albumartist, genre, comment,
     organization/label (TPUB), grouping (TIT1), catalog number
-  
+
   What is removed:
     URLs/domains      https://djsoundtop.com, TraxCrate.com, www.djcity.com
     DJ pool phrases   fordjonly, djcity, zipdj, musicafresca, promo only
@@ -279,7 +279,7 @@ python3 pipeline.py audit-quality [FLAGS]
     MEDIUM    lossy codec 192-255 kbps
     LOW       lossy codec < 192 kbps  (threshold: --min-lossy-kbps)
     UNKNOWN   ffprobe could not read file or codec/bitrate unrecognized
-  
+
   QUALITY tag locations:
     MP3  : TXXX:QUALITY  (ID3v2.3 custom text frame)
     FLAC : QUALITY       (Vorbis comment)
@@ -427,9 +427,9 @@ python3 pipeline.py convert-audio --src PATH --dst PATH --archive PATH [FLAGS]
     3. Output verified: ffprobe check + duration delta <= tolerance
     4. On success: original .m4a moved to --archive
     5. On failure: original left untouched; broken output removed
-  
+
   Output codec: pcm_s16be (16-bit big-endian PCM AIFF).
-  
+
   Environment overrides:
     FFMPEG_BIN   path to ffmpeg binary (default: ffmpeg)
     FFPROBE_BIN  path to ffprobe binary (default: ffprobe)
@@ -543,11 +543,11 @@ python3 pipeline.py rekordbox-export [FLAGS]
     Rekordbox XML is owned by Rekordbox + Mixed In Key.
     XML export is DISABLED by default to prevent data loss.
     Use --force-xml only if you are not using Mixed In Key.
-  
+
   Path mapping (defaults):
     Linux root  : /mnt/music_ssd   (= root of M: drive on Windows)
     Windows     : M:\
-  
+
   Environment overrides:
     RB_LINUX_ROOT   Linux path that is the root of the Windows drive
     RB_WIN_DRIVE    Windows drive letter (e.g. M)
@@ -620,13 +620,13 @@ python3 pipeline.py cue-suggest [FLAGS]
 
   NOTE: These are SUGGESTED positions only. Native Rekordbox hot-cues are NOT written.
   Review all cues in Rekordbox after analysis.
-  
+
   MIK-FIRST POLICY:
     Cue data is owned by Mixed In Key / Rekordbox.
     This subcommand is safe to use explicitly, but cue-suggest is
     DISABLED inside the main pipeline by default.
     Use `python3 pipeline.py --force-cue-suggest` to enable it there.
-  
+
   Cue types detected:
     intro_start   bar 1 (always present, confidence 1.0)
     mix_in        first stable DJ entry point
@@ -634,7 +634,7 @@ python3 pipeline.py cue-suggest [FLAGS]
     drop          main energy arrival / impact
     breakdown     energy/density reduction after peak
     outro_start   beginning of mix-out section
-  
+
   Output files:
     logs/cue_suggest/cue_suggestions.json     (master, all tracks)
     logs/cue_suggest/cue_suggestions.csv      (wide format, 1 row/track)
@@ -686,11 +686,11 @@ python3 pipeline.py set-builder [FLAGS]
     peak     high-energy section
     release  brief energy drop after peak
     outro    wind-down / closing
-  
+
   Output files:
     SET_BUILDER_OUTPUT_DIR/<name>.m3u8   playable playlist
     SET_BUILDER_OUTPUT_DIR/<name>.csv    full metadata + transition notes
-  
+
   Default output location: /mnt/music_ssd/KKDJ/_SETS/
 
 FLAGS
@@ -762,7 +762,7 @@ python3 pipeline.py harmonic-suggest [--track PATH | --key KEY --bpm BPM] [FLAGS
     BPM compatibility      30%   tempo delta, halftime/doubletime aware
     Energy compatibility   20%   Peak / Mid / Chill tier match
     Genre compatibility    15%   exact / related / different
-  
+
   Input modes (choose one):
     --track PATH           suggest from a specific file in the library DB
     --key KEY --bpm BPM    suggest from a virtual track (key + BPM only)
@@ -877,7 +877,7 @@ python3 pipeline.py label-clean [FLAGS]
     3. comment tag fallback               0.60
     4. filename pattern parsing           0.55-0.70
     5. unresolved                         0.00
-  
+
   Write-back only applies when confidence >= threshold (default 0.85).
   At the default threshold, only embedded-tag results are auto-written.
 
