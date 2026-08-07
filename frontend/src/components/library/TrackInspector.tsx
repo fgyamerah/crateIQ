@@ -268,6 +268,7 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
               currentTime={inspectorCurrentTime}
               duration={inspectorDuration}
               inactive={!(isCurrentTrack && isPlaying)}
+              upcomingIntensity={isCurrentTrack && isPlaying ? undefined : 1}
             />
           ) : (
             <ThreeBandWaveform seed={track?.id ?? 0} inactive={!track} compact />

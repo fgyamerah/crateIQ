@@ -108,7 +108,7 @@ function lerp(a: number, b: number, t: number): number {
  * pulls typical (~0.3-0.8) amplitudes down so the blue/cyan/green/yellow
  * range stays visible and red reads as "true peak" rather than "normal".
  */
-const COLOR_GAMMA = 2.2
+const COLOR_GAMMA = 1.8
 
 /**
  * Maps a bar's normalized amplitude (0..1) to a Night Deck waveform color,

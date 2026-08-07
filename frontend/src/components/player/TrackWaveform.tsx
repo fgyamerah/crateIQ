@@ -24,7 +24,7 @@ const MIN_BAR_PX = 1
 
 /** Amplitude-color intensity (alpha) for played vs. upcoming sections; hue stays the same. */
 const INTENSITY_PLAYED = 1
-const INTENSITY_UPCOMING = 0.55
+const INTENSITY_UPCOMING = 0.72
 const COLOR_CENTER_LINE = 'rgba(133, 158, 184, 0.22)'
 
 interface Props {
@@ -36,6 +36,13 @@ interface Props {
   duration: number
   /** Dims the waveform when playback is not active. */
   inactive?: boolean
+  /**
+   * Amplitude-color intensity for the not-yet-played section. Defaults to
+   * the persistent player's played/upcoming contrast; a purely informational
+   * waveform (e.g. Track Inspector when it isn't tracking real playback
+   * progress) can pass 1 to render every bar at full intensity.
+   */
+  upcomingIntensity?: number
   className?: string
 }
 
@@ -45,6 +52,7 @@ export default function TrackWaveform({
   currentTime,
   duration,
   inactive = false,
+  upcomingIntensity = INTENSITY_UPCOMING,
   className = '',
 }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -115,11 +123,11 @@ export default function TrackWaveform({
       const height = Math.max(MIN_BAR_PX, bottom - top)
       const y = height === MIN_BAR_PX ? centerY - MIN_BAR_PX / 2 : top
       const amplitude = Math.max(Math.abs(bar.min), Math.abs(bar.max))
-      const intensity = index < playedBars ? INTENSITY_PLAYED : INTENSITY_UPCOMING
+      const intensity = index < playedBars ? INTENSITY_PLAYED : upcomingIntensity
       context.fillStyle = waveformAmplitudeColor(amplitude, intensity)
       context.fillRect(index * BAR_STRIDE_PX, y, BAR_WIDTH_PX, height)
     }
-  }, [bars, progress, size.height, size.width])
+  }, [bars, progress, size.height, size.width, upcomingIntensity])
 
   const classes = [
     'track-waveform',
