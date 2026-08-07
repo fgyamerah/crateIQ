@@ -174,8 +174,34 @@ export interface AnalysisJobPreview {
   next_step: string | null
 }
 
+export type AnalysisOperationStatus = 'running' | 'completed' | 'failed' | 'cancelled'
+
+/** A persisted, app-owned record of one explicit, confirmed analysis run.
+ * Candidate previews are never persisted -- only a confirmed run that began
+ * work creates one of these. Lives in the backend's own jobs.db. */
+export interface AnalysisOperation {
+  id: string
+  job_type: 'bpm_analysis' | 'key_analysis'
+  mode: string
+  status: AnalysisOperationStatus
+  scope_limit: number
+  eligible_total: number
+  considered: number
+  processed: number
+  succeeded: number
+  skipped: number
+  failed: number
+  remaining_missing: number | null
+  cancel_requested: boolean
+  error_reason: string | null
+  warnings: string[]
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
 export interface AnalysisJobHistory {
-  history: Record<string, unknown>[]
+  history: AnalysisOperation[]
   message: string
 }
 
@@ -188,6 +214,8 @@ export interface BpmAnalysisRunResult {
   remaining_missing_bpm: number
   warnings: string[]
   results: AnalysisJobCandidate[]
+  operation_id: string | null
+  cancelled: boolean
 }
 
 export interface KeyAnalysisRunResult {
@@ -199,6 +227,8 @@ export interface KeyAnalysisRunResult {
   remaining_missing_key: number
   warnings: string[]
   results: AnalysisJobCandidate[]
+  operation_id: string | null
+  cancelled: boolean
 }
 
 export const REASON_COLORS: Record<BpmReason, string> = {

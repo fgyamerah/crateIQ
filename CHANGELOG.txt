@@ -2,6 +2,51 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Add operations history workspace (Cycle 2, Stage 3)
+
+- `/jobs`'s "Analysis history" section was a permanent empty-state
+  placeholder (the backend had nothing to show yet); it's now a real
+  workspace over Stage 1/2's persisted operations API: a compact,
+  keyboard-selectable table (type, status, scope, result, started,
+  duration) plus a detail rail with the full truthful count breakdown
+  (eligible/considered/succeeded/skipped/failed/remaining), a progress bar
+  shown only while an operation is genuinely 'running' (built from real
+  processed/considered counts -- never a fabricated percentage), a
+  plain-language reason on failure/cancellation, and an explicit Cancel
+  button only when status is 'running'.
+- A "Completed" run that had at least one per-track failure now gets an
+  amber badge instead of plain green -- a design self-review caught that a
+  run with 0 successes and 1 failure was rendering identically to a fully
+  clean run, which would have visually collapsed a degraded result into
+  something that looks fine.
+- Reuses the existing visual system rather than inventing new components:
+  `.table--jobs`, `Badge`, `.lib-defs`, `.job-progress-bar`/`-fill`/`-pct`,
+  `EmptyState`, and `StatusStrip` are all shared with the Library and
+  legacy Pipeline Job History views. The two-column table+detail layout
+  collapses to one column below 1180px, matching the Library page's
+  established breakpoint.
+- Files: frontend/src/components/analysis/AnalysisOperationsHistory.tsx
+  (new), frontend/src/components/analysis/AnalysisJobsCatalog.tsx (now
+  fetches the job catalog only; history fetching moved fully into the new
+  component instead of being duplicated in both places),
+  frontend/src/types/analysis.ts, frontend/src/api/analysis.ts,
+  frontend/src/index.css.
+- `npm run typecheck` and `npm run build` pass; `git diff --check` clean.
+  No backend files changed in this stage.
+- Verified via headless-Chrome screenshots at 1440px/760px/390px against
+  the real backend and a real (isolated test-library) confirmed-run
+  history, plus a synthetic 'running' and 'cancelled' row seeded directly
+  into the local dev jobs.db purely to exercise those visual states (not
+  achievable live in the short window a real run takes) and deleted again
+  immediately after verification. Confirmed: populated list rendering,
+  status-tone/badge logic (including the new amber "completed with
+  failures" case), the empty "Select a run" detail state, and the
+  responsive single-column collapse. The Chrome extension was unavailable
+  all session, so the click-to-select detail panel itself was verified by
+  code review (it reuses the same data/rendering path already proven by
+  the list and by direct API testing) rather than a live click -- disclosed
+  as a real, not a fabricated, verification gap.
+
 [2026-08-07] — Expose structured analysis operations (Cycle 2, Stage 2)
 
 - Added `GET /api/analysis/jobs/history/{operation_id}` returning one

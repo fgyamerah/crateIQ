@@ -9,6 +9,7 @@ import type {
   AnalysisJobPreview,
   AnalysisJobType,
   AnalysisJobDefinition,
+  AnalysisOperation,
   BpmAnalysisRunResult,
   KeyAnalysisRunResult,
   ReanalyzeRequest,
@@ -57,5 +58,7 @@ export const importMikMetadata = () => apiFetch.post<MikImportResult>('/analysis
 export const fetchAnalysisJobs = () => apiFetch.get<{ jobs: AnalysisJobDefinition[] }>('/analysis/jobs')
 export const previewAnalysisJob = (jobType: AnalysisJobType) => apiFetch.get<AnalysisJobPreview>(`/analysis/jobs/${jobType}/preview`)
 export const fetchAnalysisJobHistory = () => apiFetch.get<AnalysisJobHistory>('/analysis/jobs/history')
+export const fetchAnalysisOperation = (operationId: string) => apiFetch.get<AnalysisOperation>(`/analysis/jobs/history/${operationId}`)
+export const cancelAnalysisOperation = (operationId: string) => apiFetch.post<AnalysisOperation>(`/analysis/jobs/history/${operationId}/cancel`, {})
 export const runBpmAnalysis = (limit: number) => apiFetch.post<BpmAnalysisRunResult>('/analysis/jobs/bpm_analysis/run', { confirm: true, limit })
 export const runKeyAnalysis = (limit: number) => apiFetch.post<KeyAnalysisRunResult>('/analysis/jobs/key_analysis/run', { confirm: true, limit })

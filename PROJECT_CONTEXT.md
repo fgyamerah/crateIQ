@@ -6,6 +6,22 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 2 Stage 3 -- Operations UI. `/jobs`'s "Analysis
+  history" section (previously always an empty-state placeholder) now
+  renders Stage 1/2's persisted operations: a keyboard-selectable table +
+  detail rail with truthful counts, a real (not fabricated) progress bar
+  only while genuinely running, and Cancel only while running. A
+  "Completed" run with any per-track failure now gets an amber badge
+  instead of plain green so it can't visually read as fully clean. Reuses
+  existing components/CSS (`.table--jobs`, `Badge`, `.lib-defs`,
+  `.job-progress-*`) rather than inventing new ones; collapses to one
+  column below 1180px like the Library page. Verified via headless-Chrome
+  screenshots at 1440/760/390px (Chrome extension unavailable); the
+  click-to-select detail panel was verified by code review + direct API
+  testing rather than a live click, disclosed as a real gap. Cycle 2's
+  three stages (persist -> API -> UI) are now complete for BPM/key
+  analysis operations.
+
 - 2026-08-07: Cycle 2 Stage 2 -- structured Analysis Jobs API. `GET
   /api/analysis/jobs/history/{operation_id}` (detail) and `POST
   .../history/{operation_id}/cancel` (idempotent: unknown id -> 404,

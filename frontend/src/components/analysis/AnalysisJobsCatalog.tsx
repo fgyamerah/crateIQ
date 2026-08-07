@@ -2,8 +2,9 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { CheckCircle2, Eye, RefreshCw, ShieldCheck, SlidersHorizontal, Wrench } from 'lucide-react'
 import { ApiError } from '../../api/client'
-import { fetchAnalysisJobHistory, fetchAnalysisJobs, previewAnalysisJob, runBpmAnalysis, runKeyAnalysis } from '../../api/analysis'
+import { fetchAnalysisJobs, previewAnalysisJob, runBpmAnalysis, runKeyAnalysis } from '../../api/analysis'
 import type { AnalysisJobDefinition, AnalysisJobPreview, AnalysisJobStatus, AnalysisJobType, BpmAnalysisRunResult, KeyAnalysisRunResult } from '../../types/analysis'
+import AnalysisOperationsHistory from './AnalysisOperationsHistory'
 import Badge from '../ui/Badge'
 import EmptyState from '../ui/EmptyState'
 import KpiCard from '../ui/KpiCard'
@@ -63,7 +64,6 @@ function errorMessage(error: unknown) {
 export default function AnalysisJobsCatalog() {
   const [jobs, setJobs] = useState<AnalysisJobDefinition[]>([])
   const [preview, setPreview] = useState<AnalysisJobPreview | null>(null)
-  const [historyMessage, setHistoryMessage] = useState('')
   const [loading, setLoading] = useState(true)
   const [previewing, setPreviewing] = useState<AnalysisJobType | null>(null)
   const [bpmConfirmed, setBpmConfirmed] = useState(false)
@@ -75,14 +75,14 @@ export default function AnalysisJobsCatalog() {
   const [keyResult, setKeyResult] = useState<KeyAnalysisRunResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [filter, setFilter] = useState<JobFilter>('all')
+  const [historyRefreshSignal, setHistoryRefreshSignal] = useState(0)
 
   const load = useCallback(async () => {
     setLoading(true)
     setError(null)
     try {
-      const [catalog, history] = await Promise.all([fetchAnalysisJobs(), fetchAnalysisJobHistory()])
+      const catalog = await fetchAnalysisJobs()
       setJobs(catalog.jobs)
-      setHistoryMessage(history.message)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -112,7 +112,12 @@ export default function AnalysisJobsCatalog() {
 
   const runKey = async () => {
     setKeyRunning(true); setError(null)
-    try { const result = await runKeyAnalysis(bpmLimit); setKeyResult(result); setKeyConfirmed(false); setPreview(null); await load() }
+    try {
+      const result = await runKeyAnalysis(bpmLimit)
+      setKeyResult(result); setKeyConfirmed(false); setPreview(null)
+      await load()
+      setHistoryRefreshSignal((n) => n + 1)
+    }
     catch (err) { setError(errorMessage(err)) } finally { setKeyRunning(false) }
   }
 
@@ -125,6 +130,7 @@ export default function AnalysisJobsCatalog() {
       setBpmConfirmed(false)
       setPreview(null)
       await load()
+      setHistoryRefreshSignal((n) => n + 1)
     } catch (err) {
       setError(errorMessage(err))
     } finally {
@@ -209,10 +215,7 @@ export default function AnalysisJobsCatalog() {
       </section>}
       {bpmResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">BPM analysis result</h2><p className="muted">Aubio wrote only eligible BPM values to CrateIQ’s local index.</p></div><Badge tone="succeeded">Complete</Badge></div><div className="settings-import-summary"><span><strong>{bpmResult.analyzed}</strong> analyzed</span><span><strong>{bpmResult.updated}</strong> updated</span><span><strong>{bpmResult.skipped}</strong> skipped</span><span><strong>{bpmResult.failed}</strong> failed</span><span><strong>{bpmResult.remaining_missing_bpm}</strong> remaining</span></div>{bpmResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
       {keyResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">Key/Camelot analysis result</h2><p className="muted">Keyfinder wrote only eligible keys to CrateIQ’s local index.</p></div><Badge tone="succeeded">Complete</Badge></div><div className="settings-import-summary"><span><strong>{keyResult.analyzed}</strong> analyzed</span><span><strong>{keyResult.updated}</strong> updated</span><span><strong>{keyResult.skipped}</strong> skipped</span><span><strong>{keyResult.failed}</strong> failed</span><span><strong>{keyResult.remaining_missing_key}</strong> remaining</span></div>{keyResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
-      <section className="analysis-job-history">
-        <h2 className="card-title">Analysis history</h2>
-        <EmptyState title="No analysis runs yet" message={historyMessage || 'History starts when an explicit safe runner is implemented.'} />
-      </section>
+      <AnalysisOperationsHistory refreshSignal={historyRefreshSignal} />
     </>
   )
 }

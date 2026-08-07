@@ -440,7 +440,7 @@ CURRENT FOCUS
          Import remains analysis-free; unavailable tools disable only their
          named future workflow.
 
-[~] (P1) Add safe persisted Analysis Jobs history/progress (2026-08-07)
+[x] (P1) Add safe persisted Analysis Jobs history/progress (2026-08-07)
          Stage 1/Cycle 2 (backend persistence): new app-owned
          `analysis_operations` table in jobs.db (never processed.db) records
          every explicit, confirmed BPM/key analysis run: type, scope/limit,
@@ -472,7 +472,32 @@ CURRENT FOCUS
          it the event loop stayed blocked for the whole batch and
          cancellation could never be serviced. Files:
          backend/app/api/routes/analysis.py, tests/test_backend_api.py.
-         Next: an Operations UI (Stage 3).
+         Stage 3/Cycle 2 (Operations UI, 2026-08-07): `/jobs`'s "Analysis
+         history" section (previously a permanent empty-state placeholder)
+         is now a real workspace: a compact, keyboard-selectable table of
+         persisted BPM/key operations plus a detail rail with truthful
+         counts (considered/succeeded/skipped/failed/remaining), a real
+         progress bar shown only while genuinely running (built from actual
+         processed/considered counts, never a fabricated percentage), a
+         plain-language failure/cancellation reason, and an explicit Cancel
+         action only while status is 'running'. A "Completed" run that had
+         at least one per-track failure gets an amber badge instead of
+         plain green, so a degraded result can never visually read as
+         fully fine. Layout collapses to one column below 1180px (matches
+         the Library breakpoint); the history list/detail panel reuses
+         `.table--jobs`, `Badge`, `.lib-defs`, and `.job-progress-*`
+         verbatim rather than inventing new visual language. Files:
+         frontend/src/components/analysis/AnalysisOperationsHistory.tsx
+         (new), frontend/src/components/analysis/AnalysisJobsCatalog.tsx,
+         frontend/src/types/analysis.ts, frontend/src/api/analysis.ts,
+         frontend/src/index.css. Verified via headless-Chrome screenshots
+         (Chrome MCP unavailable) at 1440/760/390px against real backend
+         data (including a temporarily seeded synthetic running/cancelled
+         row for visual coverage, deleted after verification) -- confirmed
+         list rendering, status-tone logic, and responsive collapse; the
+         click-to-select detail panel itself was verified by code review
+         and direct API testing rather than a live click, since no
+         interactive browser tool was available this session.
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`
