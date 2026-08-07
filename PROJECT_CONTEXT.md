@@ -6,6 +6,43 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 4 Stage 3 -- Plan-first library reconciliation, on
+  `feat/crateiq-library-reconciliation`. `POST /api/reconciliation/
+  plans/propose` performs DETECT -> PROPOSE by calling the existing,
+  unmodified `pipeline._path_audit_report()` and `pipeline.
+  _path_reconcile_plan()`, then persists the plan to the exact artifact
+  location/filename pattern the CLI already writes
+  (`<root>/logs/path_reconcile/{YYYYMMDD}_path_reconcile_plan.json`),
+  so the pre-existing `POST /api/reconciliation/validate-plan
+  {"latest": true}` keeps working against it unchanged. The API
+  response is root-relative-path-only; the on-disk artifact stays in
+  the CLI's native absolute-path format since the unmodified validator
+  depends on that. `validate-plan` now also runs two plan-wide checks
+  the per-action CLI validator structurally can't perform alone:
+  `target_path_collision` (two actions proposing the same new_path) and
+  `ambiguous_candidate_for_old_path` (one old_path with more than one
+  proposed new_path) -- additive-only (can move an action from valid to
+  invalid, never the reverse) in a new `reconciliation_plan_service.
+  augment_with_cross_action_checks()`. `apply_supported` is `false`
+  throughout; no apply/execute endpoint exists; `_path_reconcile_apply_
+  auto_safe`/`_path_reconcile_mark_stale_pstate` remain unreachable
+  from the API, unmodified. Found and fixed one real pre-existing bug
+  while wiring propose -> validate together end-to-end for the first
+  time: `_path_reconcile_validate_action` flagged every
+  `update_path_reference` action invalid via `old_path_missing_on_disk`
+  -- but that action type exists specifically because old_path is
+  confirmed missing (that's the whole premise of a rename/relocation
+  candidate); no plan the planner itself generates could ever have
+  validated as valid before this one-line fix, and no existing test
+  asserted on the removed check. New: `backend/app/services/
+  reconciliation_plan_service.py`, `backend/app/schemas/
+  reconciliation_plan.py`; extended: `backend/app/api/routes/
+  reconciliation.py` (one new POST route; existing validate-plan route
+  now layers the cross-action check). 12 new targeted tests in
+  `tests/test_reconciliation_plan.py`; full backend suite (1401 tests)
+  passes. No file, tag, DB-schema, or apply/destructive action was
+  added; no new dependency.
+
 - 2026-08-07: Cycle 4 Stage 2 -- Orphan/stale-path/quarantine findings, on
   `feat/crateiq-library-reconciliation`. Two new read-only GET endpoints.
   `/api/reconciliation/findings` reshapes the existing `pipeline.

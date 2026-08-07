@@ -1,11 +1,12 @@
 """
-Reconciliation ledger and findings routes.
+Reconciliation ledger, findings, and plan routes.
 
-  GET /api/reconciliation/ledger                — list recent ledger entries
-  GET /api/reconciliation/ledger/{ledger_id}    — get one ledger entry
-  POST /api/reconciliation/validate-plan        — validate a path-reconcile plan
-  GET /api/reconciliation/findings              — read-only orphan/stale-path findings
-  GET /api/reconciliation/quarantine            — read-only quarantine listing
+  GET  /api/reconciliation/ledger                — list recent ledger entries
+  GET  /api/reconciliation/ledger/{ledger_id}    — get one ledger entry
+  POST /api/reconciliation/validate-plan         — validate a path-reconcile plan
+  GET  /api/reconciliation/findings              — read-only orphan/stale-path findings
+  GET  /api/reconciliation/quarantine            — read-only quarantine listing
+  POST /api/reconciliation/plans/propose         — propose (never apply) a reconciliation plan
 """
 from __future__ import annotations
 
@@ -20,8 +21,10 @@ from ...schemas.reconciliation import (
     ReconciliationPlanValidateResponse,
 )
 from ...schemas.reconciliation_findings import QuarantineListingResponse, ReconciliationFindingsResponse
+from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
 from ...services import read_only as read_only_service
 from ...services import reconciliation_findings_service
+from ...services import reconciliation_plan_service
 import pipeline
 
 router = APIRouter(tags=["reconciliation"])
@@ -67,9 +70,18 @@ async def validate_reconciliation_plan(
 
     try:
         result = pipeline._path_reconcile_validate_plan(plan_path)
+        result = reconciliation_plan_service.augment_with_cross_action_checks(result)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return ReconciliationPlanValidateResponse(**result)
+
+
+@router.post("/reconciliation/plans/propose", response_model=ReconciliationPlanProposeResponse)
+async def propose_reconciliation_plan() -> ReconciliationPlanProposeResponse:
+    try:
+        return ReconciliationPlanProposeResponse(**reconciliation_plan_service.propose_plan())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/reconciliation/findings", response_model=ReconciliationFindingsResponse)

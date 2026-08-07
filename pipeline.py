@@ -3629,8 +3629,10 @@ def _path_reconcile_validate_action(
             issues.append("missing_old_path")
         if not new_path:
             issues.append("missing_new_path")
-        if old_path and not Path(old_path).expanduser().exists():
-            issues.append("old_path_missing_on_disk")
+        # old_path is expected to be missing on disk: this action type exists
+        # specifically to relink a DB row whose file is gone to a candidate
+        # found elsewhere (see _path_reconcile_plan). Only the candidate
+        # (new_path) must actually exist for the action to be applicable.
         if new_path and not Path(new_path).expanduser().exists():
             issues.append("new_path_missing_on_disk")
     elif action_type == "update_queue_reference":

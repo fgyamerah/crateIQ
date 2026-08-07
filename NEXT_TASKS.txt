@@ -843,6 +843,23 @@ CURRENT FOCUS
          Current stable commit hash: b4c6ffb4048c4c98d225f6c65e40a7cce7f1a8e3
          WARNING: back up <root>/logs/processed.db before any reconciliation apply work.
          Scope reminder: design and test reconciliation apply behavior before enabling writes.
+         UPDATE (2026-08-07, Cycle 4 Stage 3): `POST /api/reconciliation/
+         plans/propose` now generates+persists a plan (DETECT -> PROPOSE) by
+         reusing `pipeline._path_reconcile_plan()` unchanged, writing the
+         same `logs/path_reconcile/{day}_path_reconcile_plan.json` artifact
+         the CLI already uses. `POST /api/reconciliation/validate-plan` now
+         additionally runs plan-wide `target_path_collision` and
+         `ambiguous_candidate_for_old_path` checks the per-action CLI
+         validator could not see. Fixed a real pre-existing bug found while
+         wiring propose->validate end-to-end: `_path_reconcile_validate_action`
+         flagged every `update_path_reference` action as invalid via
+         `old_path_missing_on_disk`, even though that action type exists
+         specifically because old_path is missing (see
+         `_path_reconcile_plan`) -- no generated plan could ever validate as
+         valid before this fix; no test asserted on the removed check.
+         Apply remains fully deferred: no apply endpoint was added or
+         exposed; `_path_reconcile_apply_auto_safe`/`_path_reconcile_mark_
+         stale_pstate` are untouched and unreachable from the API.
 [x] (P1) artist-repair-review — human approval workflow; queue state persistence; 158 tests (2026-05-03)
 [x] (P1) bare-number guard v6 — numeric/ordinal second token preserved; 71 tests (2026-05-03)
 [x] (P1) title-number-recover — filename-based recovery for bad bare-number strips; number>=10 guard; v5 rules (2026-05-03)

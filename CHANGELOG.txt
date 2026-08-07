@@ -2,6 +2,52 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Cycle 4 plan-first library reconciliation (Stage 3)
+
+- What changed: `POST /api/reconciliation/plans/propose` generates a
+  reconciliation plan (DETECT -> PROPOSE) by calling the existing,
+  unmodified `pipeline._path_audit_report()` and `pipeline.
+  _path_reconcile_plan()`, then persists it to the same
+  `<root>/logs/path_reconcile/{YYYYMMDD}_path_reconcile_plan.json`
+  artifact location and filename pattern the CLI already writes (so the
+  existing `latest=true` lookup keeps working unchanged). The API
+  response converts every path to root-relative before returning it;
+  the on-disk artifact keeps the CLI's native absolute-path format so
+  `_path_reconcile_validate_plan` (unmodified) can keep resolving it.
+  `POST /api/reconciliation/validate-plan` (already existed) now also
+  runs plan-wide cross-action checks the per-action CLI validator
+  can't perform alone: `target_path_collision` (two actions proposing
+  the same new_path) and `ambiguous_candidate_for_old_path` (one
+  old_path with more than one proposed new_path) -- additive only, and
+  can only move an action from valid to invalid, never the reverse.
+  `apply_supported` is `false` everywhere; no apply/execute endpoint
+  was added, and the existing `_path_reconcile_apply_auto_safe`/
+  `_path_reconcile_mark_stale_pstate` functions remain unreachable from
+  the API, unchanged.
+- Bug fix found while wiring propose -> validate end-to-end for the
+  first time: `pipeline._path_reconcile_validate_action()` flagged
+  every `update_path_reference` action as invalid via
+  `old_path_missing_on_disk`. That action type exists specifically to
+  relink a DB row whose file is confirmed missing to a candidate found
+  elsewhere (see `_path_reconcile_plan`'s `possible_renames`/
+  `relocation_candidates`/`orphan_candidates` producers) -- old_path
+  being missing is the expected precondition, not an error. This meant
+  no plan the planner itself ever generates could validate as valid.
+  Removed only that one check (kept `new_path_missing_on_disk`, which
+  is correct); no existing test asserted on the removed check.
+- Why: makes the plan-review flow actually usable end-to-end for the
+  realistic case the planner produces, and closes a real cross-action
+  safety gap (colliding/ambiguous relink targets) the single-action
+  validator structurally cannot see.
+- Files affected: `backend/app/services/reconciliation_plan_service.py`
+  (new), `backend/app/schemas/reconciliation_plan.py` (new),
+  `backend/app/api/routes/reconciliation.py` (one new POST route, one
+  existing route now layers the cross-action check), `pipeline.py`
+  (one erroneous check removed from `_path_reconcile_validate_action`),
+  `tests/test_reconciliation_plan.py` (new, 12 targeted tests).
+- Migration notes: none. No DB schema change. Plan JSON artifact format
+  is unchanged (byte-for-byte the same shape the CLI already writes).
+
 [2026-08-07] — Cycle 4 orphan/stale-path/quarantine findings (Stage 2)
 
 - What changed: two new read-only endpoints. `GET /api/reconciliation/
