@@ -39,6 +39,15 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Cycle 3 Stage 5 -- Final publish safety audit (2026-08-07)
+    Full-branch diff audit vs main; added a missing restart-recovery test
+    for publish_operations (mirrors the Cycle 2 analysis_operations
+    pattern); re-verified all 88 test-library source audio files
+    byte-identical before/after the full Cycle 3 session; validate-docs
+    --strict and git diff --check both clean. 1378 backend tests pass,
+    frontend typecheck/build pass. See CHANGELOG.txt. Cycle 3 (roadmap
+    Phase 7 Publish: readiness, guarded export, guarded sync, guided UI)
+    is complete on feat/crateiq-publish; not merged to main.
 [x] (P1) Cycle 3 Stage 4 -- Guided Publish workspace (2026-08-07)
     New `/publish` route turns Stages 1-3 into one guided flow: crate +
     format + sync-source selection -> readiness -> Export preview ->
@@ -78,9 +87,10 @@ CURRENT FOCUS
     snapshot (blockers/warnings/conflicts, export_ready, sync_ready,
     confirmation_required, next_operation) without exporting or syncing
     anything. See CHANGELOG.txt for full detail. 1355 backend tests pass.
-[~] (P1) Cycle 3 -- Guided Publish, Export, and SSD Sync (roadmap Phase 7)
-    Stages 1-4 (readiness, guarded export, guarded sync, guided UI) done.
-    Remaining: Stage 5 (final safety audit).
+[x] (P1) Cycle 3 -- Guided Publish, Export, and SSD Sync (roadmap Phase 7)
+    All 5 stages complete: readiness contract, guarded export lifecycle,
+    guarded SSD sync lifecycle, Guided Publish UI, final safety audit.
+    Not merged to main per instruction.
 
 [x] (P1) Crate/set-building improvements: transition context + funnel feedback
     (2026-08-07). Manual Crates now show a deterministic, explainable

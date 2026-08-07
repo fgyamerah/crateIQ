@@ -6,6 +6,44 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 3 Stage 5 -- final publish safety audit, completing
+  roadmap Phase 7 (Publish: export and SSD synchronization) on
+  `feat/crateiq-publish`. Full-branch diff vs `main` (`bd3a5f6`): 22 files,
+  +2,830/-9, scope held tightly to publish/export/sync plus two small
+  surgical fixes to pre-existing code (`crate_export_service.
+  next_output_path()` extraction, the rsync dry-run header parser bug).
+  Found and closed one real test gap: `publish_operations_service.
+  recover_interrupted_operations()` (restart safety for a stranded
+  'running' export/sync row) had no test, unlike its Cycle 2
+  `analysis_operations` counterpart -- added a mirrored test. Re-verified
+  source safety: all 88 audio files under `crateiq-test-library/music`
+  are byte-identical before/after the entire Cycle 3 session (including
+  Stage 4's live browser verification, which produced two real confirmed
+  exports); `processed.db`'s mtime predates this session's activity since
+  every export/readiness code path opens it read-only. The only real
+  writes this session produced are two staged `.m3u8` files under
+  `crateiq-test-library/exports/` -- the feature's own intended output
+  location. `validate-docs --strict` passes (24/24), `git diff --check`
+  is clean, 1378 backend tests pass (1377 + 1 new), frontend typecheck/
+  build pass. LedgerIQ/opsIQ untouched; no stray artifacts; other
+  Cycle 2/foundation-audit branches and `main` untouched. Not merged to
+  `main` per instruction.
+  Cycle 3 summary across all 5 stages: `GET /api/publish/readiness/
+  {crate_id}` is a read-only contract composing existing crate export
+  services and SSD sync config (export_ready/sync_ready, tagged
+  blockers/warnings, informational conflicts, confirmation_required,
+  next_operation). `publish_export_service.py` unifies the portable/
+  Rekordbox-XML/Serato exporters behind validate -> preview -> confirm ->
+  execute -> verify without reimplementing any renderer. `publish_sync_
+  service.py` does the same for SSD sync on top of the unmodified
+  `rsync_runner`, with a request schema that has no `allow_delete` field
+  at all and lazy post-job verification via a second safe dry-run.
+  Confirmed operations of both kinds persist to a new `publish_
+  operations` jobs.db table (Cycle 2-style: running -> terminal status,
+  restart recovery, root-relative destinations only). `/publish` is one
+  guided frontend workspace over all of it, reusing the Night Deck
+  primitives verbatim.
+
 - 2026-08-07: Cycle 3 Stage 4 -- Guided Publish workspace. New `/publish`
   route (`frontend/src/pages/Publish.tsx`) composes Stages 1-3's backend
   contracts into one guided flow: crate + export-format + sync-source

@@ -2,6 +2,46 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Cycle 3 final publish safety audit (Stage 5)
+
+- Full-branch audit of the Cycle 3 diff against main (bd3a5f6): 22 files
+  changed, +2,830/-9 across readiness, guarded export, guarded sync,
+  Guided Publish UI, and this audit. Scope stayed tight to publish/
+  export/sync plus two small surgical touches to pre-existing code
+  (crate_export_service.next_output_path() extraction, rsync_runner's
+  dry-run header parser fix) -- no unrelated area was refactored.
+- Added one real coverage gap found during the audit: `publish_operations
+  _service.recover_interrupted_operations()` (restart safety for a
+  stranded 'running' export/sync row) had no test, unlike its Cycle 2
+  `analysis_operations` counterpart which does. Added
+  `test_publish_operations_recover_interrupted_closes_running_rows_as_
+  failed`, mirroring the existing analysis-operations test exactly.
+- Verified explicitly: readiness/preview stay side-effect-free; every
+  confirmed write requires body.confirm=true; exports never overwrite
+  (unique timestamped names); the guarded sync request schema has no
+  allow_delete field and always calls rsync without --delete;
+  destination/source safety (self-sync, nested, protected system paths)
+  is enforced before any preview or confirm; verification is a distinct
+  field from execution status and can report "failed" without the
+  operation itself being marked failed; publish_operations never stores
+  an absolute path, only root-relative or category strings; no secret is
+  logged or returned.
+- Source-safety re-verification: hashed all 88 audio files under
+  `crateiq-test-library/music` before and after this session's full
+  Cycle 3 work (including the live Stage 4 browser verification's two
+  real confirmed exports) -- byte-identical. `logs/processed.db`'s
+  mtime predates this session's activity (export/readiness code paths
+  only ever open it read-only). The only real writes this session
+  produced are the two staged `.m3u8` files under `crateiq-test-library/
+  exports/`, exactly the feature's intended output location.
+- `validate-docs --strict` passes (24/24 registry commands present).
+  `git diff --check` clean across the full branch diff. 1378 backend
+  tests pass (1377 + 1 new), frontend typecheck/build pass. LedgerIQ and
+  opsIQ sibling repositories were never referenced. No `tatus --short`
+  artifact exists. Branch not merged to main per instruction.
+- Files: tests/test_backend_api.py (1 new test), CHANGELOG.txt,
+  NEXT_TASKS.txt, PROJECT_CONTEXT.md.
+
 [2026-08-07] — Add guided publish workspace (Cycle 3, Stage 4)
 
 - New `/publish` route (`frontend/src/pages/Publish.tsx`, sidebar entry

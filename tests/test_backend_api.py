@@ -2084,6 +2084,36 @@ def test_publish_operations_job_id_migrates_onto_an_existing_stage2_jobs_db(tmp_
     assert record["job_id"] == "job-123"
 
 
+def test_publish_operations_recover_interrupted_closes_running_rows_as_failed(tmp_path, monkeypatch):
+    """A stranded 'running' publish operation (backend crashed mid-write) must
+    never be left permanently claiming 'running' after a restart -- same
+    contract as analysis_operations_service.recover_interrupted_operations."""
+    path = tmp_path / "jobs.db"
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", path)
+    backend_db.init_db()
+
+    from backend.app.services import publish_operations_service as pub_ops
+
+    running = pub_ops.start_operation("export", export_target="m3u8", crate_id=1, crate_name="Test")
+    already_done = pub_ops.start_operation("sync", sync_source="library")
+    pub_ops.finish_operation(already_done["id"], status="completed", result="synced")
+
+    recovered = pub_ops.recover_interrupted_operations()
+    assert recovered == 1
+
+    reconciled = pub_ops.get_operation(running["id"])
+    assert reconciled["status"] == "failed"
+    assert reconciled["error_reason"] == "backend_restarted"
+    assert reconciled["finished_at"]
+
+    untouched = pub_ops.get_operation(already_done["id"])
+    assert untouched["status"] == "completed"
+    assert untouched["error_reason"] is None
+
+    # Recovery must be safe to run again (e.g. a second restart) with nothing left to close.
+    assert pub_ops.recover_interrupted_operations() == 0
+
+
 def test_publish_sync_failed_job_is_reported_without_verification(client, tmp_path, monkeypatch):
     test_client, _root = client
     _sync_fixture(tmp_path, monkeypatch)
