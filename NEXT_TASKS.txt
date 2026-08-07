@@ -298,6 +298,55 @@ CURRENT FOCUS
     typecheck/build/git diff --check pass. Live Chrome verification
     (1440x900/~760x900/phone-width) not performed — extension unavailable.
 
+[x] (P2) Waveform generation UX + bulk waveform jobs (2026-08-07)
+    Stage 1: replaced the decorative LOW/MID/HIGH `ThreeBandWaveform`
+    placeholder in Track Inspector and the Persistent Player with a new
+    `EmptyWaveform` component (thin muted center line, cannot be mistaken
+    for analyzed audio); unified lifecycle copy/actions via
+    `presentWaveformState()`. `ThreeBandWaveform` itself is untouched and
+    remains in use on the unrelated Music Review (Listening) page — see
+    follow-up below. Stage 2: added an explicit bulk "Generate missing
+    waveforms" contract (`GET /api/waveform-bulk/preview`, `POST
+    .../generate-missing`, a new `waveform_operations` jobs.db table)
+    that reuses the existing per-track waveform pipeline end to end —
+    one track submitted at a time through the existing
+    `waveform_job_service` + `WaveformScheduler`, waiting for each job to
+    finish before the next, so the existing bounded queue/concurrency
+    stays authoritative. Cancellation stops scheduling new tracks but
+    lets any in-flight job finish; a run left running by a backend
+    restart reconciles to failed/backend_restarted at startup (same
+    pattern as `analysis_operations`/`publish_operations`). Stage 3:
+    added a Waveform Generation card to the Jobs page with truthful KPI
+    counts, live progress, and a completion/cancellation summary read
+    from persisted history. Files: frontend/src/components/player/
+    EmptyWaveform.tsx, frontend/src/components/waveform/
+    WaveformGenerationCard.tsx, backend/app/services/
+    waveform_bulk_service.py, backend/app/services/
+    waveform_operations_service.py, backend/app/api/routes/
+    waveform_bulk.py, backend/app/core/db.py, backend/app/main.py,
+    frontend/src/pages/Jobs.tsx, plus 35 new tests in
+    tests/test_waveform_bulk.py. 1436 backend tests pass; typecheck and
+    build pass; validate-docs --strict OK. Live-verified against the
+    real 88-track test library via headless Chrome + CDP (extension not
+    connected this session): empty state, explicit single-track
+    generation, and bulk generate/cancel all behave exactly as designed.
+
+[ ] (P3) Unify the Music Review (Listening) page's decorative waveform
+    `frontend/src/pages/Listening.tsx` still renders `ThreeBandWaveform`
+    (the same LOW/MID/HIGH placeholder retired everywhere else in this
+    session) for its browser-preview-only queue. It already carries an
+    honest "no waveform analysis is performed" aria-label, but for full
+    consistency with the new truthful empty state it could swap to
+    `EmptyWaveform` too — deliberately left out of the 2026-08-07 branch
+    to keep that change scoped to Track Inspector/Persistent Player.
+
+[ ] (P3) Add a persisted-history table for bulk waveform runs
+    `WaveformGenerationCard` shows only the most recent run
+    (`waveform_operations` already persists full history in jobs.db). A
+    drillable table + detail rail, matching
+    `AnalysisOperationsHistory.tsx`'s pattern for BPM/key runs, would let
+    a DJ check whether an earlier bulk waveform run finished cleanly.
+
 [ ] (P3) Represent long-form DJ mixes in a future waveform sample
     The W7 sample topped out at 11:06. Multi-hour behavior is still covered
     only by synthetic tests and the timeout/pair ceilings, not by a measured

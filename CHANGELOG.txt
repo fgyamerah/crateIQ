@@ -2,6 +2,71 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Waveform generation UX + bulk waveform jobs (Stages 1-3)
+
+- Stage 1: replaced the decorative LOW/MID/HIGH ThreeBandWaveform
+  placeholder in Track Inspector and the Persistent Player with a new
+  EmptyWaveform component (frontend/src/components/player/
+  EmptyWaveform.tsx) -- a thin muted center line that cannot be mistaken
+  for analyzed audio. Lifecycle copy/actions unified across both
+  surfaces via presentWaveformState() ("Waveform not generated",
+  "Waveform generation failed" + Retry). ThreeBandWaveform itself is
+  untouched and remains in its one other, unrelated use on the Music
+  Review (Listening) page -- out of scope for this branch.
+- Stage 2: added an explicit bulk "Generate missing waveforms" contract
+  reusing the existing per-track waveform pipeline end to end -- no
+  second generation system. GET /api/waveform-bulk/preview is a
+  read-only, truthful count (ready/missing/generating/failed/
+  unsupported/eligible_to_generate). POST /api/waveform-bulk/
+  generate-missing creates a persisted waveform_operations row (new
+  jobs.db table) and an incremental async feeder that submits one
+  eligible track at a time through waveform_job_service +
+  WaveformScheduler, waiting for each job to reach a terminal state
+  before the next -- the existing bounded queue/concurrency stays
+  authoritative and can never be flooded. Cancellation stops scheduling
+  new tracks but lets any in-flight job finish so its counts stay
+  truthful. A run left 'running' by a backend restart is reconciled to
+  failed/backend_restarted at startup, mirroring analysis_operations/
+  publish_operations. New: backend/app/services/waveform_bulk_service.py,
+  backend/app/services/waveform_operations_service.py,
+  backend/app/api/routes/waveform_bulk.py, 35 tests in
+  tests/test_waveform_bulk.py.
+- Stage 3: added a Waveform Generation card to the Jobs page
+  (frontend/src/components/waveform/WaveformGenerationCard.tsx) exposing
+  the Stage 2 contract with truthful KPI counts, a running-progress
+  state, and a completion/cancellation summary read from persisted
+  history (so a page reload mid-run still shows real state). Ran an
+  Impeccable design review afterward; fixed the one real finding worth
+  fixing now -- a completed-with-failures run was showing the same green
+  badge as a clean run, the same anti-pattern AnalysisOperationsHistory
+  already guards against -- plus a KPI tone/message polish. A history
+  table/detail-rail for past waveform runs (matching
+  AnalysisOperationsHistory) and unifying the Music Review page's
+  decorative waveform are noted as follow-ups, not done here.
+- Verification: python -m compileall backend/app (clean); python -m
+  pytest -q -> 1436 passed; npm run typecheck (clean); npm run build
+  (clean); pipeline.py validate-docs --strict -> OK, 24/24 registry
+  commands present; git diff --check clean.
+- Live end-to-end check against the real, sanctioned
+  crateiq-test-library (88 tracks) via headless Chrome + CDP (the
+  Chrome-in-browser extension was not connected this session): explicit
+  single-track generation completes and the real amplitude-colored
+  waveform replaces the empty state without a reload; bulk "Generate
+  missing waveforms" showed real 0/78 progress, and Cancel stopped
+  scheduling new tracks while letting the in-flight one finish (1
+  generated, 77 remaining, status cancelled) -- exactly matching the
+  Stage 2 design.
+- Source-integrity check: mtime of all 88 real audio files predates this
+  session (none touched today); the two intentional waveform
+  generations during manual verification wrote only to the app-owned
+  waveform cache and jobs.db, never to source audio, tags, or
+  processed.db. No files changed outside backend/app, frontend/src, and
+  tests/.
+- Files affected: see commits c9e1b8c, cd04bcc, bc06a7f, a9ef703 on
+  feat/crateiq-waveform-jobs. No migration steps; the new
+  waveform_operations jobs.db table is created automatically by the
+  existing init_db() migration pattern on next backend startup.
+
 [2026-08-07] — Cycle 4 final reconciliation safety audit (Stage 5)
 
 - Full-branch audit of the Cycle 4 diff against main (b78943b): 22 files

@@ -6,6 +6,92 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Waveform generation UX + bulk waveform jobs, on
+  `feat/crateiq-waveform-jobs` (base `main` `9799e04`). Three stages, no
+  merge to main. **Stage 1** replaced the decorative LOW/MID/HIGH
+  `ThreeBandWaveform` placeholder in Track Inspector and the Persistent
+  Player with a new `EmptyWaveform` component (a thin muted center line
+  matching the real waveform's own center-line color and the real
+  waveform's 46px box height, so swapping never shifts layout) --
+  `frontend/src/components/player/EmptyWaveform.tsx`. Lifecycle copy/
+  actions unified across both surfaces via `presentWaveformState()`
+  ("Waveform not generated", "Waveform generation failed" + Retry).
+  `ThreeBandWaveform.tsx` itself is untouched and remains in its one
+  other use on the unrelated Music Review (Listening) page -- a noted
+  follow-up in `NEXT_TASKS.txt`, deliberately out of scope here.
+  **Stage 2** added an explicit bulk "Generate missing waveforms"
+  contract that reuses the existing per-track pipeline end to end, no
+  second generation system: `GET /api/waveform-bulk/preview` is a
+  read-only, truthful count
+  (ready/missing/generating/failed/unsupported/eligible_to_generate);
+  `POST /api/waveform-bulk/generate-missing` creates a persisted
+  `waveform_operations` jobs.db row (new table, mirrors
+  `analysis_operations`/`publish_operations`) and fires an async
+  fire-and-forget feeder that submits one eligible track at a time
+  through `waveform_job_service.submit_generation_job` +
+  `WaveformScheduler.enqueue`, polling for that job's terminal state
+  before submitting the next -- the existing bounded queue
+  (`max_queue_size`) and concurrency (`max_concurrent_jobs`, default 1)
+  stay fully authoritative; bulk generation can never enqueue more than
+  one job at a time on its own behalf. A track that races to ready or
+  already-active between scoping and being reached is re-checked and
+  skipped, never resubmitted. Cancellation
+  (`POST /api/waveform-bulk/operations/{id}/cancel`) stops scheduling
+  new tracks but lets any in-flight job finish so its counts stay
+  truthful; final status is always completed/failed/cancelled. A run
+  left `running` by a backend restart is reconciled to
+  `failed`/`backend_restarted` at startup
+  (`waveform_operations_service.recover_interrupted_operations`, wired
+  into `main.py` lifespan next to the existing analysis/publish
+  recovery calls). New:
+  `backend/app/services/waveform_bulk_service.py`,
+  `backend/app/services/waveform_operations_service.py`,
+  `backend/app/api/routes/waveform_bulk.py`, a `waveform_operations`
+  table/migration in `backend/app/core/db.py`, corresponding Pydantic
+  schemas, and 35 new tests in `tests/test_waveform_bulk.py` (preview
+  truthfulness, bounded scheduling -- never more than one outstanding
+  job --, concurrent-skip, cancellation semantics, restart recovery,
+  source/processed.db untouched, HTTP contract). **Stage 3** added a
+  Waveform Generation card to the Jobs page
+  (`frontend/src/components/waveform/WaveformGenerationCard.tsx`,
+  mounted in `frontend/src/pages/Jobs.tsx`) reusing existing Jobs/
+  Analysis visual patterns (`KpiCard`, `.job-progress-*`, `Badge`,
+  `StatusStrip`) rather than a parallel job UI: truthful KPI counts, a
+  running-progress state, and a completion/cancellation summary read
+  from persisted history so a page reload mid-run still shows real
+  state. Ran a focused Impeccable design review (dual sub-agent:
+  design-review + detector/screenshot-evidence) afterward and fixed the
+  one real finding worth fixing now -- a completed-with-failures run
+  showed the same green "Complete" badge as a fully clean run, the same
+  anti-pattern `AnalysisOperationsHistory.tsx` already guards against for
+  BPM/key runs -- plus a KPI tone/message polish (coral now marks the
+  actual Failed state per `DESIGN.md`'s reserved risk color, and the
+  Failed tile shows both unsupported-format and retryable counts when
+  both are nonzero). `detect.mjs` returned zero findings on all three
+  touched files. Verification: `python -m compileall backend/app`
+  clean; `python -m pytest -q` -- 1436 passed; `npm run typecheck` and
+  `npm run build` both clean; `pipeline.py validate-docs --strict` --
+  OK, 24/24 registry commands present; `git diff --check` clean.
+  Chrome-in-browser extension was not connected this session; UI
+  verification used headless Chrome + a small CDP automation script
+  (search/click via `Runtime.evaluate`, screenshots via
+  `Page.captureScreenshot`) against the real, sanctioned
+  `crateiq-test-library` (88 tracks) instead, disclosed at each stage:
+  confirmed the empty state renders with no LOW/MID/HIGH placeholder
+  anywhere in Track Inspector or the Persistent Player; explicit
+  single-track "Generate waveform" completed and the real
+  amplitude-colored waveform replaced the empty state without a reload;
+  bulk "Generate missing waveforms" showed real 0/78 progress and
+  Cancel stopped scheduling new tracks while letting the in-flight one
+  finish (1 generated, 77 remaining, status cancelled); preview counts
+  matched the backend exactly at every step. Source-integrity check:
+  mtime of all 88 real audio files predates this session (none touched
+  today); the two intentional waveform generations performed during
+  manual verification wrote only to the app-owned waveform cache and
+  jobs.db, never to source audio, tags, or `processed.db`. No files
+  changed outside `backend/app/`, `frontend/src/`, and `tests/`.
+  LedgerIQ and opsIQ were never referenced. Not merged to main.
+
 - 2026-08-07: Cycle 4 Stage 5 -- final reconciliation safety audit,
   completing roadmap Cycle 4 (Duplicate, Orphan, Quarantine, and
   Plan-First Library Reconciliation) on
