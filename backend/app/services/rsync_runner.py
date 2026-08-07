@@ -234,7 +234,11 @@ def _parse_dry_run_output(
 
         if not stripped:
             continue
-        if stripped.startswith("sending incremental file list"):
+        if stripped.startswith("sending incremental file list") or stripped.startswith("building file list"):
+            # "sending incremental file list" is rsync's default header;
+            # "building file list ... done" is what it prints instead when
+            # --no-inc-recursive is passed (as preview_sync() always does).
+            # Both mark the start of the transferred-path listing.
             in_list = True
             continue
         if stripped.startswith("sent ") and "received " in stripped:

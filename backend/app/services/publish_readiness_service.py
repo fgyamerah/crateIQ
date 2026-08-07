@@ -19,7 +19,7 @@ from ..core.library_root import selected_library_root
 from ..schemas.export import CrateExportRequest
 from ..schemas.publish import PublishExportTarget, PublishReadiness, PublishSyncSource
 from . import crate_export_service, crate_service
-from .publish_safety import describe_sync_destination_safety
+from .publish_safety import evaluate_sync_paths
 
 _STAGED_TARGETS = {"rekordbox_xml", "serato"}
 _STAGED_SUBDIR = {"rekordbox_xml": "rekordbox", "serato": "serato"}
@@ -79,27 +79,9 @@ def get_readiness(
     sync_dest_path = SYNC_DEST_SSD
     sync_destination_category = "external_ssd"
 
-    sync_blockers: List[str] = []
-    sync_warnings: List[str] = []
-
-    sync_mounted = sync_dest_path.exists() and sync_dest_path.is_dir()
-    if not sync_mounted:
-        sync_blockers.append(
-            f"[sync] Sync destination is not mounted or does not exist: {sync_dest_path}"
-        )
-
-    if sync_source_path is None:
-        sync_blockers.append(f"[sync] Unknown sync source: {sync_source!r}")
-    else:
-        sync_source_exists = sync_source_path.exists() and sync_source_path.is_dir()
-        if not sync_source_exists:
-            sync_blockers.append(f"[sync] Sync source not found: {sync_source_path}")
-        else:
-            safety_blockers, safety_warnings = describe_sync_destination_safety(
-                sync_source_path, sync_dest_path
-            )
-            sync_blockers.extend(f"[sync] {b}" for b in safety_blockers)
-            sync_warnings.extend(f"[sync] {w}" for w in safety_warnings)
+    raw_blockers, raw_warnings = evaluate_sync_paths(sync_source_path, sync_dest_path)
+    sync_blockers = [f"[sync] {b}" for b in raw_blockers]
+    sync_warnings = [f"[sync] {w}" for w in raw_warnings]
 
     sync_ready = not sync_blockers
 

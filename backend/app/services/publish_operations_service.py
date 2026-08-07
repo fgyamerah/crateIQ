@@ -49,6 +49,7 @@ def start_operation(
     *,
     export_target: Optional[str] = None,
     sync_source: Optional[str] = None,
+    job_id: Optional[str] = None,
     crate_id: Optional[int] = None,
     crate_name: Optional[str] = None,
     scope: Optional[str] = None,
@@ -62,11 +63,11 @@ def start_operation(
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO publish_operations
-               (id, operation_type, export_target, sync_source, mode, status,
+               (id, operation_type, export_target, sync_source, job_id, mode, status,
                 crate_id, crate_name, scope, track_count, created_at, started_at)
-               VALUES (?, ?, ?, ?, 'apply', 'running', ?, ?, ?, ?, ?, ?)""",
+               VALUES (?, ?, ?, ?, ?, 'apply', 'running', ?, ?, ?, ?, ?, ?)""",
             (
-                operation_id, operation_type, export_target, sync_source,
+                operation_id, operation_type, export_target, sync_source, job_id,
                 crate_id, crate_name, scope, track_count, now, now,
             ),
         )

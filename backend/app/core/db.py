@@ -172,6 +172,7 @@ CREATE TABLE IF NOT EXISTS publish_operations (
                                   CHECK (operation_type IN ('export', 'sync')),
     export_target        TEXT,
     sync_source          TEXT,
+    job_id               TEXT,
     mode                 TEXT    NOT NULL DEFAULT 'apply',
     status                TEXT   NOT NULL DEFAULT 'running'
                                   CHECK (status IN (

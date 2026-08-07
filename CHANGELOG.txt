@@ -2,6 +2,62 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Add guarded SSD sync workflow (Cycle 3, Stage 3)
+
+- New `publish_sync_service.py` builds a validate -> preview (dry-run) ->
+  confirm -> execute -> verify lifecycle on top of the existing
+  `rsync_runner` (preview_sync/start_sync_job unchanged). `POST
+  /api/publish/sync/preview` runs the existing safe rsync --dry-run
+  preview only when the destination passes structural safety checks
+  first (never spawns rsync against an already-unsafe destination).
+  `POST /api/publish/sync/confirm` requires `confirm: true` in the body
+  (else 409) and always calls `start_sync_job(..., allow_delete=False)`
+  -- the guarded request schema has no `allow_delete` field at all, so
+  the guided flow cannot request destructive `--delete` semantics even
+  in principle. `GET /api/publish/sync/{operation_id}` reports live
+  status and, once the underlying rsync job reaches a terminal state,
+  lazily runs verification exactly once by re-running the same safe
+  dry-run preview: zero pending file transfers means the destination
+  matches the source; any remaining pending files or warnings are
+  reported as a verification failure, distinct from job execution
+  failure.
+- New shared `publish_safety.evaluate_sync_paths()` composes existing
+  mount/existence checks with `describe_sync_destination_safety()`
+  (same path as source, nested/ancestor, protected system path) --
+  `publish_readiness_service.py` was refactored to call this instead of
+  duplicating the same three checks inline (Stage 1's tests still pass
+  unchanged, confirming no behavior drift).
+- Fixed a real pre-existing bug found while writing the preview test:
+  `rsync_runner._parse_dry_run_output()` only recognized rsync's default
+  "sending incremental file list" header, but `preview_sync()` always
+  passes `--no-inc-recursive`, which makes rsync print "building file
+  list ... done" instead -- so every dry-run preview silently reported
+  zero pending files regardless of what would actually transfer. Fixed
+  by recognizing both headers (one-line change); this affects the
+  pre-existing `/api/sync/preview` endpoint too, not just the new
+  guarded flow.
+- Confirmed sync operations are recorded in the same `publish_operations`
+  table Stage 2 added, linked to the underlying rsync job via a new
+  `job_id` column; a stranded 'running' sync row is closed out as
+  'failed'/`backend_restarted` on backend restart, same as export and
+  analysis operations. Destination is stored only as a category string
+  (`external_ssd:<source>`), never an absolute path.
+- Files: backend/app/services/publish_sync_service.py (new),
+  backend/app/services/publish_safety.py, backend/app/services/
+  publish_readiness_service.py, backend/app/services/
+  publish_operations_service.py (job_id support), backend/app/services/
+  rsync_runner.py (parser fix), backend/app/core/db.py (`job_id` column),
+  backend/app/schemas/publish.py, backend/app/api/routes/publish.py,
+  tests/test_backend_api.py (11 new targeted tests: preview with no side
+  effects, invalid destination, self-sync, nested destination,
+  confirmation gate, blocked-confirm-creates-no-operation, confirmed
+  fixture sync + verification + history linkage, no-delete-of-
+  destination-only-files, schema has no allow_delete field, failed job
+  reported without verification, dry-run parser regression). 1376
+  backend tests pass (1365 baseline + 11 new). No real external SSD used
+  in any test; no rsync --delete ever issued by the guarded flow; source
+  fixture files confirmed byte-identical after every sync.
+
 [2026-08-07] — Add guarded publish export flow (Cycle 3, Stage 2)
 
 - New `publish_export_service.py` orchestrates the existing crate

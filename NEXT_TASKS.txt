@@ -39,6 +39,16 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Cycle 3 Stage 3 -- Guarded SSD sync workflow (2026-08-07)
+    `publish_sync_service.py` builds validate -> preview (dry-run) ->
+    confirm -> execute -> verify on the existing rsync_runner. Guarded
+    confirm always calls allow_delete=False (the request schema has no
+    allow_delete field at all); verification re-runs the safe dry-run
+    preview and checks it now reports zero pending files. Fixed a real
+    pre-existing bug: the dry-run parser never recognized rsync's
+    --no-inc-recursive header, so every preview (old and new) silently
+    reported zero pending files. See CHANGELOG.txt. 1376 backend tests
+    pass. No real SSD used; no --delete ever issued by the guarded flow.
 [x] (P1) Cycle 3 Stage 2 -- Guarded publish export flow (2026-08-07)
     `publish_export_service.py` unifies the existing crate exporters
     (portable/Rekordbox XML/Serato) behind validate -> preview -> confirm
@@ -55,10 +65,8 @@ CURRENT FOCUS
     confirmation_required, next_operation) without exporting or syncing
     anything. See CHANGELOG.txt for full detail. 1355 backend tests pass.
 [~] (P1) Cycle 3 -- Guided Publish, Export, and SSD Sync (roadmap Phase 7)
-    Stages 1 (readiness) and 2 (guarded export) done. Remaining: Stage 3
-    (guarded SSD sync preview/execute/verify, fixture-only tests, no
-    --delete default), Stage 4 (Guided Publish UI), Stage 5 (final safety
-    audit).
+    Stages 1 (readiness), 2 (guarded export), and 3 (guarded sync) done.
+    Remaining: Stage 4 (Guided Publish UI), Stage 5 (final safety audit).
 
 [x] (P1) Crate/set-building improvements: transition context + funnel feedback
     (2026-08-07). Manual Crates now show a deterministic, explainable

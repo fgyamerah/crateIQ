@@ -4,6 +4,9 @@ Publish routes.
   GET  /api/publish/readiness/{crate_id}     — read-only readiness contract
   GET  /api/publish/export/{crate_id}/preview — export preview (no side effects)
   POST /api/publish/export/{crate_id}         — confirmed, guarded export
+  POST /api/publish/sync/preview              — sync dry-run preview
+  POST /api/publish/sync/confirm              — confirmed, guarded sync (no --delete)
+  GET  /api/publish/sync/{operation_id}       — live status; verifies once the job ends
   GET  /api/publish/operations                — recent publish operations
   GET  /api/publish/operations/{operation_id} — one operation's detail
 """
@@ -21,10 +24,21 @@ from ...schemas.publish import (
     PublishExportTarget,
     PublishOperationSummary,
     PublishReadiness,
+    PublishSyncConfirmRequest,
+    PublishSyncConfirmResponse,
+    PublishSyncPreview,
+    PublishSyncPreviewRequest,
     PublishSyncSource,
+    PublishSyncStatus,
 )
-from ...services import publish_export_service, publish_operations_service, publish_readiness_service
+from ...services import (
+    publish_export_service,
+    publish_operations_service,
+    publish_readiness_service,
+    publish_sync_service,
+)
 from ...services.publish_export_service import PublishExportBlocked
+from ...services.publish_sync_service import PublishSyncBlocked
 
 router = APIRouter(tags=["publish"])
 
@@ -91,6 +105,41 @@ async def confirm_publish_export(crate_id: int, body: PublishExportRequest) -> P
         raise HTTPException(status_code=409, detail=str(exc))
     if result is None:
         raise HTTPException(status_code=404, detail="Crate not found")
+    return result
+
+
+@router.post("/publish/sync/preview", response_model=PublishSyncPreview)
+async def preview_publish_sync(body: PublishSyncPreviewRequest) -> PublishSyncPreview:
+    """
+    Dry-run sync preview. Blocked destinations never spawn rsync; otherwise
+    delegates to the existing safe rsync --dry-run preview unchanged.
+    """
+    return await publish_sync_service.preview(body.sync_source)
+
+
+@router.post("/publish/sync/confirm", response_model=PublishSyncConfirmResponse, status_code=202)
+async def confirm_publish_sync(body: PublishSyncConfirmRequest) -> PublishSyncConfirmResponse:
+    """
+    Execute a guarded sync. Requires body.confirm == true. Never passes
+    --delete to rsync. Returns immediately with an operation_id and job_id;
+    poll GET /api/publish/sync/{operation_id} for live status/verification.
+    """
+    try:
+        return publish_sync_service.confirm(body.sync_source, body.confirm)
+    except PublishSyncBlocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.get("/publish/sync/{operation_id}", response_model=PublishSyncStatus)
+async def get_publish_sync_status(operation_id: str) -> PublishSyncStatus:
+    """
+    Return live sync status. Once the underlying rsync job reaches a
+    terminal state, this call lazily runs verification (a second safe
+    dry-run preview) exactly once and persists the result.
+    """
+    result = await publish_sync_service.get_status(operation_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Publish sync operation not found")
     return result
 
 

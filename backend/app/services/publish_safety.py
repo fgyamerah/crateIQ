@@ -9,7 +9,7 @@ about to actually run a sync.
 from __future__ import annotations
 
 from pathlib import Path
-from typing import List, Tuple
+from typing import List, Optional, Tuple
 
 # Exact-match protected paths. Only equality is checked here (not "is under"),
 # since many legitimate destinations legitimately live under /home or /mnt.
@@ -74,4 +74,34 @@ def describe_sync_destination_safety(
             f"Sync destination resolves to a protected system path: {dst_resolved}"
         )
 
+    return blockers, warnings
+
+
+def evaluate_sync_paths(
+    source: Optional[Path], destination: Path
+) -> Tuple[List[str], List[str]]:
+    """
+    Full structural sync-safety evaluation shared by the readiness contract
+    and the guarded sync lifecycle: existence/mount checks plus
+    describe_sync_destination_safety() above. Read-only; no side effects.
+    """
+    blockers: List[str] = []
+    warnings: List[str] = []
+
+    dest_available = destination.exists() and destination.is_dir()
+    if not dest_available:
+        blockers.append(f"Sync destination is not mounted or does not exist: {destination}")
+
+    if source is None:
+        blockers.append("Unknown sync source.")
+        return blockers, warnings
+
+    source_available = source.exists() and source.is_dir()
+    if not source_available:
+        blockers.append(f"Sync source not found: {source}")
+        return blockers, warnings
+
+    safety_blockers, safety_warnings = describe_sync_destination_safety(source, destination)
+    blockers.extend(safety_blockers)
+    warnings.extend(safety_warnings)
     return blockers, warnings

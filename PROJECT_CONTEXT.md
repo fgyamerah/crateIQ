@@ -6,6 +6,44 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 3 Stage 3 -- Guarded SSD sync workflow.
+  `publish_sync_service.py` layers validate -> preview (dry-run) ->
+  confirm -> execute -> verify on the existing, unmodified
+  `rsync_runner.preview_sync`/`start_sync_job`. `POST
+  /api/publish/sync/preview` never spawns rsync when the destination
+  already fails structural safety (same-path, nested/ancestor,
+  protected system path, unmounted); `POST /api/publish/sync/confirm`
+  requires `confirm: true` and its request schema has no `allow_delete`
+  field at all, so the guided flow cannot request destructive rsync
+  `--delete` semantics even in principle -- it always calls
+  `start_sync_job(..., allow_delete=False)`. `GET
+  /api/publish/sync/{operation_id}` lazily verifies exactly once after
+  the underlying job reaches a terminal state, by re-running the same
+  safe dry-run preview: zero pending transfers means verified, anything
+  else is a verification failure reported separately from job execution
+  failure. New `publish_safety.evaluate_sync_paths()` merges the
+  mount/existence checks with Stage 1's `describe_sync_destination_
+  safety()`; `publish_readiness_service.py` now calls it instead of
+  duplicating the same checks. Found and fixed a real pre-existing bug:
+  `rsync_runner._parse_dry_run_output()` only matched rsync's default
+  header, never the "building file list ... done" header rsync actually
+  prints when `--no-inc-recursive` is passed (which `preview_sync()`
+  always does) -- so every dry-run preview, old and new, silently
+  reported zero pending files regardless of reality. Confirmed sync
+  operations share Stage 2's `publish_operations` table via a new
+  `job_id` linkage column; destination is stored only as
+  `external_ssd:<source>`, never an absolute path. Files:
+  `backend/app/services/publish_sync_service.py`, `backend/app/
+  services/publish_safety.py`, `backend/app/services/
+  publish_readiness_service.py`, `backend/app/services/
+  publish_operations_service.py`, `backend/app/services/rsync_runner.py`,
+  `backend/app/core/db.py`, `backend/app/schemas/publish.py`,
+  `backend/app/api/routes/publish.py`, `tests/test_backend_api.py`. 1376
+  backend tests pass (1365 baseline + 11 new). No real external SSD used
+  in any test; no `--delete` ever issued by the guarded flow; fixture
+  source files confirmed byte-identical after every sync. Stage 4
+  (Guided Publish UI) is next.
+
 - 2026-08-07: Cycle 3 Stage 2 -- Guarded publish export flow.
   `publish_export_service.py` orchestrates the existing crate exporters
   (portable CSV/JSON/M3U/M3U8 via `crate_export_service`, staged

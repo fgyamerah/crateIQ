@@ -14,6 +14,7 @@ from typing import List, Literal, Optional
 from pydantic import BaseModel, Field
 
 from .export import CrateLineEndings, CratePathMode
+from .sync import SyncFileChange
 
 PublishExportTarget = Literal["csv", "json", "m3u", "m3u8", "rekordbox_xml", "serato"]
 PublishSyncSource = Literal["library", "inbox"]
@@ -105,6 +106,62 @@ class PublishOperationSummary(BaseModel):
     crate_name: Optional[str] = None
     scope: Optional[str] = None
     track_count: int = 0
+    destination_relative: Optional[str] = None
+    result: Optional[str] = None
+    verification_status: Optional[Literal["verified", "failed", "skipped"]] = None
+    verification_details: List[str] = []
+    warnings: List[str] = []
+    error_reason: Optional[str] = None
+    created_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+# ---------------------------------------------------------------------------
+# Guarded sync lifecycle: validate -> preview -> confirm -> execute -> verify
+# ---------------------------------------------------------------------------
+
+class PublishSyncPreviewRequest(BaseModel):
+    sync_source: PublishSyncSource = "library"
+
+
+class PublishSyncPreview(BaseModel):
+    sync_source: PublishSyncSource
+    source_path: str
+    dest_path: str
+    ssd_mounted: bool
+    file_count: int
+    files: List[SyncFileChange] = []
+    truncated: bool = False
+    blockers: List[str] = []
+    warnings: List[str] = []
+    confirmation_required: bool = True
+
+
+class PublishSyncConfirmRequest(BaseModel):
+    sync_source: PublishSyncSource = "library"
+    confirm: bool = Field(
+        False,
+        description="Must be explicitly true to execute. False/omitted is rejected.",
+    )
+
+
+class PublishSyncConfirmResponse(BaseModel):
+    operation_id: str
+    job_id: str
+    message: str
+
+
+class PublishSyncStatus(BaseModel):
+    operation_id: str
+    operation_type: Literal["sync"] = "sync"
+    sync_source: Optional[str] = None
+    job_id: Optional[str] = None
+    status: Literal["running", "completed", "failed", "cancelled"]
+    job_status: Optional[str] = None
+    progress_current: Optional[int] = None
+    progress_total: Optional[int] = None
+    progress_percent: Optional[float] = None
     destination_relative: Optional[str] = None
     result: Optional[str] = None
     verification_status: Optional[Literal["verified", "failed", "skipped"]] = None

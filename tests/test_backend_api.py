@@ -4,6 +4,7 @@ import contextlib
 import json
 import sqlite3
 import subprocess
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from xml.etree import ElementTree as ET
@@ -14,7 +15,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, publish_readiness_service, settings_service
+from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, publish_readiness_service, publish_sync_service, rsync_runner, settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1870,6 +1871,196 @@ def test_publish_export_verify_detects_json_track_count_mismatch(tmp_path):
     status, details = svc._verify("json", broken, 5)
     assert status == "failed"
     assert "mismatch" in details[0].lower()
+
+
+def _sync_fixture(tmp_path, monkeypatch, with_file: bool = True):
+    source_dir = tmp_path / "sync_source"
+    dest_dir = tmp_path / "sync_dest"
+    source_dir.mkdir()
+    dest_dir.mkdir()
+    if with_file:
+        (source_dir / "track.txt").write_text("fixture-track-content", encoding="utf-8")
+    source_map = {"library": source_dir, "inbox": source_dir}
+    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", source_map)
+    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", dest_dir)
+    # rsync_runner holds its own imported copies of these constants; both
+    # must be patched so the underlying preview/run calls it makes also
+    # target the fixture, not the real hardcoded legacy paths.
+    monkeypatch.setattr(rsync_runner, "SYNC_SOURCE_MAP", source_map)
+    monkeypatch.setattr(rsync_runner, "SYNC_DEST_SSD", dest_dir)
+    return source_dir, dest_dir
+
+
+def _wait_for_sync_operation(test_client, operation_id, timeout=10.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        response = test_client.get(f"/api/publish/sync/{operation_id}")
+        assert response.status_code == 200
+        payload = response.json()
+        if payload["status"] != "running":
+            return payload
+        time.sleep(0.1)
+    raise AssertionError("sync operation did not reach a terminal state in time")
+
+
+def test_publish_sync_preview_reports_pending_files_with_no_side_effects(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir, dest_dir = _sync_fixture(tmp_path, monkeypatch)
+
+    response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["blockers"] == []
+    assert payload["file_count"] >= 1
+    assert any(f["path"] == "track.txt" for f in payload["files"])
+    assert payload["confirmation_required"] is True
+
+    # Preview never writes to the destination.
+    assert list(dest_dir.iterdir()) == []
+    assert (source_dir / "track.txt").read_text(encoding="utf-8") == "fixture-track-content"
+
+
+def test_publish_sync_preview_blocks_invalid_destination(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir = tmp_path / "sync_source"
+    source_dir.mkdir()
+    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir})
+    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", tmp_path / "not_mounted")
+
+    response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
+    assert response.status_code == 200
+    payload = response.json()
+    assert any("not mounted" in b.lower() for b in payload["blockers"])
+    assert payload["file_count"] == 0
+    assert payload["confirmation_required"] is False
+
+
+def test_publish_sync_preview_blocks_self_sync(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    same_dir = tmp_path / "same"
+    same_dir.mkdir()
+    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": same_dir, "inbox": same_dir})
+    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", same_dir)
+
+    response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
+    assert response.status_code == 200
+    assert any("same path" in b.lower() for b in response.json()["blockers"])
+
+
+def test_publish_sync_preview_blocks_nested_destination(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir = tmp_path / "sync_source"
+    source_dir.mkdir()
+    nested_dest = source_dir / "nested_dest"
+    nested_dest.mkdir()
+    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir})
+    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", nested_dest)
+
+    response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
+    assert response.status_code == 200
+    assert any("nested inside the source" in b.lower() for b in response.json()["blockers"])
+
+
+def test_publish_sync_confirm_requires_explicit_confirmation(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    _sync_fixture(tmp_path, monkeypatch)
+
+    response = test_client.post("/api/publish/sync/confirm", json={"sync_source": "library", "confirm": False})
+    assert response.status_code == 409
+    assert "confirm" in response.json()["detail"].lower()
+
+
+def test_publish_sync_confirm_blocked_when_destination_invalid_creates_no_operation(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir = tmp_path / "sync_source"
+    source_dir.mkdir()
+    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir})
+    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", tmp_path / "not_mounted")
+
+    response = test_client.post("/api/publish/sync/confirm", json={"sync_source": "library", "confirm": True})
+    assert response.status_code == 409
+
+    listing = test_client.get("/api/publish/operations", params={"operation_type": "sync"})
+    assert listing.json() == []
+
+
+def test_publish_sync_confirmed_executes_verifies_and_records_history(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir, dest_dir = _sync_fixture(tmp_path, monkeypatch)
+
+    confirmed = test_client.post("/api/publish/sync/confirm", json={"sync_source": "library", "confirm": True})
+    assert confirmed.status_code == 202
+    body = confirmed.json()
+    operation_id = body["operation_id"]
+    assert body["job_id"]
+
+    final = _wait_for_sync_operation(test_client, operation_id)
+    assert final["status"] == "completed"
+    assert final["verification_status"] == "verified"
+    assert final["result"] == "synced"
+    assert final["destination_relative"] == "external_ssd:library"
+    assert str(dest_dir) not in (final["destination_relative"] or "")
+
+    # The file actually landed on the destination and the source is unchanged.
+    assert (dest_dir / "track.txt").read_text(encoding="utf-8") == "fixture-track-content"
+    assert (source_dir / "track.txt").read_text(encoding="utf-8") == "fixture-track-content"
+
+    detail = test_client.get(f"/api/publish/operations/{operation_id}")
+    assert detail.status_code == 200
+    assert detail.json()["operation_type"] == "sync"
+    assert detail.json()["status"] == "completed"
+
+
+def test_publish_sync_never_deletes_destination_only_files(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir, dest_dir = _sync_fixture(tmp_path, monkeypatch)
+    (dest_dir / "destination_only.txt").write_text("keep-me", encoding="utf-8")
+
+    confirmed = test_client.post("/api/publish/sync/confirm", json={"sync_source": "library", "confirm": True})
+    assert confirmed.status_code == 202
+    final = _wait_for_sync_operation(test_client, confirmed.json()["operation_id"])
+    assert final["status"] == "completed"
+
+    # No --delete was ever passed: a destination-only file must survive.
+    assert (dest_dir / "destination_only.txt").read_text(encoding="utf-8") == "keep-me"
+
+
+def test_publish_sync_confirm_request_schema_has_no_allow_delete_field():
+    from backend.app.schemas.publish import PublishSyncConfirmRequest
+
+    assert "allow_delete" not in PublishSyncConfirmRequest.model_fields
+
+
+def test_rsync_dry_run_parser_handles_no_inc_recursive_header():
+    """preview_sync() always passes --no-inc-recursive, so rsync prints
+    'building file list ... done' instead of its default 'sending
+    incremental file list' header -- the parser must recognize both."""
+    output = (
+        "building file list ... done\n"
+        "track.txt\n"
+        "\n"
+        "sent 94 bytes  received 15 bytes  218.00 bytes/sec\n"
+        "total size is 6  speedup is 0.06 (DRY RUN)\n"
+    )
+    files, summary, warnings = rsync_runner._parse_dry_run_output(output)
+    assert files == ["track.txt"]
+    assert summary is not None and "sent 94 bytes" in summary
+    assert warnings == []
+
+
+def test_publish_sync_failed_job_is_reported_without_verification(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    _sync_fixture(tmp_path, monkeypatch)
+    # Point at a nonexistent rsync binary so the job deterministically fails
+    # after it starts (pre-flight path validation already passed).
+    monkeypatch.setattr(rsync_runner, "RSYNC_BIN", str(tmp_path / "no-such-rsync-binary"))
+
+    confirmed = test_client.post("/api/publish/sync/confirm", json={"sync_source": "library", "confirm": True})
+    assert confirmed.status_code == 202
+    final = _wait_for_sync_operation(test_client, confirmed.json()["operation_id"])
+    assert final["status"] == "failed"
+    assert final["verification_status"] == "skipped"
+    assert final["error_reason"]
 
 
 def test_preview_audio_serves_allowed_file_and_byte_ranges(client):
