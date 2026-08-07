@@ -39,6 +39,26 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Crate/set-building improvements: transition context + funnel feedback
+    (2026-08-07). Manual Crates now show a deterministic, explainable
+    harmonic+BPM transition read between each consecutive track pair
+    (smooth/workable/clash/unknown, reusing modules/harmonic.py's public
+    camelot_score/bpm_score helpers; missing data degrades to "unknown", never
+    a fabricated score). Smart Crates now return a filter funnel (Library ->
+    BPM range -> Genre -> Issue-free -> Harmonic match -> Shown) so a DJ can
+    see which criterion narrowed the pool. Both are read-only annotations —
+    crate order, eligibility, and Smart Crate rules are unchanged. Verified
+    against the real crateiq-test-library backend via live API calls in
+    addition to 2 new targeted tests (1331 total). Live Chrome UI
+    verification not performed — extension unavailable this session.
+
+[ ] (P2) Live Chrome UI verification of the Stage 4 transition/funnel UI
+    Manual Crates connector rows and the Smart Crates funnel pill chain were
+    only verified via live backend API calls this session (extension was
+    unavailable). Do a real-browser pass next session: visual check of the
+    connector row placement/wrapping and the funnel pill chain on narrow
+    viewports, plus a11y label review.
+
 [x] (P1) Persistent Spotify-style bottom player (2026-08-05)
     App-shell audio state now persists the selected browser-preview track and
     queue across routes. The bottom player provides play/pause, previous/next,

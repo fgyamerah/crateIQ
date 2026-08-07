@@ -7,6 +7,15 @@ export interface CrateSummary {
   track_count: number
 }
 
+export interface CrateTransition {
+  label: 'smooth' | 'workable' | 'clash' | 'unknown'
+  score: number | null
+  camelot_score: number | null
+  bpm_score: number | null
+  bpm_delta_pct: number | null
+  explanation: string
+}
+
 export interface CrateTrack {
   track_id: number
   position: number
@@ -20,6 +29,7 @@ export interface CrateTrack {
   key_camelot: string | null
   duration_sec: number | null
   missing_from_library: boolean
+  transition_to_next: CrateTransition | null
 }
 
 export interface CrateDetail extends CrateSummary {

@@ -1276,6 +1276,42 @@ def test_manual_crates_add_prevent_duplicate_remove_reorder_and_delete(client):
     assert test_client.get(f"/api/crates/{crate['id']}").status_code == 404
 
 
+def test_manual_crate_track_rows_include_deterministic_harmonic_bpm_transitions(client):
+    test_client, _root = client
+    crate = test_client.post("/api/crates", json={"name": "Transition Check"}).json()
+
+    def _id(search: str) -> int:
+        return test_client.get("/api/tracks", params={"search": search}).json()["items"][0]["id"]
+
+    alpha_id, beta_id, gamma_id, delta_id = _id("alpha"), _id("beta"), _id("gamma"), _id("delta")
+    for track_id in (alpha_id, beta_id, gamma_id, delta_id):
+        assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    tracks = test_client.get(f"/api/crates/{crate['id']}").json()["tracks"]
+    assert [t["track_id"] for t in tracks] == [alpha_id, beta_id, gamma_id, delta_id]
+
+    # alpha (120 BPM) -> beta (124 BPM): neither fixture track has key_camelot, so this
+    # is a BPM-only read; a 3.3% BPM delta is an "easy pitch adjust" -> smooth.
+    alpha_transition = tracks[0]["transition_to_next"]
+    assert alpha_transition["label"] == "smooth"
+    assert alpha_transition["camelot_score"] is None
+    assert alpha_transition["bpm_score"] is not None
+    assert alpha_transition["bpm_delta_pct"] == pytest.approx(3.3, abs=0.1)
+
+    # gamma -> delta: delta has no BPM at all, so the transition is explicitly
+    # "unknown" rather than guessed at.
+    gamma_transition = tracks[2]["transition_to_next"]
+    assert gamma_transition["label"] == "unknown"
+    assert gamma_transition["score"] is None
+    assert "Not enough" in gamma_transition["explanation"]
+
+    # The last track in the crate has no next track to transition to.
+    assert tracks[3]["transition_to_next"] is None
+
+    # This is a read-only annotation -- order/positions are untouched.
+    assert [t["position"] for t in tracks] == [1, 2, 3, 4]
+
+
 def test_smart_crates_presets_preview_filters_and_empty_state(client):
     test_client, _root = client
 
@@ -1304,6 +1340,24 @@ def test_smart_crates_presets_preview_filters_and_empty_state(client):
     assert empty.status_code == 200
     assert empty.json()["tracks"] == []
     assert empty.json()["warnings"]
+
+
+def test_smart_crates_preview_reports_deterministic_filter_funnel(client):
+    test_client, _root = client
+    response = test_client.post("/api/smart-crates/preview", json={"name": "Funnel", "genres": ["House"], "issue_free_only": True, "limit": 10})
+    assert response.status_code == 200
+    funnel = response.json()["funnel"]
+    assert funnel[0] == {"label": "Library", "remaining": 4}
+    stage_labels = [stage["label"] for stage in funnel]
+    assert "Genre" in stage_labels
+    assert "Issue-free" in stage_labels
+    # A funnel only ever narrows -- each stage's remaining count is <= the previous one.
+    remaining_counts = [stage["remaining"] for stage in funnel]
+    assert remaining_counts == sorted(remaining_counts, reverse=True)
+
+    no_filters = test_client.post("/api/smart-crates/preview", json={"name": "No filters", "issue_free_only": False, "limit": 10})
+    assert no_filters.status_code == 200
+    assert no_filters.json()["funnel"] == [{"label": "Library", "remaining": 4}]
 
 
 def test_smart_crates_save_creates_ordered_manual_crate(client):

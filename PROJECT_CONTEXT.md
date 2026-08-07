@@ -1,10 +1,47 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-08-06
+**Updated:** 2026-08-07
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
 ## Latest Milestone
+
+- 2026-08-07: Crate/set-building improvements (Stage 4). Manual Crates now
+  show a deterministic, explainable harmonic+BPM read between each
+  consecutive track pair (`CrateTrack.transition_to_next`: label
+  smooth/workable/clash/unknown, camelot/bpm sub-scores, signed BPM delta,
+  and a short explanation) computed in `crate_service.get_crate()` from the
+  existing public `modules/harmonic.py` helpers (`camelot_score`,
+  `bpm_score`, `camelot_distance`, `bpm_delta_pct`); missing key/BPM data on
+  either side degrades to "unknown" rather than a fabricated score. This is
+  read-only annotation — it never reorders a crate or changes eligibility.
+  Smart Crates now return a `funnel` (ordered `[{label, remaining}]` stages:
+  Library → BPM range → Genre → Issue-free → Harmonic match → Shown) so a
+  DJ can see which filter narrowed the candidate pool and by how much;
+  `preview()` was restructured from one combined filter loop into
+  sequential passes to compute this without changing which tracks match
+  (same AND-composed filters, same final ranking/scoring). Frontend:
+  `Crates.tsx` renders a small connector row between track rows with a tone
+  badge + explanation; `SmartCrates.tsx` renders the funnel as a compact
+  pill chain above the preview table. An unrelated, functionally-inert
+  uncommitted edit to `usePersistentPlayer.ts` found at Stage 4 start
+  (inlining `AudioPreviewTrack`'s fields instead of extending it — same
+  resulting shape, confirmed via typecheck with/without) was reverted since
+  it had no concrete Stage 4 requirement and touched persistent-player
+  behavior outside this task's scope.
+  Files: `backend/app/schemas/crate.py`, `backend/app/services/
+  crate_service.py`, `backend/app/schemas/smart_crate.py`, `backend/app/
+  services/smart_crate_service.py`, `frontend/src/types/crate.ts`,
+  `frontend/src/types/smartCrate.ts`, `frontend/src/pages/Crates.tsx`,
+  `frontend/src/pages/SmartCrates.tsx`, `frontend/src/index.css`,
+  `tests/test_backend_api.py`. 1331 backend tests pass (1329 baseline + 2
+  new targeted tests covering the transition/funnel contract), frontend
+  typecheck/build pass, `git diff --check` clean. Verified against the real
+  `crateiq-test-library` backend (live API calls, not just unit fixtures) —
+  a real 9B→9A/122→123 BPM pair correctly scored "smooth" and a real BPM
+  funnel correctly narrowed 88 → 88 → 5 (shown). Live Chrome UI
+  verification not performed — extension unavailable this session. No
+  source audio, tags, BPM/key/cue data, or Music Review state changed.
 
 - 2026-08-06: Advanced the local-only enrichment review foundation into a
   genuine multi-source comparison. Added a second candidate source,

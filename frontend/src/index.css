@@ -8021,6 +8021,9 @@ tr.row--selected td {
 .manual-crate-position { color: var(--text-muted); font-family: var(--font-mono); text-align: center; width: 28px; }
 .manual-crate-track-main { display: grid; gap: 2px; flex: 1; min-width: 0; }
 .manual-crate-track-actions { display: flex; gap: 4px; align-items: center; }
+.manual-crate-transition { align-items: center; border-bottom: 1px solid var(--border); display: flex; gap: 8px; padding: 4px 4px 4px 34px; }
+.manual-crate-transition span { color: var(--text-muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.manual-crate-transition--clash { background: color-mix(in srgb, var(--status-failed) 6%, transparent); }
 .audio-preview-player { border: 1px solid var(--border); border-radius: 12px; display: grid; gap: 9px; margin: 12px 0; padding: 12px; }
 .audio-preview-player--playing { border-color: color-mix(in srgb, var(--accent) 55%, var(--border)); }
 .audio-preview-main, .audio-preview-controls, .audio-preview-volume { align-items: center; display: flex; gap: 8px; min-width: 0; }
@@ -8616,6 +8619,10 @@ tr.row--selected td {
 .smart-crates-controls, .smart-crates-work { background: var(--panel-gradient); border: 1px solid var(--border); border-radius: 14px; padding: 18px; box-shadow: var(--panel-shadow-soft); }
 .smart-crates-controls { display: grid; gap: 8px; }
 .smart-crates-controls h2 { font-size: 15px; margin-bottom: 3px; }
+.smart-funnel { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.smart-funnel-stage { align-items: center; background: var(--bg); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); display: inline-flex; font-size: 11px; gap: 5px; padding: 3px 10px; }
+.smart-funnel-stage strong { color: var(--text); }
+.smart-funnel-arrow { color: var(--text-muted); }
 .smart-review-context { margin: -2px 0 10px; color: var(--text-muted); font-size: 11px; line-height: 1.4; }
 .smart-preset { background: var(--bg); border: 1px solid var(--border); border-radius: 10px; color: var(--text); cursor: pointer; display: grid; gap: 3px; padding: 10px; text-align: left; }
 .smart-preset:hover { border-color: var(--accent); background: var(--bg-hover); }

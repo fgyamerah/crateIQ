@@ -7,7 +7,7 @@ from modules.harmonic import camelot_distance, camelot_score
 
 from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists
 from ..models.track import Track
-from ..schemas.smart_crate import SmartCratePreset, SmartCratePreview, SmartCrateRequest, SmartCrateTrack
+from ..schemas.smart_crate import SmartCrateFunnelStage, SmartCratePreset, SmartCratePreview, SmartCrateRequest, SmartCrateTrack
 
 PRESETS = [
     SmartCratePreset(id="afro-house-warmup", label="Afro House Warmup", description="Issue-free Afro House around a relaxed warmup BPM.", criteria=SmartCrateRequest(name="Afro House Warmup", bpm_min=118, bpm_max=123, genres=["Afro House"], issue_free_only=True, limit=25)),
@@ -40,19 +40,32 @@ def _harmonic_match(mode: str, from_key: str, candidate_key: str) -> bool:
 def preview(criteria: SmartCrateRequest) -> SmartCratePreview:
     warnings: list[str] = []
     if not pipeline_db_exists():
-        return SmartCratePreview(criteria=criteria, generated_name=criteria.name or "Smart Crate", explanation="No local library database is available.", warnings=["Run the library pipeline before generating suggestions."], track_count=0, tracks=[])
+        return SmartCratePreview(criteria=criteria, generated_name=criteria.name or "Smart Crate", explanation="No local library database is available.", warnings=["Run the library pipeline before generating suggestions."], track_count=0, tracks=[], funnel=[])
     with get_pipeline_conn() as conn:
         rows = conn.execute("SELECT * FROM tracks").fetchall()
+    tracks = [Track.from_row(row) for row in rows]
+    funnel = [SmartCrateFunnelStage(label="Library", remaining=len(tracks))]
+
+    if criteria.bpm_min is not None or criteria.bpm_max is not None:
+        tracks = [t for t in tracks if (criteria.bpm_min is None or (t.bpm is not None and t.bpm >= criteria.bpm_min)) and (criteria.bpm_max is None or (t.bpm is not None and t.bpm <= criteria.bpm_max))]
+        funnel.append(SmartCrateFunnelStage(label="BPM range", remaining=len(tracks)))
+
+    normalized_genres = {genre.lower() for genre in criteria.genres}
+    if normalized_genres:
+        tracks = [t for t in tracks if (t.genre or "").lower() in normalized_genres]
+        funnel.append(SmartCrateFunnelStage(label="Genre", remaining=len(tracks)))
+
+    if criteria.issue_free_only:
+        tracks = [t for t in tracks if not t.issues]
+        funnel.append(SmartCrateFunnelStage(label="Issue-free", remaining=len(tracks)))
+
+    if criteria.harmonic_mode:
+        tracks = [t for t in tracks if _harmonic_match(criteria.harmonic_mode, criteria.camelot_key or "", t.key_camelot or "")]
+        funnel.append(SmartCrateFunnelStage(label="Harmonic match", remaining=len(tracks)))
+
     candidates: list[tuple[float, Track, list[str]]] = []
     center = ((criteria.bpm_min or 0) + (criteria.bpm_max or 0)) / 2 if criteria.bpm_min is not None and criteria.bpm_max is not None else None
-    normalized_genres = {genre.lower() for genre in criteria.genres}
-    for row in rows:
-        track = Track.from_row(row)
-        if criteria.bpm_min is not None and (track.bpm is None or track.bpm < criteria.bpm_min): continue
-        if criteria.bpm_max is not None and (track.bpm is None or track.bpm > criteria.bpm_max): continue
-        if normalized_genres and (track.genre or "").lower() not in normalized_genres: continue
-        if criteria.issue_free_only and track.issues: continue
-        if criteria.harmonic_mode and not _harmonic_match(criteria.harmonic_mode, criteria.camelot_key or "", track.key_camelot or ""): continue
+    for track in tracks:
         score, reasons = 0.0, []
         if criteria.issue_free_only: score += 30; reasons.append("Issue-free")
         if normalized_genres: score += 20; reasons.append("Genre match")
@@ -63,6 +76,7 @@ def preview(criteria: SmartCrateRequest) -> SmartCratePreview:
         candidates.append((score, track, reasons or ["Library match"]))
     candidates.sort(key=lambda item: (-item[0], (item[1].artist or "").lower(), (item[1].title or item[1].filename).lower(), item[1].id))
     items = [SmartCrateTrack(track_id=track.id, position=index, artist=track.artist, title=track.title, filename=track.filename, genre=track.genre, bpm=track.bpm, key_camelot=track.key_camelot, duration_sec=track.duration_sec, reasons=reasons) for index, (_score, track, reasons) in enumerate(candidates[:criteria.limit], start=1)]
+    if criteria.limit < len(candidates): funnel.append(SmartCrateFunnelStage(label=f"Shown (limit {criteria.limit})", remaining=len(items)))
     if not items: warnings.append("No tracks matched these criteria. Broaden BPM, genre, key, or issue-free filters.")
     if criteria.limit < len(candidates): warnings.append(f"Showing the first {criteria.limit} matching tracks.")
-    return SmartCratePreview(criteria=criteria, generated_name=criteria.name or "Smart Crate", explanation="Deterministic local ranking uses issue state, BPM proximity, Camelot compatibility, and genre matches when selected.", warnings=warnings, track_count=len(items), tracks=items)
+    return SmartCratePreview(criteria=criteria, generated_name=criteria.name or "Smart Crate", explanation="Deterministic local ranking uses issue state, BPM proximity, Camelot compatibility, and genre matches when selected.", warnings=warnings, track_count=len(items), tracks=items, funnel=funnel)

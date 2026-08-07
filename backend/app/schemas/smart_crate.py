@@ -62,6 +62,11 @@ class SmartCrateTrack(BaseModel):
     reasons: list[str]
 
 
+class SmartCrateFunnelStage(BaseModel):
+    label: str
+    remaining: int
+
+
 class SmartCratePreview(BaseModel):
     criteria: SmartCrateRequest
     generated_name: str
@@ -69,6 +74,7 @@ class SmartCratePreview(BaseModel):
     warnings: list[str] = []
     track_count: int
     tracks: list[SmartCrateTrack]
+    funnel: list[SmartCrateFunnelStage] = []
 
 
 class SmartCratePreset(BaseModel):

@@ -1,7 +1,7 @@
 """Schemas for local, manual DJ crates. These never write music files or tags."""
 from __future__ import annotations
 
-from typing import Optional
+from typing import Literal, Optional
 from pydantic import BaseModel, Field, field_validator
 
 
@@ -60,6 +60,19 @@ class CrateSummary(BaseModel):
     track_count: int
 
 
+class CrateTransition(BaseModel):
+    """Deterministic, explainable harmonic/BPM read on a track -> next-track step.
+
+    Informational only — never changes crate order, eligibility, or track data.
+    """
+    label: Literal["smooth", "workable", "clash", "unknown"]
+    score: Optional[float] = None
+    camelot_score: Optional[float] = None
+    bpm_score: Optional[float] = None
+    bpm_delta_pct: Optional[float] = None
+    explanation: str
+
+
 class CrateTrack(BaseModel):
     track_id: int
     position: int
@@ -73,6 +86,7 @@ class CrateTrack(BaseModel):
     key_camelot: Optional[str] = None
     duration_sec: Optional[float] = None
     missing_from_library: bool = False
+    transition_to_next: Optional[CrateTransition] = None
 
 
 class CrateDetail(CrateSummary):
