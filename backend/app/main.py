@@ -34,6 +34,7 @@ from .api.routes import metadata_repair as metadata_repair_router
 from .api.routes import metadata_repair_queue as metadata_repair_queue_router
 from .api.routes import metadata_sanitation as metadata_sanitation_router
 from .api.routes import playlists as playlists_router
+from .api.routes import publish as publish_router
 from .api.routes import quality_review as quality_review_router
 from .api.routes import reconciliation as reconciliation_router
 from .api.routes import runtime as runtime_router
@@ -225,3 +226,4 @@ app.include_router(metadata_sanitation_router.router, prefix=API_PREFIX)
 app.include_router(reconciliation_router.router, prefix=API_PREFIX)
 app.include_router(exports_router.router,    prefix=API_PREFIX)
 app.include_router(sync_router.router,       prefix=API_PREFIX)
+app.include_router(publish_router.router,    prefix=API_PREFIX)

@@ -6,6 +6,29 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 3 Stage 1 -- Publish readiness contract (roadmap
+  Phase 7 begins). New `GET /api/publish/readiness/{crate_id}` is a
+  read-only snapshot composing the existing crate export services
+  (portable CSV/JSON/M3U/M3U8, staged Rekordbox XML, staged Serato
+  handoff) and the existing SSD sync config (`SYNC_SOURCE_MAP`,
+  `SYNC_DEST_SSD`) into one truthful contract: `export_ready`,
+  `sync_ready`, tagged `[export]`/`[sync]` blockers/warnings,
+  informational `conflicts` (pre-existing export artifacts -- never
+  blocking, since crate export writers already use no-overwrite
+  timestamped naming), `confirmation_required`, and `next_operation`.
+  It never exports or syncs anything itself -- existing preview/write
+  endpoints are untouched. New `publish_safety.describe_sync_destination_
+  safety()` is a pure helper (same path, nested/ancestor, protected
+  system path) shared with the later guarded sync lifecycle. Files:
+  `backend/app/schemas/publish.py`, `backend/app/services/
+  publish_safety.py`, `backend/app/services/publish_readiness_service.py`,
+  `backend/app/api/routes/publish.py`, `backend/app/main.py`,
+  `tests/test_backend_api.py`. 1355 backend tests pass (1347 baseline +
+  8 new: ready, missing source, invalid/missing sync destination,
+  destination outside allowed scope, existing output conflict,
+  unsupported format, missing crate, no side effects). Stage 2 (guarded
+  export preview/execute/verify) is next.
+
 - 2026-08-07: Cycle 2 Stage 3 -- Operations UI. `/jobs`'s "Analysis
   history" section (previously always an empty-state placeholder) now
   renders Stage 1/2's persisted operations: a keyboard-selectable table +

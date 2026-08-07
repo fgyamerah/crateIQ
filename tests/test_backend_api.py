@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, settings_service
+from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, publish_readiness_service, settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1547,6 +1547,157 @@ def test_rekordbox_staged_export_escapes_metadata_and_handles_edge_cases(client)
         json={"destination_mode": "../../Rekordbox", "dry_run": False},
     )
     assert unsafe.status_code == 422
+
+
+def _safe_sync_fixture(tmp_path, monkeypatch):
+    """Point the publish readiness service's sync config at safe temp fixtures."""
+    source_dir = tmp_path / "sync_source"
+    dest_dir = tmp_path / "sync_dest"
+    source_dir.mkdir()
+    dest_dir.mkdir()
+    monkeypatch.setattr(
+        publish_readiness_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir}
+    )
+    monkeypatch.setattr(publish_readiness_service, "SYNC_DEST_SSD", dest_dir)
+    return source_dir, dest_dir
+
+
+def test_publish_readiness_reports_ready_state_and_composes_export_sync(client, tmp_path, monkeypatch):
+    test_client, root = client
+    _safe_sync_fixture(tmp_path, monkeypatch)
+    crate = test_client.post("/api/crates", json={"name": "Readiness Ready"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    response = test_client.get(f"/api/publish/readiness/{crate['id']}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["crate_id"] == crate["id"]
+    assert payload["track_count"] == 1
+    assert payload["export_ready"] is True
+    assert payload["sync_ready"] is True
+    assert payload["blockers"] == []
+    assert payload["confirmation_required"] is True
+    assert payload["next_operation"] == "export"
+    assert payload["export_destination_category"] == str(root / "exports")
+
+
+def test_publish_readiness_blocks_on_missing_source(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    _safe_sync_fixture(tmp_path, monkeypatch)
+    crate = test_client.post("/api/crates", json={"name": "Empty Readiness"}).json()
+
+    response = test_client.get(f"/api/publish/readiness/{crate['id']}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["track_count"] == 0
+    assert payload["export_ready"] is False
+    assert any("no tracks" in b.lower() for b in payload["blockers"])
+    assert payload["next_operation"] == "none"
+
+
+def test_publish_readiness_blocks_on_missing_sync_destination(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir = tmp_path / "sync_source"
+    source_dir.mkdir()
+    monkeypatch.setattr(
+        publish_readiness_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir}
+    )
+    monkeypatch.setattr(publish_readiness_service, "SYNC_DEST_SSD", tmp_path / "not_mounted")
+    crate = test_client.post("/api/crates", json={"name": "Sync Blocked"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    response = test_client.get(f"/api/publish/readiness/{crate['id']}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["export_ready"] is True
+    assert payload["sync_ready"] is False
+    assert any("not mounted" in b.lower() for b in payload["blockers"])
+    # Export-ready-but-sync-blocked: guided flow can still proceed with export.
+    assert payload["next_operation"] == "export"
+
+
+def test_publish_readiness_blocks_destination_outside_allowed_scope(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    source_dir = tmp_path / "sync_source"
+    source_dir.mkdir()
+    monkeypatch.setattr(
+        publish_readiness_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir}
+    )
+    # Destination nested inside the source is unsafe regardless of mount state.
+    nested_dest = source_dir / "nested_dest"
+    nested_dest.mkdir()
+    monkeypatch.setattr(publish_readiness_service, "SYNC_DEST_SSD", nested_dest)
+    crate = test_client.post("/api/crates", json={"name": "Nested Scope"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    response = test_client.get(f"/api/publish/readiness/{crate['id']}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["sync_ready"] is False
+    assert any("nested inside the source" in b.lower() for b in payload["blockers"])
+
+
+def test_publish_readiness_surfaces_existing_output_conflict(client, tmp_path, monkeypatch):
+    test_client, root = client
+    _safe_sync_fixture(tmp_path, monkeypatch)
+    crate = test_client.post("/api/crates", json={"name": "Conflict Crate"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    export_dir = root / "exports"
+    export_dir.mkdir(parents=True, exist_ok=True)
+    (export_dir / "Conflict_Crate_20260101_000000.m3u8").write_text("#EXTM3U\n", encoding="utf-8")
+
+    response = test_client.get(f"/api/publish/readiness/{crate['id']}")
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["export_ready"] is True
+    assert payload["conflicts"]
+    assert "prior export artifact" in payload["conflicts"][0].lower()
+
+
+def test_publish_readiness_rejects_unsupported_format(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    _safe_sync_fixture(tmp_path, monkeypatch)
+    crate = test_client.post("/api/crates", json={"name": "Bad Format"}).json()
+
+    response = test_client.get(
+        f"/api/publish/readiness/{crate['id']}", params={"export_target": "flac"}
+    )
+    assert response.status_code == 422
+
+
+def test_publish_readiness_missing_crate_returns_404(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    _safe_sync_fixture(tmp_path, monkeypatch)
+
+    response = test_client.get("/api/publish/readiness/999999")
+    assert response.status_code == 404
+
+
+def test_publish_readiness_has_no_side_effects(client, tmp_path, monkeypatch):
+    test_client, root = client
+    _safe_sync_fixture(tmp_path, monkeypatch)
+    crate = test_client.post("/api/crates", json={"name": "No Side Effects"}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+
+    exports_dir = root / "exports"
+    before_exists = exports_dir.exists()
+    before_listing = sorted(p.name for p in exports_dir.rglob("*")) if before_exists else []
+
+    for _ in range(3):
+        response = test_client.get(f"/api/publish/readiness/{crate['id']}")
+        assert response.status_code == 200
+
+    after_exists = exports_dir.exists()
+    after_listing = sorted(p.name for p in exports_dir.rglob("*")) if after_exists else []
+    assert before_listing == after_listing
+    tracks_after = test_client.get("/api/tracks").json()["total"]
+    assert tracks_after == 4
 
 
 def test_preview_audio_serves_allowed_file_and_byte_ranges(client):

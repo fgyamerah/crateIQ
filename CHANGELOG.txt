@@ -2,6 +2,39 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Add publish readiness contract (Cycle 3, Stage 1)
+
+- New read-only `GET /api/publish/readiness/{crate_id}` composes the
+  existing crate export services (portable/Rekordbox XML/Serato staged)
+  and the existing SSD sync configuration into one truthful snapshot:
+  crate identity, requested export target, export/sync destination
+  category, blockers, warnings, conflicts, export_ready, sync_ready,
+  confirmation_required, and next_operation. It never exports or syncs
+  anything -- previews and writes remain in the existing export/sync
+  endpoints untouched by this change.
+- A ready state is explicitly not an approval: confirmation_required is
+  true whenever either operation could proceed, matching the roadmap's
+  Detected -> ... -> Approved -> Applied -> Verified lifecycle where a
+  proposal is never itself an approval.
+- Blockers/warnings are tagged `[export]`/`[sync]` so a combined list stays
+  attributable. Blockers cover: empty crate (nothing to publish), unmounted
+  or missing sync destination, missing sync source, and destination/source
+  path unsafety (same path, nested, ancestor, or a protected system path)
+  via the new pure `publish_safety.describe_sync_destination_safety()`
+  helper, reused as-is by the later guarded sync lifecycle. `conflicts[]`
+  discloses pre-existing export artifacts for the same crate without
+  blocking -- the existing crate export writers already use no-overwrite
+  timestamped naming, so this is informational only.
+- Files: backend/app/schemas/publish.py (new), backend/app/services/
+  publish_safety.py (new), backend/app/services/
+  publish_readiness_service.py (new), backend/app/api/routes/publish.py
+  (new), backend/app/main.py, tests/test_backend_api.py (8 new targeted
+  tests: ready, missing source, invalid/missing sync destination,
+  destination outside allowed scope, existing output conflict, unsupported
+  format, missing crate, no side effects across repeated calls). 1355
+  backend tests pass (1347 baseline + 8 new). No export or sync executed;
+  no music/tag/BPM/key/cue/MIK data touched.
+
 [2026-08-07] — Add operations history workspace (Cycle 2, Stage 3)
 
 - `/jobs`'s "Analysis history" section was a permanent empty-state
