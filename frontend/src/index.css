@@ -7012,6 +7012,101 @@ tr.row--selected td {
 
 .lib-table-scroll--compact .lib-table td { padding: 5px 12px; }
 
+/* ── Track list (card presentation below 860px — see TrackTable.tsx's
+   CARD_VIEW_QUERY) ──
+   Replaces the fixed 10-column table with a stacked, wrapping card per
+   track so narrow widths get readable rows instead of unreadably squeezed
+   columns. Reuses the same selection/status colors and chip styles as the
+   desktop table. */
+
+.lib-track-cards {
+  display: flex;
+  flex-direction: column;
+  max-height: clamp(420px, calc(100vh - 470px), 640px);
+  overflow-y: auto;
+}
+
+.lib-track-card {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 14px;
+  border-bottom: 1px solid rgba(44,48,71,0.6);
+  cursor: pointer;
+  outline: 0;
+}
+
+.lib-track-card:nth-child(even) { background: rgba(255,255,255,0.012); }
+.lib-track-card:hover { background: rgba(32,212,216,0.055); }
+
+.lib-track-card:focus-visible {
+  background: rgba(32,212,216,0.075);
+  box-shadow: inset 0 1px 0 rgba(32,212,216,0.5), inset 0 -1px 0 rgba(32,212,216,0.5);
+}
+
+.lib-track-card--selected {
+  background: linear-gradient(90deg, rgba(32,212,216,0.18), rgba(20,184,166,0.08) 66%, rgba(167,139,250,0.025));
+  box-shadow: inset 2px 0 0 var(--brand-cyan);
+}
+
+.lib-track-card-play {
+  flex-shrink: 0;
+  width: 28px;
+  height: 28px;
+  margin-top: 1px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(32,212,216,.34);
+  border-radius: 50%;
+  background: rgba(32,212,216,.1);
+  color: var(--brand-cyan);
+  cursor: pointer;
+}
+
+.lib-track-card-play:hover { border-color: var(--brand-cyan); background: rgba(32,212,216,.18); color: #e6feff; }
+.lib-track-card-play.is-playing { border-color: rgba(167,139,250,.55); background: rgba(167,139,250,.16); color: #e5ddff; }
+
+.lib-track-card-main {
+  min-width: 0;
+  flex: 1;
+  display: grid;
+  gap: 4px;
+}
+
+.lib-track-card-main strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+
+.lib-track-card-sub {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.lib-track-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  margin-top: 2px;
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.lib-track-card-skeleton {
+  height: 62px;
+  border-bottom: 1px solid rgba(44,48,71,0.6);
+  background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.07) 37%, rgba(255,255,255,0.03) 63%);
+  background-size: 400% 100%;
+  animation: lib-skeleton-shimmer 1.4s ease infinite;
+}
+
 .lib-col-num {
   width: 34px;
   text-align: right;
@@ -7143,15 +7238,18 @@ tr.row--selected td {
 .lib-pagination {
   min-height: 40px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: flex-end;
-  gap: 10px;
+  gap: 6px 10px;
   padding: 6px 12px;
   border-top: 1px solid var(--border);
   color: var(--text-muted);
   font-size: 12px;
   background: rgba(13, 16, 24, 0.5);
 }
+
+.lib-pagination span { white-space: nowrap; }
 
 /* ── Inspector ── */
 
@@ -7302,6 +7400,7 @@ tr.row--selected td {
 .lib-row--selected .lib-row-number { display: none; }
 
 .lib-inspector-hero-copy {
+  flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
@@ -7339,7 +7438,7 @@ tr.row--selected td {
 .lib-inspector-stats {
   padding: 12px 14px 0;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8px;
 }
 
@@ -7360,6 +7459,8 @@ tr.row--selected td {
 }
 
 .lib-stat-tile span {
+  display: block;
+  overflow-wrap: anywhere;
   font-size: 9.5px;
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -7715,7 +7816,26 @@ tr.row--selected td {
 
 @media (max-width: 760px) {
   .lib-toolbar { flex-wrap: wrap; height: auto; }
-  .lib-overview-grid { grid-template-columns: 1fr; }
+  .lib-search { flex-basis: 100%; min-width: 0; }
+  .lib-toolbar-spacer { display: none; }
+  .lib-analyze { flex: 1 1 100%; min-width: 0; }
+  .lib-analyze .lib-btn--primary { width: 100%; min-width: 0; white-space: normal; text-align: center; }
+  .lib-overview-grid { grid-template-columns: minmax(0, 1fr); }
+}
+
+/* At true phone widths the sticky Track Inspector's fixed 92px hero art
+   leaves too little room for the title/artist text next to it (the general
+   .lib-inspector-hero-copy { flex: 1 } fix above still needs more starting
+   room to produce readable ellipsis-truncated text instead of 1-character
+   truncation). Also stack the kicker label/subtitle instead of squeezing
+   them side by side. */
+@media (max-width: 620px) {
+  .lib-inspector-art { width: 64px; height: 64px; }
+  .lib-inspector-hero { flex-wrap: wrap; }
+  .lib-inspector-hero-copy { flex-basis: 100%; }
+  .lib-inspector-kicker { flex-direction: column; align-items: flex-start; gap: 2px; }
+  .lib-inspector-player { flex-wrap: wrap; }
+  .lib-inspector-player-action { flex: 1 1 100%; white-space: normal; }
 }
 
 .quality-page {
