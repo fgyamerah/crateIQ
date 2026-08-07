@@ -16,15 +16,34 @@ class DuplicateReviewItem(BaseModel):
     artist: str | None = None
     relative_path: str | None = None
     size_bytes: int | None = None
+    genre: str | None = None
+    bpm: float | None = None
+    key_camelot: str | None = None
+    key_musical: str | None = None
+    duration_sec: float | None = None
+    format: str | None = None
+    missing_metadata: list[str] = Field(default_factory=list)
+    copy_marker: bool = False
     decision: DuplicateDecision = "unresolved"
     note: str = ""
     reviewed_at: str | None = None
+
+
+class DuplicateKeeperRecommendation(BaseModel):
+    """Advisory-only keeper suggestion. Never authorizes removing another item."""
+
+    track_id: int | None = None
+    reason_code: str = "insufficient_evidence"
+    evidence: list[str] = Field(default_factory=list)
 
 
 class DuplicateReviewGroup(BaseModel):
     group_id: str
     reason: str
     confidence: Literal["high", "medium", "low"]
+    match_basis: str = "unknown"
+    checksum_prefix: str | None = None
+    recommendation: DuplicateKeeperRecommendation = Field(default_factory=DuplicateKeeperRecommendation)
     items: list[DuplicateReviewItem] = Field(default_factory=list)
 
 

@@ -6,6 +6,33 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 4 Stage 1 -- Duplicate evidence + keeper recommendation,
+  on `feat/crateiq-library-reconciliation` (branched from `main` `b78943b`).
+  Extends the existing safe, DB-only `/api/duplicates/review` contract
+  (unchanged routes/decision states) with richer per-item evidence pulled
+  only from already-indexed track data: `genre`, `bpm`, `key_camelot`/
+  `key_musical`, `duration_sec`, an extension-derived `format`, a
+  `missing_metadata` list, and a `copy_marker` flag. Groups now also carry
+  `match_basis` ("content_checksum", since rmlint groups by full-file
+  checksum) and a `checksum_prefix`. A new advisory-only `recommendation`
+  (`track_id`/`reason_code`/`evidence`) is deterministic only when exactly
+  one item's filename lacks a copy-style marker (e.g. `"(1)"`, `"copy"`,
+  `"duplicate"`); otherwise it returns `reason_code: insufficient_evidence`
+  and `track_id: null`. A recommendation is never authorization to remove
+  another item -- it is separate from, and does not gate, the human
+  keep/ignore/review_later/unresolved decision. Legacy snapshots saved
+  before these fields existed still decode safely to `match_basis:
+  "unknown"` and an empty recommendation. Implementation:
+  `backend/app/services/analysis_jobs_service.py` (`_track_rows` now also
+  selects `duration_sec`; new `_infer_format`, `_missing_metadata_fields`,
+  `_looks_like_copy_filename`, `_recommend_keeper` helpers feed
+  `_preview_duplicate_detection`), `backend/app/schemas/duplicate_review.py`
+  (new `DuplicateKeeperRecommendation` model), `backend/app/services/
+  duplicate_review_service.py` (`_safe_groups` sanitizes/passes through the
+  new fields with safe defaults for old snapshots). 4 new targeted tests in
+  `tests/test_backend_api.py`; full backend suite (1381 tests) passes. No
+  file, tag, DB-schema, or destructive action was added; no new dependency.
+
 - 2026-08-07: Cycle 3 Stage 5 -- final publish safety audit, completing
   roadmap Phase 7 (Publish: export and SSD synchronization) on
   `feat/crateiq-publish`. Full-branch diff vs `main` (`bd3a5f6`): 22 files,

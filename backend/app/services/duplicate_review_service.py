@@ -71,23 +71,52 @@ def _empty_response(message: str) -> dict[str, Any]:
     }
 
 
+def _safe_number(value: Any) -> float | int | None:
+    return value if isinstance(value, (int, float)) and not isinstance(value, bool) else None
+
+
 def _safe_groups(groups: Any) -> list[dict[str, Any]]:
     safe: list[dict[str, Any]] = []
     for group in groups if isinstance(groups, list) else []:
         if not isinstance(group, dict) or not isinstance(group.get("group_id"), str):
             continue
         items = []
+        item_track_ids: set[int] = set()
         for item in group.get("items", []):
             if not isinstance(item, dict) or not isinstance(item.get("track_id"), int):
                 continue
-            items.append({
+            missing = item.get("missing_metadata")
+            safe_item = {
                 "track_id": item["track_id"], "filename": str(item.get("filename") or "Track"),
                 "title": item.get("title"), "artist": item.get("artist"),
                 "relative_path": item.get("relative_path"), "size_bytes": item.get("size_bytes"),
-            })
+                "genre": item.get("genre"),
+                "bpm": _safe_number(item.get("bpm")),
+                "key_camelot": item.get("key_camelot") if isinstance(item.get("key_camelot"), str) else None,
+                "key_musical": item.get("key_musical") if isinstance(item.get("key_musical"), str) else None,
+                "duration_sec": _safe_number(item.get("duration_sec")),
+                "format": item.get("format") if isinstance(item.get("format"), str) else None,
+                "missing_metadata": [str(field) for field in missing] if isinstance(missing, list) else [],
+                "copy_marker": bool(item.get("copy_marker")),
+            }
+            items.append(safe_item)
+            item_track_ids.add(safe_item["track_id"])
+        recommendation_raw = group.get("recommendation") if isinstance(group.get("recommendation"), dict) else {}
+        rec_track_id = recommendation_raw.get("track_id")
+        if not isinstance(rec_track_id, int) or rec_track_id not in item_track_ids:
+            rec_track_id = None
+        evidence = recommendation_raw.get("evidence")
+        recommendation = {
+            "track_id": rec_track_id,
+            "reason_code": str(recommendation_raw.get("reason_code") or "insufficient_evidence"),
+            "evidence": [str(item) for item in evidence] if isinstance(evidence, list) else [],
+        }
         safe.append({
             "group_id": group["group_id"], "reason": str(group.get("reason") or "duplicate candidate"),
             "confidence": group.get("confidence") if group.get("confidence") in {"high", "medium", "low"} else "low",
+            "match_basis": str(group.get("match_basis") or "unknown"),
+            "checksum_prefix": group.get("checksum_prefix") if isinstance(group.get("checksum_prefix"), str) else None,
+            "recommendation": recommendation,
             "items": items,
         })
     return safe

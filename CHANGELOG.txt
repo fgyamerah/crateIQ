@@ -2,6 +2,39 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Cycle 4 duplicate evidence review (Stage 1)
+
+- What changed: the safe, DB-only Duplicate Review contract
+  (`/api/duplicates/review`, `preview-refresh`, and the decision PATCH)
+  now returns richer per-item evidence -- genre, bpm, key_camelot/
+  key_musical, duration_sec, an extension-derived `format`, a
+  `missing_metadata` list, and a `copy_marker` flag -- plus group-level
+  `match_basis` ("content_checksum") and `checksum_prefix` explaining why
+  rmlint grouped the files, and an advisory `recommendation`
+  (`track_id`/`reason_code`/`evidence`). The recommendation is
+  deterministic only when exactly one item's filename lacks a
+  copy-style marker (e.g. "(1)", "copy", "duplicate"); otherwise it
+  returns `reason_code: insufficient_evidence` and `track_id: null`.
+  Existing keep/ignore/review_later/unresolved decision states and their
+  snapshot-scoped persistence are unchanged and reused as-is.
+- Why: reviewers need to understand *why* files were grouped and what
+  evidence exists before making a keep/ignore call, without the tool
+  ever choosing or authorizing a deletion on their behalf.
+- Files affected: `backend/app/services/analysis_jobs_service.py`
+  (`_track_rows` now also selects `duration_sec`; new `_infer_format`,
+  `_missing_metadata_fields`, `_looks_like_copy_filename`,
+  `_recommend_keeper` helpers; `_preview_duplicate_detection` attaches
+  the new fields), `backend/app/schemas/duplicate_review.py` (new
+  `DuplicateKeeperRecommendation` model, extended item/group fields),
+  `backend/app/services/duplicate_review_service.py` (`_safe_groups`
+  sanitizes and passes through the new fields, defaulting safely for
+  legacy snapshots that predate them), `tests/test_backend_api.py`
+  (4 new targeted tests).
+- Migration notes: none. New response fields are additive; legacy
+  snapshots without them decode to safe defaults (`match_basis:
+  "unknown"`, empty recommendation). No DB schema change, no new
+  destructive endpoint, no file/tag write added.
+
 [2026-08-07] — Cycle 3 final publish safety audit (Stage 5)
 
 - Full-branch audit of the Cycle 3 diff against main (bd3a5f6): 22 files

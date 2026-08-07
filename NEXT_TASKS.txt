@@ -420,6 +420,20 @@ CURRENT FOCUS
          backups, confirmations, and zero destructive defaults. Do not attach
          file actions to the current Duplicate Review page.
 
+[x] (P1) Duplicate evidence + keeper recommendation (Cycle 4 Stage 1) (2026-08-07)
+         `/api/duplicates/review` groups and items now carry safe, already-
+         indexed evidence (genre, bpm, key, duration, extension-derived
+         format, missing-metadata list, filename copy-marker) plus a
+         group-level `match_basis`/`checksum_prefix` explaining why rmlint
+         grouped the files, and an advisory-only `recommendation`
+         (track_id/reason_code/evidence) that is never authorization to
+         remove another item. Recommendation is deterministic only when a
+         single item's filename lacks a copy-style marker (e.g. "(1)",
+         "copy"); otherwise it returns `reason_code: insufficient_evidence`
+         and `track_id: null`. Legacy snapshots saved before these fields
+         existed still read back safely with unknown/empty defaults. No
+         file, tag, or destructive action was added.
+
 [x] (P2) Full-workspace application layout (2026-08-05)
          The shared document page shell no longer caps content at a narrow
          desktop width. Primary routes now use the full sidebar-adjacent

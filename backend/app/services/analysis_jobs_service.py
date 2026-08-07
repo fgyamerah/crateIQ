@@ -64,9 +64,10 @@ def _track_rows() -> list[dict[str, Any]]:
         if not required.issubset(columns):
             return []
         filesize_select = "filesize_bytes" if "filesize_bytes" in columns else "NULL AS filesize_bytes"
+        duration_select = "duration_sec" if "duration_sec" in columns else "NULL AS duration_sec"
         return [dict(row) for row in conn.execute(
             "SELECT id, filepath, filename, artist, title, genre, bpm, key_musical, key_camelot, "
-            f"{filesize_select} FROM tracks ORDER BY id"
+            f"{filesize_select}, {duration_select} FROM tracks ORDER BY id"
         )]
 
 
@@ -253,6 +254,57 @@ def _as_candidate(row: dict[str, Any]) -> dict[str, Any]:
         "key_camelot": row.get("key_camelot"),
         "key_musical": row.get("key_musical"),
         "missing_fields": row.get("missing_fields", []),
+    }
+
+
+_COPY_MARKER_RE = re.compile(r"(?:\(\d+\)|(?:^|[ _-])copy(?:[ _-]|$)|duplicate)", re.IGNORECASE)
+
+
+def _infer_format(filename: str) -> str | None:
+    """Return a lowercase extension label derived only from the known filename."""
+    suffix = Path(filename).suffix.lstrip(".").lower()
+    return suffix or None
+
+
+def _missing_metadata_fields(row: dict[str, Any]) -> list[str]:
+    """List which safe, already-indexed metadata fields this track is missing."""
+    fields: list[str] = []
+    if not row.get("artist"):
+        fields.append("artist")
+    if not row.get("title"):
+        fields.append("title")
+    if not row.get("genre"):
+        fields.append("genre")
+    if row.get("bpm") is None:
+        fields.append("bpm")
+    if not (row.get("key_camelot") or row.get("key_musical")):
+        fields.append("key")
+    return fields
+
+
+def _looks_like_copy_filename(filename: str) -> bool:
+    """Detect common OS/file-manager copy suffixes such as "(1)" or "copy"."""
+    return bool(_COPY_MARKER_RE.search(Path(filename).stem))
+
+
+def _recommend_keeper(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """Suggest a keeper only when filename evidence unambiguously picks one item.
+
+    This never authorizes removing the other items; it is advisory only and
+    is kept separate from any human review decision.
+    """
+    non_copy = [item for item in items if not item["copy_marker"]]
+    if len(non_copy) == 1:
+        chosen = non_copy[0]
+        return {
+            "track_id": chosen["track_id"],
+            "reason_code": "canonical_filename_no_copy_marker",
+            "evidence": [f"\"{chosen['filename']}\" has no copy-style filename marker; the other item(s) in this group do."],
+        }
+    return {
+        "track_id": None,
+        "reason_code": "insufficient_evidence",
+        "evidence": ["Filename copy markers do not unambiguously identify a single canonical file in this group."],
     }
 
 
@@ -475,18 +527,30 @@ def _preview_duplicate_detection(job: dict[str, Any], rows: list[dict[str, Any]]
                     checksum = report.get("checksum")
                     if row is not None and isinstance(checksum, str) and checksum:
                         by_checksum.setdefault(checksum, []).append(row)
-                for index, group_rows in enumerate(by_checksum.values(), start=1):
+                for index, (checksum, group_rows) in enumerate(by_checksum.items(), start=1):
                     if len(group_rows) < 2:
                         continue
                     items = []
                     for row in sorted(group_rows, key=lambda item: (str(item.get("filepath", "")).casefold(), item["id"])):
                         item = _as_candidate(row)
+                        filename = item["filename"]
                         items.append({
-                            "track_id": item["track_id"], "filename": item["filename"],
+                            "track_id": item["track_id"], "filename": filename,
                             "title": item["title"], "artist": item["artist"],
                             "relative_path": item["relative_path"], "size_bytes": row.get("filesize_bytes"),
+                            "genre": item["genre"], "bpm": item["bpm"],
+                            "key_camelot": item["key_camelot"], "key_musical": item["key_musical"],
+                            "duration_sec": row.get("duration_sec"),
+                            "format": _infer_format(filename),
+                            "missing_metadata": _missing_metadata_fields(row),
+                            "copy_marker": _looks_like_copy_filename(filename),
                         })
-                    groups.append({"group_id": f"dup-{index}", "reason": "rmlint duplicate", "confidence": "high", "items": items})
+                    groups.append({
+                        "group_id": f"dup-{index}", "reason": "rmlint duplicate", "confidence": "high", "items": items,
+                        "match_basis": "content_checksum",
+                        "checksum_prefix": checksum[:12] if isinstance(checksum, str) else None,
+                        "recommendation": _recommend_keeper(items),
+                    })
     duplicate_candidates = sum(len(group["items"]) for group in groups)
     samples = [
         {

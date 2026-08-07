@@ -2786,6 +2786,154 @@ def test_duplicate_review_persists_db_only_decisions(client, monkeypatch):
     assert alpha_path.read_bytes() == beta_path.read_bytes() == b"same-review-safe-bytes"
 
 
+def test_duplicate_preview_exposes_safe_evidence_and_deterministic_keeper(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    alpha_path = root / "library" / "house" / "alpha.mp3"
+    beta_path = root / "library" / "house" / "beta (1).mp3"
+    alpha_path.parent.mkdir(parents=True, exist_ok=True)
+    alpha_path.write_bytes(b"identical-evidence-bytes")
+    beta_path.write_bytes(b"identical-evidence-bytes")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "UPDATE tracks SET genre = 'House', duration_sec = 240.5, bpm = 122.0, "
+            "key_musical = NULL, key_camelot = '8A' WHERE filename = 'alpha.mp3'"
+        )
+        conn.execute(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, bpm, key_musical, key_camelot, "
+            "duration_sec, bitrate_kbps, filesize_bytes, status) VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NULL, ?, ?, ?, 'ok')",
+            (str(beta_path), "beta (1).mp3", 240.5, 320, beta_path.stat().st_size),
+        )
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_rmlint_binary", lambda: "/fake/rmlint")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([
+                {"type": "duplicate_file", "checksum": "evidence-checksum-value", "path": str(alpha_path)},
+                {"type": "duplicate_file", "checksum": "evidence-checksum-value", "path": str(beta_path)},
+            ]),
+            stderr="",
+        ),
+    )
+
+    refreshed = test_client.post("/api/duplicates/review/preview-refresh")
+    assert refreshed.status_code == 200
+    group = refreshed.json()["groups"][0]
+    assert group["match_basis"] == "content_checksum"
+    assert group["checksum_prefix"] == "evidence-che"
+    by_filename = {item["filename"]: item for item in group["items"]}
+
+    alpha_item = by_filename["alpha.mp3"]
+    assert alpha_item["genre"] == "House"
+    assert alpha_item["duration_sec"] == 240.5
+    assert alpha_item["bpm"] == 122.0
+    assert alpha_item["key_camelot"] == "8A"
+    assert alpha_item["format"] == "mp3"
+    assert alpha_item["missing_metadata"] == []
+    assert alpha_item["copy_marker"] is False
+
+    beta_item = by_filename["beta (1).mp3"]
+    assert set(beta_item["missing_metadata"]) == {"artist", "title", "genre", "bpm", "key"}
+    assert beta_item["copy_marker"] is True
+
+    assert group["recommendation"]["track_id"] == alpha_item["track_id"]
+    assert group["recommendation"]["reason_code"] == "canonical_filename_no_copy_marker"
+    assert group["recommendation"]["evidence"]
+
+
+def test_duplicate_keeper_recommendation_is_unknown_when_ambiguous(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    alpha_path = root / "library" / "house" / "alpha (1).mp3"
+    beta_path = root / "library" / "house" / "beta (2).mp3"
+    alpha_path.parent.mkdir(parents=True, exist_ok=True)
+    alpha_path.write_bytes(b"ambiguous-evidence-bytes")
+    beta_path.write_bytes(b"ambiguous-evidence-bytes")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("UPDATE tracks SET filepath = ?, filename = ? WHERE filename = 'alpha.mp3'", (str(alpha_path), "alpha (1).mp3"))
+        conn.execute(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, bpm, key_musical, key_camelot, "
+            "duration_sec, bitrate_kbps, filesize_bytes, status) VALUES (?, ?, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, ?, 'ok')",
+            (str(beta_path), "beta (2).mp3", beta_path.stat().st_size),
+        )
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_rmlint_binary", lambda: "/fake/rmlint")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess,
+        "run",
+        lambda command, **kwargs: SimpleNamespace(
+            returncode=0,
+            stdout=json.dumps([
+                {"type": "duplicate_file", "checksum": "ambiguous-checksum", "path": str(alpha_path)},
+                {"type": "duplicate_file", "checksum": "ambiguous-checksum", "path": str(beta_path)},
+            ]),
+            stderr="",
+        ),
+    )
+
+    refreshed = test_client.post("/api/duplicates/review/preview-refresh")
+    assert refreshed.status_code == 200
+    group = refreshed.json()["groups"][0]
+    assert group["recommendation"] == {
+        "track_id": None,
+        "reason_code": "insufficient_evidence",
+        "evidence": ["Filename copy markers do not unambiguously identify a single canonical file in this group."],
+    }
+    # A group with no clear recommendation must never imply a file action.
+    assert refreshed.json()["safety"] == ["db_only_review", "no_delete", "no_move", "no_rename", "no_quarantine", "no_tag_writes"]
+
+
+def test_duplicate_review_tolerates_legacy_snapshot_missing_evidence_fields(client):
+    """A snapshot saved before evidence fields existed must still read back safely."""
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS duplicate_review_snapshots (
+                id INTEGER PRIMARY KEY AUTOINCREMENT, created_at TEXT NOT NULL,
+                source TEXT NOT NULL, groups_json TEXT NOT NULL, warnings_json TEXT NOT NULL
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS duplicate_review_decisions (
+                snapshot_id INTEGER NOT NULL, group_id TEXT NOT NULL, track_id INTEGER NOT NULL,
+                decision TEXT NOT NULL, note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'rmlint_preview',
+                updated_at TEXT NOT NULL, PRIMARY KEY (snapshot_id, group_id, track_id)
+            )
+            """
+        )
+        legacy_groups = [
+            {
+                "group_id": "dup-1", "reason": "rmlint duplicate", "confidence": "high",
+                "items": [
+                    {"track_id": 1, "filename": "alpha.mp3", "title": "First", "artist": "Alpha", "relative_path": "library/house/alpha.mp3", "size_bytes": 1234},
+                    {"track_id": 2, "filename": "beta.mp3", "title": "Second", "artist": "Beta", "relative_path": "library/house/beta.mp3", "size_bytes": 1234},
+                ],
+            }
+        ]
+        conn.execute(
+            "INSERT INTO duplicate_review_snapshots (created_at, source, groups_json, warnings_json) VALUES (?, ?, ?, ?)",
+            ("2026-01-01T00:00:00Z", "rmlint_preview", json.dumps(legacy_groups), json.dumps([])),
+        )
+
+    response = test_client.get("/api/duplicates/review")
+    assert response.status_code == 200
+    group = response.json()["groups"][0]
+    assert group["match_basis"] == "unknown"
+    assert group["checksum_prefix"] is None
+    assert group["recommendation"] == {"track_id": None, "reason_code": "insufficient_evidence", "evidence": []}
+    item = group["items"][0]
+    assert item["genre"] is None and item["duration_sec"] is None and item["format"] is None
+    assert item["missing_metadata"] == []
+    assert item["copy_marker"] is False
+
+
 def test_audio_quality_preview_uses_ffprobe_json_only_and_never_writes(client, monkeypatch):
     test_client, root = client
     db_path = root / "logs" / "processed.db"
