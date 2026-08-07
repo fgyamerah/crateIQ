@@ -102,6 +102,15 @@ function lerp(a: number, b: number, t: number): number {
 }
 
 /**
+ * Gamma applied to amplitude before color lookup only (never to bar height).
+ * Mastered dance material sits with most bars at high raw amplitude, which
+ * would otherwise saturate the ramp into orange/red almost everywhere; this
+ * pulls typical (~0.3-0.8) amplitudes down so the blue/cyan/green/yellow
+ * range stays visible and red reads as "true peak" rather than "normal".
+ */
+const COLOR_GAMMA = 2.2
+
+/**
  * Maps a bar's normalized amplitude (0..1) to a Night Deck waveform color,
  * continuously interpolated across the blue → cyan → green → yellow →
  * orange → red ramp (never a five-color stripe).
@@ -110,7 +119,7 @@ function lerp(a: number, b: number, t: number): number {
  * distinguished by brightness while keeping the same hue.
  */
 export function waveformAmplitudeColor(normalizedAmplitude: number, intensity = 1): string {
-  const amplitude = clampUnit01(normalizedAmplitude)
+  const amplitude = clampUnit01(normalizedAmplitude) ** COLOR_GAMMA
   const alpha = clampUnit01(intensity)
 
   let lower = AMPLITUDE_COLOR_STOPS[0]
