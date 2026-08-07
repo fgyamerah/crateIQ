@@ -37,6 +37,15 @@ function errorMessage(error: unknown): string {
   return error instanceof ApiError ? error.displayMessage : 'Could not reach waveform generation.'
 }
 
+/** The run finishing without crashing is a different fact from every track
+ * inside it succeeding -- a plain green "Complete" on a run where half the
+ * tracks failed would visually collapse a degraded result into something
+ * that looks fine. Distinguish it without changing the label. */
+function statusTone(operation: WaveformBulkOperation): BadgeTone {
+  if (operation.status === 'completed' && operation.failed > 0) return 'pending'
+  return STATUS_TONE[operation.status]
+}
+
 /** A truthful, non-technical reason for a terminal state. Never guesses. */
 function reasonLabel(operation: WaveformBulkOperation): string | null {
   if (operation.status === 'cancelled') return 'Cancelled by user request.'
@@ -180,13 +189,19 @@ export default function WaveformGenerationCard() {
       ) : preview && (
         <div className="analysis-jobs-kpis">
           <KpiCard tone="emerald" label="Ready" value={preview.ready} sub={`${preview.total_tracks} tracks total`} />
-          <KpiCard tone="coral" label="Missing" value={preview.missing} sub="No waveform yet" />
+          <KpiCard tone="muted" label="Missing" value={preview.missing} sub="No waveform yet" />
           <KpiCard tone="cyan" label="Generating" value={preview.generating} sub="Queued or in progress" />
           <KpiCard
-            tone="violet"
+            tone="coral"
             label="Failed"
             value={preview.failed}
-            sub={preview.unsupported ? `${preview.unsupported} unsupported format` : 'Can be retried'}
+            sub={
+              preview.unsupported
+                ? preview.failed > 0
+                  ? `${preview.unsupported} unsupported · ${preview.failed} can retry`
+                  : `${preview.unsupported} unsupported format`
+                : 'Can be retried'
+            }
           />
         </div>
       )}
@@ -217,7 +232,7 @@ export default function WaveformGenerationCard() {
               <h3 className="card-title">{running ? 'Generating waveforms' : 'Last run'}</h3>
               <p className="muted">{operation.eligible_total} tracks were eligible when this run started.</p>
             </div>
-            <Badge tone={STATUS_TONE[operation.status]}>{STATUS_LABEL[operation.status]}</Badge>
+            <Badge tone={statusTone(operation)}>{STATUS_LABEL[operation.status]}</Badge>
           </div>
           {running && operation.eligible_total > 0 && (
             <div className="job-progress">
