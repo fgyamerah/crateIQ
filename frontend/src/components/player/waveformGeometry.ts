@@ -25,6 +25,13 @@ function clampUnit(value: number): number {
   return value
 }
 
+function clampUnit01(value: number): number {
+  if (!Number.isFinite(value)) return 0
+  if (value < 0) return 0
+  if (value > 1) return 1
+  return value
+}
+
 /**
  * Reduce interleaved `[min0, max0, min1, max1, ...]` peaks to at most
  * `barCount` columns, preserving extrema exactly as the backend does: each
@@ -67,6 +74,63 @@ export function buildWaveformBars(
     }
   }
   return bars
+}
+
+// ---------------------------------------------------------------------------
+// Amplitude coloring (Night Deck)
+// ---------------------------------------------------------------------------
+
+/**
+ * Amplitude → hue stops for the Night Deck waveform style. Purely a function
+ * of each bar's already-normalized peak magnitude (see `buildWaveformBars`) —
+ * no frequency/spectral data is involved.
+ */
+const AMPLITUDE_COLOR_STOPS: ReadonlyArray<{
+  readonly amplitude: number
+  readonly rgb: readonly [number, number, number]
+}> = [
+  { amplitude: 0.0, rgb: [0x23, 0x88, 0xff] }, // quiet blue
+  { amplitude: 0.2, rgb: [0x00, 0xc8, 0xe8] }, // cyan
+  { amplitude: 0.4, rgb: [0x28, 0xd9, 0x6b] }, // green
+  { amplitude: 0.6, rgb: [0xf5, 0xd9, 0x0a] }, // yellow
+  { amplitude: 0.8, rgb: [0xff, 0x8a, 0x00] }, // orange
+  { amplitude: 1.0, rgb: [0xff, 0x3b, 0x30] }, // peak red
+]
+
+function lerp(a: number, b: number, t: number): number {
+  return a + (b - a) * t
+}
+
+/**
+ * Maps a bar's normalized amplitude (0..1) to a Night Deck waveform color,
+ * continuously interpolated across the blue → cyan → green → yellow →
+ * orange → red ramp (never a five-color stripe).
+ *
+ * `intensity` (0..1) scales alpha so played/upcoming sections can be
+ * distinguished by brightness while keeping the same hue.
+ */
+export function waveformAmplitudeColor(normalizedAmplitude: number, intensity = 1): string {
+  const amplitude = clampUnit01(normalizedAmplitude)
+  const alpha = clampUnit01(intensity)
+
+  let lower = AMPLITUDE_COLOR_STOPS[0]
+  let upper = AMPLITUDE_COLOR_STOPS[AMPLITUDE_COLOR_STOPS.length - 1]
+  for (let index = 0; index < AMPLITUDE_COLOR_STOPS.length - 1; index += 1) {
+    const candidateLower = AMPLITUDE_COLOR_STOPS[index]
+    const candidateUpper = AMPLITUDE_COLOR_STOPS[index + 1]
+    if (amplitude >= candidateLower.amplitude && amplitude <= candidateUpper.amplitude) {
+      lower = candidateLower
+      upper = candidateUpper
+      break
+    }
+  }
+
+  const span = upper.amplitude - lower.amplitude
+  const t = span > 0 ? (amplitude - lower.amplitude) / span : 0
+  const r = Math.round(lerp(lower.rgb[0], upper.rgb[0], t))
+  const g = Math.round(lerp(lower.rgb[1], upper.rgb[1], t))
+  const b = Math.round(lerp(lower.rgb[2], upper.rgb[2], t))
+  return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
 }
 
 /**

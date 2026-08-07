@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { buildWaveformBars, progressFraction } from './waveformGeometry'
+import { buildWaveformBars, progressFraction, waveformAmplitudeColor } from './waveformGeometry'
 
 /**
  * Real waveform renderer.
@@ -22,8 +22,9 @@ const BAR_WIDTH_PX = 1.5
 /** Keep silence visible as a thin center line rather than nothing. */
 const MIN_BAR_PX = 1
 
-const COLOR_UNPLAYED = 'rgba(146, 173, 199, 0.62)'
-const COLOR_PLAYED = '#20d4d8'
+/** Amplitude-color intensity (alpha) for played vs. upcoming sections; hue stays the same. */
+const INTENSITY_PLAYED = 1
+const INTENSITY_UPCOMING = 0.55
 const COLOR_CENTER_LINE = 'rgba(133, 158, 184, 0.22)'
 
 interface Props {
@@ -113,7 +114,9 @@ export default function TrackWaveform({
       const bottom = centerY - bar.min * halfHeight
       const height = Math.max(MIN_BAR_PX, bottom - top)
       const y = height === MIN_BAR_PX ? centerY - MIN_BAR_PX / 2 : top
-      context.fillStyle = index < playedBars ? COLOR_PLAYED : COLOR_UNPLAYED
+      const amplitude = Math.max(Math.abs(bar.min), Math.abs(bar.max))
+      const intensity = index < playedBars ? INTENSITY_PLAYED : INTENSITY_UPCOMING
+      context.fillStyle = waveformAmplitudeColor(amplitude, intensity)
       context.fillRect(index * BAR_STRIDE_PX, y, BAR_WIDTH_PX, height)
     }
   }, [bars, progress, size.height, size.width])
