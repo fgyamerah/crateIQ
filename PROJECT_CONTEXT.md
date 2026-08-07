@@ -6,6 +6,24 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 2 Stage 1 -- persisted Analysis Jobs history. New
+  app-owned `analysis_operations` table in the backend's own jobs.db
+  (processed.db untouched) records every explicit, confirmed BPM/key
+  analysis run with a real running/completed/failed/cancelled lifecycle,
+  truthful incremental progress counts, and genuine mid-batch cancellation
+  via a polled `cancel_requested` flag (partial progress preserved, never
+  fabricated). A backend restart closes out any stranded 'running' row as
+  failed/backend_restarted, mirroring the existing waveform-job recovery
+  pattern. Candidate previews remain intentionally unpersisted. Along the
+  way, fixed a real pre-existing gap: the shared backend-API test fixture
+  never isolated jobs.db, so tests were silently sharing (and could
+  pollute) a developer's real `backend/data/jobs.db`; it now isolates a
+  per-test path and initializes schema directly. `GET
+  /api/analysis/jobs/history` returns real data instead of an always-empty
+  stub. 1343 backend tests pass (1331 baseline + 12 new). Stage 2 (HTTP
+  operation-detail + cancel endpoints) and Stage 3 (Operations UI) follow
+  in the same cycle.
+
 - 2026-08-07: Crate/set-building improvements (Stage 4). Manual Crates now
   show a deterministic, explainable harmonic+BPM read between each
   consecutive track pair (`CrateTrack.transition_to_next`: label

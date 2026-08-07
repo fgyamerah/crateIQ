@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 import backend.app.main as backend_main
+from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
 from backend.app.services import analysis_jobs_service, mik_metadata_service, settings_service
 from modules import metadata_repair, metadata_sanitation
@@ -199,6 +200,14 @@ def client(tmp_path, monkeypatch):
     root.mkdir(parents=True)
     monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(settings_service, "LOCAL_ENV_PATH", tmp_path / "local" / "crateiq.env")
+    # Isolate the backend's own operational jobs.db per test (bpm_anomalies,
+    # waveform_jobs, analysis_operations) instead of sharing whatever real
+    # backend/data/jobs.db a developer's local server happens to be using.
+    # backend_main.init_db is still stubbed below to skip the rest of the
+    # FastAPI lifespan (waveform scheduler, readiness checks); the schema
+    # itself is created here directly against the isolated path.
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
     _create_tracks_db(root)
     _write_audit(root)
@@ -1775,6 +1784,64 @@ def test_bpm_runner_is_confirmed_aubio_only_and_preserves_existing_values(client
     assert timed_out.status_code == 200
     assert timed_out.json()["updated"] == 0
     assert timed_out.json()["failed"] == 1
+
+
+def test_confirmed_bpm_run_persists_truthful_history_without_touching_schema_or_audio(client, monkeypatch):
+    """Cycle 2 Stage 1: a confirmed run must be queryable in persisted history,
+    and must never mutate processed.db's schema or the source audio bytes."""
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    delta_path = root / "library" / "misc" / "delta.mp3"
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    original_audio_bytes = b"not-real-audio-content"
+    delta_path.write_bytes(original_audio_bytes)
+
+    def _processed_db_tables() -> set[str]:
+        with sqlite3.connect(db_path) as conn:
+            return {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+
+    tables_before = _processed_db_tables()
+    assert "analysis_operations" not in tables_before
+
+    # No confirmed run has happened yet: history must be genuinely empty.
+    assert test_client.get("/api/analysis/jobs/history").json()["history"] == []
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="123.26 bpm\n", stderr=""),
+    )
+    run_response = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 5})
+    assert run_response.status_code == 200
+    body = run_response.json()
+    assert body["operation_id"]
+    assert body["cancelled"] is False
+
+    history = test_client.get("/api/analysis/jobs/history").json()
+    assert len(history["history"]) == 1
+    record = history["history"][0]
+    assert record["id"] == body["operation_id"]
+    assert record["job_type"] == "bpm_analysis"
+    assert record["mode"] == "apply"
+    assert record["status"] == "completed"
+    assert record["scope_limit"] == 5
+    assert record["succeeded"] == body["updated"]
+    assert record["skipped"] == body["skipped"]
+    assert record["failed"] == body["failed"]
+    assert record["remaining_missing"] == body["remaining_missing_bpm"]
+    assert record["created_at"] and record["started_at"] and record["finished_at"]
+    assert record["cancel_requested"] is False
+    assert record["error_reason"] is None
+    # Privacy: only filenames appear in warnings, never an absolute path.
+    assert str(root) not in json.dumps(record)
+
+    # The BPM runner's own pre-existing provenance-column migration (bpm_source/
+    # bpm_trusted/bpm_analyzed_at on `tracks`) is expected and predates Cycle 2 --
+    # what Cycle 2 must never do is add its own operational table to processed.db.
+    tables_after = _processed_db_tables()
+    assert "analysis_operations" not in tables_after
+    assert tables_after == tables_before, "Cycle 2 must not add/remove processed.db tables"
+    assert delta_path.read_bytes() == original_audio_bytes, "a confirmed analysis run must never write audio bytes"
 
 
 def test_aubio_bpm_parser_accepts_known_output_and_rejects_implausible_values():

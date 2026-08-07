@@ -20,7 +20,7 @@ from typing import Any
 from modules.analyzer import CAMELOT_MAP, CAMELOT_TO_MUSICAL, _RE_CAMELOT
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
-from . import mik_metadata_service, settings_service
+from . import analysis_operations_service, mik_metadata_service, settings_service
 
 _JOB_TYPES = (
     "mixed_in_key_coverage",
@@ -677,61 +677,92 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
     analyzed = updated = skipped = failed = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
-    with sqlite3.connect(db_path) as conn:
-        _ensure_bpm_columns(conn)
-        candidates = _bpm_candidates(conn, root, limit)
-        for row in candidates:
-            try:
-                path = assert_path_under_root(row["filepath"], root)
-            except ValueError:
-                skipped += 1
-                warnings.append(f"Skipped {row['filename']}: path is outside the selected library root.")
-                continue
-            if not path.is_file():
-                skipped += 1
-                warnings.append(f"Skipped {row['filename']}: file is missing or unreadable.")
-                continue
-            try:
-                completed = subprocess.run(
-                    [binary, "tempo", str(path)], capture_output=True, text=True,
-                    timeout=_BPM_TIMEOUT_SECONDS, check=False,
+    operation_id: str | None = None
+    cancelled = False
+    remaining: int | None = None
+    try:
+        with sqlite3.connect(db_path) as conn:
+            _ensure_bpm_columns(conn)
+            eligible_total = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+            candidates = _bpm_candidates(conn, root, limit)
+            operation_id = analysis_operations_service.start_operation(
+                "bpm_analysis", scope_limit=limit, eligible_total=eligible_total,
+                considered=len(candidates),
+            )["id"]
+            for row in candidates:
+                if analysis_operations_service.is_cancel_requested(operation_id):
+                    cancelled = True
+                    break
+                analysis_operations_service.update_progress(
+                    operation_id, processed=analyzed, succeeded=updated, skipped=skipped, failed=failed,
                 )
-            except subprocess.TimeoutExpired:
-                failed += 1
-                warnings.append(f"aubio timed out for {row['filename']}.")
-                continue
-            except OSError:
-                failed += 1
-                warnings.append(f"aubio could not read {row['filename']}.")
-                continue
-            analyzed += 1
-            bpm = _parse_aubio_bpm(completed.stdout)
-            if completed.returncode != 0 or bpm is None:
-                failed += 1
-                warnings.append(f"aubio returned no usable BPM for {row['filename']}.")
-                continue
-            # The WHERE condition makes the write race-safe and reinforces the
-            # missing-data-only rule if another explicit workflow wrote first.
-            changed = conn.execute(
-                """
-                UPDATE tracks
-                SET bpm = ?, bpm_source = 'aubio', bpm_trusted = 0, bpm_analyzed_at = ?
-                WHERE id = ? AND bpm IS NULL
-                """,
-                (bpm, datetime.now(timezone.utc).isoformat(), row["id"]),
-            ).rowcount
-            if not changed:
-                skipped += 1
-                continue
-            updated += 1
-            result = _as_candidate(dict(row))
-            result["bpm"] = bpm
-            results.append(result)
-        remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+                try:
+                    path = assert_path_under_root(row["filepath"], root)
+                except ValueError:
+                    skipped += 1
+                    warnings.append(f"Skipped {row['filename']}: path is outside the selected library root.")
+                    continue
+                if not path.is_file():
+                    skipped += 1
+                    warnings.append(f"Skipped {row['filename']}: file is missing or unreadable.")
+                    continue
+                try:
+                    completed = subprocess.run(
+                        [binary, "tempo", str(path)], capture_output=True, text=True,
+                        timeout=_BPM_TIMEOUT_SECONDS, check=False,
+                    )
+                except subprocess.TimeoutExpired:
+                    failed += 1
+                    warnings.append(f"aubio timed out for {row['filename']}.")
+                    continue
+                except OSError:
+                    failed += 1
+                    warnings.append(f"aubio could not read {row['filename']}.")
+                    continue
+                analyzed += 1
+                bpm = _parse_aubio_bpm(completed.stdout)
+                if completed.returncode != 0 or bpm is None:
+                    failed += 1
+                    warnings.append(f"aubio returned no usable BPM for {row['filename']}.")
+                    continue
+                # The WHERE condition makes the write race-safe and reinforces the
+                # missing-data-only rule if another explicit workflow wrote first.
+                changed = conn.execute(
+                    """
+                    UPDATE tracks
+                    SET bpm = ?, bpm_source = 'aubio', bpm_trusted = 0, bpm_analyzed_at = ?
+                    WHERE id = ? AND bpm IS NULL
+                    """,
+                    (bpm, datetime.now(timezone.utc).isoformat(), row["id"]),
+                ).rowcount
+                if not changed:
+                    skipped += 1
+                    continue
+                updated += 1
+                result = _as_candidate(dict(row))
+                result["bpm"] = bpm
+                results.append(result)
+            remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+    except Exception as exc:
+        if operation_id:
+            analysis_operations_service.finish_operation(
+                operation_id, status="failed", processed=analyzed, succeeded=updated,
+                skipped=skipped, failed=failed, remaining_missing=None, warnings=warnings,
+                error_reason=str(exc),
+            )
+        raise
+    if operation_id:
+        analysis_operations_service.finish_operation(
+            operation_id, status="cancelled" if cancelled else "completed",
+            processed=analyzed, succeeded=updated, skipped=skipped, failed=failed,
+            remaining_missing=remaining, warnings=warnings,
+            error_reason="user_cancelled" if cancelled else None,
+        )
     return {
         "job_type": "bpm_analysis", "analyzed": analyzed, "updated": updated,
         "skipped": skipped, "failed": failed, "remaining_missing_bpm": remaining,
-        "warnings": warnings, "results": results,
+        "warnings": warnings, "results": results, "operation_id": operation_id,
+        "cancelled": cancelled,
     }
 
 
@@ -746,40 +777,96 @@ def _run_key_analysis(limit: int) -> dict[str, Any]:
     analyzed = updated = skipped = failed = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
-    with sqlite3.connect(db_path) as conn:
-        _ensure_key_columns(conn)
-        for row in _key_candidates(conn, limit):
-            try:
-                path = assert_path_under_root(row["filepath"], root)
-            except ValueError:
-                skipped += 1; warnings.append(f"Skipped {row['filename']}: path is outside the selected library root."); continue
-            if not path.is_file():
-                skipped += 1; warnings.append(f"Skipped {row['filename']}: file is missing or unreadable."); continue
-            try:
-                completed = subprocess.run([binary, str(path)], capture_output=True, text=True, timeout=_KEY_TIMEOUT_SECONDS, check=False)
-            except subprocess.TimeoutExpired:
-                failed += 1; warnings.append(f"keyfinder-cli timed out for {row['filename']}."); continue
-            except OSError:
-                failed += 1; warnings.append(f"keyfinder-cli could not read {row['filename']}."); continue
-            analyzed += 1
-            musical, camelot = _parse_keyfinder_output(completed.stdout)
-            if completed.returncode != 0 or not (musical or camelot):
-                failed += 1; warnings.append(f"keyfinder-cli returned no recognized key for {row['filename']}."); continue
-            changed = conn.execute(
-                """UPDATE tracks SET key_musical = ?, key_camelot = ?, key_source = 'keyfinder-cli', key_trusted = 0, key_analyzed_at = ?
-                   WHERE id = ? AND key_musical IS NULL AND key_camelot IS NULL""",
-                (musical, camelot, datetime.now(timezone.utc).isoformat(), row["id"]),
-            ).rowcount
-            if not changed:
-                skipped += 1; continue
-            updated += 1
-            result = _as_candidate(dict(row)); result["key_musical"] = musical; result["key_camelot"] = camelot; results.append(result)
-        remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL").fetchone()[0]
-    return {"job_type": "key_analysis", "analyzed": analyzed, "updated": updated, "skipped": skipped, "failed": failed, "remaining_missing_key": remaining, "warnings": warnings, "results": results}
+    operation_id: str | None = None
+    cancelled = False
+    remaining: int | None = None
+    try:
+        with sqlite3.connect(db_path) as conn:
+            _ensure_key_columns(conn)
+            eligible_total = conn.execute(
+                "SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL"
+            ).fetchone()[0]
+            candidates = _key_candidates(conn, limit)
+            operation_id = analysis_operations_service.start_operation(
+                "key_analysis", scope_limit=limit, eligible_total=eligible_total,
+                considered=len(candidates),
+            )["id"]
+            for row in candidates:
+                if analysis_operations_service.is_cancel_requested(operation_id):
+                    cancelled = True
+                    break
+                analysis_operations_service.update_progress(
+                    operation_id, processed=analyzed, succeeded=updated, skipped=skipped, failed=failed,
+                )
+                try:
+                    path = assert_path_under_root(row["filepath"], root)
+                except ValueError:
+                    skipped += 1; warnings.append(f"Skipped {row['filename']}: path is outside the selected library root."); continue
+                if not path.is_file():
+                    skipped += 1; warnings.append(f"Skipped {row['filename']}: file is missing or unreadable."); continue
+                try:
+                    completed = subprocess.run([binary, str(path)], capture_output=True, text=True, timeout=_KEY_TIMEOUT_SECONDS, check=False)
+                except subprocess.TimeoutExpired:
+                    failed += 1; warnings.append(f"keyfinder-cli timed out for {row['filename']}."); continue
+                except OSError:
+                    failed += 1; warnings.append(f"keyfinder-cli could not read {row['filename']}."); continue
+                analyzed += 1
+                musical, camelot = _parse_keyfinder_output(completed.stdout)
+                if completed.returncode != 0 or not (musical or camelot):
+                    failed += 1; warnings.append(f"keyfinder-cli returned no recognized key for {row['filename']}."); continue
+                changed = conn.execute(
+                    """UPDATE tracks SET key_musical = ?, key_camelot = ?, key_source = 'keyfinder-cli', key_trusted = 0, key_analyzed_at = ?
+                       WHERE id = ? AND key_musical IS NULL AND key_camelot IS NULL""",
+                    (musical, camelot, datetime.now(timezone.utc).isoformat(), row["id"]),
+                ).rowcount
+                if not changed:
+                    skipped += 1; continue
+                updated += 1
+                result = _as_candidate(dict(row)); result["key_musical"] = musical; result["key_camelot"] = camelot; results.append(result)
+            remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL").fetchone()[0]
+    except Exception as exc:
+        if operation_id:
+            analysis_operations_service.finish_operation(
+                operation_id, status="failed", processed=analyzed, succeeded=updated,
+                skipped=skipped, failed=failed, remaining_missing=None, warnings=warnings,
+                error_reason=str(exc),
+            )
+        raise
+    if operation_id:
+        analysis_operations_service.finish_operation(
+            operation_id, status="cancelled" if cancelled else "completed",
+            processed=analyzed, succeeded=updated, skipped=skipped, failed=failed,
+            remaining_missing=remaining, warnings=warnings,
+            error_reason="user_cancelled" if cancelled else None,
+        )
+    return {
+        "job_type": "key_analysis", "analyzed": analyzed, "updated": updated, "skipped": skipped,
+        "failed": failed, "remaining_missing_key": remaining, "warnings": warnings,
+        "results": results, "operation_id": operation_id, "cancelled": cancelled,
+    }
 
 
 def history() -> dict[str, Any]:
+    records = analysis_operations_service.list_recent()
     return {
-        "history": [],
-        "message": "Analysis job history will appear when a safe DB-only runner is implemented. Candidate previews are intentionally not persisted.",
+        "history": records,
+        "message": (
+            "Recent explicit, confirmed BPM/key analysis runs. Candidate previews are intentionally not persisted."
+            if records else
+            "No confirmed analysis runs yet. Candidate previews are intentionally not persisted."
+        ),
     }
+
+
+def operation_detail(operation_id: str) -> dict[str, Any]:
+    record = analysis_operations_service.get_operation(operation_id)
+    if record is None:
+        raise ValueError(f"Analysis operation {operation_id} not found.")
+    return record
+
+
+def cancel_operation(operation_id: str) -> dict[str, Any]:
+    record = analysis_operations_service.request_cancel(operation_id)
+    if record is None:
+        raise ValueError(f"Analysis operation {operation_id} not found.")
+    return record

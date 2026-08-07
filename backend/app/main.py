@@ -45,7 +45,7 @@ from .api.routes import tracks as tracks_router
 from .api.routes import waveforms as waveforms_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
-from .services import read_only as read_only_service
+from .services import analysis_operations_service, read_only as read_only_service
 from .services import waveform_cache_service, waveform_job_service
 from .services.waveform_readiness_service import (
     WaveformRuntimeError,
@@ -100,6 +100,14 @@ async def lifespan(app: FastAPI):
         waveform_job_service.recover_interrupted_jobs()
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("waveform job recovery skipped")
+
+    # Close out any Analysis Job (BPM/key) operation left 'running' by a
+    # previous process. A restart must never silently resume analysis or
+    # leave a permanent false-running history row.
+    try:
+        analysis_operations_service.recover_interrupted_operations()
+    except Exception:  # pragma: no cover - recovery must never block startup
+        log.exception("analysis operation recovery skipped")
 
     # Lightweight cache reconciliation: sweep abandoned temp files and repair
     # tracks claiming a `ready` artifact whose file is gone. This touches only

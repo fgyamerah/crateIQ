@@ -93,8 +93,38 @@ class AnalysisJobPreview(BaseModel):
     next_step: Optional[str] = None
 
 
+AnalysisOperationStatus = Literal["running", "completed", "failed", "cancelled"]
+
+
+class AnalysisOperation(BaseModel):
+    """A persisted, app-owned record of one explicit, confirmed analysis run.
+
+    Lives in the backend's own jobs.db -- never in the trusted pipeline
+    processed.db. Candidate previews are never persisted; only a confirmed
+    run that began work creates one of these.
+    """
+    id: str
+    job_type: Literal["bpm_analysis", "key_analysis"]
+    mode: str
+    status: AnalysisOperationStatus
+    scope_limit: int
+    eligible_total: int
+    considered: int
+    processed: int
+    succeeded: int
+    skipped: int
+    failed: int
+    remaining_missing: Optional[int] = None
+    cancel_requested: bool
+    error_reason: Optional[str] = None
+    warnings: list[str] = Field(default_factory=list)
+    created_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
 class AnalysisJobHistoryResponse(BaseModel):
-    history: list[dict] = Field(default_factory=list)
+    history: list[AnalysisOperation] = Field(default_factory=list)
     message: str
 
 
@@ -112,6 +142,8 @@ class BpmAnalysisRunResult(BaseModel):
     remaining_missing_bpm: int
     warnings: list[str] = Field(default_factory=list)
     results: list[AnalysisJobCandidate] = Field(default_factory=list)
+    operation_id: Optional[str] = None
+    cancelled: bool = False
 
 
 class KeyAnalysisRunRequest(BpmAnalysisRunRequest):
@@ -127,3 +159,5 @@ class KeyAnalysisRunResult(BaseModel):
     remaining_missing_key: int
     warnings: list[str] = Field(default_factory=list)
     results: list[AnalysisJobCandidate] = Field(default_factory=list)
+    operation_id: Optional[str] = None
+    cancelled: bool = False

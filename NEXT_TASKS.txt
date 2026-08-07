@@ -440,9 +440,26 @@ CURRENT FOCUS
          Import remains analysis-free; unavailable tools disable only their
          named future workflow.
 
-[ ] (P1) Add safe persisted Analysis Jobs history/progress
-         Record only explicit BPM/key DB-only runs with result summaries,
-         cancellation semantics where needed, and no pipeline/tag/file writes.
+[~] (P1) Add safe persisted Analysis Jobs history/progress (2026-08-07)
+         Stage 1/Cycle 2 (backend persistence): new app-owned
+         `analysis_operations` table in jobs.db (never processed.db) records
+         every explicit, confirmed BPM/key analysis run: type, scope/limit,
+         considered/processed/succeeded/skipped/failed counts,
+         remaining-missing, truthful incremental progress, and a real
+         running/completed/failed/cancelled lifecycle. Candidate previews
+         are still never persisted. The run loop checks a polled
+         cancel_requested flag between tracks (genuine mid-batch stop, not
+         fake) and preserves partial progress on cancel. A backend restart
+         closes out any stranded 'running' row as failed/backend_restarted
+         rather than leaving a false-running state. `GET
+         /api/analysis/jobs/history` now returns real records. No absolute
+         paths/secrets stored; warnings capped at 50. Files:
+         backend/app/core/db.py,
+         backend/app/services/analysis_operations_service.py (new),
+         backend/app/services/analysis_jobs_service.py, backend/app/main.py,
+         backend/app/schemas/analysis_jobs.py, tests/test_analysis_operations.py
+         (new), tests/test_backend_api.py. Next: expose operation detail +
+         a cancel endpoint (Stage 2), then an Operations UI (Stage 3).
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`

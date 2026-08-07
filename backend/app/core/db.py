@@ -121,6 +121,44 @@ CREATE INDEX IF NOT EXISTS idx_waveform_jobs_status
 CREATE UNIQUE INDEX IF NOT EXISTS idx_waveform_one_active_track
     ON waveform_jobs(library_id, track_id)
     WHERE status IN ('queued', 'processing');
+
+-- Persisted history for explicit, confirmed Analysis Jobs runs (BPM/key
+-- analysis today). Candidate *previews* are never persisted here -- only a
+-- confirmed run that actually attempted work creates a row. This is
+-- app-owned operational history: it never lives in the trusted pipeline
+-- processed.db, and it never stores absolute source paths, secrets, or full
+-- per-track logs -- only bounded counts/warnings already surfaced by the
+-- existing preview/run contracts.
+CREATE TABLE IF NOT EXISTS analysis_operations (
+    id                TEXT    PRIMARY KEY,
+    job_type          TEXT    NOT NULL
+                               CHECK (job_type IN ('bpm_analysis', 'key_analysis')),
+    mode              TEXT    NOT NULL DEFAULT 'apply',
+    status            TEXT    NOT NULL DEFAULT 'running'
+                               CHECK (status IN (
+                                   'running', 'completed', 'failed', 'cancelled'
+                               )),
+    scope_limit       INTEGER NOT NULL,
+    eligible_total    INTEGER NOT NULL DEFAULT 0,
+    considered        INTEGER NOT NULL DEFAULT 0,
+    processed         INTEGER NOT NULL DEFAULT 0,
+    succeeded         INTEGER NOT NULL DEFAULT 0,
+    skipped           INTEGER NOT NULL DEFAULT 0,
+    failed            INTEGER NOT NULL DEFAULT 0,
+    remaining_missing INTEGER,
+    cancel_requested  INTEGER NOT NULL DEFAULT 0
+                               CHECK (cancel_requested IN (0, 1)),
+    error_reason      TEXT,
+    warnings_json     TEXT,
+    created_at        TEXT    NOT NULL,
+    started_at        TEXT,
+    finished_at       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_analysis_operations_created
+    ON analysis_operations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_analysis_operations_status
+    ON analysis_operations(status);
 """
 
 

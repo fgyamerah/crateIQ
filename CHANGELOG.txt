@@ -2,6 +2,56 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Persist analysis job history (Cycle 2, Stage 1)
+
+- Added a new, app-owned `analysis_operations` table to the backend's own
+  jobs.db (never processed.db) that records every explicit, confirmed
+  BPM/key analysis run: job type, requested scope/limit, eligible/
+  considered/processed/succeeded/skipped/failed counts, remaining-missing,
+  and a real `running -> completed|failed|cancelled` lifecycle with
+  created/started/finished timestamps. Candidate previews are still
+  intentionally never persisted -- only a confirmed run that has passed its
+  pre-flight checks (tool available, library initialized) and is about to
+  attempt work creates a row.
+- Progress is truthful, not fabricated: the loop persists real
+  processed/succeeded/skipped/failed counts as it goes (scoped so a stale
+  in-flight write can never resurrect an already-closed row), and there is
+  no invented percentage anywhere.
+- Cancellation is genuine: a `cancel_requested` flag is checked at the top
+  of every loop iteration (before the next track is handed to aubio/
+  keyfinder-cli), so a request to stop preserves whatever partial progress
+  already happened rather than corrupting or rolling it back. Cancelling an
+  already-finished or unknown operation is a safe no-op.
+- A backend restart can never leave a permanent false-"running" row: on
+  startup, any operation still marked 'running' from a previous process is
+  closed out as 'failed' with reason `backend_restarted` (mirrors the
+  existing waveform-job restart-recovery pattern). Resuming requires a
+  fresh explicit confirmed run.
+- No absolute source paths, secrets, or per-track logs are stored -- only
+  the same short filename-only warning strings the existing preview/run
+  contracts already return, capped at 50 entries per operation.
+- `GET /api/analysis/jobs/history` (previously an always-empty stub) now
+  returns real, typed records.
+- Fixed a real, pre-existing test-isolation gap this work exposed: the
+  shared backend-API test `client` fixture never isolated jobs.db, so every
+  API test silently shared and could pollute the real
+  `backend/data/jobs.db` a developer's local server was using. The fixture
+  now redirects `JOBS_DB_PATH` to a per-test tmp path and initializes the
+  schema there directly, matching the isolation pattern the waveform test
+  suite already used.
+- Files: backend/app/core/db.py, backend/app/services/
+  analysis_operations_service.py (new), backend/app/services/
+  analysis_jobs_service.py, backend/app/main.py,
+  backend/app/schemas/analysis_jobs.py, tests/test_analysis_operations.py
+  (new, 11 tests), tests/test_backend_api.py (+1 integration test, jobs.db
+  isolation fix).
+- 1343 backend tests pass (1331 baseline + 12 new). No processed.db schema
+  or source-audio-file mutation from this change (the pre-existing BPM
+  runner's own `bpm_source`/`bpm_trusted`/`bpm_analyzed_at` provenance-
+  column migration on `tracks` predates Cycle 2 and is unrelated).
+- Next: Stage 2 exposes operation detail + a cancel endpoint over HTTP;
+  Stage 3 builds the Operations UI on top of it.
+
 [2026-08-07] — Improve crate and set building
 
 - Manual Crates: each consecutive track pair now carries a deterministic,
