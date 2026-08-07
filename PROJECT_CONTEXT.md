@@ -6,6 +6,57 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 4 Stage 5 -- final reconciliation safety audit,
+  completing roadmap Cycle 4 (Duplicate, Orphan, Quarantine, and
+  Plan-First Library Reconciliation) on
+  `feat/crateiq-library-reconciliation` (base `main` `b78943b`).
+  Full-branch diff vs `main`: 22 files changed, +2,170/-262 across all 4
+  stages. Verification: `python -m compileall backend/app` clean;
+  `python -m pytest -q` -- 1401 passed; `npm run typecheck` and `npm run
+  build` both clean; `pipeline.py validate-docs --strict` -- OK, 24/24
+  registry commands present; `git diff --check` clean on the full branch
+  diff. Ran a live end-to-end DETECT -> PROPOSE -> VALIDATE pass against
+  the real, sanctioned `crateiq-test-library` (88 tracks, 88 disk files,
+  library already in sync -- 0 findings, 0 planned actions, 0/0/0
+  validation, confirming truthful empty states rather than fabricated
+  activity) and confirmed `POST /api/reconciliation/plans/apply` and
+  `/api/reconciliation/apply` both 404 -- no apply endpoint exists
+  anywhere. Source-integrity check: sha256 of all 88 audio files
+  byte-identical before/after the full session (including this stage's
+  live propose/validate calls and Stage 4's duplicate-preview refresh);
+  `tracks` table row count and bpm/key_camelot/key_musical values
+  unchanged; the only writes to the real test library across the whole
+  session were the intended, contract-safe ones -- one row in
+  `duplicate_review_snapshots` (Stage 1's DB-only review contract) and
+  one `logs/path_reconcile/20260807_path_reconcile_plan.json` artifact
+  (Stage 3's designed plan-proposal output) -- both are the feature
+  working as designed, not incidental mutation. No file was moved,
+  renamed, or deleted; no tag, BPM, key, Camelot, or cue value changed;
+  no other real music library was touched; LedgerIQ and opsIQ were never
+  referenced. Chrome MCP extension was unavailable all session; UI
+  verification throughout used headless Chrome screenshots and direct
+  API calls instead, disclosed at each stage.
+  Cycle 4 summary across all 5 stages: duplicate groups now carry safe
+  evidence (genre/bpm/key/duration/format, missing-metadata,
+  copy-marker) and an advisory-only keeper recommendation
+  (deterministic only when a filename copy-marker unambiguously
+  identifies one canonical file, else `insufficient_evidence`); orphan/
+  stale-path findings (`indexed_missing_file`, `untracked_file`,
+  `stale_path`, `path_candidate`) and a quarantine listing are exposed
+  read-only with root-relative paths and symlink-escape rejection;
+  `POST /reconciliation/plans/propose` performs DETECT -> PROPOSE by
+  reusing the unmodified `pipeline._path_reconcile_plan()` and persists
+  to the same artifact location the CLI already used, while
+  `validate-plan` gained plan-wide `target_path_collision` /
+  `ambiguous_candidate_for_old_path` checks; one real pre-existing bug
+  (`old_path_missing_on_disk` wrongly failing every generated
+  `update_path_reference` action) was found and fixed while wiring
+  propose -> validate together for the first time. `/reconciliation` is
+  now one tabbed "Library Reconciliation" workspace over all of it. At
+  no point was a filesystem-mutation, auto-apply, auto-keeper-removal,
+  or auto-relink capability added -- apply remains fully deferred by
+  design, exactly as scoped.
+
 - 2026-08-07: Cycle 4 Stage 4 -- Unified Library Reconciliation UI, on
   `feat/crateiq-library-reconciliation`. `/reconciliation` (sidebar label
   changed from "Ledger" to "Library Reconciliation") became one tabbed

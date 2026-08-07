@@ -860,6 +860,26 @@ CURRENT FOCUS
          Apply remains fully deferred: no apply endpoint was added or
          exposed; `_path_reconcile_apply_auto_safe`/`_path_reconcile_mark_
          stale_pstate` are untouched and unreachable from the API.
+         UPDATE (2026-08-07, Cycle 4 Stage 5 final audit): full branch
+         verified -- 1401 backend tests pass, frontend typecheck/build
+         clean, validate-docs --strict OK, live end-to-end propose/
+         validate against the real crateiq-test-library confirmed
+         truthful 0-finding/0-action empty state and that
+         `/reconciliation/plans/apply` and `/reconciliation/apply` both
+         404. Source audio byte-identical before/after; only the two
+         intended, contract-safe writes occurred (one duplicate_review_
+         snapshots row, one path_reconcile plan JSON artifact). Cycle 4
+         (Duplicate, Orphan, Quarantine, Plan-First Reconciliation) is
+         complete for its scoped DETECT/PROPOSE/REVIEW/VALIDATE goal.
+         Remaining, explicitly out-of-scope-for-Cycle-4 follow-up:
+         designing and testing an actual reconciliation APPLY workflow
+         (backups, per-action confirmation, restore path) stays a
+         separate future task -- do not treat this update as apply being
+         ready.
+[x] (P1) Cycle 4 -- Duplicate, Orphan, Quarantine, and Plan-First Library
+         Reconciliation (all 5 stages) (2026-08-07)
+         See CHANGELOG.txt entries dated 2026-08-07 (Stages 1-5) and the
+         PROJECT_CONTEXT.md Latest Milestone log for full detail.
 [x] (P1) artist-repair-review — human approval workflow; queue state persistence; 158 tests (2026-05-03)
 [x] (P1) bare-number guard v6 — numeric/ordinal second token preserved; 71 tests (2026-05-03)
 [x] (P1) title-number-recover — filename-based recovery for bad bare-number strips; number>=10 guard; v5 rules (2026-05-03)

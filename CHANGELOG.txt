@@ -2,6 +2,44 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Cycle 4 final reconciliation safety audit (Stage 5)
+
+- Full-branch audit of the Cycle 4 diff against main (b78943b): 22 files
+  changed, +2,170/-262 across duplicate evidence, orphan/quarantine
+  findings, plan-first reconciliation, and the unified workspace UI.
+- Verification run: python -m compileall backend/app (clean); python -m
+  pytest -q -> 1401 passed; npm run typecheck (clean); npm run build
+  (clean); pipeline.py validate-docs --strict -> OK, 24/24 registry
+  commands present; git diff --check clean on the full branch diff.
+- Live end-to-end check against the real, sanctioned
+  crateiq-test-library (88 tracks, 88 disk files, already in sync):
+  GET /api/reconciliation/findings -> 0 findings; POST
+  /api/reconciliation/plans/propose -> 0 planned actions, apply_
+  supported: false; POST /api/reconciliation/validate-plan
+  {"latest": true} -> 0/0/0; POST /api/reconciliation/plans/apply and
+  POST /api/reconciliation/apply both 404. This proves the empty state
+  is truthful (nothing fabricated) and confirms no apply endpoint
+  exists anywhere in the branch.
+- Source-integrity check: sha256 of all 88 real audio files is
+  byte-identical before and after the entire session, including this
+  stage's live propose/validate calls and Stage 4's duplicate-preview
+  refresh. tracks table row count (88) and every bpm/key_camelot/
+  key_musical value are unchanged. The only writes to the real test
+  library across the whole session were the two intended, contract-safe
+  ones: one row in duplicate_review_snapshots (Stage 1) and one
+  logs/path_reconcile/20260807_path_reconcile_plan.json artifact
+  (Stage 3) -- both are the feature working as designed, mirroring the
+  precedent set by Cycle 3 Stage 4's staged export files.
+- Confirmed explicitly: no file moved, renamed, or deleted; no tag,
+  BPM, key, Camelot, or cue value changed; no live Rekordbox/Serato
+  write; no external metadata provider call; no other real music
+  library touched; LedgerIQ and opsIQ never referenced; no
+  `tatus --short` artifact created.
+- Chrome MCP extension was unavailable for this entire session; every
+  stage's UI/API verification used headless Chrome screenshots and/or
+  direct API calls instead, disclosed at the time.
+- Not merged to main, per instruction.
+
 [2026-08-07] — Cycle 4 unified Library Reconciliation workspace (Stage 4)
 
 - What changed: `/reconciliation` (sidebar label changed from "Ledger" to
