@@ -6,6 +6,53 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 3 Stage 4 -- Guided Publish workspace. New `/publish`
+  route (`frontend/src/pages/Publish.tsx`) composes Stages 1-3's backend
+  contracts into one guided flow: crate + export-format + sync-source
+  selection -> readiness (blockers/warnings/conflicts, export_ready/
+  sync_ready badges) -> Export preview -> confirm -> verify -> SSD Sync
+  preview -> confirm -> live status polling -> verify, plus a "Recent
+  publish operations" table. Export and Sync are two separate cards; a
+  user can act on Export alone and stop. Every Confirm button is disabled
+  until a fresh preview for the *current* selection exists with zero
+  blockers -- changing any selector clears stale preview/result state.
+  Reuses the Night Deck primitives verbatim (PageHeader, StatusStrip,
+  Badge, EmptyState, `.card`, `.lib-defs`, `.table--jobs`,
+  `.job-progress-*`); only layout-only `.publish-*` CSS was added.
+  Impeccable's focused review (detector clean; inline design pass) fixed
+  two real issues: "blocked" readiness badges used a neutral tone
+  (changed to `failed`), and the running-sync state didn't reuse the
+  existing job-progress-bar pattern (now added). Live verification
+  (Chrome extension unavailable -- used a scripted headless-Chrome +
+  DevTools-Protocol session against the real `crateiq-test-library`
+  backend/frontend) found and fixed a real bug the unit suite structurally
+  could not catch: any `jobs.db` created before this session's Stage 3
+  change (including the long-running dev backend used for verification)
+  had `publish_operations` without the new `job_id` column, since `CREATE
+  TABLE IF NOT EXISTS` never alters an existing table -- every confirmed
+  export hit a raw 500. Fixed with the same `_add_column_safe()` additive
+  migration pattern already used for every other jobs.db column, plus a
+  regression test reproducing the exact pre-migration table shape. After
+  the fix, a real confirmed M3U8 export against the "test" crate wrote and
+  verified successfully end-to-end through the actual browser UI at
+  1440/760/390px with no console errors; SSD Sync correctly showed
+  BLOCKED (no real SSD mounted on this machine) and Preview sync completed
+  in ~2ms, confirming rsync was never spawned against a blocked
+  destination. `/publish` was also registered in
+  `tests/test_supported_route_contracts.py` (read-only `/api/publish/
+  operations` in the smoke contract; the three mutating endpoints in
+  DEFERRED_ENDPOINTS; ID-scoped GETs untracked, consistent with existing
+  precedent). Files: `frontend/src/pages/Publish.tsx`, `frontend/src/api/
+  publish.ts`, `frontend/src/types/publish.ts`, `frontend/src/App.tsx`,
+  `frontend/src/components/Sidebar.tsx`, `frontend/src/index.css`,
+  `backend/app/core/db.py`, `tests/test_backend_api.py`, `tests/
+  test_supported_route_contracts.py`. 1377 backend tests pass (1376 + 1
+  new), frontend typecheck/build/`git diff --check` pass. No source
+  audio/tag/BPM/key/cue/MIK data touched; no live Rekordbox/Serato/SSD
+  write; the only real writes were verification exports into
+  `crateiq-test-library`'s own `exports/` directory. Stage 5 (final
+  safety audit) is next.
+
 - 2026-08-07: Cycle 3 Stage 3 -- Guarded SSD sync workflow.
   `publish_sync_service.py` layers validate -> preview (dry-run) ->
   confirm -> execute -> verify on the existing, unmodified

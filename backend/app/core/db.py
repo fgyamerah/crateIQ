@@ -282,4 +282,9 @@ def init_db() -> None:
         # eviction ordering uses this column instead.
         _add_column_safe(conn, "waveform_track_state", "last_accessed_at", "TEXT")
 
+        # Cycle 3 Stage 3: link a publish_operations sync row to its
+        # underlying rsync job. Rows created by Stage 2 (export-only) predate
+        # this column.
+        _add_column_safe(conn, "publish_operations", "job_id", "TEXT")
+
     log.info("Backend operational DB ready")

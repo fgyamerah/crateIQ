@@ -10,6 +10,7 @@ import BpmReview from './pages/BpmReview'
 import BeetsReview from './pages/BeetsReview'
 import EnrichmentReview from './pages/EnrichmentReview'
 import Export from './pages/Export'
+import Publish from './pages/Publish'
 import Jobs from './pages/Jobs'
 import Reconciliation from './pages/Reconciliation'
 import MetadataRepair from './pages/MetadataRepair'
@@ -58,6 +59,7 @@ export default function App() {
           <Route path="set-builder" element={<ErrorBoundary><SetBuilder /></ErrorBoundary>} />
           <Route path="exports" element={<ErrorBoundary><Export /></ErrorBoundary>} />
           <Route path="sync" element={<ErrorBoundary><SsdSync /></ErrorBoundary>} />
+          <Route path="publish" element={<ErrorBoundary><Publish /></ErrorBoundary>} />
           <Route path="reconciliation" element={<ErrorBoundary><Reconciliation /></ErrorBoundary>} />
           <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
           <Route path="genres" element={<ErrorBoundary><Genres /></ErrorBoundary>} />

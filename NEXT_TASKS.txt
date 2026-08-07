@@ -39,6 +39,20 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Cycle 3 Stage 4 -- Guided Publish workspace (2026-08-07)
+    New `/publish` route turns Stages 1-3 into one guided flow: crate +
+    format + sync-source selection -> readiness -> Export preview ->
+    confirm -> verify -> SSD Sync preview -> confirm -> live status ->
+    verify, plus a Recent publish operations table. Export/Sync are
+    visibly separate cards; Confirm stays disabled without a fresh
+    blocker-free preview for the current selection. Live headless-Chrome
+    verification against the real crateiq-test-library found and fixed a
+    real bug: existing jobs.db files predating Stage 3 were missing the
+    publish_operations.job_id column (CREATE TABLE IF NOT EXISTS doesn't
+    alter existing tables) -- fixed via the same _add_column_safe()
+    migration pattern used everywhere else, plus a regression test. See
+    CHANGELOG.txt for full detail. 1377 backend tests pass; frontend
+    typecheck/build pass.
 [x] (P1) Cycle 3 Stage 3 -- Guarded SSD sync workflow (2026-08-07)
     `publish_sync_service.py` builds validate -> preview (dry-run) ->
     confirm -> execute -> verify on the existing rsync_runner. Guarded
@@ -65,8 +79,8 @@ CURRENT FOCUS
     confirmation_required, next_operation) without exporting or syncing
     anything. See CHANGELOG.txt for full detail. 1355 backend tests pass.
 [~] (P1) Cycle 3 -- Guided Publish, Export, and SSD Sync (roadmap Phase 7)
-    Stages 1 (readiness), 2 (guarded export), and 3 (guarded sync) done.
-    Remaining: Stage 4 (Guided Publish UI), Stage 5 (final safety audit).
+    Stages 1-4 (readiness, guarded export, guarded sync, guided UI) done.
+    Remaining: Stage 5 (final safety audit).
 
 [x] (P1) Crate/set-building improvements: transition context + funnel feedback
     (2026-08-07). Manual Crates now show a deterministic, explainable

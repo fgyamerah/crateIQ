@@ -228,6 +228,14 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/publish",
+        "purpose": "Guided export and SSD sync for one Manual Crate at a time",
+        "access": "read-only operations history; readiness/preview/confirm deferred",
+        "endpoints": [
+            ("/api/publish/operations", "list", ()),
+        ],
+    },
+    {
         "route": "/reconciliation",
         "purpose": "Reconciliation ledger",
         "access": "read-only; plan validation deferred",
@@ -278,6 +286,11 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
     "/set-builder": ["/api/playlists/set-builder (POST)"],
     "/exports": ["/api/exports/validate (POST)", "/api/exports/run (POST)"],
     "/sync": ["/api/sync/preview (POST, spawns rsync)", "/api/sync/run (POST)"],
+    "/publish": [
+        "/api/publish/export/{crate_id} (POST, writes an export file)",
+        "/api/publish/sync/preview (POST, spawns rsync)",
+        "/api/publish/sync/confirm (POST, dispatches a job)",
+    ],
     "/bpm-review": [
         "/api/analysis/bpm-check (POST, writes anomaly rows)",
         "/api/analysis/reanalyze (POST, dispatches job)",

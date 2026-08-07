@@ -2048,6 +2048,42 @@ def test_rsync_dry_run_parser_handles_no_inc_recursive_header():
     assert warnings == []
 
 
+def test_publish_operations_job_id_migrates_onto_an_existing_stage2_jobs_db(tmp_path, monkeypatch):
+    """A jobs.db created before Stage 3 has publish_operations without job_id.
+
+    init_db() must add it via _add_column_safe rather than only creating the
+    table when missing (CREATE TABLE IF NOT EXISTS is a no-op on an existing
+    table and does not add new columns) -- this reproduces a real bug caught
+    via live-server verification: a long-running backend process (or any
+    jobs.db written before this migration existed) hit `sqlite3.
+    OperationalError: table publish_operations has no column named job_id`
+    on the very first confirmed export after this session's Stage 3 changes.
+    """
+    path = tmp_path / "legacy" / "jobs.db"
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            "CREATE TABLE publish_operations (id TEXT PRIMARY KEY, operation_type TEXT NOT NULL, "
+            "export_target TEXT, sync_source TEXT, mode TEXT NOT NULL DEFAULT 'apply', "
+            "status TEXT NOT NULL DEFAULT 'running', crate_id INTEGER, crate_name TEXT, "
+            "scope TEXT, track_count INTEGER NOT NULL DEFAULT 0, destination_relative TEXT, "
+            "result TEXT, verification_status TEXT, verification_details_json TEXT, "
+            "warnings_json TEXT, error_reason TEXT, created_at TEXT NOT NULL, "
+            "started_at TEXT, finished_at TEXT)"
+        )
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", path)
+    backend_db.init_db()
+    with sqlite3.connect(path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(publish_operations)")}
+    assert "job_id" in columns
+
+    from backend.app.services import publish_operations_service as pub_ops
+
+    operation = pub_ops.start_operation("sync", sync_source="library", job_id="job-123")
+    record = pub_ops.get_operation(operation["id"])
+    assert record["job_id"] == "job-123"
+
+
 def test_publish_sync_failed_job_is_reported_without_verification(client, tmp_path, monkeypatch):
     test_client, _root = client
     _sync_fixture(tmp_path, monkeypatch)

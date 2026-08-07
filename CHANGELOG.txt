@@ -2,6 +2,69 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Add guided publish workspace (Cycle 3, Stage 4)
+
+- New `/publish` route (`frontend/src/pages/Publish.tsx`, sidebar entry
+  under Operations) turns Stages 1-3's backend contracts into one guided
+  flow: select a Manual Crate + export format + sync source -> readiness
+  (blockers/warnings/conflicts, export_ready/sync_ready badges) -> Export
+  preview -> confirm -> verify -> SSD Sync preview -> confirm -> live
+  status polling -> verify, plus a "Recent publish operations" table.
+  Export and Sync are two visually and functionally separate cards; a user
+  can act on Export alone and never touch Sync. Every Confirm button stays
+  disabled until a fresh preview for the *current* crate/target/source
+  selection exists with zero blockers -- changing any selector clears the
+  stale preview/result state so a stale preview can never be confirmed
+  against a different selection.
+- Reuses the existing Night Deck primitives verbatim (PageHeader,
+  StatusStrip, Badge, EmptyState, `.card`, `.lib-defs`/`.lib-defs-path`,
+  `.table--jobs`, `.job-progress-*`) rather than inventing new visual
+  language; only new layout-only CSS was added
+  (`.publish-*` selectors in index.css).
+- Impeccable focused review (inline design pass; detector clean) found two
+  real issues, both fixed: the "blocked" readiness badges used a neutral
+  `pending` Badge tone indistinguishable from "waiting", changed to
+  `failed` so a blocked state reads as clearly bad; the running-sync state
+  didn't reuse the app's existing `.job-progress-*` bar pattern used
+  elsewhere for job progress, now added.
+- Live verification (Chrome extension unavailable; used a scripted
+  headless-Chrome + raw DevTools-Protocol session against the real
+  `crateiq-test-library` backend/frontend dev servers) found and fixed a
+  real bug the unit test suite structurally could not catch: `backend/
+  data/jobs.db` files created before this session's Stage 3 change (i.e.
+  any already-running backend, including the one used for this
+  verification) had a `publish_operations` table *without* the new
+  `job_id` column. `CREATE TABLE IF NOT EXISTS` never alters an existing
+  table, so every confirmed export hit `sqlite3.OperationalError: table
+  publish_operations has no column named job_id` and surfaced as a raw
+  500 in the browser. Fixed with the same `_add_column_safe()` additive
+  migration this codebase already uses for every other post-hoc jobs.db
+  column (`backend/app/core/db.py`), plus a new regression test that
+  creates a pre-migration `publish_operations` table and asserts
+  `init_db()` adds the column. After the fix, a real confirmed M3U8
+  export against `crateiq-test-library`'s "test" crate wrote and verified
+  successfully end-to-end through the actual browser UI (screenshots at
+  1440/760/390px showed no overflow and no console errors; SSD Sync
+  correctly showed BLOCKED since no real SSD is mounted on this machine,
+  and clicking Preview sync completed in ~2ms confirming rsync was never
+  spawned against the blocked destination).
+- Also registered `/publish` in `tests/test_supported_route_contracts.py`
+  (its read-only `/api/publish/operations` list endpoint in the smoke
+  contract; the three genuinely mutating endpoints in
+  `DEFERRED_ENDPOINTS`; the crate/operation-ID-scoped GETs are untracked
+  here, consistent with how other ID-scoped GETs like `/api/tracks/{id}/
+  compatible` are already handled).
+- Files: frontend/src/pages/Publish.tsx (new), frontend/src/api/
+  publish.ts (new), frontend/src/types/publish.ts (new), frontend/src/
+  App.tsx, frontend/src/components/Sidebar.tsx, frontend/src/index.css,
+  backend/app/core/db.py (job_id migration), tests/test_backend_api.py
+  (migration regression test), tests/test_supported_route_contracts.py.
+  1377 backend tests pass (1376 baseline + 1 new), frontend typecheck/
+  build/`git diff --check` all pass. No source audio, tag, BPM/key/cue,
+  or MIK data touched; no live Rekordbox/Serato/SSD write; the only real
+  writes were verification-only exports into `crateiq-test-library`'s own
+  `exports/` directory, exactly the workflow this feature is for.
+
 [2026-08-07] — Add guarded SSD sync workflow (Cycle 3, Stage 3)
 
 - New `publish_sync_service.py` builds a validate -> preview (dry-run) ->
