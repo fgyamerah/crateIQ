@@ -882,8 +882,19 @@ CURRENT FOCUS
 [ ] (P2) Collection workspace — Phase 5: pagination for large folders (>500 tracks)
 [ ] (P2) Collection workspace — duplicate scan review UI (show found dupes in table)
 [ ] (P2) Collection workspace — virtual list for very large track sets
-[ ] (P2) Library maintenance — expose orphan-scan results via API endpoint (for Collection UI)
-[ ] (P3) Library maintenance — quarantine browser in Collection UI (review quarantined files)
+[x] (P2) Library maintenance — expose orphan-scan results via API endpoint (2026-08-07)
+         `GET /api/reconciliation/findings` reshapes the existing pipeline.py
+         path-audit engine (`_path_audit_report`) into a bounded,
+         relative-path-only finding contract: indexed_missing_file,
+         untracked_file, stale_path, path_candidate. Read-only; no file, tag,
+         or DB write. Frontend workspace for this remains Cycle 4 Stage 4.
+[x] (P3) Library maintenance — quarantine browser (read-only) (2026-08-07)
+         `GET /api/reconciliation/quarantine` lists files under
+         `<library_root>/.BIN/QUARANTINE`, read-only. Original location,
+         reason, operation id, and timestamp are not persisted for legacy
+         quarantine moves, so every item reports `restore_supported: false`
+         rather than fabricating provenance. No permanent-delete or restore
+         action exists.
 [x] (P1) Artist Intelligence — Phase 2 hardening complete (2026-04-19)
 [x] (P1) Artist Intelligence — Phase 3: pollution guards, feat dedup, personal-name split (2026-04-19)
 [x] (P1) Artist Intelligence — Phase 4: nested separator split, casing normalization, confidence boost (2026-04-19)

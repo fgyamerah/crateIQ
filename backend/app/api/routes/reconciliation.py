@@ -1,9 +1,11 @@
 """
-Reconciliation ledger routes.
+Reconciliation ledger and findings routes.
 
   GET /api/reconciliation/ledger                — list recent ledger entries
   GET /api/reconciliation/ledger/{ledger_id}    — get one ledger entry
   POST /api/reconciliation/validate-plan        — validate a path-reconcile plan
+  GET /api/reconciliation/findings              — read-only orphan/stale-path findings
+  GET /api/reconciliation/quarantine            — read-only quarantine listing
 """
 from __future__ import annotations
 
@@ -17,7 +19,9 @@ from ...schemas.reconciliation import (
     ReconciliationPlanValidateRequest,
     ReconciliationPlanValidateResponse,
 )
+from ...schemas.reconciliation_findings import QuarantineListingResponse, ReconciliationFindingsResponse
 from ...services import read_only as read_only_service
+from ...services import reconciliation_findings_service
 import pipeline
 
 router = APIRouter(tags=["reconciliation"])
@@ -66,3 +70,19 @@ async def validate_reconciliation_plan(
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc))
     return ReconciliationPlanValidateResponse(**result)
+
+
+@router.get("/reconciliation/findings", response_model=ReconciliationFindingsResponse)
+async def get_reconciliation_findings() -> ReconciliationFindingsResponse:
+    try:
+        return ReconciliationFindingsResponse(**reconciliation_findings_service.get_findings())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/reconciliation/quarantine", response_model=QuarantineListingResponse)
+async def get_reconciliation_quarantine() -> QuarantineListingResponse:
+    try:
+        return QuarantineListingResponse(**reconciliation_findings_service.get_quarantine_listing())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

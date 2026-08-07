@@ -6,6 +6,35 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 4 Stage 2 -- Orphan/stale-path/quarantine findings, on
+  `feat/crateiq-library-reconciliation`. Two new read-only GET endpoints.
+  `/api/reconciliation/findings` reshapes the existing `pipeline.
+  _path_audit_report()` CLI engine (disk-vs-DB scan, rename/relocation
+  matching) into a bounded, relative-path-only finding contract with four
+  types: `indexed_missing_file`, `untracked_file`, `stale_path` (a
+  processed-state row superseded by an existing current path), and
+  `path_candidate` (an untracked file that may be the renamed/relocated
+  version of a missing indexed track). `/api/reconciliation/quarantine`
+  lists files under `<library_root>/.BIN/QUARANTINE` read-only; since
+  legacy quarantine moves never persisted original location, reason,
+  operation id, or timestamp, every item truthfully reports
+  `restore_supported: false` and null provenance rather than fabricating
+  it. Every exposed path is root-relative and independently re-checked
+  with `assert_path_under_root` (rejecting symlink escapes) regardless of
+  what the underlying pipeline report already filtered. Finding ids are
+  content-derived (sha256 of finding type + path), so ids stay stable
+  across repeated calls but a finding legitimately disappears if the
+  underlying DB/disk state changes -- the property Stage 3's plan
+  staleness check will depend on. New:
+  `backend/app/services/reconciliation_findings_service.py`,
+  `backend/app/schemas/reconciliation_findings.py`; extended:
+  `backend/app/api/routes/reconciliation.py` (two GET routes on the
+  existing router, no new router). 8 new targeted tests in
+  `tests/test_reconciliation_findings.py`; full backend suite (1389
+  tests) passes. No detection logic was reimplemented -- 100% reused from
+  `pipeline.py`. No file, tag, DB-schema, or destructive action was
+  added; no new dependency.
+
 - 2026-08-07: Cycle 4 Stage 1 -- Duplicate evidence + keeper recommendation,
   on `feat/crateiq-library-reconciliation` (branched from `main` `b78943b`).
   Extends the existing safe, DB-only `/api/duplicates/review` contract

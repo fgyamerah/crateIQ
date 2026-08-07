@@ -2,6 +2,39 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Cycle 4 orphan/stale-path/quarantine findings (Stage 2)
+
+- What changed: two new read-only endpoints. `GET /api/reconciliation/
+  findings` reshapes the existing `pipeline._path_audit_report()` engine
+  into a bounded, relative-path-only finding contract with four finding
+  types: `indexed_missing_file` (DB row, file gone from disk),
+  `untracked_file` (file on disk, not indexed), `stale_path`
+  (processed-state row superseded by an existing current path), and
+  `path_candidate` (a specific untracked file that may be the renamed/
+  relocated version of a missing indexed track, from the existing
+  possible-rename/relocation matchers). `GET /api/reconciliation/
+  quarantine` lists files under `<library_root>/.BIN/QUARANTINE`
+  read-only; every item reports `restore_supported: false` and null
+  reason/operation_id/quarantined_at/original_relative_path because
+  legacy quarantine moves never persisted that provenance -- it is not
+  fabricated. Every path in every response is root-relative only, each
+  independently re-validated with `assert_path_under_root` (rejecting
+  symlink escapes) before being exposed. Finding ids are content-derived
+  (sha256 of type + path) so the same finding keeps the same id across
+  calls, and a finding disappearing when the underlying state changes is
+  by design (Stage 3 will rely on this for staleness checks).
+- Why: gives a human reviewer truthful, bounded evidence about
+  library/DB drift and legacy quarantine contents without adding any
+  new detection heuristic or any file/DB mutation capability.
+- Files affected: `backend/app/services/reconciliation_findings_service.py`
+  (new), `backend/app/schemas/reconciliation_findings.py` (new),
+  `backend/app/api/routes/reconciliation.py` (two new GET routes added
+  to the existing router), `tests/test_reconciliation_findings.py` (new,
+  8 targeted tests).
+- Migration notes: none. No DB schema change, no new destructive
+  endpoint. Detection logic is 100% reused from pipeline.py; this stage
+  only added a safe read-only reshaping/exposure layer.
+
 [2026-08-07] — Cycle 4 duplicate evidence review (Stage 1)
 
 - What changed: the safe, DB-only Duplicate Review contract
