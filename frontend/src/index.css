@@ -302,12 +302,9 @@ textarea {
 }
 
 .persistent-player-waveform { min-width: 0; display: grid; gap: 5px; }
-.persistent-player-waveform .three-band-waveform { padding: 5px 8px; border: 0; border-radius: 6px; background: rgba(255,255,255,.018); }
-.persistent-player-waveform .three-band-waveform-segments { height: 10px; }
-.persistent-player-waveform .three-band-waveform-label { font-size: 7.5px; }
 
-/* Real backend-generated waveform. Height matches the decorative three-band
-   block so swapping between them never shifts the player layout. */
+/* Real backend-generated waveform. Height matches the truthful empty state
+   below so swapping between them never shifts the player layout. */
 .track-waveform {
   min-width: 0;
   height: 46px;
@@ -319,15 +316,37 @@ textarea {
 .track-waveform canvas { display: block; width: 100%; height: 100%; }
 .track-waveform--inactive { opacity: .62; }
 
-/* Seek surface: wraps whichever waveform visual is showing (real or
-   decorative fallback) with a transparent native range input stretched over
-   the full box. Seeking works identically for both, since it is fundamentally
+/* Truthful "no waveform" visual: a thin muted center line only, never a
+   fake spectral shape. Same box height as .track-waveform so the real and
+   empty states swap without shifting layout. */
+.empty-waveform {
+  min-width: 0;
+  height: 46px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.018);
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.empty-waveform-line {
+  display: block;
+  width: 100%;
+  height: 1px;
+  background: rgba(133, 158, 184, 0.22);
+}
+
+.empty-waveform--inactive { opacity: .62; }
+
+/* Seek surface: wraps whichever waveform visual is showing (real or empty)
+   with a transparent native range input stretched over the full box.
+   Seeking works identically for both, since it is fundamentally
    a player capability, not a waveform-generation capability. The visuals are
    pointer-events:none so the range is the sole interaction target — one
    semantic seek control, not two duplicate accessible sliders. */
 .persistent-player-wave-surface { position: relative; min-width: 0; }
 .persistent-player-wave-surface .track-waveform,
-.persistent-player-wave-surface .three-band-waveform {
+.persistent-player-wave-surface .empty-waveform {
   pointer-events: none;
 }
 
@@ -7654,10 +7673,8 @@ tr.row--selected td {
 }
 
 /* Keeps layout stable when swapping between the real waveform and the
-   decorative fallback, mirroring the persistent player's own sizing. */
+   truthful empty state, mirroring the persistent player's own sizing. */
 .lib-inspector-waveform { min-width: 0; }
-.lib-inspector-waveform .three-band-waveform { padding: 8px 9px; }
-.lib-inspector-waveform .three-band-waveform-segments { height: 13px; }
 
 .lib-inspector-note {
   display: block;

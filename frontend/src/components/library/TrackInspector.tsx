@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AudioWaveform, Loader2, Pause, Play } from 'lucide-react'
-import ThreeBandWaveform from '../player/ThreeBandWaveform'
+import EmptyWaveform from '../player/EmptyWaveform'
 import TrackWaveform from '../player/TrackWaveform'
 import { presentWaveformState } from '../player/waveformGeometry'
 import { usePersistentPlayer } from '../player/usePersistentPlayer'
@@ -271,7 +271,7 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
               upcomingIntensity={isCurrentTrack && isPlaying ? undefined : 1}
             />
           ) : (
-            <ThreeBandWaveform seed={track?.id ?? 0} inactive={!track} compact />
+            <EmptyWaveform inactive={!track} />
           )}
         </div>
         {showWaveformState && (
@@ -290,7 +290,7 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
                 aria-label="Generate waveform for this track"
               >
                 <AudioWaveform size={11} aria-hidden="true" />
-                Generate waveform
+                {presentation.actionLabel}
               </button>
             )}
             {presentation.canCancel && (

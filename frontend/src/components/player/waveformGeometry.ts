@@ -166,6 +166,8 @@ export interface WaveformPresentation {
   message: string
   /** Show the explicit "Generate waveform" action. */
   canGenerate: boolean
+  /** Label for the generate action, when shown ("Generate waveform" or "Retry"). */
+  actionLabel: string
   /** Show the cancel-generation action. */
   canCancel: boolean
   /** Generation is actively queued or running. */
@@ -173,6 +175,9 @@ export interface WaveformPresentation {
   /** This is a degraded state the user should notice, not a neutral one. */
   degraded: boolean
 }
+
+const GENERATE_LABEL = 'Generate waveform'
+const RETRY_LABEL = 'Retry'
 
 /**
  * Map a lifecycle state to player UI.
@@ -187,17 +192,18 @@ export function presentWaveformState(
 ): WaveformPresentation {
   switch (status) {
     case 'loading':
-      return { message: 'Checking waveform…', canGenerate: false, canCancel: false, busy: false, degraded: false }
+      return { message: 'Checking waveform…', canGenerate: false, actionLabel: GENERATE_LABEL, canCancel: false, busy: false, degraded: false }
     case 'ready':
-      return { message: '', canGenerate: false, canCancel: false, busy: false, degraded: false }
+      return { message: '', canGenerate: false, actionLabel: GENERATE_LABEL, canCancel: false, busy: false, degraded: false }
     case 'queued':
-      return { message: 'Waveform queued', canGenerate: false, canCancel: true, busy: true, degraded: false }
+      return { message: 'Waveform queued', canGenerate: false, actionLabel: GENERATE_LABEL, canCancel: true, busy: true, degraded: false }
     case 'processing':
-      return { message: 'Generating waveform…', canGenerate: false, canCancel: true, busy: true, degraded: false }
+      return { message: 'Generating waveform…', canGenerate: false, actionLabel: GENERATE_LABEL, canCancel: true, busy: true, degraded: false }
     case 'not_generated':
       return {
-        message: 'No waveform yet',
+        message: 'Waveform not generated',
         canGenerate: generationAvailable,
+        actionLabel: GENERATE_LABEL,
         canCancel: false,
         busy: false,
         degraded: false,
@@ -206,6 +212,7 @@ export function presentWaveformState(
       return {
         message: 'Waveform out of date',
         canGenerate: generationAvailable,
+        actionLabel: GENERATE_LABEL,
         canCancel: false,
         busy: false,
         degraded: false,
@@ -214,14 +221,16 @@ export function presentWaveformState(
       return {
         message: 'Waveform generation cancelled',
         canGenerate: generationAvailable,
+        actionLabel: GENERATE_LABEL,
         canCancel: false,
         busy: false,
         degraded: false,
       }
     case 'failed':
       return {
-        message: "Couldn't generate waveform",
+        message: 'Waveform generation failed',
         canGenerate: generationAvailable,
+        actionLabel: RETRY_LABEL,
         canCancel: false,
         busy: false,
         degraded: true,
@@ -230,11 +239,12 @@ export function presentWaveformState(
       return {
         message: 'Waveform unavailable for this format',
         canGenerate: false,
+        actionLabel: GENERATE_LABEL,
         canCancel: false,
         busy: false,
         degraded: true,
       }
     default:
-      return { message: '', canGenerate: false, canCancel: false, busy: false, degraded: false }
+      return { message: '', canGenerate: false, actionLabel: GENERATE_LABEL, canCancel: false, busy: false, degraded: false }
   }
 }

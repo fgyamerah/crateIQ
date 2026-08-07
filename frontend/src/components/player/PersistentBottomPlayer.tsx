@@ -13,7 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useTrackWaveform } from '../../hooks/useTrackWaveform'
-import ThreeBandWaveform from './ThreeBandWaveform'
+import EmptyWaveform from './EmptyWaveform'
 import TrackWaveform from './TrackWaveform'
 import { presentWaveformState } from './waveformGeometry'
 import { usePersistentPlayer } from './usePersistentPlayer'
@@ -115,7 +115,7 @@ export default function PersistentBottomPlayer() {
                 inactive={!player.playing}
               />
             ) : (
-              <ThreeBandWaveform seed={track.id} inactive={!player.playing} compact />
+              <EmptyWaveform inactive={!player.playing} />
             )}
             {/* The waveform visual is presentation only (pointer-events: none in
                 CSS); this native range is the single seek control and interaction
@@ -155,7 +155,7 @@ export default function PersistentBottomPlayer() {
                   aria-label="Generate waveform for the current track"
                 >
                   <AudioWaveform size={11} aria-hidden="true" />
-                  Generate waveform
+                  {presentation.actionLabel}
                 </button>
               )}
               {presentation.canCancel && (
@@ -192,7 +192,7 @@ export default function PersistentBottomPlayer() {
                   ? 'Loading browser preview…'
                   : isReady
                     ? 'Browser preview · real waveform'
-                    : 'Browser preview · placeholder visual'}
+                    : 'Browser preview · waveform not generated'}
               </span>
             )}
           </div>
