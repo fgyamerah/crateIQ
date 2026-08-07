@@ -202,6 +202,41 @@ CREATE INDEX IF NOT EXISTS idx_publish_operations_status
     ON publish_operations(status);
 CREATE INDEX IF NOT EXISTS idx_publish_operations_type
     ON publish_operations(operation_type);
+
+-- Persisted history for explicit, confirmed bulk waveform generation runs
+-- ("Generate missing waveforms" on the Jobs page). Mirrors the
+-- analysis_operations / publish_operations privacy and lifecycle contract:
+-- app-owned, never in the trusted pipeline processed.db, and a row is
+-- created only for a confirmed run that is genuinely about to begin work --
+-- read-only previews are never persisted. No absolute source paths, cache
+-- paths, or content hashes are stored, only bounded counts.
+CREATE TABLE IF NOT EXISTS waveform_operations (
+    id                TEXT    PRIMARY KEY,
+    operation_type    TEXT    NOT NULL DEFAULT 'generate_missing'
+                               CHECK (operation_type IN ('generate_missing')),
+    status            TEXT    NOT NULL DEFAULT 'running'
+                               CHECK (status IN (
+                                   'running', 'completed', 'failed', 'cancelled'
+                               )),
+    total_tracks      INTEGER NOT NULL DEFAULT 0,
+    eligible_total    INTEGER NOT NULL DEFAULT 0,
+    processed         INTEGER NOT NULL DEFAULT 0,
+    generated         INTEGER NOT NULL DEFAULT 0,
+    skipped           INTEGER NOT NULL DEFAULT 0,
+    failed            INTEGER NOT NULL DEFAULT 0,
+    remaining_missing INTEGER,
+    cancel_requested  INTEGER NOT NULL DEFAULT 0
+                               CHECK (cancel_requested IN (0, 1)),
+    error_reason      TEXT,
+    created_at        TEXT    NOT NULL,
+    started_at        TEXT,
+    finished_at       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_waveform_operations_created
+    ON waveform_operations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_waveform_operations_status
+    ON waveform_operations(status);
 """
 
 

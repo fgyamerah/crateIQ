@@ -44,10 +44,11 @@ from .api.routes import sync as sync_router
 from .api.routes import smart_crates as smart_crates_router
 from .api.routes import tracks as tracks_router
 from .api.routes import waveforms as waveforms_router
+from .api.routes import waveform_bulk as waveform_bulk_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
 from .services import analysis_operations_service, publish_operations_service, read_only as read_only_service
-from .services import waveform_cache_service, waveform_job_service
+from .services import waveform_cache_service, waveform_job_service, waveform_operations_service
 from .services.waveform_readiness_service import (
     WaveformRuntimeError,
     resolve_cache_runtime,
@@ -116,6 +117,15 @@ async def lifespan(app: FastAPI):
         publish_operations_service.recover_interrupted_operations()
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("publish operation recovery skipped")
+
+    # Close out any bulk waveform generation ("Generate missing waveforms")
+    # operation left 'running' by a previous process. Already-generated
+    # waveform caches remain valid; a later Generate Missing run simply
+    # continues with the remaining tracks.
+    try:
+        waveform_operations_service.recover_interrupted_operations()
+    except Exception:  # pragma: no cover - recovery must never block startup
+        log.exception("waveform bulk operation recovery skipped")
 
     # Lightweight cache reconciliation: sweep abandoned temp files and repair
     # tracks claiming a `ready` artifact whose file is gone. This touches only
@@ -218,6 +228,7 @@ app.include_router(jobs_router.router,       prefix=API_PREFIX)
 app.include_router(library_router.router,    prefix=API_PREFIX)
 app.include_router(tracks_router.router,     prefix=API_PREFIX)
 app.include_router(waveforms_router.router,  prefix=API_PREFIX)
+app.include_router(waveform_bulk_router.router, prefix=API_PREFIX)
 app.include_router(insights_router.router,    prefix=API_PREFIX)
 app.include_router(analysis_router.router,   prefix=API_PREFIX)
 app.include_router(beets_review_router.router, prefix=API_PREFIX)

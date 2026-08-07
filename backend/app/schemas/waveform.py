@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class WaveformEngineCapability(BaseModel):
@@ -117,3 +117,61 @@ class WaveformCacheClearResponse(BaseModel):
     reset_track_states: int
     remaining_files: int
     current_cache_bytes: int
+
+
+# ---------------------------------------------------------------------------
+# Bulk "Generate missing waveforms" (Waveform Jobs Stage 2)
+#
+# Read-only preview plus a persisted, app-owned parent-operation history.
+# Never carries a source path, cache path, or content hash.
+# ---------------------------------------------------------------------------
+
+
+class WaveformBulkPreviewResponse(BaseModel):
+    """Truthful, side-effect-free counts. Never enqueues a job."""
+
+    total_tracks: int
+    ready: int
+    missing: int
+    generating: int
+    failed: int
+    unsupported: int
+    eligible_to_generate: int
+
+
+class WaveformBulkStartResponse(BaseModel):
+    id: str
+    total_tracks: int
+    eligible_total: int
+
+
+WaveformBulkOperationStatus = Literal["running", "completed", "failed", "cancelled"]
+
+
+class WaveformBulkOperation(BaseModel):
+    """A persisted, app-owned record of one explicit, confirmed bulk run.
+
+    Lives in the backend's own jobs.db -- never in the trusted pipeline
+    processed.db. Read-only previews are never persisted; only a confirmed
+    run that began work creates one of these.
+    """
+
+    id: str
+    operation_type: Literal["generate_missing"]
+    status: WaveformBulkOperationStatus
+    total_tracks: int
+    eligible_total: int
+    processed: int
+    generated: int
+    skipped: int
+    failed: int
+    remaining_missing: Optional[int] = None
+    cancel_requested: bool
+    error_reason: Optional[str] = None
+    created_at: str
+    started_at: Optional[str] = None
+    finished_at: Optional[str] = None
+
+
+class WaveformBulkHistoryResponse(BaseModel):
+    history: List[WaveformBulkOperation] = Field(default_factory=list)
