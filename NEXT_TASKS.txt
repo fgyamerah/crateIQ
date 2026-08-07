@@ -458,8 +458,21 @@ CURRENT FOCUS
          backend/app/services/analysis_operations_service.py (new),
          backend/app/services/analysis_jobs_service.py, backend/app/main.py,
          backend/app/schemas/analysis_jobs.py, tests/test_analysis_operations.py
-         (new), tests/test_backend_api.py. Next: expose operation detail +
-         a cancel endpoint (Stage 2), then an Operations UI (Stage 3).
+         (new), tests/test_backend_api.py.
+         Stage 2/Cycle 2 (structured API): `GET
+         /api/analysis/jobs/history/{operation_id}` returns one operation's
+         full detail; `POST /api/analysis/jobs/history/{operation_id}/cancel`
+         requests cancellation (idempotent -- unknown id is 404, an
+         already-terminal or already-flagged operation just returns its
+         current record, never an error). The confirmed-run response now
+         carries `operation_id`/`cancelled` for direct traceability. The run
+         route is dispatched via `run_in_threadpool` instead of being
+         awaited inline, which is what actually lets a concurrent cancel
+         request reach the server while a batch is still executing -- without
+         it the event loop stayed blocked for the whole batch and
+         cancellation could never be serviced. Files:
+         backend/app/api/routes/analysis.py, tests/test_backend_api.py.
+         Next: an Operations UI (Stage 3).
 
 [x] (P1) Full functionality, workflow, dependency, and product-surface audit
          (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`

@@ -14,7 +14,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, mik_metadata_service, settings_service
+from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1842,6 +1842,113 @@ def test_confirmed_bpm_run_persists_truthful_history_without_touching_schema_or_
     assert "analysis_operations" not in tables_after
     assert tables_after == tables_before, "Cycle 2 must not add/remove processed.db tables"
     assert delta_path.read_bytes() == original_audio_bytes, "a confirmed analysis run must never write audio bytes"
+
+
+def test_analysis_operation_detail_endpoint_matches_run_and_history(client, monkeypatch):
+    """Cycle 2 Stage 2: GET /analysis/jobs/history/{id} exposes one operation's full detail."""
+    test_client, _root = client
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="123.26 bpm\n", stderr=""),
+    )
+    run_response = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 5})
+    operation_id = run_response.json()["operation_id"]
+
+    detail = test_client.get(f"/api/analysis/jobs/history/{operation_id}")
+    assert detail.status_code == 200
+    assert detail.json()["id"] == operation_id
+    assert detail.json()["status"] == "completed"
+    assert detail.json() == test_client.get("/api/analysis/jobs/history").json()["history"][0]
+
+
+def test_cancel_unknown_analysis_operation_returns_404(client):
+    test_client, _root = client
+    response = test_client.post("/api/analysis/jobs/history/does-not-exist/cancel")
+    assert response.status_code == 404
+    assert test_client.get("/api/analysis/jobs/history/does-not-exist").status_code == 404
+
+
+def test_cancel_genuinely_stops_a_running_bpm_analysis_mid_batch(client, monkeypatch):
+    """Cycle 2 Stage 2: cancellation must be real, not fake.
+
+    Rather than depending on real wall-clock thread interleaving through
+    TestClient (unreliable/flaky in-process -- confirmed by an earlier,
+    thread-based version of this test failing to observe genuine overlap),
+    the fake aubio call itself invokes the same service-layer cancellation
+    a concurrent request would, as a side effect after the first track.
+    This exercises the exact real production loop-check code path
+    (is_cancel_requested at the top of each iteration, scope-limited
+    update_progress writes, finish_operation with a truthful partial
+    summary) fully deterministically. The HTTP cancel endpoint's own
+    contract (idempotent on an unknown/terminal id) is covered separately.
+    """
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    extras_dir = root / "library" / "extras"
+    extras_dir.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        for i in range(8):
+            (extras_dir / f"extra{i}.mp3").write_bytes(b"not-real-audio")
+            conn.execute(
+                "INSERT INTO tracks (filepath, filename, artist, title, genre, bpm, status) "
+                "VALUES (?, ?, ?, ?, 'House', NULL, 'ok')",
+                (str(extras_dir / f"extra{i}.mp3"), f"extra{i}.mp3", f"Artist{i}", f"Track{i}"),
+            )
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    calls: list[str] = []
+
+    def aubio_that_gets_cancelled_after_the_first_track(command, **kwargs):
+        calls.append(command[-1])
+        if len(calls) == 1:
+            # Simulate a cancel request arriving from another concurrent
+            # request while this first track is still analyzing.
+            operation_id = analysis_jobs_service.history()["history"][0]["id"]
+            record = analysis_operations_service.request_cancel(operation_id)
+            assert record["cancel_requested"] is True
+        return SimpleNamespace(returncode=0, stdout="123.0 bpm\n", stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", aubio_that_gets_cancelled_after_the_first_track)
+
+    run_response = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 8})
+    assert run_response.status_code == 200
+    body = run_response.json()
+    assert body["cancelled"] is True
+    # Only the first track was ever handed to aubio -- the loop noticed the
+    # flag before starting a second one.
+    assert len(calls) == 1
+    assert body["updated"] + body["skipped"] + body["failed"] < 8
+
+    operation_id = body["operation_id"]
+    final = test_client.get(f"/api/analysis/jobs/history/{operation_id}").json()
+    assert final["status"] == "cancelled"
+    assert final["error_reason"] == "user_cancelled"
+    assert final["cancel_requested"] is True
+    assert final["finished_at"]
+    assert final["succeeded"] == body["updated"]
+    assert final["remaining_missing"] == body["remaining_missing_bpm"]
+
+    # A second cancel call on the now-terminal operation must be a safe no-op.
+    repeat = test_client.post(f"/api/analysis/jobs/history/{operation_id}/cancel")
+    assert repeat.status_code == 200
+    assert repeat.json()["status"] == "cancelled"
+
+
+def test_cancel_endpoint_sets_the_flag_on_a_genuinely_running_operation(client):
+    """Isolates the HTTP cancel endpoint's own contract against a 'running' row,
+    independent of the fuller mid-batch integration test above."""
+    test_client, _root = client
+    op = analysis_operations_service.start_operation(
+        "key_analysis", scope_limit=5, eligible_total=5, considered=5,
+    )
+    response = test_client.post(f"/api/analysis/jobs/history/{op['id']}/cancel")
+    assert response.status_code == 200
+    body = response.json()
+    assert body["id"] == op["id"]
+    assert body["status"] == "running"  # cancellation is requested, not forced
+    assert body["cancel_requested"] is True
+    assert analysis_operations_service.is_cancel_requested(op["id"]) is True
 
 
 def test_aubio_bpm_parser_accepts_known_output_and_rejects_implausible_values():

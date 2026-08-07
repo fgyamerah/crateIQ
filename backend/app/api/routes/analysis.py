@@ -24,6 +24,7 @@ import logging
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 
 from ...schemas.bpm_analysis import (
     BpmAnomalyResponse,
@@ -34,6 +35,7 @@ from ...schemas.bpm_analysis import (
 )
 from ...schemas.job import JobResponse
 from ...schemas.analysis_jobs import (
+    AnalysisOperation,
     BpmAnalysisRunRequest,
     BpmAnalysisRunResult,
     KeyAnalysisRunRequest,
@@ -63,8 +65,33 @@ async def list_analysis_jobs() -> AnalysisJobListResponse:
 
 @router.get("/analysis/jobs/history", response_model=AnalysisJobHistoryResponse)
 async def get_analysis_job_history() -> AnalysisJobHistoryResponse:
-    """Return persisted analysis history once a safe runner exists."""
+    """Return persisted history of explicit, confirmed analysis runs."""
     return AnalysisJobHistoryResponse(**analysis_jobs_service.history())
+
+
+@router.get("/analysis/jobs/history/{operation_id}", response_model=AnalysisOperation)
+async def get_analysis_operation(operation_id: str) -> AnalysisOperation:
+    """Return one persisted analysis operation's full detail."""
+    try:
+        return AnalysisOperation(**analysis_jobs_service.operation_detail(operation_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+
+@router.post("/analysis/jobs/history/{operation_id}/cancel", response_model=AnalysisOperation)
+async def cancel_analysis_operation(operation_id: str) -> AnalysisOperation:
+    """Request cancellation of a running analysis operation.
+
+    Idempotent: cancelling an already-cancelled or already-terminal
+    operation simply returns its current (unchanged) record rather than
+    erroring. The still-running loop notices the flag between tracks and
+    closes itself out -- this endpoint only requests that; it does not
+    forcibly kill anything.
+    """
+    try:
+        return AnalysisOperation(**analysis_jobs_service.cancel_operation(operation_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
 
 
 @router.get("/analysis/jobs/{job_type}/preview", response_model=AnalysisJobPreview)
@@ -78,9 +105,15 @@ async def preview_analysis_job(job_type: str) -> AnalysisJobPreview:
 
 @router.post("/analysis/jobs/{job_type}/run", response_model=BpmAnalysisRunResult | KeyAnalysisRunResult)
 async def run_analysis_job(job_type: str, body: BpmAnalysisRunRequest | KeyAnalysisRunRequest = BpmAnalysisRunRequest()):
-    """Run only explicitly confirmed safe DB-only analysis workflows."""
+    """Run only explicitly confirmed safe DB-only analysis workflows.
+
+    Dispatched to a thread pool (not awaited inline) so a blocking BPM/key
+    run cannot stall the event loop -- this is what lets a concurrent GET on
+    /history/{id} or a POST .../cancel actually be serviced while a run is
+    still in progress.
+    """
     try:
-        result = analysis_jobs_service.run(job_type, confirm=body.confirm, limit=body.limit)
+        result = await run_in_threadpool(analysis_jobs_service.run, job_type, confirm=body.confirm, limit=body.limit)
         return BpmAnalysisRunResult(**result) if job_type == "bpm_analysis" else KeyAnalysisRunResult(**result)
     except ValueError as exc:
         status_code = 404 if "Unknown" in str(exc) else 422

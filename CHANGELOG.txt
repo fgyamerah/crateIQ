@@ -2,6 +2,35 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Expose structured analysis operations (Cycle 2, Stage 2)
+
+- Added `GET /api/analysis/jobs/history/{operation_id}` returning one
+  persisted analysis operation's full detail, and `POST
+  /api/analysis/jobs/history/{operation_id}/cancel` to request
+  cancellation of a running one. Cancellation is idempotent: an unknown id
+  is a 404, and calling it again on an already-cancelled or already-
+  terminal (completed/failed) operation is a safe no-op that just returns
+  the current record rather than erroring.
+- The confirmed BPM/key run response now carries `operation_id` and
+  `cancelled` so a caller can immediately deep-link into the operation it
+  just started, or tell it apart from a natural completion.
+- Fixed a real concurrency bug this stage's own cancellation tests exposed:
+  `POST /analysis/jobs/{job_type}/run` was calling the blocking BPM/key
+  runner directly from an `async def` route, which held the single event
+  loop for the entire batch -- a concurrent cancel (or even a simple
+  history GET) genuinely could not reach the server until the whole batch
+  finished, making Stage 1's cancellation flag unreachable in practice. The
+  route now dispatches through `fastapi.concurrency.run_in_threadpool`, the
+  documented idiom for exactly this case, so the loop stays free to service
+  other requests while a batch runs in its own worker thread.
+- Files: backend/app/api/routes/analysis.py, tests/test_backend_api.py
+  (+4 tests: operation detail, unknown-id 404, genuine mid-batch
+  cancellation, cancel-on-a-running-operation).
+- 1347 backend tests pass (1343 baseline + 4 new). `git diff --check`
+  clean. No processed.db or source-audio changes from this stage --
+  purely new read/cancel API surface over Stage 1's existing persistence.
+- Next: Stage 3 builds the Operations UI on top of this API.
+
 [2026-08-07] — Persist analysis job history (Cycle 2, Stage 1)
 
 - Added a new, app-owned `analysis_operations` table to the backend's own

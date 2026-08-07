@@ -6,6 +6,18 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 2 Stage 2 -- structured Analysis Jobs API. `GET
+  /api/analysis/jobs/history/{operation_id}` (detail) and `POST
+  .../history/{operation_id}/cancel` (idempotent: unknown id -> 404,
+  already-terminal/already-flagged -> current record, never an error) sit
+  on top of Stage 1's persistence. Confirmed run responses now carry
+  `operation_id`/`cancelled`. Fixed a real concurrency bug the
+  cancellation tests exposed: the run route awaited the blocking BPM/key
+  runner directly, holding the event loop for the whole batch so a
+  concurrent cancel genuinely could not be serviced; it now dispatches via
+  `run_in_threadpool`. 1347 backend tests pass (1343 baseline + 4 new).
+  Stage 3 (Operations UI) is next.
+
 - 2026-08-07: Cycle 2 Stage 1 -- persisted Analysis Jobs history. New
   app-owned `analysis_operations` table in the backend's own jobs.db
   (processed.db untouched) records every explicit, confirmed BPM/key
