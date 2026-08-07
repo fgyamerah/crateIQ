@@ -10,6 +10,7 @@ import LogModal from '../components/LogModal'
 import EmptyState from '../components/ui/EmptyState'
 import StatusStrip from '../components/ui/StatusStrip'
 import AnalysisJobsCatalog from '../components/analysis/AnalysisJobsCatalog'
+import WaveformGenerationCard from '../components/waveform/WaveformGenerationCard'
 import { isActive } from '../types/job'
 import type { Job } from '../types/job'
 
@@ -222,6 +223,10 @@ export default function Jobs() {
 
       <section className="section">
         <AnalysisJobsCatalog />
+      </section>
+
+      <section className="section">
+        <WaveformGenerationCard />
       </section>
 
       <section className="section">
