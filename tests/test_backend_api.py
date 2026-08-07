@@ -1700,6 +1700,178 @@ def test_publish_readiness_has_no_side_effects(client, tmp_path, monkeypatch):
     assert tracks_after == 4
 
 
+def _crate_with_one_track(test_client, name="Guarded Export"):
+    crate = test_client.post("/api/crates", json={"name": name}).json()
+    track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
+    assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
+    return crate, track_id
+
+
+def test_publish_export_preview_is_side_effect_free(client):
+    test_client, root = client
+    crate, _track_id = _crate_with_one_track(test_client, "Preview Only")
+
+    exports_dir = root / "exports"
+    before = exports_dir.exists()
+
+    preview = test_client.get(
+        f"/api/publish/export/{crate['id']}/preview", params={"export_target": "m3u8"}
+    )
+    assert preview.status_code == 200
+    payload = preview.json()
+    assert payload["crate_id"] == crate["id"]
+    assert payload["track_count"] == 1
+    assert payload["target_exists"] is False
+    assert payload["proposed_filename"].endswith(".m3u8")
+    assert payload["no_overwrite"] is True
+    assert payload["confirmation_required"] is True
+    assert payload["blockers"] == []
+
+    after = exports_dir.exists()
+    assert before == after  # preview never creates the exports directory
+
+
+def test_publish_export_requires_explicit_confirmation(client):
+    test_client, _root = client
+    crate, _track_id = _crate_with_one_track(test_client, "No Confirm")
+
+    response = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "m3u8", "confirm": False}
+    )
+    assert response.status_code == 409
+    assert "confirm" in response.json()["detail"].lower()
+
+
+def test_publish_export_blocks_empty_crate(client):
+    test_client, _root = client
+    crate = test_client.post("/api/crates", json={"name": "Empty Guarded"}).json()
+
+    response = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "m3u8", "confirm": True}
+    )
+    assert response.status_code == 409
+    assert "no tracks" in response.json()["detail"].lower()
+
+
+def test_publish_export_rejects_unsupported_format(client):
+    test_client, _root = client
+    crate, _track_id = _crate_with_one_track(test_client, "Bad Format Guarded")
+
+    response = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "flac", "confirm": True}
+    )
+    assert response.status_code == 422
+
+
+def test_publish_export_missing_crate_returns_404(client):
+    test_client, _root = client
+    preview = test_client.get("/api/publish/export/999999/preview", params={"export_target": "m3u8"})
+    assert preview.status_code == 404
+
+    confirmed = test_client.post(
+        "/api/publish/export/999999", json={"export_target": "m3u8", "confirm": True}
+    )
+    assert confirmed.status_code == 404
+
+
+def test_publish_export_confirmed_writes_verifies_and_records_history(client):
+    test_client, root = client
+    crate, track_id = _crate_with_one_track(test_client, "Confirmed Export")
+
+    audio_path = root / "library" / "house" / "confirmed.mp3"
+    audio_path.parent.mkdir(parents=True, exist_ok=True)
+    audio_path.write_bytes(b"source-audio-fixture-bytes")
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute("UPDATE tracks SET filepath = ? WHERE id = ?", (str(audio_path), track_id))
+
+    response = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "m3u8", "confirm": True}
+    )
+    assert response.status_code == 200
+    result = response.json()
+    assert result["written"] is True
+    assert result["verification_status"] == "verified"
+    assert result["track_count"] == 1
+    output_path = Path(result["output_path"])
+    assert output_path.is_file()
+    assert output_path.parent == root / "exports"
+
+    # Source audio is never touched by an export write.
+    assert audio_path.read_bytes() == b"source-audio-fixture-bytes"
+
+    operation_id = result["operation_id"]
+    op = test_client.get(f"/api/publish/operations/{operation_id}")
+    assert op.status_code == 200
+    op_payload = op.json()
+    assert op_payload["operation_type"] == "export"
+    assert op_payload["status"] == "completed"
+    assert op_payload["verification_status"] == "verified"
+    assert op_payload["crate_id"] == crate["id"]
+    assert op_payload["destination_relative"] == f"exports/{output_path.name}"
+    assert str(root) not in (op_payload["destination_relative"] or "")
+
+    listing = test_client.get("/api/publish/operations", params={"operation_type": "export"})
+    assert listing.status_code == 200
+    assert any(item["id"] == operation_id for item in listing.json())
+
+
+def test_publish_export_repeated_confirm_never_overwrites(client):
+    test_client, root = client
+    crate, _track_id = _crate_with_one_track(test_client, "Repeat Export")
+
+    first = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "m3u8", "confirm": True}
+    )
+    second = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "m3u8", "confirm": True}
+    )
+    assert first.status_code == 200 and second.status_code == 200
+    first_payload, second_payload = first.json(), second.json()
+    assert first_payload["operation_id"] != second_payload["operation_id"]
+    assert first_payload["output_path"] != second_payload["output_path"]
+    assert Path(first_payload["output_path"]).is_file()
+    assert Path(second_payload["output_path"]).is_file()
+
+
+def test_publish_export_confirmed_rekordbox_and_serato_verify(client):
+    test_client, root = client
+    crate, _track_id = _crate_with_one_track(test_client, "Staged Guarded")
+
+    rb = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "rekordbox_xml", "confirm": True}
+    )
+    assert rb.status_code == 200
+    rb_payload = rb.json()
+    assert rb_payload["verification_status"] == "verified"
+    assert Path(rb_payload["output_path"]).is_file()
+
+    se = test_client.post(
+        f"/api/publish/export/{crate['id']}", json={"export_target": "serato", "confirm": True}
+    )
+    assert se.status_code == 200
+    se_payload = se.json()
+    assert se_payload["verification_status"] == "verified"
+    assert Path(se_payload["output_path"]).is_dir()
+
+
+def test_publish_export_verify_detects_broken_artifact():
+    from backend.app.services import publish_export_service as svc
+
+    status, details = svc._verify("json", Path("/nonexistent/does-not-exist.json"), 3)
+    assert status == "failed"
+    assert "does not exist" in details[0].lower()
+
+
+def test_publish_export_verify_detects_json_track_count_mismatch(tmp_path):
+    from backend.app.services import publish_export_service as svc
+
+    broken = tmp_path / "broken.json"
+    broken.write_text(json.dumps({"tracks": [{"a": 1}]}), encoding="utf-8")
+    status, details = svc._verify("json", broken, 5)
+    assert status == "failed"
+    assert "mismatch" in details[0].lower()
+
+
 def test_preview_audio_serves_allowed_file_and_byte_ranges(client):
     test_client, root = client
     audio_path = root / "library" / "house" / "Muyè & Friends (Live).mp3"

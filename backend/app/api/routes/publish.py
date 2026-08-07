@@ -1,16 +1,30 @@
 """
 Publish routes.
 
-  GET /api/publish/readiness/{crate_id} — read-only readiness contract
-      composing existing crate export + SSD sync capabilities. Never
-      exports or syncs anything; deterministic and side-effect-free.
+  GET  /api/publish/readiness/{crate_id}     — read-only readiness contract
+  GET  /api/publish/export/{crate_id}/preview — export preview (no side effects)
+  POST /api/publish/export/{crate_id}         — confirmed, guarded export
+  GET  /api/publish/operations                — recent publish operations
+  GET  /api/publish/operations/{operation_id} — one operation's detail
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException
+from typing import List, Optional
 
-from ...schemas.publish import PublishExportTarget, PublishReadiness, PublishSyncSource
-from ...services import publish_readiness_service
+from fastapi import APIRouter, HTTPException, Query
+
+from ...schemas.export import CrateLineEndings, CratePathMode
+from ...schemas.publish import (
+    PublishExportPreview,
+    PublishExportRequest,
+    PublishExportResult,
+    PublishExportTarget,
+    PublishOperationSummary,
+    PublishReadiness,
+    PublishSyncSource,
+)
+from ...services import publish_export_service, publish_operations_service, publish_readiness_service
+from ...services.publish_export_service import PublishExportBlocked
 
 router = APIRouter(tags=["publish"])
 
@@ -32,3 +46,65 @@ async def get_publish_readiness(
     if result is None:
         raise HTTPException(status_code=404, detail="Crate not found")
     return result
+
+
+@router.get("/publish/export/{crate_id}/preview", response_model=PublishExportPreview)
+async def preview_publish_export(
+    crate_id: int,
+    export_target: PublishExportTarget = "m3u8",
+    path_mode: CratePathMode = "filename",
+    include_metadata: bool = True,
+    line_endings: CrateLineEndings = "lf",
+) -> PublishExportPreview:
+    """
+    Preview a guarded export without writing anything.
+
+    Delegates to the existing per-format preview (crate/Rekordbox/Serato)
+    and adds the exact would-be output path so the UI can show it before
+    the user confirms.
+    """
+    result = publish_export_service.preview(crate_id, export_target, path_mode, include_metadata, line_endings)
+    if result is None:
+        raise HTTPException(status_code=404, detail="Crate not found")
+    return result
+
+
+@router.post("/publish/export/{crate_id}", response_model=PublishExportResult)
+async def confirm_publish_export(crate_id: int, body: PublishExportRequest) -> PublishExportResult:
+    """
+    Execute a guarded export. Requires body.confirm == true.
+
+    Persists the confirmed operation to the publish operations history and
+    verifies the artifact after writing; verification failure is reported
+    separately from execution failure.
+    """
+    try:
+        result = publish_export_service.execute(
+            crate_id,
+            body.export_target,
+            body.path_mode,
+            body.include_metadata,
+            body.line_endings,
+            confirm=body.confirm,
+        )
+    except PublishExportBlocked as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+    if result is None:
+        raise HTTPException(status_code=404, detail="Crate not found")
+    return result
+
+
+@router.get("/publish/operations", response_model=List[PublishOperationSummary])
+async def list_publish_operations(
+    limit: int = Query(default=50, ge=1, le=200),
+    operation_type: Optional[str] = Query(default=None, pattern="^(export|sync)$"),
+) -> List[PublishOperationSummary]:
+    return [PublishOperationSummary(**row) for row in publish_operations_service.list_recent(limit, operation_type)]
+
+
+@router.get("/publish/operations/{operation_id}", response_model=PublishOperationSummary)
+async def get_publish_operation(operation_id: str) -> PublishOperationSummary:
+    row = publish_operations_service.get_operation(operation_id)
+    if row is None:
+        raise HTTPException(status_code=404, detail="Publish operation not found")
+    return PublishOperationSummary(**row)

@@ -73,16 +73,31 @@ def _render(request, crate, rows, warnings, newline: str) -> str:
     return newline.join(lines) + newline
 
 
+def export_suffix(format: str) -> str:
+    return ".m3u8" if format == "m3u8" else f".{format}"
+
+
+def next_output_path(export_dir: Path, crate_name: str, suffix: str) -> Path:
+    """Return the next collision-free candidate path, without creating it.
+
+    Pure/read-only (only probes existence) so it is safe to call from a
+    preview. The actual write() call below re-derives its own candidate at
+    write time, so no-overwrite safety never depends on a stale preview.
+    """
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    candidate = export_dir / f"{_safe_name(crate_name)}_{stamp}{suffix}"
+    counter = 2
+    while candidate.exists():
+        candidate = export_dir / f"{_safe_name(crate_name)}_{stamp}_{counter}{suffix}"
+        counter += 1
+    return candidate
+
+
 def write(crate_id: int, request: CrateExportRequest) -> CrateExportResult | None:
     result = preview(crate_id, request)
     if result is None: return None
     root = selected_library_root(); export_dir = assert_path_under_root(root / "exports", root)
     export_dir.mkdir(parents=True, exist_ok=True)
-    suffix = ".m3u8" if request.format == "m3u8" else f".{request.format}"
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-    candidate = export_dir / f"{_safe_name(result.crate_name)}_{stamp}{suffix}"
-    counter = 2
-    while candidate.exists():
-        candidate = export_dir / f"{_safe_name(result.crate_name)}_{stamp}_{counter}{suffix}"; counter += 1
+    candidate = next_output_path(export_dir, result.crate_name, export_suffix(request.format))
     candidate.write_text(result.content, encoding="utf-8", newline="")
     return CrateExportResult(**result.model_dump(), output_path=str(candidate))

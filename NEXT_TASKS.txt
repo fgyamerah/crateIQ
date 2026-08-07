@@ -39,6 +39,15 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P1) Cycle 3 Stage 2 -- Guarded publish export flow (2026-08-07)
+    `publish_export_service.py` unifies the existing crate exporters
+    (portable/Rekordbox XML/Serato) behind validate -> preview -> confirm
+    -> execute -> verify. Preview is side-effect-free; execute requires
+    body.confirm=true; confirmed writes are recorded in a new
+    `publish_operations` jobs.db table (root-relative destination only)
+    and verified afterward (existence + format-specific shape), with
+    verification failure reported separately from execution failure. See
+    CHANGELOG.txt for full detail. 1365 backend tests pass.
 [x] (P1) Cycle 3 Stage 1 -- Publish readiness contract (2026-08-07)
     `GET /api/publish/readiness/{crate_id}` composes the existing crate
     export services and SSD sync config into one read-only readiness
@@ -46,10 +55,10 @@ CURRENT FOCUS
     confirmation_required, next_operation) without exporting or syncing
     anything. See CHANGELOG.txt for full detail. 1355 backend tests pass.
 [~] (P1) Cycle 3 -- Guided Publish, Export, and SSD Sync (roadmap Phase 7)
-    Stage 1 (readiness) done. Remaining: Stage 2 (guarded export
-    preview/execute/verify + operations history), Stage 3 (guarded SSD
-    sync preview/execute/verify, fixture-only tests, no --delete
-    default), Stage 4 (Guided Publish UI), Stage 5 (final safety audit).
+    Stages 1 (readiness) and 2 (guarded export) done. Remaining: Stage 3
+    (guarded SSD sync preview/execute/verify, fixture-only tests, no
+    --delete default), Stage 4 (Guided Publish UI), Stage 5 (final safety
+    audit).
 
 [x] (P1) Crate/set-building improvements: transition context + funnel feedback
     (2026-08-07). Manual Crates now show a deterministic, explainable

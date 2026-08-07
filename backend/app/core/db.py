@@ -159,6 +159,48 @@ CREATE INDEX IF NOT EXISTS idx_analysis_operations_created
     ON analysis_operations(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_analysis_operations_status
     ON analysis_operations(status);
+
+-- Persisted history for explicit, confirmed Guided Publish operations
+-- (crate export and SSD sync). A row is created only for a confirmed
+-- operation that actually attempted a write -- readiness/preview calls are
+-- never persisted here. No absolute source/destination paths are stored,
+-- only a root-relative or category destination string, matching the
+-- analysis_operations privacy contract above.
+CREATE TABLE IF NOT EXISTS publish_operations (
+    id                   TEXT    PRIMARY KEY,
+    operation_type       TEXT    NOT NULL
+                                  CHECK (operation_type IN ('export', 'sync')),
+    export_target        TEXT,
+    sync_source          TEXT,
+    mode                 TEXT    NOT NULL DEFAULT 'apply',
+    status                TEXT   NOT NULL DEFAULT 'running'
+                                  CHECK (status IN (
+                                      'running', 'completed', 'failed', 'cancelled'
+                                  )),
+    crate_id             INTEGER,
+    crate_name           TEXT,
+    scope                TEXT,
+    track_count          INTEGER NOT NULL DEFAULT 0,
+    destination_relative TEXT,
+    result               TEXT,
+    verification_status  TEXT
+                                  CHECK (verification_status IS NULL OR verification_status IN (
+                                      'verified', 'failed', 'skipped'
+                                  )),
+    verification_details_json TEXT,
+    warnings_json         TEXT,
+    error_reason           TEXT,
+    created_at            TEXT   NOT NULL,
+    started_at            TEXT,
+    finished_at            TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_publish_operations_created
+    ON publish_operations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_publish_operations_status
+    ON publish_operations(status);
+CREATE INDEX IF NOT EXISTS idx_publish_operations_type
+    ON publish_operations(operation_type);
 """
 
 

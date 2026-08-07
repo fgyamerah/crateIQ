@@ -6,6 +6,36 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 3 Stage 2 -- Guarded publish export flow.
+  `publish_export_service.py` orchestrates the existing crate exporters
+  (portable CSV/JSON/M3U/M3U8 via `crate_export_service`, staged
+  Rekordbox XML, staged Serato handoff) behind one explicit validate ->
+  preview -> confirm -> execute -> verify lifecycle, reusing every
+  existing renderer/no-overwrite-naming implementation unchanged.
+  `GET /api/publish/export/{crate_id}/preview` never creates the exports
+  directory; `POST /api/publish/export/{crate_id}` requires
+  `confirm: true` (else 409) and re-checks blockers immediately before
+  writing (empty crate -> 409). Confirmed writes are recorded in a new
+  `publish_operations` jobs.db table (mirrors Cycle 2's
+  `analysis_operations`: running -> terminal status, restart-recovery,
+  root-relative destination only, never an absolute path) and verified
+  afterward -- portable formats check file existence/shape, Rekordbox
+  checks `COLLECTION Entries` against track_count, Serato checks both
+  staged files and the manifest's track_count. Verification failure is
+  reported separately from execution failure, never silently upgraded to
+  success. `crate_export_service.write()`'s inline naming loop was
+  factored into a pure `next_output_path()` (identical behavior; all
+  pre-existing crate/serato/rekordbox export tests still pass unchanged)
+  so preview can disclose the same path write() would use. Files:
+  `backend/app/services/publish_export_service.py`,
+  `backend/app/services/publish_operations_service.py`,
+  `backend/app/services/crate_export_service.py`, `backend/app/core/
+  db.py`, `backend/app/schemas/publish.py`, `backend/app/api/routes/
+  publish.py`, `backend/app/main.py`, `tests/test_backend_api.py`. 1365
+  backend tests pass (1355 baseline + 10 new). No source audio, tag,
+  BPM/key/cue, or MIK data touched; no live Rekordbox/Serato database
+  written. Stage 3 (guarded SSD sync) is next.
+
 - 2026-08-07: Cycle 3 Stage 1 -- Publish readiness contract (roadmap
   Phase 7 begins). New `GET /api/publish/readiness/{crate_id}` is a
   read-only snapshot composing the existing crate export services

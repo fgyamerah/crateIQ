@@ -2,6 +2,52 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Add guarded publish export flow (Cycle 3, Stage 2)
+
+- New `publish_export_service.py` orchestrates the existing crate
+  exporters (portable CSV/JSON/M3U/M3U8, staged Rekordbox XML, staged
+  Serato handoff) behind one explicit validate -> preview -> confirm ->
+  execute -> verify lifecycle, without reimplementing any format
+  rendering or output-path collision avoidance. `GET
+  /api/publish/export/{crate_id}/preview` is side-effect-free (never
+  creates the exports directory) and discloses the exact would-be output
+  path; `POST /api/publish/export/{crate_id}` requires an explicit
+  `confirm: true` in the body (missing/false -> 409) and re-validates
+  blockers immediately before writing (e.g. an empty crate -> 409, never
+  a silent empty export).
+- Confirmed executions are persisted to a new `publish_operations` table
+  in jobs.db (mirrors the Cycle 2 `analysis_operations` pattern: a
+  'running' row created at start, finished with a terminal status,
+  restart-recovery marks any stranded 'running' row 'failed'). Only a
+  root-relative destination is stored, never an absolute path.
+- Every write is verified afterward and the result is reported separately
+  from execution: portable exports check the file exists/is non-empty and
+  matches its format's expected shape (M3U8 header, CSV header, JSON
+  track_count); Rekordbox XML checks `COLLECTION Entries` matches
+  track_count; Serato checks both the M3U8 and manifest exist and the
+  manifest's track_count matches. A write that succeeds but fails
+  verification reports `verification_status: "failed"` rather than a
+  fabricated success.
+- Refactored `crate_export_service.write()`'s inline collision-avoidance
+  loop into a pure `next_output_path()` helper (identical behavior,
+  confirmed by the pre-existing crate/serato/rekordbox export tests
+  passing unchanged) so the new preview can disclose the same path
+  write() would use without creating anything.
+- Files: backend/app/services/publish_export_service.py (new),
+  backend/app/services/publish_operations_service.py (new),
+  backend/app/services/crate_export_service.py, backend/app/core/db.py
+  (new `publish_operations` table), backend/app/schemas/publish.py,
+  backend/app/api/routes/publish.py, backend/app/main.py (restart
+  recovery wiring), tests/test_backend_api.py (10 new targeted tests:
+  preview side-effect-free, confirmation required, empty-crate blocker,
+  unsupported format, missing crate, confirmed write+verify+history
+  linkage with source-audio-unchanged assertion, repeated-confirm
+  never-overwrite, Rekordbox/Serato verification, two direct verify()
+  unit tests for a missing artifact and a JSON track_count mismatch).
+  1365 backend tests pass (1355 baseline + 10 new). No source audio, tag,
+  BPM/key/cue, or MIK data touched; no live Rekordbox/Serato database
+  written.
+
 [2026-08-07] — Add publish readiness contract (Cycle 3, Stage 1)
 
 - New read-only `GET /api/publish/readiness/{crate_id}` composes the
