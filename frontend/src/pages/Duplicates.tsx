@@ -19,6 +19,13 @@ function formatBytes(value: number | null) {
   return `${(value / (1024 * 1024)).toFixed(1)} MB`
 }
 
+function formatDuration(seconds: number | null) {
+  if (seconds == null) return null
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.round(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
 function decisionTone(decision: DuplicateDecision) {
   if (decision === 'keep') return 'succeeded'
   if (decision === 'ignore') return 'cancelled'
@@ -113,10 +120,26 @@ export default function Duplicates() {
         </div>
       </aside>
       {selected && <section className="duplicates-detail-panel">
-        <div className="duplicates-panel-heading"><div><h2>{selected.group_id}</h2><p>{selected.reason} · {selected.confidence} confidence · decisions do not alter files.</p></div><Badge tone="pending">DB-only</Badge></div>
+        <div className="duplicates-panel-heading"><div><h2>{selected.group_id}</h2><p>{selected.reason} · {selected.confidence} confidence · match basis: {selected.match_basis}{selected.checksum_prefix ? ` (${selected.checksum_prefix}…)` : ''} · decisions do not alter files.</p></div><Badge tone="pending">DB-only</Badge></div>
+        <div className={`duplicates-recommendation${selected.recommendation.track_id == null ? ' is-unknown' : ''}`}>
+          {selected.recommendation.track_id == null
+            ? <p><strong>No recommendation.</strong> Evidence does not unambiguously identify a single canonical file in this group — this is advisory only, not a required action.</p>
+            : <p><strong>Advisory keeper suggestion:</strong> {selected.items.find((item) => item.track_id === selected.recommendation.track_id)?.filename ?? `track ${selected.recommendation.track_id}`} <span className="duplicates-reason-code">({selected.recommendation.reason_code})</span>. This is a suggestion only — no file is removed automatically, and the review decision below is separate from this recommendation.</p>}
+          {selected.recommendation.evidence.map((line) => <p key={line} className="duplicates-recommendation-evidence">{line}</p>)}
+        </div>
         <div className="duplicates-track-list">
           {selected.items.map((item) => <article className="duplicates-track" key={item.track_id}>
-            <div className="duplicates-track-main"><div className="duplicates-track-title"><strong>{item.title || item.filename}</strong><Badge tone={decisionTone(item.decision)}>{decisionLabel(item.decision)}</Badge></div><p>{item.artist || 'Artist unavailable'} · {formatBytes(item.size_bytes)}</p><code>{item.relative_path || item.filename}</code></div>
+            <div className="duplicates-track-main">
+              <div className="duplicates-track-title"><strong>{item.title || item.filename}</strong><Badge tone={decisionTone(item.decision)}>{decisionLabel(item.decision)}</Badge>{selected.recommendation.track_id === item.track_id && <Badge tone="succeeded">Suggested keeper</Badge>}{item.copy_marker && <Badge tone="pending">Copy-style filename</Badge>}</div>
+              <p>{item.artist || 'Artist unavailable'} · {formatBytes(item.size_bytes)}{formatDuration(item.duration_sec) ? ` · ${formatDuration(item.duration_sec)}` : ''}{item.format ? ` · .${item.format}` : ''}</p>
+              <code>{item.relative_path || item.filename}</code>
+              <div className="duplicates-evidence-chips">
+                {item.genre && <span>{item.genre}</span>}
+                {item.bpm != null && <span>{item.bpm} BPM</span>}
+                {(item.key_camelot || item.key_musical) && <span>{item.key_camelot || item.key_musical}</span>}
+                {item.missing_metadata.map((field) => <span key={field} className="duplicates-evidence-chip--missing">Missing {field}</span>)}
+              </div>
+            </div>
             <div className="duplicates-track-review"><div className="duplicates-decision-actions"><button className="btn btn--ghost btn--xs" disabled={savingTrack === item.track_id} onClick={() => void save(item.track_id, 'keep')}><Check size={12} /> Mark keep</button><button className="btn btn--ghost btn--xs" disabled={savingTrack === item.track_id} onClick={() => void save(item.track_id, 'ignore')}>Ignore</button><button className="btn btn--ghost btn--xs" disabled={savingTrack === item.track_id} onClick={() => void save(item.track_id, 'review_later')}><Clock3 size={12} /> Review later</button><button className="btn btn--ghost btn--xs" disabled={savingTrack === item.track_id} onClick={() => void save(item.track_id, 'unresolved')}>Clear</button></div>
               <label>Review note<textarea className="form-input" value={notes[item.track_id] ?? ''} maxLength={1000} onChange={(event) => setNotes((current) => ({ ...current, [item.track_id]: event.target.value }))} placeholder="Optional local note" /></label><button className="btn btn--ghost btn--xs" disabled={savingTrack === item.track_id} onClick={() => void save(item.track_id, item.decision)}><Bookmark size={12} /> {savingTrack === item.track_id ? 'Saving…' : 'Save note'}</button>
             </div>

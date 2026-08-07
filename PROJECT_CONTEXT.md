@@ -6,6 +6,44 @@
 
 ## Latest Milestone
 
+- 2026-08-07: Cycle 4 Stage 4 -- Unified Library Reconciliation UI, on
+  `feat/crateiq-library-reconciliation`. `/reconciliation` (sidebar label
+  changed from "Ledger" to "Library Reconciliation") became one tabbed
+  workspace: Duplicates (a summary card linking to the existing
+  `/duplicates` page rather than re-implementing its group browser),
+  Missing / Orphaned (`indexed_missing_file` + `stale_path` findings),
+  Untracked (`untracked_file` findings), Quarantine (Stage 2's read-only
+  listing), and Plans (the pre-existing ledger + validate-plan UI, now
+  joined by a "Propose plan" button wired to Stage 3's `POST
+  /reconciliation/plans/propose`). No tab has a delete/apply/resolve-all
+  control. Also completed Stage 1's deferred UI: `/duplicates` now
+  renders the evidence fields (genre/bpm/key/duration/format,
+  missing-metadata chips, copy-marker flag) and the advisory keeper
+  recommendation, kept visually distinct from the human review decision.
+  Implementation extended existing pages/components rather than adding a
+  parallel workspace: `frontend/src/pages/Reconciliation.tsx` (tabbed
+  restructure), `frontend/src/pages/Duplicates.tsx` (evidence display),
+  `frontend/src/types/reconciliation.ts` + `frontend/src/types/
+  duplicates.ts` (new response shapes), `frontend/src/api/
+  reconciliation.ts` (3 new fetchers), `frontend/src/components/
+  Sidebar.tsx` (1 label change), `frontend/src/index.css` (new
+  workspace/tab/finding/evidence-chip CSS, following the existing
+  per-page-prefixed class convention). `npm run typecheck` and `npm run
+  build` both pass. Ran the Impeccable `audit` skill (a11y/performance/
+  theming/responsive/implementation-integrity) against the changed
+  files -- 0 issues attributable to this stage; its static detector's 4
+  findings are all pre-existing, in unrelated Jobs/Collection
+  progress-bar CSS, left untouched. The Chrome MCP extension was not
+  connected this session, so final visual verification used headless
+  Chrome screenshots at ~1440/~760/~390px against the dev server bound
+  to the configured `crateiq-test-library`, plus a stderr console-error
+  scan (clean apart from pre-existing React Router v7 future-flag
+  warnings). Confirmed the persistent sidebar not collapsing below
+  ~1440px is a pre-existing, app-wide issue -- reproduced identically on
+  the untouched `/jobs` page -- not a regression from this stage, and
+  left unfixed as out of scope. No backend change in this stage; no
+  file, tag, DB-schema, or destructive action was added.
+
 - 2026-08-07: Cycle 4 Stage 3 -- Plan-first library reconciliation, on
   `feat/crateiq-library-reconciliation`. `POST /api/reconciliation/
   plans/propose` performs DETECT -> PROPOSE by calling the existing,

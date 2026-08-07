@@ -1,18 +1,35 @@
 import type { ReactNode } from 'react'
 import { useEffect, useMemo, useState } from 'react'
-import { Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
+import { Link } from 'react-router-dom'
+import { Archive, CopyCheck, FileQuestion, FileX2, Loader2, RefreshCw, ShieldCheck, Workflow } from 'lucide-react'
 import { ApiError } from '../api/client'
+import { fetchDuplicateReview } from '../api/duplicates'
 import {
+  fetchReconciliationFindings,
   fetchReconciliationLedger,
   fetchReconciliationLedgerEntry,
+  fetchReconciliationQuarantine,
+  proposeReconciliationPlan,
   validateReconciliationPlan,
 } from '../api/reconciliation'
-import type { ReconciliationLedgerEntry } from '../types/reconciliation'
-import type { ReconciliationPlanValidationResult } from '../types/reconciliation'
+import type { DuplicateReviewSummary } from '../types/duplicates'
+import type {
+  FindingType,
+  QuarantineListingResponse,
+  ReconciliationFinding,
+  ReconciliationFindingsResponse,
+  ReconciliationLedgerEntry,
+  ReconciliationPlanProposeResponse,
+  ReconciliationPlanValidationResult,
+} from '../types/reconciliation'
 import PageHeader from '../components/PageHeader'
 import Badge, { type BadgeTone } from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import StatusStrip from '../components/ui/StatusStrip'
+
+function messageFor(error: unknown, fallback: string): string {
+  return error instanceof ApiError ? error.displayMessage : error instanceof Error ? error.message : fallback
+}
 
 function formatDateTime(value: string | null): string {
   if (!value) return '—'
@@ -20,13 +37,17 @@ function formatDateTime(value: string | null): string {
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString()
 }
 
+function formatBytes(value: number | null): string {
+  if (value == null) return 'Size unavailable'
+  if (value < 1024 * 1024) return `${Math.round(value / 1024)} KB`
+  return `${(value / (1024 * 1024)).toFixed(1)} MB`
+}
+
 function parseTableList(value: string | null): string[] {
   if (!value) return []
   try {
     const parsed = JSON.parse(value)
-    if (Array.isArray(parsed)) {
-      return parsed.map((item) => String(item)).filter((item) => item.trim())
-    }
+    if (Array.isArray(parsed)) return parsed.map((item) => String(item)).filter((item) => item.trim())
   } catch {
     // fall through to comma-separated fallback
   }
@@ -44,9 +65,9 @@ function prettyJson(value: string | null): string {
 
 function statusTone(status: string | null): BadgeTone {
   const value = (status || 'unknown').toLowerCase()
-  if (value.includes('fail') || value.includes('error')) return 'failed'
+  if (value.includes('fail') || value.includes('error') || value === 'invalid') return 'failed'
   if (value.includes('pend') || value.includes('queue')) return 'pending'
-  if (value.includes('ok') || value.includes('success') || value.includes('applied') || value.includes('done')) {
+  if (value.includes('ok') || value.includes('success') || value.includes('applied') || value.includes('done') || value === 'valid') {
     return 'succeeded'
   }
   return 'info'
@@ -57,48 +78,161 @@ function LedgerBadge({ status }: { status: string | null }) {
 }
 
 function DetailField({ label, value }: { label: string; value: ReactNode }) {
-  return (
-    <>
-      <dt>{label}</dt>
-      <dd>{value}</dd>
-    </>
-  )
+  return <><dt>{label}</dt><dd>{value}</dd></>
 }
 
+const FINDING_LABELS: Record<FindingType, string> = {
+  indexed_missing_file: 'Missing file',
+  stale_path: 'Stale path',
+  untracked_file: 'Untracked file',
+  path_candidate: 'Path candidate',
+}
+
+function FindingsList({ findings, selectedId, onSelect }: { findings: ReconciliationFinding[]; selectedId: string | null; onSelect: (id: string) => void }) {
+  return <div className="reconciliation-findings-scroll">
+    {findings.map((finding) => {
+      const side = finding.db_side ?? finding.filesystem_side
+      return <button
+        key={finding.finding_id}
+        type="button"
+        className={`reconciliation-findings-option${selectedId === finding.finding_id ? ' is-selected' : ''}`}
+        onClick={() => onSelect(finding.finding_id)}
+      >
+        <span><strong>{side?.relative_path || side?.filename || finding.finding_id}</strong><small>{FINDING_LABELS[finding.finding_type]}</small></span>
+        <span><Badge tone="pending">{finding.finding_type}</Badge></span>
+      </button>
+    })}
+  </div>
+}
+
+function FindingDetail({ finding }: { finding: ReconciliationFinding | null }) {
+  if (!finding) return <EmptyState message="Select a finding to inspect its evidence." />
+  const evidenceEntries = Object.entries(finding.evidence).filter(([, value]) => value !== null && value !== undefined && value !== '')
+  return <div className="recon-detail">
+    <p className="muted">{finding.summary}</p>
+    <div className="reconciliation-findings-sides">
+      <div className="reconciliation-findings-side">
+        <h4>DB / index side</h4>
+        {finding.db_side ? <>
+          <code>{finding.db_side.relative_path || '—'}</code>
+          {finding.db_side.status && <p>Status: {finding.db_side.status}</p>}
+          {finding.db_side.stage && <p>Stage: {finding.db_side.stage}</p>}
+          {finding.db_side.size_bytes != null && <p>{formatBytes(finding.db_side.size_bytes)}</p>}
+        </> : <p>No indexed row on this side.</p>}
+      </div>
+      <div className="reconciliation-findings-side">
+        <h4>Filesystem side</h4>
+        {finding.filesystem_side ? <>
+          <code>{finding.filesystem_side.relative_path || '—'}</code>
+          {finding.filesystem_side.size_bytes != null && <p>{formatBytes(finding.filesystem_side.size_bytes)}</p>}
+        </> : <p>No file on this side.</p>}
+      </div>
+    </div>
+    {evidenceEntries.length > 0 && <dl className="def-list reconciliation-findings-evidence">
+      {evidenceEntries.map(([key, value]) => <DetailField key={key} label={key} value={String(value)} />)}
+    </dl>}
+    <StatusStrip tone="info">Evidence only. No next action here changes a file, tag, or database row.</StatusStrip>
+  </div>
+}
+
+type WorkspaceTab = 'duplicates' | 'missing' | 'untracked' | 'quarantine' | 'plans'
+
 export default function Reconciliation() {
+  const [tab, setTab] = useState<WorkspaceTab>('duplicates')
+
+  const [dupSummary, setDupSummary] = useState<DuplicateReviewSummary | null>(null)
+  const [dupMessage, setDupMessage] = useState<string | null>(null)
+  const [dupLoading, setDupLoading] = useState(true)
+  const [dupError, setDupError] = useState<string | null>(null)
+
+  const [findings, setFindings] = useState<ReconciliationFindingsResponse | null>(null)
+  const [findingsLoading, setFindingsLoading] = useState(true)
+  const [findingsError, setFindingsError] = useState<string | null>(null)
+  const [selectedMissingId, setSelectedMissingId] = useState<string | null>(null)
+  const [selectedUntrackedId, setSelectedUntrackedId] = useState<string | null>(null)
+
+  const [quarantine, setQuarantine] = useState<QuarantineListingResponse | null>(null)
+  const [quarantineLoading, setQuarantineLoading] = useState(true)
+  const [quarantineError, setQuarantineError] = useState<string | null>(null)
+
   const [entries, setEntries] = useState<ReconciliationLedgerEntry[]>([])
-  const [selectedId, setSelectedId] = useState<string | null>(null)
-  const [selectedEntry, setSelectedEntry] = useState<ReconciliationLedgerEntry | null>(null)
+  const [selectedLedgerId, setSelectedLedgerId] = useState<string | null>(null)
+  const [selectedLedgerEntry, setSelectedLedgerEntry] = useState<ReconciliationLedgerEntry | null>(null)
+  const [loadingLedgerList, setLoadingLedgerList] = useState(true)
+  const [loadingLedgerDetail, setLoadingLedgerDetail] = useState(false)
+  const [ledgerError, setLedgerError] = useState<string | null>(null)
+
+  const [proposal, setProposal] = useState<ReconciliationPlanProposeResponse | null>(null)
+  const [proposing, setProposing] = useState(false)
+  const [proposeError, setProposeError] = useState<string | null>(null)
   const [validation, setValidation] = useState<ReconciliationPlanValidationResult | null>(null)
-  const [loadingList, setLoadingList] = useState(true)
-  const [loadingDetail, setLoadingDetail] = useState(false)
   const [loadingValidation, setLoadingValidation] = useState(false)
-  const [error, setError] = useState<string | null>(null)
   const [validationError, setValidationError] = useState<string | null>(null)
 
-  const selectedSummary = useMemo(
-    () => entries.find((entry) => entry.ledger_id === selectedId) ?? null,
-    [entries, selectedId],
-  )
+  async function loadDuplicates() {
+    setDupLoading(true)
+    setDupError(null)
+    try {
+      const review = await fetchDuplicateReview()
+      setDupSummary(review.summary)
+      setDupMessage(review.message)
+    } catch (err) {
+      setDupError(messageFor(err, 'Could not load duplicate review summary.'))
+    } finally {
+      setDupLoading(false)
+    }
+  }
+
+  async function loadFindings() {
+    setFindingsLoading(true)
+    setFindingsError(null)
+    try {
+      const result = await fetchReconciliationFindings()
+      setFindings(result)
+    } catch (err) {
+      setFindingsError(messageFor(err, 'Could not load reconciliation findings.'))
+    } finally {
+      setFindingsLoading(false)
+    }
+  }
+
+  async function loadQuarantine() {
+    setQuarantineLoading(true)
+    setQuarantineError(null)
+    try {
+      setQuarantine(await fetchReconciliationQuarantine())
+    } catch (err) {
+      setQuarantineError(messageFor(err, 'Could not load the quarantine listing.'))
+    } finally {
+      setQuarantineLoading(false)
+    }
+  }
 
   async function loadLedger() {
-    setLoadingList(true)
-    setError(null)
+    setLoadingLedgerList(true)
+    setLedgerError(null)
     try {
       const rows = await fetchReconciliationLedger()
       setEntries(rows)
-      setSelectedId((current) => {
-        if (current && rows.some((entry) => entry.ledger_id === current)) return current
-        return rows[0]?.ledger_id ?? null
-      })
-      if (!rows.length) {
-        setSelectedEntry(null)
-      }
+      setSelectedLedgerId((current) => (current && rows.some((entry) => entry.ledger_id === current)) ? current : rows[0]?.ledger_id ?? null)
+      if (!rows.length) setSelectedLedgerEntry(null)
     } catch (err) {
-      const msg = err instanceof ApiError ? err.displayMessage : err instanceof Error ? err.message : String(err)
-      setError(msg)
+      setLedgerError(messageFor(err, 'Could not load the reconciliation ledger.'))
     } finally {
-      setLoadingList(false)
+      setLoadingLedgerList(false)
+    }
+  }
+
+  async function proposePlan() {
+    setProposing(true)
+    setProposeError(null)
+    try {
+      setProposal(await proposeReconciliationPlan())
+      setValidation(null)
+    } catch (err) {
+      setProposeError(messageFor(err, 'Could not propose a reconciliation plan.'))
+    } finally {
+      setProposing(false)
     }
   }
 
@@ -106,264 +240,283 @@ export default function Reconciliation() {
     setLoadingValidation(true)
     setValidationError(null)
     try {
-      const result = await validateReconciliationPlan({ latest: true })
-      setValidation(result)
+      setValidation(await validateReconciliationPlan({ latest: true }))
     } catch (err) {
-      const msg = err instanceof ApiError ? err.displayMessage : err instanceof Error ? err.message : String(err)
-      setValidationError(msg)
+      setValidationError(messageFor(err, 'Could not validate the latest plan.'))
     } finally {
       setLoadingValidation(false)
     }
   }
 
-  useEffect(() => {
-    void loadLedger()
-  }, [])
+  useEffect(() => { void loadDuplicates() }, [])
+  useEffect(() => { void loadFindings() }, [])
+  useEffect(() => { void loadQuarantine() }, [])
+  useEffect(() => { void loadLedger() }, [])
 
   useEffect(() => {
-    if (!selectedId) return
+    if (!selectedLedgerId) return
     let cancelled = false
-    setLoadingDetail(true)
-    setError(null)
-    void fetchReconciliationLedgerEntry(selectedId)
-      .then((entry) => {
-        if (!cancelled) {
-          setSelectedEntry(entry)
-        }
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          const msg = err instanceof ApiError ? err.displayMessage : err instanceof Error ? err.message : String(err)
-          setError(msg)
-        }
-      })
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingDetail(false)
-        }
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [selectedId])
+    setLoadingLedgerDetail(true)
+    void fetchReconciliationLedgerEntry(selectedLedgerId)
+      .then((entry) => { if (!cancelled) setSelectedLedgerEntry(entry) })
+      .catch((err) => { if (!cancelled) setLedgerError(messageFor(err, 'Could not load ledger entry.')) })
+      .finally(() => { if (!cancelled) setLoadingLedgerDetail(false) })
+    return () => { cancelled = true }
+  }, [selectedLedgerId])
 
-  useEffect(() => {
-    if (!selectedId && entries.length > 0) {
-      setSelectedId(entries[0].ledger_id)
-    }
-  }, [entries, selectedId])
+  const missingFindings = useMemo(
+    () => findings?.findings.filter((f) => f.finding_type === 'indexed_missing_file' || f.finding_type === 'stale_path') ?? [],
+    [findings],
+  )
+  const untrackedFindings = useMemo(
+    () => findings?.findings.filter((f) => f.finding_type === 'untracked_file') ?? [],
+    [findings],
+  )
+  const candidateCount = findings?.summary.path_candidate ?? 0
+  const selectedMissing = missingFindings.find((f) => f.finding_id === selectedMissingId) ?? missingFindings[0] ?? null
+  const selectedUntracked = untrackedFindings.find((f) => f.finding_id === selectedUntrackedId) ?? untrackedFindings[0] ?? null
 
-  const tableRows = entries.length
-  const detail = selectedEntry ?? selectedSummary
-  const affectedTables = detail ? parseTableList(detail.affected_tables) : []
+  const ledgerDetail = selectedLedgerEntry ?? entries.find((entry) => entry.ledger_id === selectedLedgerId) ?? null
+  const affectedTables = ledgerDetail ? parseTableList(ledgerDetail.affected_tables) : []
+
+  const tabs: { id: WorkspaceTab; label: string; icon: ReactNode; count: number | null }[] = [
+    { id: 'duplicates', label: 'Duplicates', icon: <CopyCheck size={13} />, count: dupSummary?.candidates ?? null },
+    { id: 'missing', label: 'Missing / Orphaned', icon: <FileX2 size={13} />, count: findings?.summary ? findings.summary.indexed_missing_file + findings.summary.stale_path : null },
+    { id: 'untracked', label: 'Untracked', icon: <FileQuestion size={13} />, count: findings?.summary.untracked_file ?? null },
+    { id: 'quarantine', label: 'Quarantine', icon: <Archive size={13} />, count: quarantine?.items.length ?? null },
+    { id: 'plans', label: 'Plans', icon: <Workflow size={13} />, count: entries.length || null },
+  ]
 
   return (
     <div className="page">
       <PageHeader
-        title="Reconciliation Ledger"
-        subtitle="Read-only ledger records for path reconciliation work."
-        actions={(
-          <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn--ghost btn--sm" onClick={() => void validateLatestPlan()} disabled={loadingValidation}>
-              {loadingValidation ? <Loader2 size={13} className="spin" /> : <ShieldCheck size={13} />}
-              Validate Latest Plan
-            </button>
-            <button className="btn btn--ghost btn--sm" onClick={() => void loadLedger()} disabled={loadingList}>
-              {loadingList ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />}
-              Refresh
-            </button>
-          </div>
-        )}
+        title="Library Reconciliation"
+        subtitle="Find, review, and plan library cleanup. Nothing here deletes, moves, or renames a file — plans stop at validation."
+        actions={<button className="btn btn--ghost btn--sm" onClick={() => { void loadDuplicates(); void loadFindings(); void loadQuarantine(); void loadLedger() }}>
+          <RefreshCw size={13} /> Refresh all
+        </button>}
       />
 
-      {error && (
-        <StatusStrip tone="danger" role="alert" onDismiss={() => setError(null)}>
-          <strong>Error:</strong> {error}
-        </StatusStrip>
-      )}
-      {validationError && (
-        <StatusStrip tone="danger" role="alert" onDismiss={() => setValidationError(null)}>
-          <strong>Error:</strong> {validationError}
-        </StatusStrip>
-      )}
+      <StatusStrip tone="info" icon={<ShieldCheck size={15} />}>
+        Review workspace only: findings and plans are evidence and proposals. No automatic keeper removal, path relink, quarantine action, or plan apply exists here.
+      </StatusStrip>
 
-      <section className="section">
-        <div className="recon-grid">
-          <div className="card recon-list-card">
-            <div className="card-header">
-              <h2 className="card-title">Ledger table <span className="card-title-count">{tableRows}</span></h2>
-            </div>
-            {loadingList ? (
-              <p className="empty-state">Loading ledger entries…</p>
-            ) : tableRows === 0 ? (
-              <EmptyState message="No ledger entries found." />
-            ) : (
-              <div className="table-wrapper">
-                <table className="table recon-table">
-                  <thead>
-                    <tr>
-                      <th>Ledger ID</th>
-                      <th className="nowrap">Timestamp</th>
-                      <th>Operation</th>
-                      <th>Status</th>
-                      <th>Root</th>
-                      <th>Affected tables</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {entries.map((entry) => {
-                      const selected = entry.ledger_id === selectedId
-                      return (
-                        <tr
-                          key={entry.ledger_id}
-                          className={`row--clickable${selected ? ' row--selected' : ''}`}
-                          onClick={() => setSelectedId(entry.ledger_id)}
-                        >
-                          <td className="td-mono">{entry.ledger_id}</td>
-                          <td className="nowrap">{formatDateTime(entry.created_at)}</td>
-                          <td className="td-mono">{entry.operation_type || '—'}</td>
-                          <td><LedgerBadge status={entry.status} /></td>
-                          <td className="td-mono recon-path">{entry.root || '—'}</td>
-                          <td className="recon-tables">{parseTableList(entry.affected_tables).join(', ') || '—'}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
+      <div className="reconciliation-tabs" role="tablist" aria-label="Library reconciliation sections">
+        {tabs.map((item) => (
+          <button
+            key={item.id}
+            type="button"
+            role="tab"
+            aria-selected={tab === item.id}
+            className={`reconciliation-tab${tab === item.id ? ' is-active' : ''}`}
+            onClick={() => setTab(item.id)}
+          >
+            {item.icon} {item.label}{item.count != null && <span className="badge-count">{item.count}</span>}
+          </button>
+        ))}
+      </div>
 
-          <div className="card recon-detail-card">
-            <div className="card-header">
-              <h2 className="card-title">Ledger detail inspector</h2>
-            </div>
-            {loadingDetail ? (
-              <p className="empty-state">Loading entry…</p>
-            ) : detail ? (
-              <div className="recon-detail">
-                <dl className="def-list recon-detail-fields">
-                  <DetailField label="Ledger ID" value={detail.ledger_id} />
-                  <DetailField label="Timestamp" value={formatDateTime(detail.created_at)} />
-                  <DetailField label="Operation type" value={detail.operation_type || '—'} />
-                  <DetailField label="Status" value={<LedgerBadge status={detail.status} />} />
-                  <DetailField label="Root" value={detail.root || '—'} />
-                  <DetailField label="Old path" value={detail.old_path || '—'} />
-                  <DetailField label="New path" value={detail.new_path || '—'} />
-                  <DetailField label="Affected tables" value={affectedTables.join(', ') || '—'} />
-                  <DetailField label="Error" value={detail.error || '—'} />
-                </dl>
-                <div className="recon-json-block">
-                  <div className="recon-json-label">Before values</div>
-                  <pre className="recon-json">{prettyJson(detail.before_values_json)}</pre>
-                </div>
-                <div className="recon-json-block">
-                  <div className="recon-json-label">After values</div>
-                  <pre className="recon-json">{prettyJson(detail.after_values_json)}</pre>
-                </div>
-              </div>
-            ) : (
-              <EmptyState message="Select a ledger entry to inspect it." />
-            )}
-          </div>
-        </div>
-      </section>
-
-      <section className="section">
-        <div className="card">
-          <div className="card-header">
-            <h2 className="card-title">Plan validation</h2>
-          </div>
-          {validation ? (
-            <div className="recon-validation">
+      {tab === 'duplicates' && (
+        <section className="section" role="tabpanel" aria-label="Duplicates">
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Duplicate review</h2></div>
+            {dupError && <StatusStrip tone="danger" role="alert" onDismiss={() => setDupError(null)}>{dupError}</StatusStrip>}
+            {dupLoading ? <p className="empty-state">Loading duplicate summary…</p> : (
               <div className="recon-stat-grid">
-                <div className="recon-stat">
-                  <span className="recon-stat-label">Total</span>
-                  <strong>{validation.total_actions}</strong>
+                <div className="recon-stat"><span className="recon-stat-label">Groups</span><strong>{dupSummary?.groups ?? '—'}</strong></div>
+                <div className="recon-stat"><span className="recon-stat-label">Candidates</span><strong>{dupSummary?.candidates ?? '—'}</strong></div>
+                <div className="recon-stat"><span className="recon-stat-label">Unresolved</span><strong>{dupSummary?.unresolved ?? '—'}</strong></div>
+                <div className="recon-stat"><span className="recon-stat-label">Keep</span><strong>{dupSummary?.keep ?? '—'}</strong></div>
+              </div>
+            )}
+            <p className="muted">{dupMessage || 'Duplicate evidence, keeper recommendations (advisory only), and review decisions live in the dedicated Duplicate Review workspace.'}</p>
+            <Link className="btn btn--primary btn--sm" to="/duplicates">Open Duplicate Review</Link>
+          </div>
+        </section>
+      )}
+
+      {(tab === 'missing' || tab === 'untracked') && (
+        <section className="section" role="tabpanel" aria-label={tab === 'missing' ? 'Missing and orphaned files' : 'Untracked files'}>
+          {findingsError && <StatusStrip tone="danger" role="alert" onDismiss={() => setFindingsError(null)}>{findingsError}</StatusStrip>}
+          {findings?.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}
+          {findingsLoading ? <p className="empty-state">Loading findings…</p> : (
+            (tab === 'missing' ? missingFindings : untrackedFindings).length === 0 ? (
+              <EmptyState
+                icon={<ShieldCheck size={28} />}
+                title={tab === 'missing' ? 'No missing or stale-path findings' : 'No untracked files found'}
+                message={findings?.message || 'The local index and the selected library are in sync for this finding type.'}
+              />
+            ) : (
+              <div className="reconciliation-findings-layout">
+                <div className="reconciliation-findings-list">
+                  <div className="duplicates-panel-heading"><div><h2>{tab === 'missing' ? 'Missing / stale-path' : 'Untracked files'}</h2><p>{(tab === 'missing' ? missingFindings : untrackedFindings).length} finding(s)</p></div></div>
+                  <FindingsList
+                    findings={tab === 'missing' ? missingFindings : untrackedFindings}
+                    selectedId={tab === 'missing' ? selectedMissing?.finding_id ?? null : selectedUntracked?.finding_id ?? null}
+                    onSelect={tab === 'missing' ? setSelectedMissingId : setSelectedUntrackedId}
+                  />
                 </div>
-                <div className="recon-stat">
-                  <span className="recon-stat-label">Valid</span>
-                  <strong>{validation.valid_actions}</strong>
-                </div>
-                <div className="recon-stat">
-                  <span className="recon-stat-label">Invalid</span>
-                  <strong>{validation.invalid_actions}</strong>
-                </div>
-                <div className="recon-stat">
-                  <span className="recon-stat-label">Skipped</span>
-                  <strong>{validation.skipped_actions}</strong>
+                <div className="reconciliation-findings-detail">
+                  <FindingDetail finding={tab === 'missing' ? selectedMissing : selectedUntracked} />
                 </div>
               </div>
+            )
+          )}
+          {tab === 'missing' && candidateCount > 0 && (
+            <StatusStrip tone="info">{candidateCount} possible rename/relocation candidate(s) were found for these missing files. Propose a plan in the Plans tab to review them as specific actions.</StatusStrip>
+          )}
+        </section>
+      )}
 
-              <div className="recon-validation-meta">
-                <span className="muted">Plan: <code>{validation.plan_path}</code></span>
-                <span className="muted">Generated: {formatDateTime(validation.generated_at)}</span>
+      {tab === 'quarantine' && (
+        <section className="section" role="tabpanel" aria-label="Quarantine">
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Quarantine <span className="card-title-count">{quarantine?.items.length ?? 0}</span></h2></div>
+            {quarantineError && <StatusStrip tone="danger" role="alert" onDismiss={() => setQuarantineError(null)}>{quarantineError}</StatusStrip>}
+            {quarantine?.message && <StatusStrip tone="info">{quarantine.message}</StatusStrip>}
+            {quarantineLoading ? <p className="empty-state">Loading quarantine listing…</p> : !quarantine || quarantine.items.length === 0 ? (
+              <EmptyState icon={<Archive size={28} />} message="No files are currently in the quarantine directory." />
+            ) : (
+              <div className="reconciliation-findings-scroll">
+                {quarantine.items.map((item) => (
+                  <div className="reconciliation-quarantine-item" key={item.relative_path}>
+                    <span><code>{item.relative_path}</code><br /><small className="muted">{formatBytes(item.size_bytes)}</small></span>
+                    <Badge tone="pending">Restore not available</Badge>
+                  </div>
+                ))}
               </div>
+            )}
+          </div>
+        </section>
+      )}
 
-              <div className="recon-validation-grid">
+      {tab === 'plans' && (
+        <section className="section" role="tabpanel" aria-label="Plans">
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Propose a plan</h2></div>
+            <p className="muted">Detects candidates from the current findings and writes a plan artifact for review. Nothing is applied — apply is intentionally not built in this workspace.</p>
+            {proposeError && <StatusStrip tone="danger" role="alert" onDismiss={() => setProposeError(null)}>{proposeError}</StatusStrip>}
+            <div className="reconciliation-plan-actions">
+              <button className="btn btn--primary btn--sm" onClick={() => void proposePlan()} disabled={proposing}>
+                {proposing ? <Loader2 size={13} className="spin" /> : <Workflow size={13} />} {proposing ? 'Proposing…' : 'Propose plan'}
+              </button>
+              <button className="btn btn--ghost btn--sm" onClick={() => void validateLatestPlan()} disabled={loadingValidation}>
+                {loadingValidation ? <Loader2 size={13} className="spin" /> : <ShieldCheck size={13} />} Validate latest plan
+              </button>
+            </div>
+            {proposal && (
+              <div className="reconciliation-plan-summary">
+                <p>Plan artifact: <code>{proposal.plan_artifact}</code> · apply supported: <strong>{String(proposal.apply_supported)}</strong></p>
                 <div className="table-wrapper">
                   <table className="table recon-table">
-                    <thead>
-                      <tr>
-                        <th>Reason</th>
-                        <th style={{ width: 120 }}>Count</th>
-                      </tr>
-                    </thead>
+                    <thead><tr><th>Action</th><th>Old path</th><th>New path</th><th>Risk</th><th>Review tier</th></tr></thead>
                     <tbody>
-                      {Object.entries(validation.reasons).length > 0 ? (
-                        Object.entries(validation.reasons).map(([reason, count]) => (
-                          <tr key={reason}>
-                            <td className="td-mono">{reason}</td>
-                            <td>{count}</td>
-                          </tr>
-                        ))
-                      ) : (
-                        <tr>
-                          <td colSpan={2} className="muted">No invalid reasons reported.</td>
+                      {proposal.planned_actions.length === 0 ? <tr><td colSpan={5} className="muted">No actions proposed from current findings.</td></tr> : proposal.planned_actions.map((action, index) => (
+                        // Plan actions have no stable id from the API; index is fine since this list re-renders wholesale per proposal.
+                        <tr key={index}>
+                          <td className="td-mono">{String(action.action ?? '—')}</td>
+                          <td className="td-mono recon-path">{String(action.old_path ?? '—')}</td>
+                          <td className="td-mono recon-path">{String(action.new_path ?? '—')}</td>
+                          <td>{String(action.risk ?? '—')}</td>
+                          <td>{String(action.review_tier ?? '—')}</td>
                         </tr>
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>
+              </div>
+            )}
+          </div>
 
-                <div className="table-wrapper">
-                  <table className="table recon-table">
-                    <thead>
-                      <tr>
-                        <th>Action</th>
-                        <th>Status</th>
-                        <th>Reason</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {validation.validation_records.filter((record) => record.status !== 'valid').length > 0 ? (
-                        validation.validation_records
-                          .filter((record) => record.status !== 'valid')
-                          .map((record) => (
-                            // No real ID on validation records; key on the
-                            // stable plan-action content instead of the
-                            // (unstable) filtered-array index.
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Plan validation</h2></div>
+            {validationError && <StatusStrip tone="danger" role="alert" onDismiss={() => setValidationError(null)}>{validationError}</StatusStrip>}
+            {validation ? (
+              <div className="recon-validation">
+                <div className="recon-stat-grid">
+                  <div className="recon-stat"><span className="recon-stat-label">Total</span><strong>{validation.total_actions}</strong></div>
+                  <div className="recon-stat"><span className="recon-stat-label">Valid</span><strong>{validation.valid_actions}</strong></div>
+                  <div className="recon-stat"><span className="recon-stat-label">Invalid</span><strong>{validation.invalid_actions}</strong></div>
+                  <div className="recon-stat"><span className="recon-stat-label">Skipped</span><strong>{validation.skipped_actions}</strong></div>
+                </div>
+                <div className="recon-validation-meta">
+                  <span className="muted">Generated: {formatDateTime(validation.generated_at)}</span>
+                </div>
+                <div className="recon-validation-grid">
+                  <div className="table-wrapper">
+                    <table className="table recon-table">
+                      <thead><tr><th>Reason</th><th style={{ width: 120 }}>Count</th></tr></thead>
+                      <tbody>
+                        {Object.entries(validation.reasons).length > 0 ? Object.entries(validation.reasons).map(([reason, count]) => (
+                          <tr key={reason}><td className="td-mono">{reason}</td><td>{count}</td></tr>
+                        )) : <tr><td colSpan={2} className="muted">No invalid reasons reported.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div className="table-wrapper">
+                    <table className="table recon-table">
+                      <thead><tr><th>Action</th><th>Status</th><th>Reason</th></tr></thead>
+                      <tbody>
+                        {validation.validation_records.filter((record) => record.status !== 'valid').length > 0 ? (
+                          validation.validation_records.filter((record) => record.status !== 'valid').map((record) => (
                             <tr key={`${record.action_type}:${record.reason ?? ''}:${JSON.stringify(record.action)}`}>
                               <td className="td-mono">{record.action_type}</td>
                               <td><LedgerBadge status={record.status} /></td>
                               <td className="td-mono">{record.reason || '—'}</td>
                             </tr>
                           ))
-                      ) : (
-                        <tr>
-                          <td colSpan={3} className="muted">No invalid actions.</td>
+                        ) : <tr><td colSpan={3} className="muted">No invalid actions.</td></tr>}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+            ) : <EmptyState message="Propose or validate a plan to inspect its actions." />}
+          </div>
+
+          <div className="card">
+            <div className="card-header"><h2 className="card-title">Ledger table <span className="card-title-count">{entries.length}</span></h2></div>
+            {ledgerError && <StatusStrip tone="danger" role="alert" onDismiss={() => setLedgerError(null)}>{ledgerError}</StatusStrip>}
+            {loadingLedgerList ? <p className="empty-state">Loading ledger entries…</p> : entries.length === 0 ? <EmptyState message="No ledger entries found." /> : (
+              <div className="recon-grid">
+                <div className="table-wrapper">
+                  <table className="table recon-table">
+                    <thead><tr><th>Ledger ID</th><th className="nowrap">Timestamp</th><th>Operation</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {entries.map((entry) => (
+                        <tr key={entry.ledger_id} className={`row--clickable${entry.ledger_id === selectedLedgerId ? ' row--selected' : ''}`} onClick={() => setSelectedLedgerId(entry.ledger_id)}>
+                          <td className="td-mono">{entry.ledger_id}</td>
+                          <td className="nowrap">{formatDateTime(entry.created_at)}</td>
+                          <td className="td-mono">{entry.operation_type || '—'}</td>
+                          <td><LedgerBadge status={entry.status} /></td>
                         </tr>
-                      )}
+                      ))}
                     </tbody>
                   </table>
                 </div>
+                <div className="recon-detail">
+                  {loadingLedgerDetail ? <p className="empty-state">Loading entry…</p> : ledgerDetail ? (
+                    <>
+                      <dl className="def-list recon-detail-fields">
+                        <DetailField label="Ledger ID" value={ledgerDetail.ledger_id} />
+                        <DetailField label="Timestamp" value={formatDateTime(ledgerDetail.created_at)} />
+                        <DetailField label="Operation type" value={ledgerDetail.operation_type || '—'} />
+                        <DetailField label="Status" value={<LedgerBadge status={ledgerDetail.status} />} />
+                        <DetailField label="Old path" value={ledgerDetail.old_path || '—'} />
+                        <DetailField label="New path" value={ledgerDetail.new_path || '—'} />
+                        <DetailField label="Affected tables" value={affectedTables.join(', ') || '—'} />
+                        <DetailField label="Error" value={ledgerDetail.error || '—'} />
+                      </dl>
+                      <div className="recon-json-block"><div className="recon-json-label">Before values</div><pre className="recon-json">{prettyJson(ledgerDetail.before_values_json)}</pre></div>
+                      <div className="recon-json-block"><div className="recon-json-label">After values</div><pre className="recon-json">{prettyJson(ledgerDetail.after_values_json)}</pre></div>
+                    </>
+                  ) : <EmptyState message="Select a ledger entry to inspect it." />}
+                </div>
               </div>
-            </div>
-          ) : (
-            <EmptyState message="Run validation to inspect the latest reconcile plan." />
-          )}
-        </div>
-      </section>
+            )}
+          </div>
+        </section>
+      )}
     </div>
   )
 }

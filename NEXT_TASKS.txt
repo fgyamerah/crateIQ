@@ -904,14 +904,36 @@ CURRENT FOCUS
          path-audit engine (`_path_audit_report`) into a bounded,
          relative-path-only finding contract: indexed_missing_file,
          untracked_file, stale_path, path_candidate. Read-only; no file, tag,
-         or DB write. Frontend workspace for this remains Cycle 4 Stage 4.
+         or DB write. Frontend workspace for this landed in Cycle 4 Stage 4.
 [x] (P3) Library maintenance — quarantine browser (read-only) (2026-08-07)
          `GET /api/reconciliation/quarantine` lists files under
          `<library_root>/.BIN/QUARANTINE`, read-only. Original location,
          reason, operation id, and timestamp are not persisted for legacy
          quarantine moves, so every item reports `restore_supported: false`
          rather than fabricating provenance. No permanent-delete or restore
-         action exists.
+         action exists. UI landed in Cycle 4 Stage 4 (Quarantine tab).
+[x] (P1) Cycle 4 Stage 4 — Unified Library Reconciliation UI (2026-08-07)
+         `/reconciliation` (sidebar label now "Library Reconciliation")
+         became a tabbed workspace: Duplicates (summary + link to the
+         existing `/duplicates` workspace, not duplicated), Missing /
+         Orphaned (indexed_missing_file + stale_path findings),
+         Untracked (untracked_file findings), Quarantine (read-only
+         listing), Plans (existing ledger + validate-plan, plus a new
+         "Propose plan" action calling POST /reconciliation/plans/propose).
+         Also surfaced Stage 1's duplicate evidence (genre/bpm/key/
+         duration/format, missing-metadata chips, copy-marker flag,
+         match_basis/checksum_prefix, advisory keeper recommendation) on
+         the existing `/duplicates` page, deferred there until this stage.
+         No destructive primary action anywhere on the page (no delete/
+         apply/resolve-all control). frontend typecheck + build pass;
+         Impeccable audit found 0 issues in the new code (4 pre-existing
+         findings elsewhere in index.css, unrelated Jobs/Collection
+         progress-bar CSS, left untouched). Verified at ~1440/~760/~390px
+         via headless Chrome screenshots (Chrome MCP extension was not
+         connected this session); confirmed the persistent sidebar not
+         collapsing below ~1440px is a pre-existing, app-wide issue
+         reproduced identically on the untouched `/jobs` page, not a
+         regression from this stage.
 [x] (P1) Artist Intelligence — Phase 2 hardening complete (2026-04-19)
 [x] (P1) Artist Intelligence — Phase 3: pollution guards, feat dedup, personal-name split (2026-04-19)
 [x] (P1) Artist Intelligence — Phase 4: nested separator split, casing normalization, confidence boost (2026-04-19)

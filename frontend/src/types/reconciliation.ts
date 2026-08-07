@@ -37,3 +37,66 @@ export interface ReconciliationPlanValidateRequest {
   plan_path?: string | null
   latest?: boolean
 }
+
+export type FindingType = 'indexed_missing_file' | 'untracked_file' | 'stale_path' | 'path_candidate'
+
+export interface FindingPathSide {
+  relative_path: string | null
+  filename: string | null
+  track_id: number | null
+  status: string | null
+  stage: string | null
+  size_bytes: number | null
+}
+
+export interface ReconciliationFinding {
+  finding_id: string
+  finding_type: FindingType
+  summary: string
+  db_side: FindingPathSide | null
+  filesystem_side: FindingPathSide | null
+  evidence: Record<string, unknown>
+}
+
+export interface ReconciliationFindingsSummary {
+  indexed_missing_file: number
+  untracked_file: number
+  stale_path: number
+  path_candidate: number
+}
+
+export interface ReconciliationFindingsResponse {
+  summary: ReconciliationFindingsSummary
+  findings: ReconciliationFinding[]
+  warnings: string[]
+  generated_at: string | null
+  message: string | null
+}
+
+export interface QuarantineItem {
+  relative_path: string
+  filename: string
+  size_bytes: number | null
+  original_relative_path: string | null
+  reason: string | null
+  operation_id: string | null
+  quarantined_at: string | null
+  restore_supported: boolean
+}
+
+export interface QuarantineListingResponse {
+  supported: boolean
+  items: QuarantineItem[]
+  message: string | null
+}
+
+export interface ReconciliationPlanProposeResponse {
+  generated_at: string | null
+  plan_artifact: string | null
+  apply_supported: boolean
+  planned_action_summary: Record<string, number>
+  planned_actions: Record<string, unknown>[]
+  audit_summary: Record<string, unknown>
+  limitations: string[]
+  message: string
+}

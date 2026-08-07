@@ -92,7 +92,7 @@ const NAV: NavSection[] = [
   {
     title: 'Reconciliation',
     items: [
-      { to: '/reconciliation', label: 'Ledger', Icon: Database },
+      { to: '/reconciliation', label: 'Library Reconciliation', Icon: Database },
     ],
   },
 ]

@@ -1733,6 +1733,33 @@ code {
   gap: 14px;
 }
 
+/* ── Library Reconciliation workspace (Cycle 4 Stage 4) ── */
+.reconciliation-tabs { display: flex; flex-wrap: wrap; gap: 6px; }
+.reconciliation-tab { align-items: center; background: rgba(8,12,19,.46); border: 1px solid var(--border); border-radius: 999px; color: var(--text-muted); cursor: pointer; display: inline-flex; font: inherit; font-size: 12px; gap: 6px; padding: 7px 14px; transition: background .12s ease, border-color .12s ease, color .12s ease; }
+.reconciliation-tab:hover { color: var(--text); }
+.reconciliation-tab.is-active { background: rgba(20,184,166,.12); border-color: rgba(20,184,166,.5); color: #a5f3e8; }
+.reconciliation-tab .badge-count { background: rgba(255,255,255,.08); border-radius: 999px; font-size: 10px; padding: 1px 7px; }
+.reconciliation-findings-layout { align-items: start; display: grid; gap: 14px; grid-template-columns: minmax(280px, 360px) minmax(0, 1fr); min-width: 0; }
+.reconciliation-findings-list, .reconciliation-findings-detail { background: linear-gradient(145deg, rgba(22,27,39,.98), rgba(14,18,27,.98)); border: 1px solid var(--border); border-radius: 14px; display: grid; gap: 12px; min-width: 0; padding: 14px; }
+.reconciliation-findings-scroll { display: grid; gap: 7px; max-height: 620px; overflow: auto; padding-right: 2px; }
+.reconciliation-findings-option { align-items: flex-start; background: rgba(8,12,19,.46); border: 1px solid var(--border); border-radius: 10px; color: var(--text); cursor: pointer; display: flex; font: inherit; gap: 9px; justify-content: space-between; min-width: 0; padding: 10px; text-align: left; transition: background .12s ease, border-color .12s ease; }
+.reconciliation-findings-option:hover, .reconciliation-findings-option.is-selected { background: rgba(20,184,166,.09); border-color: rgba(20,184,166,.45); }
+.reconciliation-findings-option > span { display: grid; gap: 3px; min-width: 0; }
+.reconciliation-findings-option strong, .reconciliation-findings-option small { overflow-wrap: anywhere; }
+.reconciliation-findings-option small { color: var(--text-muted); font-size: 11px; }
+.reconciliation-findings-sides { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); }
+.reconciliation-findings-side { background: rgba(8,12,19,.46); border: 1px solid rgba(67,77,108,.58); border-radius: 10px; padding: 10px 12px; }
+.reconciliation-findings-side h4 { color: var(--text-muted); font-size: 10.5px; letter-spacing: .04em; margin: 0 0 6px; text-transform: uppercase; }
+.reconciliation-findings-side code { color: #b9f5ff; font-size: 12px; overflow-wrap: anywhere; }
+.reconciliation-findings-side p { color: var(--text-muted); font-size: 11px; margin: 4px 0 0; }
+.reconciliation-findings-evidence { background: rgba(8,12,19,.38); border: 1px solid rgba(67,77,108,.58); border-radius: 9px; font-size: 11px; padding: 8px 10px; }
+.reconciliation-findings-evidence dt { color: var(--text-muted); }
+.reconciliation-findings-evidence dd { color: var(--text); margin: 0 0 4px; overflow-wrap: anywhere; }
+.reconciliation-quarantine-item { align-items: center; background: rgba(8,12,19,.46); border: 1px solid var(--border); border-radius: 10px; display: flex; gap: 10px; justify-content: space-between; padding: 10px 12px; }
+.reconciliation-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
+.reconciliation-plan-summary { display: grid; gap: 10px; }
+.reconciliation-plan-summary > p { color: var(--text-muted); font-size: 12px; margin: 0; }
+
 .metadata-repair-page {
   max-width: none;
   padding: 18px 20px;
@@ -8529,6 +8556,15 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
 .duplicates-group-option span { display: grid; gap: 3px; min-width: 0; }
 .duplicates-group-option span:last-child { justify-items: end; }
 .duplicates-group-option small { color: var(--text-muted); font-size: 11px; overflow-wrap: anywhere; }
+.duplicates-recommendation { background: rgba(20,184,166,.07); border: 1px solid rgba(20,184,166,.28); border-radius: 10px; display: grid; font-size: 12px; gap: 4px; line-height: 1.5; padding: 10px 12px; }
+.duplicates-recommendation.is-unknown { background: rgba(8,12,19,.46); border-color: var(--border); }
+.duplicates-recommendation p { margin: 0; }
+.duplicates-recommendation strong { color: var(--text); }
+.duplicates-reason-code { color: var(--text-muted); font-size: 11px; }
+.duplicates-recommendation-evidence { color: var(--text-muted); font-size: 11px; }
+.duplicates-evidence-chips { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 2px; }
+.duplicates-evidence-chips span { background: rgba(8,12,19,.46); border: 1px solid rgba(67,77,108,.58); border-radius: 999px; color: var(--text-muted); font-size: 10.5px; padding: 3px 8px; }
+.duplicates-evidence-chips span.duplicates-evidence-chip--missing { background: rgba(248,113,113,.08); border-color: rgba(248,113,113,.28); color: #fca5a5; }
 .duplicates-track-list { display: grid; gap: 10px; }
 .duplicates-track { background: rgba(8,12,19,.46); border: 1px solid rgba(67,77,108,.58); border-radius: 11px; display: grid; gap: 12px; grid-template-columns: minmax(0, 1fr) minmax(260px, 360px); padding: 12px; }
 .duplicates-track-main { display: grid; gap: 5px; min-width: 0; }

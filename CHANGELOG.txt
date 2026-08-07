@@ -2,6 +2,58 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-07] — Cycle 4 unified Library Reconciliation workspace (Stage 4)
+
+- What changed: `/reconciliation` (sidebar label changed from "Ledger" to
+  "Library Reconciliation") is now one tabbed workspace instead of a
+  ledger-only page: Duplicates (a lightweight summary card linking out to
+  the existing `/duplicates` workspace rather than re-implementing it),
+  Missing / Orphaned (`indexed_missing_file` + `stale_path` findings from
+  Stage 2), Untracked (`untracked_file` findings), Quarantine (Stage 2's
+  read-only listing), and Plans (the pre-existing ledger table + plan
+  validation, now joined by a new "Propose plan" action that calls
+  `POST /reconciliation/plans/propose` from Stage 3). Findings render in
+  a list + evidence-detail layout; every tab's data is fetched once on
+  load and tab buttons/counts update live. No tab exposes a delete,
+  apply, or resolve-all control.
+- Also completed Stage 1's deferred UI: `/duplicates` now shows the
+  evidence fields added in Stage 1 (genre, bpm, key, duration,
+  extension-derived format, missing-metadata chips, copy-marker flag)
+  and the advisory keeper recommendation (with its reason code and
+  evidence lines, clearly separated from the human keep/ignore/
+  review-later decision) per duplicate group.
+- Why: Stages 1-3 built real backend evidence and a plan-first
+  contract with no way to see any of it; this stage is the review
+  surface, deliberately built by extending the existing Reconciliation
+  and Duplicates pages rather than forking a parallel workspace.
+- Files affected: `frontend/src/pages/Reconciliation.tsx` (restructured
+  into tabs), `frontend/src/pages/Duplicates.tsx` (evidence/
+  recommendation display added), `frontend/src/types/reconciliation.ts`
+  and `frontend/src/types/duplicates.ts` (new response shapes),
+  `frontend/src/api/reconciliation.ts` (three new fetch functions),
+  `frontend/src/components/Sidebar.tsx` (one label change),
+  `frontend/src/index.css` (new workspace/tab/finding CSS plus
+  duplicate-evidence chip styles, following existing per-page class
+  conventions -- no new design system).
+- Verification: `npm run typecheck` and `npm run build` both pass. Ran
+  the Impeccable audit skill against the changed files; its detector
+  found 0 issues in this stage's code (4 pre-existing findings in
+  unrelated Jobs/Collection progress-bar CSS were left untouched, out
+  of scope). The Chrome MCP extension was not connected this session,
+  so final visual verification used headless Chrome screenshots at
+  ~1440px, ~760px, and ~390px against the live dev server bound to the
+  configured `crateiq-test-library`, plus a stderr scan for console
+  errors (none from this code; only pre-existing React Router v7
+  future-flag warnings). Confirmed the persistent sidebar failing to
+  collapse below ~1440px is a pre-existing, app-wide layout issue
+  (reproduced identically on the untouched `/jobs` page) and not a
+  regression introduced here; not fixed, since it is out of this
+  stage's scope.
+- Migration notes: none. No backend change in this stage. The
+  `/reconciliation` route path and the `/duplicates` route are
+  unchanged, so no link elsewhere in the app needed updating beyond the
+  one sidebar label.
+
 [2026-08-07] — Cycle 4 plan-first library reconciliation (Stage 3)
 
 - What changed: `POST /api/reconciliation/plans/propose` generates a

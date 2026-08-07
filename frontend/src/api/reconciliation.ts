@@ -1,6 +1,9 @@
 import { apiFetch } from './client'
 import type {
+  QuarantineListingResponse,
+  ReconciliationFindingsResponse,
   ReconciliationLedgerEntry,
+  ReconciliationPlanProposeResponse,
   ReconciliationPlanValidateRequest,
   ReconciliationPlanValidationResult,
 } from '../types/reconciliation'
@@ -17,4 +20,16 @@ export function validateReconciliationPlan(
   req: ReconciliationPlanValidateRequest,
 ): Promise<ReconciliationPlanValidationResult> {
   return apiFetch.post<ReconciliationPlanValidationResult>('/reconciliation/validate-plan', req)
+}
+
+export function fetchReconciliationFindings(): Promise<ReconciliationFindingsResponse> {
+  return apiFetch.get<ReconciliationFindingsResponse>('/reconciliation/findings')
+}
+
+export function fetchReconciliationQuarantine(): Promise<QuarantineListingResponse> {
+  return apiFetch.get<QuarantineListingResponse>('/reconciliation/quarantine')
+}
+
+export function proposeReconciliationPlan(): Promise<ReconciliationPlanProposeResponse> {
+  return apiFetch.post<ReconciliationPlanProposeResponse>('/reconciliation/plans/propose', {})
 }

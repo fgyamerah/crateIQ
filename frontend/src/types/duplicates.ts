@@ -7,15 +7,32 @@ export interface DuplicateReviewItem {
   artist: string | null
   relative_path: string | null
   size_bytes: number | null
+  genre: string | null
+  bpm: number | null
+  key_camelot: string | null
+  key_musical: string | null
+  duration_sec: number | null
+  format: string | null
+  missing_metadata: string[]
+  copy_marker: boolean
   decision: DuplicateDecision
   note: string
   reviewed_at: string | null
+}
+
+export interface DuplicateKeeperRecommendation {
+  track_id: number | null
+  reason_code: string
+  evidence: string[]
 }
 
 export interface DuplicateReviewGroup {
   group_id: string
   reason: string
   confidence: 'high' | 'medium' | 'low'
+  match_basis: string
+  checksum_prefix: string | null
+  recommendation: DuplicateKeeperRecommendation
   items: DuplicateReviewItem[]
 }
 
