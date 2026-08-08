@@ -6,6 +6,102 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 14 (Workspace Onboarding + Settings UX), on
+  `feat/crateiq-workspace-onboarding` (base Cycle 13, this file's previous
+  entry), no merge to main. Fixes the confusing first-run experience where
+  Settings exposed the legacy direct-library setup (`Initialize CrateIQ
+  index` / `Scan preview` / `Import previewed tracks`) as the primary
+  onboarding path even though the managed Inbox/Library/Quarantine
+  workspace (Cycle 9+) is the recommended model -- users had to understand
+  both "library root" and "workspace" simultaneously, and a brand-new,
+  not-yet-existing root could not be created from the UI at all.
+
+  **Settings information architecture:** Workspace is now the first tab
+  (`Workspace, Metadata Sources, Analysis & Tools, Safety & Behavior, Job
+  Defaults, Backup & Restore, Diagnostics, Advanced`). The old "Library &
+  Paths" primary section and its `Initialize index / Scan preview / Import
+  previewed tracks` wizard moved under a new **Advanced** tab, inside a
+  collapsed `<details id="legacy-direct-library">` disclosure with an
+  explicit "Legacy mode ... does not provide the managed Inbox -> Library
+  workflow" warning. Active/pending library root and internal DB paths
+  (`processed.db`, `manual_crates.db`, exports root) also moved to Advanced
+  -- normal onboarding only ever shows Root/Inbox/Library/Quarantine.
+
+  **New `frontend/src/components/settings/WorkspacePanel.tsx`** renders five
+  explicit states driven by `settings.library.restart_required` (pending
+  wins over everything, so a stale/old workspace's DB paths are never
+  presented as belonging to the new one) and `workspace_service.
+  workspace_state()`: Ready (managed), Not Set Up (empty active root, one
+  "Create Managed Workspace" click), Pending Restart (current vs. new
+  workspace in visibly distinct columns, copyable restart command, old DB
+  paths demoted into a collapsed "Current runtime -- until restart"
+  disclosure), Legacy Detected (no auto-restructuring, "Choose New Managed
+  Workspace" primary + de-emphasized "Advanced: save as Legacy Direct
+  Library"), and the first-run "Set Up Managed Workspace" form. Settings can
+  now complete the entire flow itself -- Inbox's own `configureWorkspace`
+  call/button was removed in favor of routing `not_configured` and
+  `legacy_direct_library` Inbox states to `/settings#workspace` (one
+  canonical setup surface, per product decision).
+
+  **Safe new-folder creation**, split from the existing exists-only
+  `settings_service._validated_library_root()` (kept, unchanged behavior,
+  now built on a shared `core/library_root.assert_safe_new_root_path()` --
+  absolute path, no control characters, not a system/repo/runtime path,
+  symlink-resolved -- so the two entry points can't drift on what counts as
+  unsafe):
+  `workspace_service.classify_root_candidate(value)` (read-only; classifies
+  an existing dir via the same `workspace_state()` used everywhere else, or
+  reports `parent_exists`/`parent_writable`/`can_create` for a path that
+  doesn't exist yet -- never touches disk) and
+  `workspace_service.create_root_directory(value, confirm=True)` (creates
+  *only* the single final path segment via `Path.mkdir()` with no
+  `parents=True`; a missing parent is a hard error, never a recursive
+  create; idempotent no-op if the directory already exists; rejects a file
+  at that path). New routes in `backend/app/api/routes/workspace.py`:
+  `POST /api/workspace/root/classify`, `POST /api/workspace/root/create`.
+
+  **Self-import containment**, closing a gap `import_sources()` didn't
+  cover: it already refused a source *equal to or inside* the managed root,
+  but not the reverse -- a source that *contains* the managed root (e.g.
+  workspace `~/Music/crateIQ`, source `~/Music`), which would otherwise let
+  a recursive import walk into its own `Inbox/Library/Quarantine` copies
+  mid-run. Added a symlink-resolved `root_resolved.relative_to(resolved)`
+  check alongside the existing one, with a clear rejection message; a
+  sibling source (`~/Music/downloads` into `~/Music/crateIQ/Inbox`) is
+  unaffected.
+
+  **Tests:** 51 new/updated backend tests
+  (`tests/test_workspace_service.py`: classify/create safety matrix --
+  creatable, missing parent, forbidden/repo path, file-not-dir, existing
+  empty/managed/legacy, idempotent create, never-recursive-parents,
+  never-overwrites-a-file; both directions of self-import containment
+  including a symlink alias; `tests/test_workspace_root_routes.py`: the two
+  new routes end to end). 1630 backend tests pass total (zero regressions);
+  frontend typecheck/build pass; `git diff --check` clean;
+  `pipeline.py validate-docs --strict` OK.
+
+  **Live end-to-end verification** against disposable fixtures and the
+  already-running local dev backend (found already parked mid-scenario --
+  active root a disposable `crateiq-test-library`, pending root an empty
+  disposable `djcoco`, `restart_required=true` -- a live reproduction of
+  the exact bug this cycle fixes): confirmed Pending Restart correctly
+  showed current vs. new without conflating them; restarted against the
+  empty pending root and confirmed Not Set Up -> one click -> Ready,
+  creating `Inbox/Library/Quarantine/.crateiq-workspace.json` +
+  `logs/processed.db`; imported a real external MP3 through Inbox and
+  confirmed the Inbox copy was SHA-256 byte-identical while the external
+  original was untouched; attempted a self-import of the workspace's own
+  parent directory and confirmed it was rejected with zero files discovered
+  (no recursive walk into `Inbox`); pointed "Change Workspace" at a
+  disposable folder already containing a track and confirmed the Legacy
+  Detected UI with no auto-restructuring. Backend window-resize automation
+  did not actually change `window.innerWidth` in this environment, so the
+  760px/390px responsive breakpoints were verified by CSS review (existing
+  640px media queries on the new grids) rather than a live render --
+  disclosed rather than claimed as tested. Restored the local dev
+  environment to a clean, non-pending state on the now-initialized
+  `djcoco` workspace afterward.
+
 - 2026-08-08: Cycle 13 (Provider Consensus Wired into Process All), a
   tightly scoped final integration cycle on `feat/crateiq-managed-library`
   (base Cycle 12, this file's previous entry), no merge to main. Closes

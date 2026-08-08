@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.crate_db import crates_db_path
-from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
+from ..core.library_root import assert_path_under_root, assert_safe_new_root_path, library_db_path, selected_library_root
 from ..core.preflight import redact_path, run_preflight
 from .providers import (
     acoustid_client, beatport_client, deezer_client, discogs_client,
@@ -257,40 +257,14 @@ def _is_demo_root(root: Path) -> bool:
     return root.resolve(strict=False) == (_REPO_ROOT / ".run" / "demo-library").resolve(strict=False)
 
 
-def _is_within(path: Path, parent: Path) -> bool:
-    try:
-        path.relative_to(parent)
-        return True
-    except ValueError:
-        return False
-
-
-def _forbidden_library_roots() -> tuple[Path, ...]:
-    return (
-        Path("/"), Path("/etc"), Path("/usr"), Path("/bin"), Path("/sbin"),
-        Path("/proc"), Path("/sys"), Path("/dev"), Path("/run"),
-        _REPO_ROOT, _REPO_ROOT / ".git", _REPO_ROOT / ".venv",
-        _REPO_ROOT / "node_modules", _REPO_ROOT / ".run",
-    )
-
-
 def _validated_library_root(value: str) -> Path:
-    candidate_text = value.strip()
-    if not candidate_text:
-        raise ValueError("library_root is required")
-    if "\x00" in candidate_text or "\n" in candidate_text or "\r" in candidate_text:
-        raise ValueError("library_root contains an unsafe character")
-    candidate = Path(candidate_text).expanduser()
-    if not candidate.is_absolute():
-        raise ValueError("library_root must be an absolute path")
-    resolved = candidate.resolve(strict=False)
-    if any(
-        resolved == forbidden.resolve(strict=False)
-        if forbidden == Path("/")
-        else _is_within(resolved, forbidden.resolve(strict=False))
-        for forbidden in _forbidden_library_roots()
-    ):
-        raise ValueError("library_root cannot be a system or CrateIQ runtime directory")
+    """
+    Legacy/advanced entry point: the root must already exist. Managed
+    workspace onboarding uses workspace_service.classify_root_candidate() /
+    create_root_directory() instead, which additionally support a
+    not-yet-existing final directory.
+    """
+    resolved = assert_safe_new_root_path(value)
     if not resolved.exists():
         raise ValueError("library_root does not exist")
     if not resolved.is_dir():

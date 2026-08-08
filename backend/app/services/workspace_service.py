@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import sqlite3
@@ -31,7 +32,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from . import library_setup_service, tag_write_service
-from ..core.library_root import assert_path_under_root
+from ..core.library_root import assert_path_under_root, assert_safe_new_root_path
 from ..core.preflight import redact_path
 
 WORKSPACE_MARKER_NAME = ".crateiq-workspace.json"
@@ -220,6 +221,85 @@ def configure_workspace(root: Path) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Root classification + safe new-folder creation (onboarding)
+# ---------------------------------------------------------------------------
+
+def classify_root_candidate(value: str) -> dict[str, Any]:
+    """
+    Read-only safety classification for a candidate workspace root that may
+    not exist yet. Never creates or modifies anything on disk. Raises
+    ValueError for a path that is unsafe regardless of whether it exists
+    (not absolute, control characters, system/repo path, a file).
+
+    This is the single source of truth Settings onboarding uses to decide
+    between "eligible to create", "eligible existing workspace", and
+    "existing music folder detected" -- the frontend never re-derives this
+    classification itself.
+    """
+    resolved = assert_safe_new_root_path(value)
+    if resolved.exists():
+        if not resolved.is_dir():
+            raise ValueError("library_root is a file, not a directory")
+        state = workspace_state(resolved)
+        return {
+            "exists": True,
+            "parent_exists": True,
+            "parent_writable": None,
+            "can_create": False,
+            **state,
+        }
+
+    parent = resolved.parent
+    parent_exists = parent.is_dir()
+    parent_writable = parent_exists and os.access(parent, os.W_OK)
+    if not parent_exists:
+        message = f"Parent folder does not exist: {redact_path(parent)}. Create the parent folder first, or choose a different location."
+    elif not parent_writable:
+        message = f"Parent folder is not writable: {redact_path(parent)}."
+    else:
+        message = "This folder does not exist yet. CrateIQ can create it as a new managed workspace."
+    return {
+        "state": "not_configured",
+        "library_root": redact_path(resolved),
+        "inbox_path": None,
+        "library_path": None,
+        "quarantine_path": None,
+        "marker_version": None,
+        "exists": False,
+        "parent_exists": parent_exists,
+        "parent_writable": parent_writable,
+        "can_create": parent_exists and parent_writable,
+        "message": message,
+    }
+
+
+def create_root_directory(value: str, *, confirm: bool) -> dict[str, Any]:
+    """
+    Safely create ONLY the final requested directory for a new managed
+    workspace root -- never a recursive parent tree. Idempotent: calling
+    this on an already-existing directory performs no filesystem write and
+    just returns its current classification.
+    """
+    resolved = assert_safe_new_root_path(value)
+    if resolved.exists():
+        if not resolved.is_dir():
+            raise ValueError("library_root is a file, not a directory")
+        return classify_root_candidate(value)
+
+    if not confirm:
+        raise ValueError("Creating a new workspace folder requires confirm=true.")
+
+    parent = resolved.parent
+    if not parent.is_dir():
+        raise ValueError(f"Parent folder does not exist: {redact_path(parent)}")
+    if not os.access(parent, os.W_OK):
+        raise ValueError(f"Parent folder is not writable: {redact_path(parent)}")
+
+    resolved.mkdir()  # single level only -- never parents=True here
+    return classify_root_candidate(value)
+
+
+# ---------------------------------------------------------------------------
 # Import (copy external sources into Inbox)
 # ---------------------------------------------------------------------------
 
@@ -305,19 +385,33 @@ def import_sources(root: Path, source_paths: list[str], *, confirm: bool) -> dic
 
     all_sources: list[Path] = []
     validation_errors: list[str] = []
+    root_resolved = root.resolve(strict=False)
     for raw in source_paths:
         try:
             candidate = Path(raw).expanduser()
             if not candidate.is_absolute():
                 validation_errors.append(f"Not an absolute path: {raw}")
                 continue
+            # strict=True resolves symlinks and also catches a symlink that
+            # escapes into the managed root -- the containment checks below
+            # then see the real resolved destination, not the link's surface
+            # path.
             resolved = candidate.resolve(strict=True)
         except OSError:
             validation_errors.append(f"Source not found: {raw}")
             continue
         try:
-            resolved.relative_to(root.resolve(strict=False))
+            resolved.relative_to(root_resolved)
             validation_errors.append(f"Refusing to import from inside the managed root: {raw}")
+            continue
+        except ValueError:
+            pass
+        try:
+            root_resolved.relative_to(resolved)
+            validation_errors.append(
+                f"Refusing to import: the managed workspace is inside this source folder ({raw}). "
+                "Choose a source that does not contain the managed workspace."
+            )
             continue
         except ValueError:
             pass

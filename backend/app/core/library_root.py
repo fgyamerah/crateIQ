@@ -12,6 +12,52 @@ import importlib.util
 import os
 from pathlib import Path
 
+_REPO_ROOT = Path(__file__).resolve().parents[3]
+
+# Shared with settings_service's legacy library-root validation so the two
+# entry points (existing-root-only legacy setup, new-folder-eligible
+# managed workspace setup) can never drift on what counts as an unsafe path.
+_FORBIDDEN_NEW_ROOT_PATHS: tuple[Path, ...] = (
+    Path("/"), Path("/etc"), Path("/usr"), Path("/bin"), Path("/sbin"),
+    Path("/proc"), Path("/sys"), Path("/dev"), Path("/run"),
+    _REPO_ROOT, _REPO_ROOT / ".git", _REPO_ROOT / ".venv",
+    _REPO_ROOT / "node_modules", _REPO_ROOT / ".run",
+)
+
+
+def _is_within(path: Path, parent: Path) -> bool:
+    try:
+        path.relative_to(parent)
+        return True
+    except ValueError:
+        return False
+
+
+def assert_safe_new_root_path(value: str) -> Path:
+    """
+    Validate a user-supplied path is safe to use as a library/workspace root,
+    without requiring it to already exist. Raises ValueError with a clear,
+    user-facing message. Resolves symlinks (via Path.resolve) so a symlink
+    that escapes into a forbidden/system location is still rejected.
+    """
+    text = value.strip()
+    if not text:
+        raise ValueError("library_root is required")
+    if any(ch in text for ch in ("\x00", "\n", "\r")):
+        raise ValueError("library_root contains an unsafe character")
+    candidate = Path(text).expanduser()
+    if not candidate.is_absolute():
+        raise ValueError("library_root must be an absolute path")
+    resolved = candidate.resolve(strict=False)
+    if any(
+        resolved == forbidden.resolve(strict=False)
+        if forbidden == Path("/")
+        else _is_within(resolved, forbidden.resolve(strict=False))
+        for forbidden in _FORBIDDEN_NEW_ROOT_PATHS
+    ):
+        raise ValueError("library_root cannot be a system or CrateIQ runtime directory")
+    return resolved
+
 
 def _load_toolkit_music_root() -> Path | None:
     """

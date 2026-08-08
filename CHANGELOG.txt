@@ -2,6 +2,51 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Simplify managed workspace onboarding in Settings
+
+- What changed: Workspace is now the primary/first Settings tab (Workspace,
+  Metadata Sources, Analysis & Tools, Safety & Behavior, Job Defaults,
+  Backup & Restore, Diagnostics, Advanced). The legacy direct-library setup
+  wizard (Initialize index / Scan preview / Import previewed tracks) and
+  the active/pending library root + internal DB path diagnostics moved to
+  a new Advanced tab, inside a collapsed "Legacy Direct Library" disclosure
+  with an explicit non-managed-workflow warning. Added a new
+  WorkspacePanel component covering five explicit states: Ready (managed),
+  Not Set Up (empty active root -> one-click Create Managed Workspace),
+  Pending Restart (current vs. new workspace shown in clearly separate
+  columns so old DB paths can never be mistaken for the pending one),
+  Legacy Detected (no auto-restructuring, "Choose New Managed Workspace"
+  as the primary action), and first-run Set Up Managed Workspace. Settings
+  can now safely create a brand-new, not-yet-existing workspace folder
+  (parent must already exist and be writable; only the single final
+  directory is created, never a recursive parent tree) via two new
+  endpoints, POST /api/workspace/root/classify (read-only) and
+  POST /api/workspace/root/create (confirm required). Inbox's
+  not_configured/legacy_direct_library empty states now route to
+  /settings#workspace instead of duplicating setup UI. Closed a gap in
+  workspace_service.import_sources(): an import source that *contains* the
+  managed workspace (e.g. importing "~/Music" into a workspace at
+  "~/Music/crateIQ") is now rejected, not just a source equal to or inside
+  the workspace.
+- Why: users had to understand "library root" vs. "active root" vs.
+  "pending root" vs. "managed root" vs. "legacy direct library" vs.
+  "workspace" simultaneously just to get started, and there was no way to
+  create a new dedicated workspace folder without leaving CrateIQ to run
+  mkdir manually. A new user should be able to complete Choose Managed
+  Workspace -> Restart -> Initialize -> Import External Music -> Inbox
+  without understanding the legacy direct-library architecture at all.
+- Files affected: backend/app/core/library_root.py,
+  backend/app/services/settings_service.py,
+  backend/app/services/workspace_service.py,
+  backend/app/api/routes/workspace.py, frontend/src/pages/Settings.tsx,
+  frontend/src/pages/Inbox.tsx, frontend/src/api/workspace.ts,
+  frontend/src/components/settings/WorkspacePanel.tsx (new),
+  frontend/src/index.css, tests/test_workspace_service.py,
+  tests/test_workspace_root_routes.py (new).
+- Migration notes: none. Internal library_root variable/API naming is
+  unchanged; only user-facing Settings copy and layout moved. Existing
+  legacy direct-library setups keep working unchanged under Advanced.
+
 [2026-08-08] — Docs: refresh public-facing documentation for Cycle 13 baseline
 
 - What changed: README.md rewritten around the current product (Managed

@@ -69,6 +69,23 @@ export function configureWorkspace(): Promise<WorkspaceStatus> {
   return apiFetch.post<WorkspaceStatus>('/workspace/configure', {})
 }
 
+export interface WorkspaceRootClassification extends WorkspaceStatus {
+  exists: boolean
+  parent_exists: boolean
+  parent_writable: boolean | null
+  can_create: boolean
+}
+
+/** Read-only: classify a candidate workspace root path. Never touches disk. */
+export function classifyWorkspaceRoot(libraryRoot: string): Promise<WorkspaceRootClassification> {
+  return apiFetch.post<WorkspaceRootClassification>('/workspace/root/classify', { library_root: libraryRoot })
+}
+
+/** Safely create only the final requested directory for a new workspace root. */
+export function createWorkspaceRoot(libraryRoot: string): Promise<WorkspaceRootClassification> {
+  return apiFetch.post<WorkspaceRootClassification>('/workspace/root/create', { library_root: libraryRoot, confirm: true })
+}
+
 export function importToInbox(sourcePaths: string[]): Promise<WorkspaceImportResult> {
   return apiFetch.post<WorkspaceImportResult>('/workspace/import', { source_paths: sourcePaths, confirm: true })
 }

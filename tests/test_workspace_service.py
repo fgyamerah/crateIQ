@@ -374,6 +374,203 @@ def test_promote_tracks_fails_closed_on_uninitialized_root(tmp_path):
         svc.promote_tracks(root, [1], confirm=True)
 
 
+# ---------------------------------------------------------------------------
+# classify_root_candidate / create_root_directory (safe onboarding creation)
+# ---------------------------------------------------------------------------
+
+def test_classify_new_directory_is_creatable(tmp_path):
+    parent = tmp_path / "Music"
+    parent.mkdir()
+    candidate = parent / "crateIQ"
+
+    result = svc.classify_root_candidate(str(candidate))
+
+    assert result["exists"] is False
+    assert result["parent_exists"] is True
+    assert result["parent_writable"] is True
+    assert result["can_create"] is True
+    assert result["state"] == "not_configured"
+
+
+def test_classify_rejects_missing_parent(tmp_path):
+    candidate = tmp_path / "missing-parent" / "crateIQ"
+
+    result = svc.classify_root_candidate(str(candidate))
+
+    assert result["exists"] is False
+    assert result["parent_exists"] is False
+    assert result["can_create"] is False
+
+
+def test_classify_rejects_relative_path():
+    with pytest.raises(ValueError):
+        svc.classify_root_candidate("relative/path")
+
+
+def test_classify_rejects_forbidden_system_path():
+    with pytest.raises(ValueError):
+        svc.classify_root_candidate("/etc/crateiq-workspace")
+
+
+def test_classify_rejects_repo_runtime_path():
+    from backend.app.core.library_root import _REPO_ROOT
+    with pytest.raises(ValueError):
+        svc.classify_root_candidate(str(_REPO_ROOT / ".run" / "sneaky"))
+
+
+def test_classify_rejects_file_path(tmp_path):
+    file_path = tmp_path / "not-a-dir.txt"
+    file_path.write_text("hi")
+    with pytest.raises(ValueError):
+        svc.classify_root_candidate(str(file_path))
+
+
+def test_classify_existing_empty_directory_is_not_configured(tmp_path):
+    root = tmp_path / "empty"
+    root.mkdir()
+    result = svc.classify_root_candidate(str(root))
+    assert result["exists"] is True
+    assert result["state"] == "not_configured"
+    assert result["can_create"] is False
+
+
+def test_classify_existing_managed_workspace(tmp_path):
+    root = tmp_path / "managed"
+    svc.configure_workspace(root)
+    result = svc.classify_root_candidate(str(root))
+    assert result["exists"] is True
+    assert result["state"] == "managed_workspace"
+    assert result["inbox_path"] is not None
+
+
+def test_classify_existing_legacy_root_is_not_restructured(tmp_path):
+    root = tmp_path / "legacy"
+    root.mkdir()
+    _write(root / "track.mp3")
+    result = svc.classify_root_candidate(str(root))
+    assert result["state"] == "legacy_direct_library"
+    # Purely a classification call -- no zones/marker are created.
+    assert not (root / "Inbox").exists()
+    assert not (root / svc.WORKSPACE_MARKER_NAME).exists()
+
+
+def test_create_root_directory_creates_only_final_segment(tmp_path):
+    parent = tmp_path / "Music"
+    parent.mkdir()
+    candidate = parent / "crateIQ"
+
+    result = svc.create_root_directory(str(candidate), confirm=True)
+
+    assert candidate.is_dir()
+    assert result["exists"] is True
+    assert result["state"] == "not_configured"
+
+
+def test_create_root_directory_requires_confirm(tmp_path):
+    parent = tmp_path / "Music"
+    parent.mkdir()
+    candidate = parent / "crateIQ"
+    with pytest.raises(ValueError, match="confirm"):
+        svc.create_root_directory(str(candidate), confirm=False)
+    assert not candidate.exists()
+
+
+def test_create_root_directory_rejects_missing_parent(tmp_path):
+    candidate = tmp_path / "no-such-parent" / "crateIQ"
+    with pytest.raises(ValueError, match="Parent folder does not exist"):
+        svc.create_root_directory(str(candidate), confirm=True)
+    assert not candidate.exists()
+
+
+def test_create_root_directory_never_creates_recursive_parents(tmp_path):
+    candidate = tmp_path / "a" / "b" / "c"
+    with pytest.raises(ValueError, match="Parent folder does not exist"):
+        svc.create_root_directory(str(candidate), confirm=True)
+    assert not (tmp_path / "a").exists()
+
+
+def test_create_root_directory_is_idempotent_on_existing_dir(tmp_path):
+    root = tmp_path / "already-there"
+    root.mkdir()
+    result = svc.create_root_directory(str(root), confirm=False)
+    assert result["exists"] is True
+    assert result["state"] == "not_configured"
+
+
+def test_create_root_directory_rejects_file_path(tmp_path):
+    file_path = tmp_path / "not-a-dir.txt"
+    file_path.write_text("hi")
+    with pytest.raises(ValueError):
+        svc.create_root_directory(str(file_path), confirm=True)
+
+
+def test_create_root_directory_never_overwrites_file_with_directory(tmp_path):
+    parent = tmp_path / "Music"
+    parent.mkdir()
+    blocking_file = parent / "crateIQ"
+    blocking_file.write_text("i am a file, not a folder")
+
+    with pytest.raises(ValueError):
+        svc.create_root_directory(str(blocking_file), confirm=True)
+    assert blocking_file.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Import containment safety (self-import / recursive-copy protection)
+# ---------------------------------------------------------------------------
+
+def test_import_rejects_source_equal_to_workspace(tmp_path):
+    root = tmp_path / "managed"
+    svc.configure_workspace(root)
+
+    result = svc.import_sources(root, [str(root)], confirm=True)
+    assert result["imported_count"] == 0
+    assert any("Refusing to import" in w for w in result["warnings"])
+
+
+def test_import_rejects_source_that_contains_workspace(tmp_path):
+    music = tmp_path / "Music"
+    root = music / "crateIQ"
+    svc.configure_workspace(root)
+
+    result = svc.import_sources(root, [str(music)], confirm=True)
+
+    assert result["imported_count"] == 0
+    assert any("managed workspace is inside this source folder" in w for w in result["warnings"])
+    # Nothing was recursively discovered/copied from inside Inbox/Library/Quarantine.
+    assert not any((root / "Inbox").glob("*"))
+
+
+def test_import_sibling_source_still_succeeds(tmp_path):
+    music = tmp_path / "Music"
+    music.mkdir()
+    root = music / "crateIQ"
+    svc.configure_workspace(root)
+
+    sibling = music / "downloads"
+    _write(sibling / "track.mp3")
+
+    result = svc.import_sources(root, [str(sibling)], confirm=True)
+
+    assert result["imported_count"] == 1
+    assert (root / "Inbox" / "track.mp3").is_file()
+    assert (sibling / "track.mp3").is_file(), "sibling source must remain untouched"
+
+
+def test_import_rejects_symlink_resolved_self_import(tmp_path):
+    music = tmp_path / "Music"
+    root = music / "crateIQ"
+    svc.configure_workspace(root)
+
+    alias = tmp_path / "alias-to-music"
+    alias.symlink_to(music)
+
+    result = svc.import_sources(root, [str(alias)], confirm=True)
+
+    assert result["imported_count"] == 0
+    assert any("managed workspace is inside this source folder" in w for w in result["warnings"])
+
+
 def test_promotion_preview_empty_track_ids_means_none_not_all(tmp_path, monkeypatch):
     root = tmp_path / "managed"
     svc.configure_workspace(root)

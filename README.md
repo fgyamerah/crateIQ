@@ -66,6 +66,14 @@ under one **Managed Root** folder you choose (Settings → Workspace):
   scanned in place, no `Inbox`/`Library`/`Quarantine` folders) is never
   silently restructured into this layout — configuring a managed workspace
   requires a new, dedicated root.
+- **Workspace Root vs. Import Source are different things.** The Workspace
+  Root is the dedicated folder crateIQ owns (Settings → Workspace can create
+  it safely — one new folder only, never a recursive parent tree, and only
+  after you confirm). An Import Source is any external folder of your
+  existing music; crateIQ refuses an import whose source *is* the workspace,
+  *contains* the workspace, or resolves through a symlink into it, so a
+  sibling folder like `~/Music/downloads` imports cleanly into
+  `~/Music/crateIQ/Inbox` without ever re-discovering its own copies.
 - Operational databases, backups, and caches (crateIQ's SQLite index, job
   state, waveform cache) live under crateIQ's own runtime data directories,
   outside the managed music tree.
@@ -332,11 +340,21 @@ scripts/crateiq-local-services.sh start-demo-local
 **First-run flow for your own music:**
 
 1. Start crateIQ.
-2. Open **Settings** → **Workspace** and choose a Managed Root.
-3. Open **Inbox** and **Import Music** — this copies files in; your
-   originals are untouched.
+2. Open **Settings** — Workspace is the first tab. Enter a new folder path
+   (e.g. `~/Music/crateIQ`); Settings validates it and, once you confirm,
+   creates it and saves it as the pending workspace. Restart crateIQ
+   (Settings shows the exact restart command and clearly separates the
+   *current* workspace you're still running on from the *new* one pending
+   restart), then reload Settings and click **Create Managed Workspace**.
+3. Open **Inbox** and **Import Music** — this copies files in from an
+   external Import Source; your originals are untouched.
 4. Run **Process All**, resolve anything in **Needs Review**, then
    **Move Ready to Library**.
+
+Direct/legacy library setup (scan an existing folder in place, no managed
+Inbox/Library/Quarantine) has moved to **Settings → Advanced → Legacy
+Direct Library** — it still works, but it's no longer the default path new
+users see.
 
 ```bash
 scripts/crateiq-local-services.sh start-library-local

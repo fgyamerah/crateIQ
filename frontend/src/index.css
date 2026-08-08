@@ -8454,6 +8454,28 @@ tr.row--selected td {
 .settings-capability span, .settings-capability small { color: var(--text-muted); font-size: 12px; line-height: 1.45; }
 .settings-capability small { overflow-wrap: anywhere; }
 .settings-capability .btn { flex: 0 0 auto; }
+.workspace-panel { gap: 16px; }
+.workspace-zone-preview { display: grid; gap: 8px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.workspace-zone-preview > div { background: rgba(8,12,19,.62); border: 1px solid rgba(67,77,108,.58); border-radius: 10px; display: grid; gap: 3px; justify-items: start; padding: 10px; }
+.workspace-zone-preview svg { color: var(--brand-cyan); }
+.workspace-zone-preview span { color: var(--text-muted); font-size: 11px; line-height: 1.35; }
+@media (max-width: 640px) { .workspace-zone-preview { grid-template-columns: 1fr; } }
+.workspace-root-picker { background: rgba(8,12,19,.35); border: 1px solid var(--border); border-radius: 12px; display: grid; gap: 10px; padding: 14px; }
+.workspace-root-picker label { color: var(--text-muted); display: grid; font-size: 12px; gap: 5px; }
+.workspace-pending-columns { display: grid; gap: 12px; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.workspace-pending-columns > div { background: rgba(8,12,19,.62); border: 1px solid rgba(67,77,108,.58); border-radius: 10px; display: grid; gap: 4px; padding: 12px; }
+.workspace-pending-columns > div:first-child strong { color: var(--text-muted); }
+.workspace-pending-columns > div:last-child { border-color: color-mix(in srgb, var(--accent) 45%, var(--border)); }
+.workspace-pending-columns > div:last-child strong { color: var(--accent); }
+.workspace-pending-columns code { overflow-wrap: anywhere; }
+@media (max-width: 640px) { .workspace-pending-columns { grid-template-columns: 1fr; } }
+.workspace-restart-command { background: rgba(8,12,19,.72); border: 1px solid var(--border); border-radius: 10px; font-size: 12px; margin: 0; overflow-x: auto; padding: 10px 12px; white-space: pre-wrap; }
+.workspace-runtime-details summary { color: var(--text-muted); cursor: pointer; font-size: 12px; padding: 4px 0; }
+.workspace-runtime-details[open] summary { color: var(--text); }
+.settings-legacy-details { background: rgba(8,12,19,.35); border: 1px dashed rgba(67,77,108,.7); border-radius: 12px; padding: 12px 14px; }
+.settings-legacy-details summary { color: var(--text-muted); cursor: pointer; font-size: 13px; font-weight: 600; padding: 4px 0; }
+.settings-legacy-details[open] summary { color: var(--text); margin-bottom: 10px; }
+.settings-legacy-details .settings-import-wizard { display: grid; gap: 14px; padding-top: 4px; }
 .metadata-sources-card { gap: 18px; }
 .metadata-source-group { display: grid; gap: 9px; }
 .metadata-source-group h3 { font-size: 13px; margin: 0; }

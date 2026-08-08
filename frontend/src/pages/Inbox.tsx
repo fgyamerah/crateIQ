@@ -6,7 +6,6 @@ import {
   applyPromotion,
   cancelPrepareOperation,
   cleanSelected,
-  configureWorkspace,
   enrichSelected,
   fetchInboxTracks,
   fetchPreparePreview,
@@ -38,7 +37,6 @@ export default function Inbox() {
   const [preview, setPreview] = useState<PromotionPreview | null>(null)
   const [preflight, setPreflight] = useState<PreparePreflight | null>(null)
   const [loading, setLoading] = useState(true)
-  const [configuring, setConfiguring] = useState(false)
   const [importing, setImporting] = useState(false)
   const [promoting, setPromoting] = useState(false)
   const [importPaths, setImportPaths] = useState('')
@@ -97,19 +95,6 @@ export default function Inbox() {
     }
     void tick()
   }, [load])
-
-  const doConfigure = async () => {
-    setConfiguring(true)
-    setError(null)
-    try {
-      await configureWorkspace()
-      await load()
-    } catch (err) {
-      setError(messageFor(err, 'Could not configure the managed workspace.'))
-    } finally {
-      setConfiguring(false)
-    }
-  }
 
   const doImport = async () => {
     const paths = importPaths.split('\n').map((line) => line.trim()).filter(Boolean)
@@ -228,18 +213,15 @@ export default function Inbox() {
         <EmptyState
           icon={<FolderInput size={22} />}
           title="No managed workspace yet"
-          message={status.message}
-          action={
-            <button className="btn btn--primary" disabled={configuring} onClick={() => void doConfigure()}>
-              {configuring ? 'Configuring…' : 'Configure managed workspace'}
-            </button>
-          }
+          message="Set up a managed workspace in Settings, then come back to Inbox to import music."
+          action={<Link className="btn btn--primary" to="/settings#workspace">Set Up Workspace</Link>}
         />
       ) : status?.state === 'legacy_direct_library' ? (
         <EmptyState
           icon={<FolderInput size={22} />}
-          title="Existing direct library detected"
-          message={status.message}
+          title="Existing music folder detected"
+          message="This is not a CrateIQ Managed Workspace. To use Inbox, create a dedicated workspace first."
+          action={<Link className="btn btn--primary" to="/settings#workspace">Set Up Workspace</Link>}
         />
       ) : (
         <>

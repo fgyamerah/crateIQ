@@ -59,6 +59,28 @@ class WorkspaceImportRequest(BaseModel):
     confirm: bool = False
 
 
+class WorkspaceRootClassifyRequest(BaseModel):
+    library_root: str = Field(min_length=1, max_length=4096)
+
+
+class WorkspaceRootCreateRequest(WorkspaceRootClassifyRequest):
+    confirm: bool = False
+
+
+class WorkspaceRootClassifyResponse(BaseModel):
+    state: str
+    library_root: str
+    inbox_path: Optional[str] = None
+    library_path: Optional[str] = None
+    quarantine_path: Optional[str] = None
+    marker_version: Optional[int] = None
+    exists: bool
+    parent_exists: bool
+    parent_writable: Optional[bool] = None
+    can_create: bool
+    message: str
+
+
 class TrackPageResponse(BaseModel):
     items: List[TrackSummary]
     limit: int
@@ -99,6 +121,24 @@ async def get_workspace_status() -> WorkspaceStatusResponse:
 async def configure_workspace() -> WorkspaceStatusResponse:
     try:
         return WorkspaceStatusResponse(**workspace_service.configure_workspace(_root()))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/root/classify", response_model=WorkspaceRootClassifyResponse)
+async def classify_workspace_root(body: WorkspaceRootClassifyRequest) -> WorkspaceRootClassifyResponse:
+    """Read-only: classify a candidate workspace root path. Never touches disk."""
+    try:
+        return WorkspaceRootClassifyResponse(**workspace_service.classify_root_candidate(body.library_root))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/root/create", response_model=WorkspaceRootClassifyResponse)
+async def create_workspace_root(body: WorkspaceRootCreateRequest) -> WorkspaceRootClassifyResponse:
+    """Safely create only the final requested directory for a new workspace root."""
+    try:
+        return WorkspaceRootClassifyResponse(**workspace_service.create_root_directory(body.library_root, confirm=body.confirm))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

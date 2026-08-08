@@ -39,6 +39,42 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 14 -- Workspace Onboarding + Settings UX (2026-08-08)
+    Fixes the confusing first-run experience where Settings exposed the
+    legacy direct-library wizard as the primary onboarding path alongside
+    the managed workspace, and there was no way to create a brand-new
+    workspace folder from the UI. Workspace is now the first Settings tab;
+    legacy setup (Initialize index/Scan preview/Import previewed tracks)
+    plus active/pending root and internal DB paths moved to a new Advanced
+    tab behind a collapsed "Legacy Direct Library" disclosure. New
+    WorkspacePanel component covers five states (Ready, Not Set Up,
+    Pending Restart with current-vs-new columns, Legacy Detected, first-run
+    setup form). New backend safe-creation endpoints
+    POST /api/workspace/root/classify and .../root/create (single-directory
+    only, confirm required, no recursive parent creation), built on a
+    shared core/library_root.assert_safe_new_root_path() so legacy and
+    managed-workspace validation can't drift. Closed a self-import
+    containment gap: importing a source that *contains* the managed root is
+    now rejected (previously only source == or inside root was caught).
+    Inbox's not_configured/legacy states now route to /settings#workspace
+    instead of duplicating setup UI. 51 new backend tests; 1630 backend
+    tests pass total (zero regressions); frontend typecheck/build pass.
+    Live-verified end to end against the already-running local dev
+    environment (found mid-scenario in exactly the bug state this cycle
+    fixes -- pending root distinct from active, both disposable test
+    dirs): restart -> empty-root init -> real MP3 import with SHA-256
+    verification -> self-import rejection -> legacy detection, all
+    confirmed through the real UI. Responsive check at 760px/390px could
+    not be verified live (browser automation's resize did not change
+    window.innerWidth in this environment) -- verified by CSS review of
+    the existing 640px breakpoints instead; disclosed, not claimed as
+    tested. On feat/crateiq-workspace-onboarding; not merged to main.
+[ ] (P3) Inbox import result doesn't surface per-source `warnings` text
+    (e.g. the new self-import containment rejection message) in the UI --
+    only imported/duplicate/failed counts are shown. Noticed during Cycle
+    14 browser verification; the backend already returns the message via
+    WorkspaceImportResult.warnings, this is purely a frontend display gap
+    in frontend/src/pages/Inbox.tsx's importResult rendering.
 [x] (P0) Managed Library Cycle 13 -- Provider Consensus Wired into Process All (2026-08-08)
     Closes the P1 follow-up below. preparation_service.enrich_tracks() now
     calls provider_routing_service.gather_evidence() + consensus_service.
