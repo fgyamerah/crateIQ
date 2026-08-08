@@ -4,6 +4,9 @@ from pydantic import BaseModel, Field
 
 Decision = Literal['pending', 'applied', 'ignored', 'review_later']
 
+class OnlineLookupRequest(BaseModel):
+    source: Literal['beets', 'musicbrainz']
+
 class SuggestionUpdate(BaseModel):
     decision: Decision = 'pending'
     note: str = Field(default='', max_length=1000)

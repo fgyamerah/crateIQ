@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import { Check, RefreshCw, ShieldCheck } from 'lucide-react'
+import { Check, Globe2, Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { ApiError } from '../api/client'
-import { applyEnrichmentSuggestion, fetchEnrichmentReview, refreshEnrichmentReview, updateEnrichmentSuggestion } from '../api/enrichmentReview'
+import { applyEnrichmentSuggestion, fetchEnrichmentReview, refreshEnrichmentReview, runOnlineLookup, updateEnrichmentSuggestion } from '../api/enrichmentReview'
 import type { EnrichmentSuggestion, EnrichmentReview } from '../types/enrichmentReview'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
@@ -82,6 +82,19 @@ export default function EnrichmentReviewPage() {
     } catch (e) { setProblem(errorMessage(e)) } finally { setBusy(false) }
   }
 
+  const [lookupBusy, setLookupBusy] = useState<'beets' | 'musicbrainz' | null>(null)
+
+  async function lookup(source: 'beets' | 'musicbrainz') {
+    if (!selected) return
+    setLookupBusy(source)
+    try {
+      const next = await runOnlineLookup(selected.track_id, source)
+      apply(next)
+      const found = next.items.find((x) => x.track_id === selected.track_id && x.source_id === source)
+      setMessage(found ? `${source === 'beets' ? 'Beets' : 'MusicBrainz'} suggestion added for this track.` : `No new ${source} suggestion for this track — see warnings below.`)
+    } catch (e) { setProblem(errorMessage(e)) } finally { setLookupBusy(null) }
+  }
+
   async function runApply() {
     if (!selected) return
     setBusy(true)
@@ -124,7 +137,7 @@ export default function EnrichmentReviewPage() {
       </header>
 
       <StatusStrip tone="info" icon={<ShieldCheck size={15} />}>
-        Review-first · DB-only · selected fields only. No tags, file changes, BPM/key/Camelot/cue changes, or external API calls.
+        Review-first · DB-only · selected fields only. No tags, file, or BPM/key/Camelot/cue changes. Beets and MusicBrainz lookups only run when you explicitly click them for a single track.
       </StatusStrip>
       {problem && <StatusStrip tone="danger" onDismiss={() => setProblem(null)}>{problem}</StatusStrip>}
       {message && <StatusStrip tone="good" onDismiss={() => setMessage(null)}>{message}</StatusStrip>}
@@ -148,7 +161,7 @@ export default function EnrichmentReviewPage() {
       {!review || !review.items.length ? (
         <EmptyState
           title="No local comparison suggestions"
-          message="Refresh preview after importing tracks. External API matching is intentionally not implemented yet."
+          message="Refresh preview after importing tracks, then open a track to run a Beets or MusicBrainz lookup."
           action={<button className="btn btn--primary" onClick={() => void refresh()} disabled={busy}>Refresh preview</button>}
         />
       ) : (
@@ -179,6 +192,18 @@ export default function EnrichmentReviewPage() {
               <h2>{selected.current_fields.title || selected.filename}</h2>
               <code className="beets-review-path">{selected.relative_path || selected.filename}</code>
               <StatusStrip tone="info">{selected.reason}</StatusStrip>
+
+              <div className="enrichment-online-lookup">
+                <button className="btn btn--online-lookup btn--sm" disabled={lookupBusy !== null} onClick={() => void lookup('beets')}>
+                  {lookupBusy === 'beets' ? <Loader2 size={13} className="spin" /> : <Globe2 size={13} />}
+                  {lookupBusy === 'beets' ? 'Looking up…' : 'Look up on Beets'}
+                </button>
+                <button className="btn btn--online-lookup btn--sm" disabled={lookupBusy !== null} onClick={() => void lookup('musicbrainz')}>
+                  {lookupBusy === 'musicbrainz' ? <Loader2 size={13} className="spin" /> : <Globe2 size={13} />}
+                  {lookupBusy === 'musicbrainz' ? 'Looking up…' : 'Look up on MusicBrainz'}
+                </button>
+                <span className="lib-muted">Sends this track's artist/title to the selected provider — never automatic, never a whole-library scan.</span>
+              </div>
 
               <div className="enrichment-compare">
                 <strong>Compare sources for this track</strong>

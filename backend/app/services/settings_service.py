@@ -43,8 +43,8 @@ _METADATA_SOURCE_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {"id": "local_tags", "label": "Local tags", "category": "local", "requires_credentials": False, "default_enabled": True, "priority": 10, "best_for": ["Existing title, artist, album, genre metadata"], "current_behavior": "implemented"},
     {"id": "mixed_in_key", "label": "Mixed In Key", "category": "external_input", "requires_credentials": False, "default_enabled": True, "priority": 20, "best_for": ["Trusted BPM, key, Camelot, and cue metadata"], "current_behavior": "implemented"},
     {"id": "filename_hints", "label": "Filename hints", "category": "local", "requires_credentials": False, "default_enabled": True, "priority": 90, "best_for": ["Low-confidence fallback hints"], "current_behavior": "implemented"},
-    {"id": "beets", "label": "Beets", "category": "installed_tool", "requires_credentials": False, "default_enabled": True, "priority": 60, "best_for": ["Missing non-critical local-index metadata review"], "current_behavior": "preview_only"},
-    {"id": "musicbrainz", "label": "MusicBrainz", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 40, "best_for": ["Official releases and albums"], "current_behavior": "settings_only", "credential_fields": ("user_agent", "contact_email")},
+    {"id": "beets", "label": "Beets", "category": "installed_tool", "requires_credentials": False, "default_enabled": True, "priority": 60, "best_for": ["Missing non-critical local-index metadata review"], "current_behavior": "implemented", "configuration_note": "Explicit per-track lookup only, via Enrichment Review's online-lookup action. Distance-scored MusicBrainz-backed matching from beets' own matching engine."},
+    {"id": "musicbrainz", "label": "MusicBrainz", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 40, "best_for": ["Official releases and albums"], "current_behavior": "implemented", "configuration_note": "Explicit per-track lookup only, via Enrichment Review's online-lookup action. Rate-limited to MusicBrainz's own 1 request/second limit; results are cached locally."},
     {"id": "discogs", "label": "Discogs", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 50, "best_for": ["Electronic, vinyl, remix, and release metadata"], "current_behavior": "settings_only", "credential_fields": ("personal_access_token",)},
     {"id": "spotify", "label": "Spotify", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 70, "best_for": ["Mainstream track, artist, and album matching"], "current_behavior": "settings_only", "credential_fields": ("client_id", "client_secret")},
     {"id": "deezer", "label": "Deezer", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 80, "best_for": ["Alternate track, artist, and album matching"], "current_behavior": "settings_only", "credential_fields": ("app_id", "app_secret")},
@@ -94,6 +94,8 @@ def get_metadata_sources() -> dict[str, Any]:
             credential_status = "not_required"
         if source_id == "beets":
             connection_status = "ready" if _metadata_source_tool_available(source_id) else "unavailable"
+        elif source_id == "musicbrainz":
+            connection_status = "ready"
         elif definition["category"] == "external_api":
             connection_status = "not_implemented"
         else:
@@ -158,8 +160,8 @@ def test_metadata_source(source_id: str) -> dict[str, Any]:
         return {"source_id": source_id, "connection_status": "ready" if ready else "unavailable", "message": "Beets executable detection only; no Beets command was run.", "network_used": False}
     if source_id in {"local_tags", "filename_hints", "mixed_in_key"}:
         return {"source_id": source_id, "connection_status": "ready", "message": "Local metadata source is available; no scan or tag write was performed.", "network_used": False}
-    if source_id == "musicbrainz" and source["configured"]:
-        return {"source_id": source_id, "connection_status": "not_implemented", "message": "Local configuration is saved. Network connection testing is not implemented.", "network_used": False}
+    if source_id == "musicbrainz":
+        return {"source_id": source_id, "connection_status": "ready", "message": "MusicBrainz lookup is implemented as an explicit, per-track action in Enrichment Review. This button does not perform a live network check.", "network_used": False}
     return {"source_id": source_id, "connection_status": "not_implemented", "message": "External connection testing and track lookup are not implemented in this local-only foundation.", "network_used": False}
 
 

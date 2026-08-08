@@ -33,3 +33,11 @@ argcomplete>=3.1.0
 # Required for LLM features (genre inference, metadata assist via Claude).
 # utils/llm_client.py wraps all API calls and logs prompts to ./last-prompts/
 anthropic>=0.25.0
+
+# ── Metadata enrichment ───────────────────────────────────────────────────────
+# Real Beets distance-scored matching + MusicBrainz search, used only via
+# backend/app/services/musicbrainz_client.py: an isolated in-memory Item and
+# an isolated beets.config (user=False) -- never opens a real beets Library
+# or the user's real beets config/library.db. Never invoke the `beet` CLI
+# binary from CrateIQ code; it opens the real library unconditionally.
+beets>=2.13.0

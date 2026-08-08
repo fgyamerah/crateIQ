@@ -2,6 +2,92 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Core Usability Cycle 6: real Beets + MusicBrainz enrichment
+
+- What changed: replaced placeholder-only enrichment with real, working
+  suggestions from Beets and MusicBrainz, built directly on the existing
+  multi-source Enrichment Review foundation (backend/app/services/
+  enrichment_review_service.py) rather than a new parallel tool. New
+  POST /api/enrichment/review/tracks/{track_id}/online-lookup, body
+  {"source": "beets" | "musicbrainz"}: explicit, single-track, bounded --
+  never triggered automatically or run library-wide. Skips the network
+  call entirely (with a truthful warning) when the track has no missing
+  artist/title/genre field. Never proposes a value for an already-filled
+  field. Results cached in a new metadata_lookup_cache sqlite table
+  (30-day TTL).
+- New backend/app/services/musicbrainz_client.py wraps beets' own
+  upstream-tested MusicBrainz HTTP client (beetsplug.musicbrainz /
+  beetsplug._utils.musicbrainz) instead of building a second HTTP
+  client: compliant User-Agent, 10s timeout, bounded retries on
+  transient 5xx/429 only, and MusicBrainz's own required 1 request/
+  second rate limit, all inherited for free. search_recordings() is the
+  "MusicBrainz" source (raw search, score-based confidence).
+  match_track_candidates() is the "Beets" source: beets' own
+  distance-scored matching against MusicBrainz candidates, using beets'
+  authoritative match.strong_rec_thresh/medium_rec_thresh (0.04/0.25)
+  for HIGH/MEDIUM/LOW confidence -- not invented thresholds. Both
+  functions return a MusicBrainzError value (never raise) on network
+  failure so a lookup failure degrades to a warning, never a 500.
+- Isolation: beets.config is read with user=False so a real
+  ~/.config/beets/config.yaml is never loaded; only in-memory
+  beets.library.Item objects are constructed, so no real beets Library
+  is ever opened. See "Incident" below.
+- Frontend: EnrichmentReview.tsx gained "Look up on Beets"/"Look up on
+  MusicBrainz" buttons feeding the page's existing generic N-source
+  field-comparison table. New distinct .btn--online-lookup cyan-signal
+  style (added during Impeccable review, see below) so the two
+  network-triggering actions read as a different risk tier than the
+  page's purely-local buttons (Save selection, Ignore, Apply).
+- Why it changed: Cycle 6 of the crateIQ Core Usability Program --
+  "Enrichment Queue"/"Beets Review"/"Enrichment Review" pages already
+  existed but sourced only local filename/tag hints; MusicBrainz + Beets
+  make the enrichment step genuinely useful.
+- Incident and fix: during manual adapter testing, an ad-hoc `beet
+  --version` shell invocation (not part of the isolated adapter code
+  itself -- a mistake in manual verification) opened this machine's real
+  ~/.config/beets/library.db and ran several beets schema migrations
+  against it. Diagnosed via beets' own migration order
+  (beets/library/library.py Library._migrations) to identify the
+  earliest pre-migration .bak snapshot beets itself created
+  (library.db-before-items-multi_genre_field.bak, the first migration
+  in sequence), restored it (integrity-checked, tables confirmed empty
+  matching the pre-existing empty library), and removed the 11 leftover
+  .bak debris files. Hard rule going forward: never invoke the `beet`
+  CLI binary from CrateIQ code or tooling -- Python-API-only, exactly as
+  musicbrainz_client.py already does.
+- Files affected: backend/app/services/musicbrainz_client.py (new),
+  backend/app/services/enrichment_review_service.py (online_lookup +
+  cache helpers), backend/app/api/routes/enrichment_review.py (new
+  route), backend/app/schemas/enrichment_review.py (OnlineLookupRequest),
+  backend/app/services/settings_service.py (beets/musicbrainz source
+  definitions updated to reflect real implemented status),
+  requirements.txt (beets>=2.13.0), frontend/src/pages/
+  EnrichmentReview.tsx, frontend/src/api/enrichmentReview.ts,
+  frontend/src/index.css (.enrichment-online-lookup, .btn--online-lookup),
+  tests/test_musicbrainz_client.py (new, 7 tests, fully mocked),
+  tests/test_backend_api.py (4 new online-lookup tests, fully mocked).
+- Verification: .venv/bin/python -m compileall -q backend/app clean;
+  .venv/bin/python -m pytest -q -> 1459 passed (all mocked, no live
+  network in the automated suite); npm --prefix frontend run typecheck
+  clean; npm --prefix frontend run build clean; git diff --check clean.
+  Live acceptance (bounded, a few explicit queries only, against the
+  real running dev backend): both a Beets distance-matched candidate
+  (distance 0.4, confidence low, "Jorn - Traveller") and a MusicBrainz
+  search match (score 100, confidence high, "Stripper's Union -
+  Traveller Traveller") were produced for the same real
+  sanctioned-library track (id 88, Traveller.mp3, missing artist),
+  coexisting for field-by-field comparison, correctly proposing only
+  the missing artist field. metadata_lookup_cache confirmed populated.
+  All 88 sanctioned test-library audio files confirmed unmodified
+  (mtime check) after this cycle -- this cycle's writes are
+  local-index-only, same write boundary as Cycle 5.
+- Migration notes: new pip dependency beets>=2.13.0 (project .venv
+  only, no system-wide install). New sqlite table
+  metadata_lookup_cache, created lazily via the existing _ensure()
+  pattern -- no manual migration needed.
+- Branch: feat/crateiq-core-usability (base Cycle 5 ae6dae7). Not
+  merged to main.
+
 [2026-08-08] — Core Usability Cycle 5: unified Library Prep workflow
 
 - What changed: added a new "Library Prep" workspace

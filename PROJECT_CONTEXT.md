@@ -6,6 +6,77 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 6 (Real Enrichment) of the crateIQ Core Usability
+  Program, on `feat/crateiq-core-usability` (base Cycle 5 `ae6dae7`), no
+  merge to main. Added real, verified-live Beets and MusicBrainz metadata
+  enrichment, built on the existing multi-source Enrichment Review
+  foundation rather than a parallel tool. New `beets>=2.13.0` runtime
+  dependency (`requirements.txt`); no system-wide install, project `.venv`
+  only. New `backend/app/services/musicbrainz_client.py` wraps beets'
+  own upstream-tested MusicBrainz HTTP client (compliant User-Agent, 10s
+  timeout, bounded retries on transient 5xx/429 only, MusicBrainz's
+  required 1 req/sec rate limit) rather than reimplementing an HTTP
+  client -- exposes `search_recordings()` (raw MB search, the
+  "MusicBrainz" source) and `match_track_candidates()` (beets' own
+  distance-scored matching against MB candidates using beets'
+  authoritative `strong_rec_thresh`/`medium_rec_thresh` = 0.04/0.25, the
+  "Beets" source). Both return a `MusicBrainzError` value instead of
+  raising on network/HTTP failure so a lookup failure degrades to a
+  warning, never a 500. New `POST /api/enrichment/review/tracks/{id}
+  /online-lookup` (body `{"source": "beets"|"musicbrainz"}`) in
+  `enrichment_review_service.py`: explicit, single-track, bounded --
+  never triggered automatically or library-wide; skips the network call
+  entirely (with a truthful warning) when the track has no missing
+  allowed field; results are cached in a new `metadata_lookup_cache`
+  sqlite table (30-day TTL) so a repeat lookup for the same track/source
+  is free; only proposes values for currently-missing fields, matching
+  the existing "never overwrite non-empty metadata" invariant unchanged.
+  Frontend: `EnrichmentReview.tsx` gained "Look up on Beets"/"Look up on
+  MusicBrainz" buttons (distinct cyan-signal `.btn--online-lookup` style,
+  spinner during the request) feeding the page's existing generic N-source
+  field-comparison table -- no new page, no parallel review tool.
+  **Isolation (critical, learned the hard way this cycle):** a real
+  `~/.config/beets/library.db` can exist on the machine CrateIQ runs on.
+  `musicbrainz_client.py` only ever constructs in-memory `beets.library
+  .Item` objects and calls `beets.config.read(user=False, defaults=True)`
+  -- it never opens a real beets `Library` and never reads a real user
+  config. During adapter development an ad-hoc `beet --version` shell
+  invocation (outside the isolated adapter code, a mistake in manual
+  testing) opened the real library and ran several schema migrations
+  against it; it was restored from beets' own earliest pre-migration
+  `.bak` snapshot (integrity-checked, empty tables confirmed matching the
+  pre-existing empty library) and the debris backup files were removed.
+  **Hard rule going forward: never invoke the `beet` CLI binary from
+  CrateIQ code or tooling** -- only the isolated Python API path above.
+  Real, live acceptance verified against the running dev backend (not
+  just mocked tests): both a Beets distance-matched candidate (distance
+  0.4, confidence low, `Jorn - Traveller`) and a MusicBrainz search match
+  (score 100, confidence high, `Stripper's Union - Traveller Traveller`)
+  were produced for the same real sanctioned-library track (id 88,
+  `Traveller.mp3`, missing artist), coexisting for field-by-field
+  comparison, cached correctly, proposing only the missing `artist` field
+  -- title was left alone. All 88 sanctioned test-library audio files
+  confirmed unmodified (mtime check) after this cycle's work; this
+  cycle's writes are local-index-only (new snapshot items + cache table),
+  identical to Cycle 5's write boundary. Automated tests use mocks only
+  (`tests/test_musicbrainz_client.py`, 7 tests; 4 new tests in
+  `tests/test_backend_api.py` for the online-lookup route) -- no live
+  network call runs in the pytest suite. 1459 backend tests pass; frontend
+  typecheck/build pass. One Impeccable critique pass on the new UI found
+  and fixed: stale safety copy that flatly denied external API calls
+  (now false -- copy corrected to describe the bounded, explicit
+  behavior), no visual differentiation between the new network-triggering
+  buttons and purely-local buttons (added the cyan-signal
+  `.btn--online-lookup` style per DESIGN.md's Signal Color Rule), and a
+  static "Looking up…" busy state inconsistent with the app's existing
+  `Loader2`/`.spin` convention used everywhere else (fixed). Settings'
+  metadata-sources catalog updated: `beets` and `musicbrainz` now report
+  `current_behavior: "implemented"` (were `preview_only`/`settings_only`)
+  and accurate `connection_status`, reflecting that online-lookup is real,
+  not a placeholder -- Spotify/Deezer/Discogs/Beatport/Last.fm remain
+  untouched, deferred placeholders as planned (not attempted this cycle,
+  per scope).
+
 - 2026-08-08: Cycle 5 (Core Library Workflow) of the crateIQ Core Usability
   Program, on `feat/crateiq-core-usability` (base `main` `4119013`), no
   merge to main. Added a new unified **Library Prep** workspace

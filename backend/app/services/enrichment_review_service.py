@@ -6,11 +6,14 @@ from pathlib import Path
 from typing import Any
 from modules.metadata_clean import _read_tags as _read_embedded_tags
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
-from . import analysis_jobs_service, settings_service
+from . import analysis_jobs_service, musicbrainz_client, settings_service
+from .musicbrainz_client import MusicBrainzError
 
 _ALLOWED = ('artist', 'title', 'genre')
 _DECISIONS = {'pending', 'applied', 'ignored', 'review_later'}
 _SAFETY = ['review_first', 'db_only', 'selected_fields_only', 'no_tag_writes', 'no_file_writes', 'no_bpm_key_camelot_cue_changes']
+_ONLINE_SOURCES = {'beets', 'musicbrainz'}
+_CACHE_TTL_DAYS = 30
 def _now(): return datetime.now(timezone.utc).isoformat()
 def _path() -> Path:
     root = selected_library_root(); path = assert_path_under_root(library_db_path(root), root)
@@ -19,6 +22,7 @@ def _path() -> Path:
 def _ensure(conn: sqlite3.Connection):
     conn.execute('CREATE TABLE IF NOT EXISTS enrichment_review_snapshots (id INTEGER PRIMARY KEY, created_at TEXT NOT NULL, items_json TEXT NOT NULL, warnings_json TEXT NOT NULL)')
     conn.execute('CREATE TABLE IF NOT EXISTS enrichment_review_decisions (snapshot_id INTEGER NOT NULL, suggestion_id TEXT NOT NULL, track_id INTEGER NOT NULL, decision TEXT NOT NULL, note TEXT NOT NULL DEFAULT \'\', selected_fields_json TEXT NOT NULL DEFAULT \'{}\', updated_at TEXT NOT NULL, applied_at TEXT, PRIMARY KEY(snapshot_id, suggestion_id))')
+    conn.execute('CREATE TABLE IF NOT EXISTS metadata_lookup_cache (source TEXT NOT NULL, cache_key TEXT NOT NULL, response_json TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(source, cache_key))')
     columns = {row[1] for row in conn.execute('PRAGMA table_info(tracks)')}
     for name in ('enrichment_source', 'enrichment_updated_at', 'enrichment_reviewed_at'):
         if name not in columns: conn.execute(f'ALTER TABLE tracks ADD COLUMN {name} TEXT')
@@ -118,3 +122,128 @@ def apply_selected(items:list[dict[str,Any]],confirm:bool):
             conn.execute("UPDATE enrichment_review_decisions SET decision='applied',updated_at=?,applied_at=? WHERE snapshot_id=? AND suggestion_id=?",(now,now,snapshot['id'],item['suggestion_id'])); applied+=1
         review=_response(conn,snapshot)
     return {'applied':applied,'skipped':skipped,'failed':failed,'warnings':warnings,'review':review}
+
+
+def _cache_key(artist: str | None, title: str | None) -> str:
+    return f"{(artist or '').strip().lower()}||{(title or '').strip().lower()}"
+
+
+def _cached_lookup(conn: sqlite3.Connection, source: str, key: str) -> Any | None:
+    row = conn.execute(
+        'SELECT response_json, created_at FROM metadata_lookup_cache WHERE source = ? AND cache_key = ?',
+        (source, key),
+    ).fetchone()
+    if row is None:
+        return None
+    age_days = (datetime.now(timezone.utc) - datetime.fromisoformat(row['created_at'])).total_seconds() / 86400
+    if age_days > _CACHE_TTL_DAYS:
+        return None
+    try:
+        return json.loads(row['response_json'])
+    except (TypeError, json.JSONDecodeError):
+        return None
+
+
+def _store_lookup(conn: sqlite3.Connection, source: str, key: str, payload: Any) -> None:
+    conn.execute(
+        'INSERT INTO metadata_lookup_cache(source, cache_key, response_json, created_at) VALUES (?, ?, ?, ?) '
+        'ON CONFLICT(source, cache_key) DO UPDATE SET response_json = excluded.response_json, created_at = excluded.created_at',
+        (source, key, json.dumps(payload), _now()),
+    )
+
+
+def _get_or_create_snapshot(conn: sqlite3.Connection) -> sqlite3.Row:
+    try:
+        return _latest(conn)
+    except LookupError:
+        cursor = conn.execute(
+            'INSERT INTO enrichment_review_snapshots(created_at, items_json, warnings_json) VALUES (?, ?, ?)',
+            (_now(), '[]', '[]'),
+        )
+        return conn.execute(
+            'SELECT id, created_at, items_json, warnings_json FROM enrichment_review_snapshots WHERE id = ?',
+            (cursor.lastrowid,),
+        ).fetchone()
+
+
+def online_lookup(track_id: int, source: str) -> dict[str, Any]:
+    """
+    Explicit, single-track, bounded online lookup against Beets' real
+    distance-scored MusicBrainz matching, or a raw MusicBrainz search.
+
+    Never called automatically; must be triggered per-track by the user.
+    Only proposes values for currently-missing allowed fields -- existing
+    non-empty metadata is never a lookup target or overwrite candidate.
+    """
+    if source not in _ONLINE_SOURCES:
+        raise ValueError(f"Unsupported online source: {source}.")
+    root = selected_library_root()
+    with sqlite3.connect(_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure(conn)
+        track = conn.execute('SELECT id, filepath, filename, artist, title, genre FROM tracks WHERE id = ?', (track_id,)).fetchone()
+        if track is None:
+            raise LookupError(f'Track {track_id} was not found in the local index.')
+        current = {field: track[field] for field in _ALLOWED}
+        missing = [field for field in _ALLOWED if not current[field]]
+        snapshot = _get_or_create_snapshot(conn)
+        if not missing:
+            warnings = json.loads(snapshot['warnings_json'])
+            warnings.append(f"{track['filename']}: no missing artist/title/genre fields -- {source} lookup skipped.")
+            conn.execute('UPDATE enrichment_review_snapshots SET warnings_json = ? WHERE id = ?', (json.dumps(warnings), snapshot['id']))
+            return _response(conn, conn.execute('SELECT id, created_at, items_json, warnings_json FROM enrichment_review_snapshots WHERE id = ?', (snapshot['id'],)).fetchone())
+
+        key = _cache_key(track['artist'], track['title'])
+        cached = _cached_lookup(conn, source, key)
+        if cached is not None:
+            candidates = cached
+        else:
+            if source == 'beets':
+                result = musicbrainz_client.match_track_candidates(track['artist'] or '', track['title'] or '')
+            else:
+                result = musicbrainz_client.search_recordings(track['artist'] or '', track['title'] or '')
+            if isinstance(result, MusicBrainzError):
+                warnings = json.loads(snapshot['warnings_json'])
+                warnings.append(f"{track['filename']}: {result.message}")
+                conn.execute('UPDATE enrichment_review_snapshots SET warnings_json = ? WHERE id = ?', (json.dumps(warnings), snapshot['id']))
+                return _response(conn, conn.execute('SELECT id, created_at, items_json, warnings_json FROM enrichment_review_snapshots WHERE id = ?', (snapshot['id'],)).fetchone())
+            candidates = result
+            _store_lookup(conn, source, key, candidates)
+
+        try:
+            relative_path = str(assert_path_under_root(track['filepath'], root).relative_to(root))
+        except (ValueError, TypeError):
+            relative_path = None
+
+        items = json.loads(snapshot['items_json'])
+        items = [item for item in items if not (item['track_id'] == track_id and item['source_id'] == source)]
+        if candidates:
+            best = candidates[0]
+            suggested = {
+                field: str(best.get(field)).strip()
+                for field in ('artist', 'title')
+                if field in missing and best.get(field) and str(best.get(field)).strip()
+            }
+            if suggested:
+                if source == 'beets':
+                    confidence = best.get('confidence', 'LOW')
+                    reason = f"Beets distance-matched candidate (distance {best.get('distance')}): {best.get('artist')} - {best.get('title')}."
+                else:
+                    score = best.get('score')
+                    confidence = 'HIGH' if isinstance(score, int) and score >= 90 else 'MEDIUM' if isinstance(score, int) and score >= 70 else 'LOW'
+                    reason = f"MusicBrainz search match (score {score}): {best.get('artist')} - {best.get('title')}."
+                items.append({
+                    'suggestion_id': f'sug-{uuid.uuid4().hex[:12]}',
+                    'track_id': track_id,
+                    'source_id': source,
+                    'confidence': confidence.lower(),
+                    'reason': reason,
+                    'filename': track['filename'],
+                    'relative_path': relative_path,
+                    'current_fields': current,
+                    'suggested_fields': suggested,
+                    'allowed_fields': list(suggested),
+                })
+        conn.execute('UPDATE enrichment_review_snapshots SET items_json = ? WHERE id = ?', (json.dumps(items), snapshot['id']))
+        updated = conn.execute('SELECT id, created_at, items_json, warnings_json FROM enrichment_review_snapshots WHERE id = ?', (snapshot['id'],)).fetchone()
+        return _response(conn, updated)

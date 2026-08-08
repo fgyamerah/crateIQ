@@ -56,12 +56,29 @@ CURRENT FOCUS
     duplicate icon. See CHANGELOG.txt and PROJECT_CONTEXT.md Latest
     Milestone for full detail. On feat/crateiq-core-usability (base main
     4119013); not merged to main.
-[~] (P0) Core Usability Cycle 6 -- Real Enrichment
-    Next: safe Beets adapter (suggestions only, isolated temp
-    config/library, never touches the user's real Beets state or source
-    audio), real MusicBrainz provider (rate-limited, cached, mocked tests),
-    unified candidate/provenance model, field-by-field review UI built on
-    the existing Enrichment Review page. No source-file writes.
+[x] (P0) Core Usability Cycle 6 -- Real Enrichment (2026-08-08)
+    Real Beets (distance-scored, via beets' own MusicBrainz-backed
+    matching) and MusicBrainz (raw search) suggestions, both wrapping
+    beets' upstream-tested MB HTTP client rather than a new one. New
+    POST /api/enrichment/review/tracks/{id}/online-lookup: explicit,
+    single-track, bounded, cached 30 days, never overwrites non-empty
+    fields. Built on the existing Enrichment Review page (new
+    "Look up on Beets/MusicBrainz" buttons + existing N-source compare
+    table), not a parallel tool. Live-verified against the real backend
+    (not just mocks): both sources returned real candidates for a real
+    sanctioned-library track. 1459 backend tests pass; frontend
+    typecheck/build pass. One Impeccable pass fixed stale
+    now-false safety copy and added visual/spinner consistency for the
+    new network-triggering buttons. See CHANGELOG.txt and
+    PROJECT_CONTEXT.md Latest Milestone for full detail, including a
+    real incident (accidental `beet` CLI invocation touched the real
+    ~/.config/beets/library.db during manual testing; restored from
+    beets' own pre-migration backup) and the resulting hard rule: never
+    invoke the `beet` CLI binary from CrateIQ code.
+[ ] (P2) Consider a live "test connection" check for the MusicBrainz
+    source in Settings (currently the Test button reports readiness
+    without making a network call; the real check only happens via
+    Enrichment Review's online-lookup action).
 [ ] (P1) Core Usability Cycle 7 -- Controlled Metadata Write-Back
     Exact write plan -> mandatory full-file backup outside the scanned
     music tree -> explicit confirm -> write -> re-read verify -> restore.

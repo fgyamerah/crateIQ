@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, publish_readiness_service, publish_sync_service, rsync_runner, settings_service
+from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, musicbrainz_client, publish_readiness_service, publish_sync_service, rsync_runner, settings_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -3307,6 +3307,100 @@ def test_multisource_enrichment_review_skips_local_tags_when_file_is_unreadable(
     source_ids = {item["source_id"] for item in items}
     assert "local_tags" not in source_ids, "the file does not exist on disk, so no embedded-tag candidate should be fabricated"
     assert source_ids == {"filename_hints"}, "filename parsing depends only on the DB row and must still work"
+
+
+def test_online_lookup_beets_and_musicbrainz_add_provenance_tagged_suggestions(client, monkeypatch):
+    """Real Beets/MusicBrainz acceptance path, fully mocked at the network boundary:
+    an explicit per-track lookup adds a provenance-tagged suggestion for a missing
+    field only, is cached (second call for the same track does not re-invoke the
+    mocked client), and never proposes a value for an already-filled field."""
+    test_client, root = client
+    track_path = root / "library" / "hints" / "online-lookup.mp3"
+    track_id = _insert_track(
+        root, filepath=track_path, filename="online-lookup.mp3",
+        artist="Known Artist", title=None, genre=None,
+    )
+
+    beets_calls = []
+
+    def fake_match(artist, title, limit=5):
+        beets_calls.append((artist, title))
+        return [{"mb_recording_id": "mb-1", "artist": "Known Artist", "title": "Recovered Title", "album": None, "distance": 0.02, "confidence": "HIGH"}]
+
+    mb_calls = []
+
+    def fake_search(artist, title, limit=5):
+        mb_calls.append((artist, title))
+        return [{"mb_recording_id": "mb-2", "artist": "Known Artist", "title": "MB Title", "album": "MB Album", "date": None, "score": 95}]
+
+    monkeypatch.setattr(musicbrainz_client, "match_track_candidates", fake_match)
+    monkeypatch.setattr(musicbrainz_client, "search_recordings", fake_search)
+
+    beets_response = test_client.post(f"/api/enrichment/review/tracks/{track_id}/online-lookup", json={"source": "beets"})
+    assert beets_response.status_code == 200
+    beets_items = [item for item in beets_response.json()["items"] if item["track_id"] == track_id and item["source_id"] == "beets"]
+    assert len(beets_items) == 1
+    assert beets_items[0]["suggested_fields"] == {"title": "Recovered Title"}
+    assert beets_items[0]["allowed_fields"] == ["title"]
+    assert beets_items[0]["confidence"] == "high"
+    assert "distance" in beets_items[0]["reason"]
+
+    mb_response = test_client.post(f"/api/enrichment/review/tracks/{track_id}/online-lookup", json={"source": "musicbrainz"})
+    assert mb_response.status_code == 200
+    payload = mb_response.json()
+    by_source = {item["source_id"]: item for item in payload["items"] if item["track_id"] == track_id}
+    assert set(by_source) == {"beets", "musicbrainz"}, "both provenance-tagged suggestions must coexist for field-by-field comparison"
+    assert by_source["musicbrainz"]["suggested_fields"] == {"title": "MB Title"}
+    assert by_source["musicbrainz"]["confidence"] == "high"
+
+    # Cache hit: a second lookup for the same (source, artist, title) must not re-invoke the client.
+    repeat = test_client.post(f"/api/enrichment/review/tracks/{track_id}/online-lookup", json={"source": "beets"})
+    assert repeat.status_code == 200
+    assert len(beets_calls) == 1, "second lookup for the same track/source must be served from the app-owned cache"
+    assert len(mb_calls) == 1
+
+    # Never propose a value for a field that already has one (artist is filled).
+    assert "artist" not in by_source["musicbrainz"]["suggested_fields"]
+    assert "artist" not in by_source["beets"]["suggested_fields"]
+
+
+def test_online_lookup_skips_network_when_no_fields_are_missing(client, monkeypatch):
+    test_client, root = client
+    track_path = root / "library" / "hints" / "complete.mp3"
+    track_id = _insert_track(
+        root, filepath=track_path, filename="complete.mp3",
+        artist="Full Artist", title="Full Title", genre="House",
+    )
+    calls = []
+    monkeypatch.setattr(musicbrainz_client, "match_track_candidates", lambda *a, **k: calls.append(1) or [])
+
+    response = test_client.post(f"/api/enrichment/review/tracks/{track_id}/online-lookup", json={"source": "beets"})
+
+    assert response.status_code == 200
+    assert calls == [], "a track with no missing allowed fields must never trigger a network lookup"
+    assert any("no missing artist/title/genre fields" in warning for warning in response.json()["warnings"])
+
+
+def test_online_lookup_handles_network_failure_gracefully(client, monkeypatch):
+    test_client, root = client
+    track_path = root / "library" / "hints" / "offline.mp3"
+    track_id = _insert_track(
+        root, filepath=track_path, filename="offline.mp3",
+        artist=None, title="Offline Track", genre=None,
+    )
+    monkeypatch.setattr(musicbrainz_client, "match_track_candidates", lambda *a, **k: musicbrainz_client.MusicBrainzError("MusicBrainz lookup failed (ConnectionError)."))
+
+    response = test_client.post(f"/api/enrichment/review/tracks/{track_id}/online-lookup", json={"source": "beets"})
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [] or all(item["track_id"] != track_id for item in response.json()["items"])
+    assert any("lookup failed" in warning for warning in response.json()["warnings"])
+
+
+def test_online_lookup_rejects_unknown_source_and_missing_track(client):
+    test_client, _root = client
+    assert test_client.post("/api/enrichment/review/tracks/1/online-lookup", json={"source": "spotify"}).status_code == 422
+    assert test_client.post("/api/enrichment/review/tracks/999999/online-lookup", json={"source": "beets"}).status_code == 404
 
 
 def test_listening_review_is_db_only_and_validates_review_fields(client):
