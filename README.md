@@ -116,6 +116,26 @@ separate, explicit action (see "Ready and promotion" below).
 You can also run **Clean Selected** or **Enrich Selected** on a chosen
 subset instead of the whole Inbox.
 
+### Inline editing and sorting
+
+The Inbox table supports direct editing without leaving the page:
+
+- **Track / file** — the managed Inbox *filename* (basename only; the file
+  extension is always locked to the current file and can never be changed
+  through a rename). Editing it renames only the managed Inbox copy — it
+  never changes **Title** metadata, and never touches external originals,
+  promoted Library files, or Quarantine.
+- **Artist** and **Genre** — editing either goes through the same
+  preview/stale-check/backup/write/verify write-back path Process All uses;
+  there is no separate, simplified writer. A manually entered non-empty,
+  non-junk value is never silently overwritten by a later Process All run.
+- **Bulk Edit** — select multiple Inbox tracks to set one Artist and/or one
+  Genre across all of them in a single, previewed operation. Bulk edit never
+  renames files.
+- Every column except the selection checkbox is **sortable** (click to sort
+  ascending, click again to reverse); sorting is server-side and combines
+  correctly with search and selection.
+
 ## Metadata intelligence
 
 crateIQ draws on multiple evidence sources per track:

@@ -32,6 +32,9 @@ export interface InboxTrackPage {
   total:  number
 }
 
+export type InboxSortKey = 'artist' | 'title' | 'filename' | 'genre' | 'bpm' | 'key' | 'readiness'
+export type SortOrder = 'asc' | 'desc'
+
 export interface PromotionPreviewItem {
   track_id: number
   filename: string
@@ -90,12 +93,92 @@ export function importToInbox(sourcePaths: string[]): Promise<WorkspaceImportRes
   return apiFetch.post<WorkspaceImportResult>('/workspace/import', { source_paths: sourcePaths, confirm: true })
 }
 
-export function fetchInboxTracks(params: { search?: string; limit?: number; offset?: number } = {}): Promise<InboxTrackPage> {
+export function fetchInboxTracks(
+  params: { search?: string; sort?: InboxSortKey; order?: SortOrder; limit?: number; offset?: number } = {},
+): Promise<InboxTrackPage> {
   const qs = new URLSearchParams()
   if (params.search) qs.set('search', params.search)
+  if (params.sort) qs.set('sort', params.sort)
+  if (params.order) qs.set('order', params.order)
   qs.set('limit', String(params.limit ?? 100))
   qs.set('offset', String(params.offset ?? 0))
   return apiFetch.get<InboxTrackPage>(`/workspace/inbox/tracks?${qs}`)
+}
+
+// ---------------------------------------------------------------------------
+// Inline Track/Artist/Genre editing + bulk edit
+// ---------------------------------------------------------------------------
+
+export interface InboxTrackRenameResult {
+  track_id: number
+  status: 'renamed' | 'no_change'
+  filename: string
+  filepath: string
+}
+
+export interface InboxTrackMetadataEditResult {
+  track_id: number
+  status: 'updated' | 'no_change'
+  fields_changed: string[]
+  artist: string | null
+  genre: string | null
+  tag_write: { written_count: number; failed_count: number; warnings: string[] } | null
+}
+
+export interface InboxTrackEditResponse {
+  track_id: number
+  rename: InboxTrackRenameResult | null
+  metadata: InboxTrackMetadataEditResult | null
+  errors: string[]
+}
+
+/** Single-track Inbox edit. `filename` is the basename only -- the extension is always locked to the current file. */
+export function patchInboxTrack(
+  trackId: number,
+  fields: { filename?: string; artist?: string; genre?: string },
+): Promise<InboxTrackEditResponse> {
+  return apiFetch.patch<InboxTrackEditResponse>(`/workspace/inbox/tracks/${trackId}`, fields)
+}
+
+export interface InboxBulkEditFieldPreview {
+  current_values: string[]
+  new_value: string
+}
+
+export interface InboxBulkEditPreview {
+  selected_count: number
+  eligible_count: number
+  skipped_not_inbox: number
+  missing_count: number
+  fields: { artist?: InboxBulkEditFieldPreview; genre?: InboxBulkEditFieldPreview }
+  message: string
+}
+
+export function previewInboxBulkEdit(trackIds: number[], fields: { artist?: string; genre?: string }): Promise<InboxBulkEditPreview> {
+  return apiFetch.post<InboxBulkEditPreview>('/workspace/inbox/bulk-edit/preview', { track_ids: trackIds, ...fields })
+}
+
+export interface InboxBulkEditResultItem {
+  track_id: number
+  status: 'succeeded' | 'unchanged' | 'skipped' | 'not_found' | 'failed'
+  fields?: string[]
+  reason?: string
+}
+
+export interface InboxBulkEditApplyResult {
+  selected_count: number
+  changed_count: number
+  unchanged_count: number
+  succeeded_count: number
+  failed_count: number
+  skipped_count: number
+  not_found_count: number
+  results: InboxBulkEditResultItem[]
+  message: string
+}
+
+export function applyInboxBulkEdit(trackIds: number[], fields: { artist?: string; genre?: string }): Promise<InboxBulkEditApplyResult> {
+  return apiFetch.post<InboxBulkEditApplyResult>('/workspace/inbox/bulk-edit/apply', { track_ids: trackIds, ...fields, confirm: true })
 }
 
 export function previewPromotion(trackIds?: number[]): Promise<PromotionPreview> {

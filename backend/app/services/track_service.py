@@ -30,14 +30,84 @@ _MATCH_LABELS = {
 # ---------------------------------------------------------------------------
 # Allowed sort columns — never interpolate user input directly into SQL
 # ---------------------------------------------------------------------------
-_SORT_COLUMNS = {
-    "artist":       "LOWER(COALESCE(artist, ''))",
-    "title":        "LOWER(COALESCE(title, ''))",
-    "bpm":          "bpm",
-    "processed_at": "processed_at",
-    "filename":     "LOWER(filename)",
+# Text columns sort case-insensitively with blank/NULL values grouped last
+# (both ascending and descending) rather than relying on SQLite's incidental
+# NULL/empty-string ordering. "key" prefers key_camelot, falling back to
+# key_musical, matching what the Inbox table displays in its Key column.
+_TEXT_SORT_COLUMNS = {
+    "artist":   "artist",
+    "title":    "title",
+    "filename": "filename",
+    "genre":    "genre",
 }
+_KEY_SORT_EXPR = "COALESCE(NULLIF(TRIM(key_camelot), ''), NULLIF(TRIM(key_musical), ''))"
+_NUMERIC_SORT_COLUMNS = {"bpm": "bpm"}
+_RAW_SORT_COLUMNS = {"processed_at": "processed_at"}
+# Field-completeness readiness proxy for sorting only: required fields
+# (artist/title/genre) missing -> BLOCKED; required fields present but BPM
+# or key missing -> WARNING; otherwise READY. This intentionally mirrors
+# only the DB-observable half of workspace_service._promotion_readiness
+# (required fields + BPM/key warnings) and does not re-derive its
+# filesystem-dependent checks (pending tag write-back, missing file,
+# destination collision) — those stay exactly as they are, computed only by
+# the Promotion Preview endpoint that already powers the Inbox Readiness
+# badge. This proxy exists solely to give the Readiness column a
+# deterministic, testable sort order.
+_READINESS_SORT_EXPR = (
+    "(CASE "
+    "WHEN TRIM(COALESCE(artist,'')) = '' OR TRIM(COALESCE(title,'')) = '' "
+    "OR TRIM(COALESCE(genre,'')) = '' THEN 2 "
+    "WHEN bpm IS NULL OR (TRIM(COALESCE(key_camelot,'')) = '' "
+    "AND TRIM(COALESCE(key_musical,'')) = '') THEN 1 "
+    "ELSE 0 END)"
+)
 _DEFAULT_SORT = "artist"
+VALID_SORT_KEYS = frozenset(
+    set(_TEXT_SORT_COLUMNS) | set(_NUMERIC_SORT_COLUMNS) | set(_RAW_SORT_COLUMNS) | {"key", "readiness"}
+)
+
+
+def _build_order_by(sort: str, order: str) -> str:
+    """
+    Build a validated ORDER BY body (no "ORDER BY" prefix). `sort` must
+    already be a key of VALID_SORT_KEYS -- callers that accept sort from a
+    request should reject unknown keys explicitly rather than relying on
+    the _DEFAULT_SORT fallback here, which exists only as defense in depth
+    for internal callers.
+    """
+    order_dir = "ASC" if order.lower() != "desc" else "DESC"
+    key = sort if sort in VALID_SORT_KEYS else _DEFAULT_SORT
+
+    if key == "readiness":
+        return f"{_READINESS_SORT_EXPR} {order_dir}, LOWER(COALESCE(artist, '')) ASC, id ASC"
+
+    if key == "key":
+        blank = f"({_KEY_SORT_EXPR}) IS NULL"
+        value_expr = f"LOWER({_KEY_SORT_EXPR})"
+        return f"(CASE WHEN {blank} THEN 1 ELSE 0 END) ASC, {value_expr} {order_dir}, id ASC"
+
+    if key in _NUMERIC_SORT_COLUMNS:
+        col = _NUMERIC_SORT_COLUMNS[key]
+        return f"(CASE WHEN {col} IS NULL THEN 1 ELSE 0 END) ASC, {col} {order_dir}, id ASC"
+
+    if key in _RAW_SORT_COLUMNS:
+        col = _RAW_SORT_COLUMNS[key]
+        return f"{col} {order_dir}, id ASC"
+
+    # Text column (artist/title/filename/genre).
+    col = _TEXT_SORT_COLUMNS[key]
+    blank = f"TRIM(COALESCE({col}, '')) = ''"
+    value_expr = f"LOWER(TRIM({col}))"
+    secondary = ""
+    if key == "artist":
+        # No deliberate pre-existing default beyond "artist asc" -- use a
+        # stable Title secondary order per product decision, ahead of the
+        # universal id tiebreak.
+        secondary = (
+            ", (CASE WHEN TRIM(COALESCE(title,'')) = '' THEN 1 ELSE 0 END) ASC"
+            ", LOWER(TRIM(COALESCE(title,''))) ASC"
+        )
+    return f"(CASE WHEN {blank} THEN 1 ELSE 0 END) ASC, {value_expr} {order_dir}{secondary}, id ASC"
 _KNOWN_ISSUES = {
     "missing_bpm",
     "missing_key",
@@ -238,15 +308,14 @@ def list_tracks(
 
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-    sort_col = _SORT_COLUMNS.get(sort, _SORT_COLUMNS[_DEFAULT_SORT])
-    order_dir = "ASC" if order.lower() != "desc" else "DESC"
+    order_by_sql = _build_order_by(sort, order)
 
     try:
         with get_pipeline_conn() as conn:
             if post_filter_issue:
                 base_rows = conn.execute(
                     f"""SELECT * FROM tracks {where_sql}
-                        ORDER BY {sort_col} {order_dir}""",
+                        ORDER BY {order_by_sql}""",
                     params,
                 ).fetchall()
                 tracks = _apply_post_filters([Track.from_row(r) for r in base_rows], post_filter_issue)
@@ -258,7 +327,7 @@ def list_tracks(
             ).fetchone()
             rows = conn.execute(
                 f"""SELECT * FROM tracks {where_sql}
-                    ORDER BY {sort_col} {order_dir}
+                    ORDER BY {order_by_sql}
                     LIMIT ? OFFSET ?""",
                 params + [limit, offset],
             ).fetchall()

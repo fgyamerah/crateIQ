@@ -105,6 +105,22 @@ class TrackIdsRequest(BaseModel):
     track_ids: List[int] = Field(min_length=1, max_length=200)
 
 
+class InboxTrackEditRequest(BaseModel):
+    filename: Optional[str] = Field(default=None, max_length=255)
+    artist: Optional[str] = Field(default=None, max_length=200)
+    genre: Optional[str] = Field(default=None, max_length=200)
+
+
+class InboxBulkEditRequest(BaseModel):
+    track_ids: List[int] = Field(min_length=1, max_length=200)
+    artist: Optional[str] = Field(default=None, max_length=200)
+    genre: Optional[str] = Field(default=None, max_length=200)
+
+
+class InboxBulkEditApplyRequest(InboxBulkEditRequest):
+    confirm: bool = False
+
+
 def _root():
     try:
         return selected_library_root()
@@ -161,12 +177,71 @@ async def list_inbox_tracks(
     limit: int = Query(default=100, ge=1, le=500),
     offset: int = Query(default=0, ge=0),
 ) -> TrackPageResponse:
+    if sort not in track_service.VALID_SORT_KEYS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Invalid sort key '{sort}'. Allowed: {', '.join(sorted(track_service.VALID_SORT_KEYS))}.",
+        )
     tracks, total = track_service.list_tracks(
         q=search, storage_zone="INBOX", sort=sort, order=order, limit=limit, offset=offset,
     )
     return TrackPageResponse(
         items=[TrackSummary.from_track(t) for t in tracks], limit=limit, offset=offset, total=total,
     )
+
+
+@router.patch("/workspace/inbox/tracks/{track_id}")
+async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
+    """
+    Single-track Inbox edit: optional filename (managed Inbox rename, basename
+    only -- extension is always locked to the current file), artist, genre.
+    Fields are processed independently so a failure in one never hides a
+    success in another; if every requested field fails, the response is a
+    422 with all failure reasons joined.
+    """
+    if body.filename is None and body.artist is None and body.genre is None:
+        raise HTTPException(status_code=422, detail="Provide at least one of filename, artist, or genre.")
+    root = _root()
+    result: dict = {"track_id": track_id, "rename": None, "metadata": None, "errors": []}
+
+    if body.filename is not None:
+        try:
+            result["rename"] = workspace_service.rename_inbox_track(root, track_id, body.filename)
+        except ValueError as exc:
+            result["errors"].append(str(exc))
+
+    if body.artist is not None or body.genre is not None:
+        try:
+            result["metadata"] = workspace_service.edit_inbox_track_metadata(
+                root, track_id, artist=body.artist, genre=body.genre,
+            )
+        except ValueError as exc:
+            result["errors"].append(str(exc))
+
+    if result["errors"] and result["rename"] is None and result["metadata"] is None:
+        raise HTTPException(status_code=422, detail="; ".join(result["errors"]))
+    return result
+
+
+@router.post("/workspace/inbox/bulk-edit/preview")
+async def preview_inbox_bulk_edit(body: InboxBulkEditRequest):
+    """Read-only: preview a bulk Artist/Genre edit before it is applied."""
+    try:
+        return workspace_service.bulk_edit_preview(_root(), body.track_ids, artist=body.artist, genre=body.genre)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/inbox/bulk-edit/apply")
+async def apply_inbox_bulk_edit(body: InboxBulkEditApplyRequest):
+    if not body.confirm:
+        raise HTTPException(status_code=422, detail="Bulk edit requires confirm=true after reviewing the preview.")
+    try:
+        return workspace_service.bulk_edit_apply(
+            _root(), body.track_ids, artist=body.artist, genre=body.genre, confirm=True,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.post("/workspace/promotion/preview")

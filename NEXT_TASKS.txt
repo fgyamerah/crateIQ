@@ -39,6 +39,54 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 15 -- Inbox Inline Editing + Bulk Edit + Sortable Columns (2026-08-08)
+    Closes the "Inbox has no inline metadata editor yet" gap noted in
+    Cycle 9. Track/file (managed Inbox filename, extension always locked),
+    Artist, and Genre are now directly editable inline. New safe rename
+    contract (workspace_service.rename_inbox_track) rejects separators/
+    traversal/control chars/empty/reserved Windows names/trailing dot-or-
+    space, preserves Unicode, never overwrites on collision (no silent
+    "(2)" suffix), rejects symlinks, is a no-op for an identical name, and
+    attempts to roll back the filesystem rename if the DB update after it
+    fails. Artist/Genre edits (single via new
+    PATCH /api/workspace/inbox/tracks/{id}, and bulk via new
+    POST /api/workspace/inbox/bulk-edit/preview + .../apply, confirm
+    required, Artist/Genre only -- never filename) reuse
+    tag_write_service's exact backup/write/re-read/verify contract through
+    preparation_service.write_tracks() -- no second writer. No new
+    provenance column: "manual edit survives Process All" already holds via
+    enrich_tracks()'s existing never-overwrite-non-empty-non-junk rule,
+    now regression-tested. Inbox columns are sortable server-side
+    (track_service.VALID_SORT_KEYS extended with genre/key/readiness;
+    unknown sort key now 422s instead of silently falling back; blank/NULL
+    values sort last in both directions; deterministic id tiebreak).
+    Readiness sort is an explicit field-completeness proxy, not the same
+    computation as the live per-track Ready badge (documented distinction
+    -- avoids O(n) disk I/O per list request). 73 new backend tests; 1703
+    backend tests pass total (zero regressions); frontend typecheck/build
+    pass. Live-verified end to end against the real running dev backend
+    and the already-prepared managed workspace at
+    /home/paak/Music/djcoco (its intentional Traveler/Traveller duplicate
+    pair used only as a do-not-touch check); every test mutation was
+    reverted afterward. See PROJECT_CONTEXT.md for full detail. On
+    feat/crateiq-workspace-onboarding; not merged to main.
+[ ] (P2) No frontend automated test framework exists in this repo (no
+    vitest/jest, no `test` npm script). Cycle 15's Inbox editing/sorting
+    frontend work relied on typecheck + build + manual/live verification
+    instead, per this repo's "don't add dependencies casually" rule --
+    adding one was judged out of proportion for a single feature. Worth
+    a dedicated task to introduce one deliberately (e.g. vitest +
+    @testing-library/react) with its own justification/scope, not bundled
+    into a feature cycle.
+[ ] (P3) Bulk/manual filename rename across multiple selected Inbox tracks
+    is intentionally out of scope for Cycle 15 (collision handling for a
+    *bulk* rename is materially harder than the single-track contract
+    shipped this cycle) -- single-track rename only for now.
+[ ] (P3) Genre Taxonomy suggestions are not wired into the new inline/bulk
+    Genre editors (Cycle 15) -- they accept any valid non-empty string, by
+    product decision not to force a taxonomy mapping over deliberate user
+    input. Worth reconsidering once/if taxonomy-assisted entry (autocomplete)
+    is prioritized.
 [x] (P0) Managed Library Cycle 14 -- Workspace Onboarding + Settings UX (2026-08-08)
     Fixes the confusing first-run experience where Settings exposed the
     legacy direct-library wizard as the primary onboarding path alongside

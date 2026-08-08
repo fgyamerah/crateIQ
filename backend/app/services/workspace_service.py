@@ -55,6 +55,13 @@ WorkspaceState = Literal["managed_workspace", "legacy_direct_library", "not_conf
 # ---------------------------------------------------------------------------
 
 _UNSAFE_SEGMENT_CHARS = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_CONTROL_CHAR_RE = re.compile(r'[\x00-\x1f]')
+_RESERVED_WINDOWS_STEMS = {
+    "CON", "PRN", "AUX", "NUL",
+    "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+    "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
+}
+_MAX_METADATA_FIELD_LENGTH = 200
 
 
 def safe_path_segment(value: str | None, fallback: str) -> str:
@@ -679,4 +686,354 @@ def promote_tracks(root: Path, track_ids: list[int], *, confirm: bool) -> dict[s
         "promoted_count": promoted,
         "failed_count": failed,
         "results": results,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Inbox inline editing -- Track/file rename, Artist/Genre single + bulk edit
+# ---------------------------------------------------------------------------
+
+def _require_inbox_row(conn: sqlite3.Connection, track_id: int) -> sqlite3.Row:
+    row = conn.execute("SELECT * FROM tracks WHERE id = ?", (track_id,)).fetchone()
+    if row is None:
+        raise ValueError("Track not found.")
+    if (row["storage_zone"] or "LIBRARY") != "INBOX":
+        raise ValueError("Only managed Inbox tracks can be edited here.")
+    return row
+
+
+def _validate_new_basename(value: str) -> str:
+    """
+    Validate a user-supplied Inbox filename basename (the part before the
+    locked extension). Unlike safe_path_segment -- which silently normalizes
+    free-text metadata into a generated destination path -- this rejects
+    unsafe input outright: a manual rename is a deliberate user action, and
+    an unsafe value must be fixed by the user, never silently rewritten.
+    """
+    text = unicodedata.normalize("NFC", value or "")
+    if "\x00" in text or _CONTROL_CHAR_RE.search(text):
+        raise ValueError("Filename contains an unsafe control character.")
+    if "/" in text or "\\" in text:
+        raise ValueError("Filename cannot contain a path separator.")
+    if not text.strip():
+        raise ValueError("Filename cannot be empty.")
+    if text in {".", ".."}:
+        raise ValueError("Filename cannot be '.' or '..'.")
+    trimmed = text.rstrip(" .")
+    if not trimmed:
+        raise ValueError("Filename cannot consist only of dots or spaces.")
+    if trimmed != text:
+        raise ValueError("Filename cannot end with a space or a period.")
+    if trimmed.upper() in _RESERVED_WINDOWS_STEMS:
+        raise ValueError(f"'{trimmed}' is a reserved filename and cannot be used.")
+    return trimmed
+
+
+def rename_inbox_track(root: Path, track_id: int, new_basename: str) -> dict[str, Any]:
+    """
+    Rename the managed Inbox copy's filename only.
+
+    Never touches audio bytes, never touches TITLE metadata, never changes
+    the extension (always taken from the current file, never from user
+    input), and never renames anything outside <root>/Inbox -- Library and
+    Quarantine tracks, and external originals, are untouched by this
+    function by construction (it only ever resolves paths under the Inbox
+    zone directory).
+    """
+    db_path = _require_initialized_db(root)
+    library_setup_service.ensure_storage_zone_column(root)
+    inbox_dir = _zone_dir(root, "Inbox")
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = _require_inbox_row(conn, track_id)
+
+        # Check symlink-ness on the raw, un-resolved path first: assert_path_
+        # under_root resolves symlinks (Path.resolve), so by the time a path
+        # comes back from it the link has already been transparently
+        # dereferenced and is_symlink() on the *result* would never fire.
+        if Path(row["filepath"]).is_symlink():
+            raise ValueError("Refusing to rename a symlinked Inbox entry.")
+        try:
+            current_path = assert_path_under_root(row["filepath"], root)
+            current_path.relative_to(inbox_dir)
+        except ValueError:
+            raise ValueError("Indexed file is not inside the managed Inbox.")
+        if not current_path.is_file():
+            raise ValueError("Source file no longer exists in Inbox.")
+
+        ext = current_path.suffix
+        requested = new_basename or ""
+        if ext and requested.lower().endswith(ext.lower()):
+            requested = requested[: -len(ext)]
+        basename = _validate_new_basename(requested)
+        new_filename = f"{basename}{ext}"
+
+        if new_filename == current_path.name:
+            return {
+                "track_id": track_id, "status": "no_change",
+                "filename": current_path.name, "filepath": str(current_path),
+            }
+
+        destination = inbox_dir / new_filename
+        try:
+            destination = assert_path_under_root(destination, root)
+            destination.relative_to(inbox_dir)
+        except ValueError:
+            raise ValueError("Resolved destination escapes the managed Inbox.")
+        if destination.is_symlink() or destination.exists():
+            raise ValueError(f"A file named '{new_filename}' already exists in Inbox. Choose a different name.")
+
+        try:
+            current_path.rename(destination)
+        except OSError:
+            try:
+                shutil.move(str(current_path), str(destination))
+            except OSError as exc:
+                raise ValueError(f"Rename failed: {exc}")
+
+        if not (destination.is_file() and not current_path.exists()):
+            # Truthful failure -- do not claim success on an unverified rename.
+            raise ValueError("Rename could not be verified on disk.")
+
+        try:
+            conn.execute(
+                "UPDATE tracks SET filepath = ?, filename = ? WHERE id = ?",
+                (str(destination), destination.name, track_id),
+            )
+            conn.commit()
+        except Exception as exc:
+            # Filesystem rename already succeeded -- recover by renaming back
+            # so the index and disk never disagree about the Inbox filename.
+            try:
+                destination.rename(current_path)
+                reverted = True
+            except OSError:
+                reverted = False
+            reason = f"Index update failed after rename ({exc}); " + (
+                "the file was renamed back to its original name." if reverted
+                else "the file remains at its NEW name on disk but the index still shows "
+                     "the OLD name -- manual reconciliation required."
+            )
+            raise ValueError(reason)
+
+    return {"track_id": track_id, "status": "renamed", "filename": destination.name, "filepath": str(destination)}
+
+
+def _validate_metadata_value(field: str, value: str) -> str:
+    text = unicodedata.normalize("NFC", value or "").strip()
+    if not text:
+        raise ValueError(f"{field.capitalize()} cannot be empty.")
+    if len(text) > _MAX_METADATA_FIELD_LENGTH:
+        raise ValueError(f"{field.capitalize()} is too long (max {_MAX_METADATA_FIELD_LENGTH} characters).")
+    if _CONTROL_CHAR_RE.search(text):
+        raise ValueError(f"{field.capitalize()} contains an unsafe control character.")
+    return text
+
+
+def edit_inbox_track_metadata(
+    root: Path, track_id: int, *, artist: str | None = None, genre: str | None = None,
+) -> dict[str, Any]:
+    """
+    Manual single-track Artist/Genre edit for a managed Inbox copy.
+
+    Updates the local index (the same "approved value" tag_write_service
+    already treats as authoritative) and then reuses
+    preparation_service.write_tracks -- the exact build_plan -> backup ->
+    write -> re-read -> verify contract Process All's write stage uses -- to
+    push the change into the file. No second, simplified tag writer exists
+    here; this is a thin caller of the same one.
+    """
+    if artist is None and genre is None:
+        raise ValueError("Provide at least one of artist or genre to update.")
+
+    db_path = _require_initialized_db(root)
+    library_setup_service.ensure_storage_zone_column(root)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = _require_inbox_row(conn, track_id)
+
+        updates: dict[str, str] = {}
+        if artist is not None:
+            new_artist = _validate_metadata_value("artist", artist)
+            if new_artist != (row["artist"] or ""):
+                updates["artist"] = new_artist
+        if genre is not None:
+            new_genre = _validate_metadata_value("genre", genre)
+            if new_genre != (row["genre"] or ""):
+                updates["genre"] = new_genre
+
+        if not updates:
+            return {
+                "track_id": track_id, "status": "no_change", "fields_changed": [],
+                "artist": row["artist"], "genre": row["genre"], "tag_write": None,
+            }
+
+        set_sql = ", ".join(f"{field} = ?" for field in updates)
+        conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
+        conn.commit()
+
+    from . import preparation_service  # local import breaks the module import cycle
+    write_result = preparation_service.write_tracks([track_id])
+
+    return {
+        "track_id": track_id,
+        "status": "updated",
+        "fields_changed": list(updates),
+        "artist": updates.get("artist", row["artist"]),
+        "genre": updates.get("genre", row["genre"]),
+        "tag_write": write_result,
+    }
+
+
+def bulk_edit_preview(root: Path, track_ids: list[int], *, artist: str | None, genre: str | None) -> dict[str, Any]:
+    """Read-only preview for bulk Artist/Genre edit. Never writes anything."""
+    if artist is None and genre is None:
+        raise ValueError("Select at least one field (Artist or Genre) to bulk edit.")
+    if not track_ids:
+        raise ValueError("Select at least one track to bulk edit.")
+
+    fields: dict[str, str] = {}
+    if artist is not None:
+        fields["artist"] = _validate_metadata_value("artist", artist)
+    if genre is not None:
+        fields["genre"] = _validate_metadata_value("genre", genre)
+
+    db_path = _require_initialized_db(root)
+    library_setup_service.ensure_storage_zone_column(root)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        placeholders = ",".join("?" * len(track_ids))
+        rows = {r["id"]: r for r in conn.execute(f"SELECT * FROM tracks WHERE id IN ({placeholders})", track_ids)}
+
+    field_previews: dict[str, Any] = {}
+    for field, new_value in fields.items():
+        counts: dict[str, int] = {}
+        for track_id in track_ids:
+            row = rows.get(track_id)
+            if row is None:
+                continue
+            current = (row[field] or "").strip() or "Unknown"
+            counts[current] = counts.get(current, 0) + 1
+        current_values = sorted(counts, key=lambda v: (-counts[v], v.lower()))[:10]
+        field_previews[field] = {"current_values": current_values, "new_value": new_value}
+
+    eligible = skipped_not_inbox = missing = 0
+    for track_id in track_ids:
+        row = rows.get(track_id)
+        if row is None:
+            missing += 1
+        elif (row["storage_zone"] or "LIBRARY") != "INBOX":
+            skipped_not_inbox += 1
+        else:
+            eligible += 1
+
+    return {
+        "selected_count": len(track_ids),
+        "eligible_count": eligible,
+        "skipped_not_inbox": skipped_not_inbox,
+        "missing_count": missing,
+        "fields": field_previews,
+        "message": "Preview only. No metadata or files were changed.",
+    }
+
+
+def bulk_edit_apply(
+    root: Path, track_ids: list[int], *, artist: str | None, genre: str | None, confirm: bool,
+) -> dict[str, Any]:
+    """
+    Apply a bulk Artist/Genre edit to every selected managed-Inbox track.
+
+    Per track: confirm it still exists and is still storage_zone=INBOX,
+    diff against the current DB value (skip real no-ops), update the index,
+    then reuse preparation_service.write_tracks (tag_write_service's exact
+    backup/write/re-read/verify contract) for the changed tracks as one
+    batch. One track's tag-write failure never flips another track's already
+    -successful result, and vice versa -- each track's final status is
+    reported independently and truthfully.
+    """
+    if not confirm:
+        raise ValueError("Bulk edit requires confirm=true after reviewing the preview.")
+    if artist is None and genre is None:
+        raise ValueError("Select at least one field (Artist or Genre) to bulk edit.")
+    if not track_ids:
+        raise ValueError("Select at least one track to bulk edit.")
+
+    fields: dict[str, str] = {}
+    if artist is not None:
+        fields["artist"] = _validate_metadata_value("artist", artist)
+    if genre is not None:
+        fields["genre"] = _validate_metadata_value("genre", genre)
+
+    db_path = _require_initialized_db(root)
+    library_setup_service.ensure_storage_zone_column(root)
+
+    results: dict[int, dict[str, Any]] = {}
+    changed_ids: list[int] = []
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        placeholders = ",".join("?" * len(track_ids))
+        rows = {r["id"]: r for r in conn.execute(f"SELECT * FROM tracks WHERE id IN ({placeholders})", track_ids)}
+
+        for track_id in track_ids:
+            row = rows.get(track_id)
+            if row is None:
+                results[track_id] = {"track_id": track_id, "status": "not_found", "reason": "Track not found."}
+                continue
+            if (row["storage_zone"] or "LIBRARY") != "INBOX":
+                results[track_id] = {"track_id": track_id, "status": "skipped", "reason": "Track is not in Inbox."}
+                continue
+
+            updates = {f: v for f, v in fields.items() if v != (row[f] or "")}
+            if not updates:
+                results[track_id] = {"track_id": track_id, "status": "unchanged"}
+                continue
+
+            set_sql = ", ".join(f"{f} = ?" for f in updates)
+            conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
+            changed_ids.append(track_id)
+            results[track_id] = {"track_id": track_id, "status": "changed", "fields": list(updates)}
+        conn.commit()
+
+    from . import preparation_service  # local import breaks the module import cycle
+    write_result = (
+        preparation_service.write_tracks(changed_ids) if changed_ids
+        else {"written_count": 0, "failed_count": 0, "warnings": [], "results": []}
+    )
+    for wr in write_result.get("results", []):
+        entry = results.get(wr.get("track_id"))
+        if entry is None:
+            continue
+        tw_status = wr.get("status")
+        entry["tag_write_status"] = tw_status
+        if tw_status in ("failed", "blocked"):
+            entry["status"] = "failed"
+            entry["reason"] = wr.get("reason") or "Metadata write-back to the file failed."
+        else:
+            # "applied" or "no_op" (approved value already matched the file)
+            # both mean the field is correctly reflected on disk -- success.
+            entry["status"] = "succeeded"
+
+    for track_id, entry in results.items():
+        if entry["status"] == "changed":
+            # A DB update happened but no matching tag-write result came
+            # back (e.g. build_plan itself failed for the whole chunk) --
+            # do not silently claim success on an unverified write.
+            entry["status"] = "failed"
+            entry.setdefault("reason", "Metadata write-back could not be verified.")
+
+    ordered_results = [results[tid] for tid in track_ids if tid in results]
+    return {
+        "selected_count": len(track_ids),
+        "changed_count": len(changed_ids),
+        "unchanged_count": sum(1 for r in ordered_results if r["status"] == "unchanged"),
+        "succeeded_count": sum(1 for r in ordered_results if r["status"] == "succeeded"),
+        "failed_count": sum(1 for r in ordered_results if r["status"] == "failed"),
+        "skipped_count": sum(1 for r in ordered_results if r["status"] == "skipped"),
+        "not_found_count": sum(1 for r in ordered_results if r["status"] == "not_found"),
+        "results": ordered_results,
+        "tag_write": write_result,
+        "message": "Bulk edit applied to the managed Inbox copies.",
     }

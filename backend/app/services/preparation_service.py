@@ -311,8 +311,17 @@ def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_
 # ---------------------------------------------------------------------------
 
 def write_tracks(track_ids: list[int]) -> dict[str, Any]:
+    """
+    Reuses tag_write_service's exact build_plan -> apply_plan contract,
+    chunked to its own per-request cap. `results` carries a per-track outcome
+    (matching tag_write_service.apply_plan's status vocabulary, plus
+    "no_op"/"blocked" for tracks apply_plan is never even called for) so
+    callers that need track-level truth -- e.g. bulk Inbox edits -- don't
+    have to re-implement this chunking loop themselves.
+    """
     written = failed = 0
     warnings: list[str] = []
+    results: list[dict[str, Any]] = []
     for start in range(0, len(track_ids), _WRITE_CHUNK_SIZE):
         chunk = track_ids[start:start + _WRITE_CHUNK_SIZE]
         try:
@@ -320,6 +329,19 @@ def write_tracks(track_ids: list[int]) -> dict[str, Any]:
         except ValueError as exc:
             warnings.append(str(exc))
             continue
+
+        # Build blocked/no_op results directly from the plan (single source
+        # of truth) rather than from apply_plan's own "skipped" status, which
+        # collapses both cases under one label distinguishable only by reason
+        # text -- fragile to depend on from a caller.
+        results.extend(
+            {"track_id": item["track_id"], "status": "blocked", "reason": item["blocker"]}
+            for item in plan["items"] if item["blocked"]
+        )
+        results.extend(
+            {"track_id": item["track_id"], "status": "no_op"}
+            for item in plan["items"] if not item["blocked"] and not item["fields"]
+        )
         expected = {
             item["track_id"]: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}
             for item in plan["items"] if not item["blocked"] and item["fields"]
@@ -329,7 +351,11 @@ def write_tracks(track_ids: list[int]) -> dict[str, Any]:
         result = tag_write_service.apply_plan(chunk, expected, confirm=True)
         written += result["applied"]
         failed += result["failed"]
-    return {"written_count": written, "failed_count": failed, "warnings": warnings}
+        # apply_plan recomputes its own plan over the whole chunk and would
+        # re-report the blocked/no-field tracks above (as "skipped") -- keep
+        # only the entries for tracks that were actually changeable here.
+        results.extend(r for r in result["results"] if r["track_id"] in expected)
+    return {"written_count": written, "failed_count": failed, "warnings": warnings, "results": results}
 
 
 # ---------------------------------------------------------------------------

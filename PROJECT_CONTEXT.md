@@ -6,6 +6,131 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 15 (Inbox Inline Editing + Bulk Edit + Sortable
+  Columns), on `feat/crateiq-workspace-onboarding` (base Cycle 14, this
+  file's previous entry), no merge to main. Closes the "Inbox has no inline
+  metadata editor yet" gap noted at the end of Cycle 9's entry below.
+
+  **Track/Artist/Genre inline editing.** New
+  `PATCH /api/workspace/inbox/tracks/{track_id}` (optional `filename`,
+  `artist`, `genre`; fields processed independently so one failing never
+  hides another succeeding). `workspace_service.rename_inbox_track()` is a
+  new safe rename contract for the managed Inbox filename only: rejects
+  path separators/traversal/NUL/control chars/empty/reserved Windows
+  device names/trailing dot-or-space, preserves Unicode (NFC), always
+  locks the extension to the current file (never taken from user input),
+  same-normalized-name is a no-op, collision is a hard rejection (no
+  silent `(2)` suffix -- that stays exclusive to auto-import), symlinks are
+  rejected on the raw pre-resolve path (checking post-resolve is a no-op
+  bug the tests caught), and a DB-update failure after a successful
+  filesystem rename attempts to rename the file back so disk and index
+  never disagree. TITLE is never touched by a filename rename.
+  `workspace_service.edit_inbox_track_metadata()` handles Artist/Genre: it
+  updates the local index (the same "approved value"
+  `tag_write_service.build_plan()` already treats as authoritative) and
+  then calls `preparation_service.write_tracks()` -- Process All's own
+  write stage, extended (additively -- new `results` key, existing callers
+  unaffected) to return per-track outcomes -- reusing the exact
+  backup/write/re-read/verify contract rather than a second writer.
+  **No new provenance column was added.** "Manual edit survives Process
+  All" already falls out of `preparation_service.enrich_tracks()`'s
+  existing "never auto-replace a non-empty, non-junk value" rule once the
+  manual edit has landed in the DB -- proven by two new regression tests
+  (`test_manual_artist_survives_process_all_enrich`,
+  `..._genre_...`) rather than building a parallel precedence engine.
+
+  **Bulk edit.** `POST /api/workspace/inbox/bulk-edit/preview` (read-only:
+  selected/eligible/skipped counts, current-value distribution, new value)
+  and `POST /api/workspace/inbox/bulk-edit/apply` (`confirm=true`
+  required; Artist and/or Genre only, never filename). Applies DB updates
+  per track, batches the changed ids through one
+  `preparation_service.write_tracks()` call, and reports
+  `succeeded/unchanged/skipped/not_found/failed` per track independently --
+  one track's tag-write failure (e.g. an unsupported format slipped into
+  the selection) never flips another track's already-verified success.
+
+  **Sortable Inbox columns**, server-side. `GET /api/workspace/inbox/tracks`
+  already had `sort`/`order` params wired to `track_service.list_tracks()`
+  but the frontend never sent them and the whitelist only covered
+  artist/title/bpm/filename/processed_at. Extended
+  `track_service.VALID_SORT_KEYS` (route now 422s on an unknown key,
+  closing the client-controlled-SQL-column risk explicitly rather than
+  silently falling back) with `genre`, `key` (Camelot, falling back to
+  musical), and `readiness`. All text/BPM/key sorts now group blank/NULL
+  values **last regardless of direction** (previously undefined/incidental
+  SQLite ordering) and every sort gets a deterministic `id` tiebreak
+  (`artist` sort also gets `title` as an explicit secondary, matching the
+  pre-existing default). Readiness sorts by an explicit
+  READY(0)/WARNING(1)/BLOCKED(2) tier -- **note this is a field-completeness
+  proxy** (required fields present; BPM/key warnings), computed in pure SQL
+  with no per-row disk I/O, and is deliberately *not* the same computation
+  as the live per-track "Ready" badge (`workspace_service.
+  _promotion_readiness()`, which also checks pending tag-write-back, file
+  existence, and destination collision via `tag_write_service.build_plan()`
+  + file stat/hash per row) -- doing that for every row on a hot,
+  paginated/searchable list endpoint would mean O(n) disk I/O per request.
+  The live badge itself is unchanged.
+
+  **Frontend** (`frontend/src/pages/Inbox.tsx`): new `SortTh` (native
+  `<button>` inside `<th>` for free keyboard activation, `aria-sort`,
+  ▲/▼/⇅ indicator matching `Tracks.tsx`'s existing convention) and
+  `EditableCell` (hover/focus-revealed pencil, click-to-edit, Enter
+  saves/Escape cancels, accessible Save/Cancel icon buttons) local
+  components; Track/file edits the basename only with the extension shown
+  as a locked suffix. A page-level `activeEditCount` blocks sort-header
+  clicks while any cell has an unsaved edit open rather than silently
+  discarding it. Selection stays a `Set<number>` of track ids, untouched by
+  sorting/refetch. New Bulk Edit panel (checkboxes for Set Artist/Set
+  Genre, required Preview step before an `Apply to N tracks` button --
+  never a bare "Save"). `frontend/src/api/workspace.ts` gained
+  `patchInboxTrack`/`previewInboxBulkEdit`/`applyInboxBulkEdit` and
+  `fetchInboxTracks` now forwards `sort`/`order`.
+
+  **No frontend test framework exists in this repo** (no vitest/jest, no
+  `test` script, none added by earlier cycles) and the task's own gate list
+  only requires `typecheck`/`build` for frontend -- introducing a whole new
+  toolchain for one feature was judged out of proportion per this repo's
+  "don't add dependencies casually" rule, so frontend coverage here is
+  typecheck + build (both pass) plus manual verification against every
+  item in the frontend acceptance checklist, and live end-to-end
+  verification (below). A follow-up task to add frontend test
+  infrastructure is recorded in `NEXT_TASKS.txt`.
+
+  **Tests:** 73 new backend tests across three new files
+  (`tests/test_workspace_rename.py`, `tests/test_workspace_inbox_edit.py`,
+  `tests/test_inbox_sort.py`); full suite 1703 passed. `git diff --check`
+  clean; `validate-docs --strict` OK.
+
+  **Live end-to-end verification**, against the already-prepared managed
+  workspace at `/home/paak/Music/djcoco` (real audio files, real
+  `mutagen`/ID3 writes, its intentional `Traveler.mp3`/`Traveller.mp3`
+  duplicate pair used only as a **do-not-touch** negative check) via the
+  already-running dev backend/frontend (browser automation was unavailable
+  this session, so this was driven at the HTTP API layer the UI itself
+  calls, not through pytest fixtures): single Artist edit and single Genre
+  edit each verified end-to-end (index updated, real file tag written,
+  backup recorded in `tag_write_operations`, re-read verified); a Track/file
+  rename verified extension-locked, TITLE unchanged, old path gone/new path
+  serving `/preview-audio` with 200, and a same-name no-op; a same-directory
+  collision attempt correctly rejected with 422 and zero filesystem change;
+  bulk Genre and bulk Artist edits across 3 tracks each verified written and
+  reported `succeeded_count`; sort by `genre`/`readiness` and an invalid
+  `sort` key (422) all verified against live data. Every test mutation was
+  explicitly reverted afterward (confirmed via re-read of both the index and
+  the real file tags) so the sanctioned library ends the session byte- and
+  metadata-identical to how it started; the `Traveler`/`Traveller` pair and
+  a pre-existing unrelated stale index row (`id=1`, `filepath` pointing at a
+  `track.mp3` that doesn't exist on disk -- present before this session,
+  not caused by it) were never touched.
+
+  **Known gaps carried to later cycles:** no bulk/manual filename rename
+  (out of scope per this cycle's product decision -- collision handling for
+  a *bulk* rename is materially harder and deferred); Genre Taxonomy
+  suggestions are not wired into the inline/bulk Genre editors (accepts any
+  valid non-empty string, per product decision not to force a taxonomy
+  mapping over deliberate user input); no frontend automated test suite
+  (see above).
+
 - 2026-08-08: Cycle 14 (Workspace Onboarding + Settings UX), on
   `feat/crateiq-workspace-onboarding` (base Cycle 13, this file's previous
   entry), no merge to main. Fixes the confusing first-run experience where

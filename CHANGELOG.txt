@@ -2,6 +2,52 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Add Inbox inline Track/Artist/Genre editing, bulk edit, and sortable columns
+
+- What changed: The Inbox table's Track/file (managed Inbox filename, extension
+  always locked), Artist, and Genre columns are now directly editable inline
+  (hover reveals a pencil affordance; click to edit; Enter saves, Escape
+  cancels; accessible Save/Cancel controls). Selecting one or more Inbox
+  tracks now exposes a Bulk Edit panel to set one Artist and/or one Genre
+  across the whole selection, always behind a required preview step before
+  an explicit "Apply to N tracks" action -- never a bare "Save", never a
+  filename field. Every Inbox column except the selection checkbox is now
+  sortable (click to sort ascending, click again to reverse; ascending/
+  descending indicator; aria-sort on the active header; server-side, so it
+  combines correctly with search and does not disturb selection, which is
+  tracked by track id, not row position).
+- Why it changed: Inbox is the primary working-preparation surface but had
+  no way to fix a track's filename/Artist/Genre, or reorder the table,
+  without leaving the page or using an unrelated bulk workflow.
+- Files affected:
+  - backend/app/services/workspace_service.py -- new rename_inbox_track()
+    (safe filename-only rename contract), edit_inbox_track_metadata()
+    (single Artist/Genre edit reusing the tag-write contract),
+    bulk_edit_preview()/bulk_edit_apply() (bulk Artist/Genre, confirm
+    required, per-track truthful reporting).
+  - backend/app/services/preparation_service.py -- write_tracks() now also
+    returns a per-track results list (additive; existing callers
+    unaffected) so bulk edit can report track-level tag-write outcomes.
+  - backend/app/services/track_service.py -- extended sort whitelist
+    (genre/key/readiness added; VALID_SORT_KEYS now exported), blank/NULL
+    values sort last in both directions, deterministic id tiebreak,
+    readiness sorts by an explicit field-completeness proxy (not the same
+    computation as the live per-track Ready badge -- documented in-code).
+  - backend/app/api/routes/workspace.py -- new
+    PATCH /api/workspace/inbox/tracks/{track_id},
+    POST /api/workspace/inbox/bulk-edit/preview,
+    POST /api/workspace/inbox/bulk-edit/apply; GET .../inbox/tracks now
+    validates sort against the whitelist (422 on an unknown key).
+  - frontend/src/api/workspace.ts, frontend/src/pages/Inbox.tsx,
+    frontend/src/index.css -- sortable headers, inline edit cells, Bulk
+    Edit panel; fetchInboxTracks now forwards sort/order.
+  - tests/test_workspace_rename.py, tests/test_workspace_inbox_edit.py,
+    tests/test_inbox_sort.py -- 73 new backend tests.
+- Migration notes: none (additive API surface; no schema change; no
+  behavior change to existing callers of preparation_service.write_tracks()
+  or the pre-existing sort keys). See PROJECT_CONTEXT.md's Cycle 15 entry
+  for full detail, including live end-to-end verification notes.
+
 [2026-08-08] — Simplify managed workspace onboarding in Settings
 
 - What changed: Workspace is now the primary/first Settings tab (Workspace,

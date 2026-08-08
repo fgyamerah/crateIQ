@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { FolderInput, Inbox as InboxIcon, Loader2, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
+import { Check, FolderInput, Inbox as InboxIcon, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2, X } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
+  applyInboxBulkEdit,
   applyPromotion,
   cancelPrepareOperation,
   cleanSelected,
@@ -12,12 +13,15 @@ import {
   fetchPrepareOperation,
   fetchWorkspaceStatus,
   importToInbox,
+  patchInboxTrack,
+  previewInboxBulkEdit,
   previewPromotion,
   startProcessAll,
 } from '../api/workspace'
 import type {
-  InboxTrackPage, PreparationOperation, PreparePreflight,
-  PromotionPreview, WorkspaceImportResult, WorkspaceStatus,
+  InboxBulkEditApplyResult, InboxBulkEditPreview, InboxSortKey, InboxTrackPage,
+  PreparationOperation, PreparePreflight, PromotionPreview, SortOrder,
+  WorkspaceImportResult, WorkspaceStatus,
 } from '../api/workspace'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
@@ -30,6 +34,144 @@ function messageFor(error: unknown, fallback: string) {
 }
 
 const POLL_INTERVAL_MS = 1500
+
+interface SortState {
+  key: InboxSortKey
+  order: SortOrder
+}
+
+// ---------------------------------------------------------------------------
+// Sortable column header
+// ---------------------------------------------------------------------------
+
+interface SortThProps {
+  label: string
+  sortKey: InboxSortKey
+  sort: SortState
+  onSort: (key: InboxSortKey) => void
+  title?: string
+}
+
+function SortTh({ label, sortKey, sort, onSort, title }: SortThProps) {
+  const active = sort.key === sortKey
+  const ariaSort: 'ascending' | 'descending' | 'none' = active ? (sort.order === 'asc' ? 'ascending' : 'descending') : 'none'
+  return (
+    <th className={`th-sortable${active ? ' th-sortable--active' : ''}`} aria-sort={ariaSort}>
+      <button type="button" className="th-sortable-button" onClick={() => onSort(sortKey)} title={title ?? `Sort by ${label}`}>
+        {label}
+        <span className="sort-indicator" aria-hidden="true">{active ? (sort.order === 'asc' ? ' ▲' : ' ▼') : ' ⇅'}</span>
+      </button>
+    </th>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Inline edit cell (Track/file basename, Artist, Genre)
+// ---------------------------------------------------------------------------
+
+function splitExt(filename: string): { base: string; ext: string } {
+  const idx = filename.lastIndexOf('.')
+  if (idx <= 0) return { base: filename, ext: '' }
+  return { base: filename.slice(0, idx), ext: filename.slice(idx) }
+}
+
+interface EditableCellProps {
+  value: string
+  ariaLabel: string
+  onSave: (nextValue: string) => Promise<void>
+  onEditingChange: (editing: boolean) => void
+  suffix?: string
+  maxLength?: number
+}
+
+function EditableCell({ value, ariaLabel, onSave, onEditingChange, suffix, maxLength }: EditableCellProps) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [saving, setSaving] = useState(false)
+  const [localError, setLocalError] = useState<string | null>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => { if (!editing) setDraft(value) }, [value, editing])
+  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
+
+  const startEdit = () => {
+    setDraft(value)
+    setLocalError(null)
+    setEditing(true)
+    onEditingChange(true)
+  }
+  const stopEdit = () => {
+    setEditing(false)
+    onEditingChange(false)
+  }
+  const cancel = () => {
+    setDraft(value)
+    setLocalError(null)
+    stopEdit()
+  }
+  const save = async () => {
+    const next = draft.trim()
+    if (!next) {
+      setLocalError('Cannot be empty.')
+      return
+    }
+    if (next === value.trim()) {
+      stopEdit()
+      return
+    }
+    setSaving(true)
+    setLocalError(null)
+    try {
+      await onSave(next)
+      stopEdit()
+    } catch (err) {
+      setLocalError(messageFor(err, 'Save failed.'))
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (!editing) {
+    return (
+      <button type="button" className="inbox-cell-edit-trigger" onClick={startEdit} aria-label={`Edit ${ariaLabel}`}>
+        <span className="inbox-cell-value">{value || '—'}</span>
+        <Pencil size={12} className="inbox-cell-pencil" aria-hidden="true" />
+      </button>
+    )
+  }
+
+  return (
+    <span className="inbox-cell-editing">
+      <span className="inbox-cell-input-row">
+        <input
+          ref={inputRef}
+          className="inbox-cell-input"
+          value={draft}
+          maxLength={maxLength}
+          disabled={saving}
+          onChange={(event) => setDraft(event.target.value)}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') { event.preventDefault(); void save() }
+            else if (event.key === 'Escape') { event.preventDefault(); cancel() }
+          }}
+          aria-label={`${ariaLabel} value`}
+        />
+        {suffix && <span className="inbox-cell-suffix">{suffix}</span>}
+        <button type="button" className="icon-btn icon-btn--sm icon-btn--approve" disabled={saving} onClick={() => void save()} aria-label={`Save ${ariaLabel}`}>
+          <Check size={13} />
+        </button>
+        <button type="button" className="icon-btn icon-btn--sm" disabled={saving} onClick={cancel} aria-label={`Cancel editing ${ariaLabel}`}>
+          <X size={13} />
+        </button>
+      </span>
+      {localError && <span className="inbox-cell-error">{localError}</span>}
+    </span>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Page
+// ---------------------------------------------------------------------------
 
 export default function Inbox() {
   const [status, setStatus] = useState<WorkspaceStatus | null>(null)
@@ -47,7 +189,20 @@ export default function Inbox() {
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [batchBusy, setBatchBusy] = useState<'clean' | 'enrich' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [sort, setSort] = useState<SortState>({ key: 'artist', order: 'asc' })
+  const [activeEditCount, setActiveEditCount] = useState(0)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Bulk edit
+  const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkArtistEnabled, setBulkArtistEnabled] = useState(false)
+  const [bulkArtistValue, setBulkArtistValue] = useState('')
+  const [bulkGenreEnabled, setBulkGenreEnabled] = useState(false)
+  const [bulkGenreValue, setBulkGenreValue] = useState('')
+  const [bulkPreview, setBulkPreview] = useState<InboxBulkEditPreview | null>(null)
+  const [bulkPreviewing, setBulkPreviewing] = useState(false)
+  const [bulkApplying, setBulkApplying] = useState(false)
+  const [bulkResult, setBulkResult] = useState<InboxBulkEditApplyResult | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -57,7 +212,7 @@ export default function Inbox() {
       setStatus(nextStatus)
       if (nextStatus.state === 'managed_workspace') {
         const [nextTracks, nextPreview, nextPreflight] = await Promise.all([
-          fetchInboxTracks({ limit: 200 }),
+          fetchInboxTracks({ limit: 200, sort: sort.key, order: sort.order }),
           previewPromotion(),
           fetchPreparePreview(),
         ])
@@ -74,10 +229,11 @@ export default function Inbox() {
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [sort])
 
   useEffect(() => { void load() }, [load])
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current) }, [])
+  useEffect(() => { if (selected.size === 0) setBulkEditOpen(false) }, [selected])
 
   const pollOperation = useCallback((operationId: string) => {
     const tick = async () => {
@@ -185,6 +341,56 @@ export default function Inbox() {
       setError(messageFor(err, 'Enrich Selected failed.'))
     } finally {
       setBatchBusy(null)
+    }
+  }
+
+  const onSort = (key: InboxSortKey) => {
+    if (activeEditCount > 0) {
+      setError('Finish or cancel the open edit before changing the sort order.')
+      return
+    }
+    setSort((current) => (
+      current.key === key
+        ? { key, order: current.order === 'asc' ? 'desc' : 'asc' }
+        : { key, order: 'asc' }
+    ))
+  }
+
+  const bulkFields = {
+    ...(bulkArtistEnabled && bulkArtistValue.trim() ? { artist: bulkArtistValue.trim() } : {}),
+    ...(bulkGenreEnabled && bulkGenreValue.trim() ? { genre: bulkGenreValue.trim() } : {}),
+  }
+  const bulkFieldsValid = Object.keys(bulkFields).length > 0
+
+  const resetBulkResults = () => { setBulkPreview(null); setBulkResult(null) }
+
+  const doBulkPreview = async () => {
+    if (!bulkFieldsValid || !selected.size) return
+    setBulkPreviewing(true)
+    setError(null)
+    try {
+      const result = await previewInboxBulkEdit(Array.from(selected), bulkFields)
+      setBulkPreview(result)
+      setBulkResult(null)
+    } catch (err) {
+      setError(messageFor(err, 'Bulk edit preview failed.'))
+    } finally {
+      setBulkPreviewing(false)
+    }
+  }
+
+  const doBulkApply = async () => {
+    if (!bulkFieldsValid || !selected.size) return
+    setBulkApplying(true)
+    setError(null)
+    try {
+      const result = await applyInboxBulkEdit(Array.from(selected), bulkFields)
+      setBulkResult(result)
+      await load()
+    } catch (err) {
+      setError(messageFor(err, 'Bulk edit apply failed.'))
+    } finally {
+      setBulkApplying(false)
     }
   }
 
@@ -323,8 +529,106 @@ export default function Inbox() {
                 <button className="btn btn--ghost btn--sm" disabled={!selected.size || batchBusy !== null} onClick={() => void doEnrichSelected()}>
                   {batchBusy === 'enrich' ? 'Enriching…' : `Enrich Selected (${selected.size})`}
                 </button>
+                <button
+                  className="btn btn--ghost btn--sm"
+                  disabled={!selected.size}
+                  onClick={() => setBulkEditOpen((open) => !open)}
+                  aria-expanded={bulkEditOpen}
+                >
+                  <Pencil size={14} /> Bulk Edit ({selected.size})
+                </button>
                 <Link className="btn btn--ghost btn--sm" to="/needs-review">Open Needs Review</Link>
               </div>
+
+              {bulkEditOpen && (
+                <div className="card settings-card inbox-bulk-edit">
+                  <h2 className="card-title"><Pencil size={16} /> Bulk Edit — {selected.size} selected track{selected.size === 1 ? '' : 's'}</h2>
+                  <div className="inbox-bulk-edit-fields">
+                    <label className="inbox-bulk-edit-field">
+                      <input
+                        type="checkbox"
+                        checked={bulkArtistEnabled}
+                        onChange={(event) => { setBulkArtistEnabled(event.target.checked); resetBulkResults() }}
+                      />
+                      Set Artist
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={bulkArtistValue}
+                        disabled={!bulkArtistEnabled}
+                        onChange={(event) => { setBulkArtistValue(event.target.value); resetBulkResults() }}
+                        placeholder="New artist name"
+                        aria-label="New artist value for bulk edit"
+                      />
+                    </label>
+                    <label className="inbox-bulk-edit-field">
+                      <input
+                        type="checkbox"
+                        checked={bulkGenreEnabled}
+                        onChange={(event) => { setBulkGenreEnabled(event.target.checked); resetBulkResults() }}
+                      />
+                      Set Genre
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={bulkGenreValue}
+                        disabled={!bulkGenreEnabled}
+                        onChange={(event) => { setBulkGenreValue(event.target.value); resetBulkResults() }}
+                        placeholder="New genre"
+                        aria-label="New genre value for bulk edit"
+                      />
+                    </label>
+                  </div>
+                  <div className="settings-actions">
+                    <button className="btn btn--ghost btn--sm" disabled={bulkPreviewing || !bulkFieldsValid} onClick={() => void doBulkPreview()}>
+                      {bulkPreviewing ? 'Loading preview…' : 'Preview'}
+                    </button>
+                    <button
+                      className="btn btn--ghost btn--sm"
+                      onClick={() => { setBulkEditOpen(false); resetBulkResults() }}
+                    >
+                      Close
+                    </button>
+                  </div>
+
+                  {bulkPreview && (
+                    <div className="inbox-bulk-edit-preview">
+                      <p className="muted">
+                        {bulkPreview.selected_count} selected track{bulkPreview.selected_count === 1 ? '' : 's'}
+                        {bulkPreview.skipped_not_inbox ? ` — ${bulkPreview.skipped_not_inbox} not in Inbox will be skipped` : ''}
+                      </p>
+                      {bulkPreview.fields.artist && (
+                        <div className="inbox-bulk-edit-preview-field">
+                          <strong>Artist</strong>
+                          <p className="muted">Current values include: {bulkPreview.fields.artist.current_values.join(', ')}</p>
+                          <p>New value: <strong>{bulkPreview.fields.artist.new_value}</strong></p>
+                        </div>
+                      )}
+                      {bulkPreview.fields.genre && (
+                        <div className="inbox-bulk-edit-preview-field">
+                          <strong>Genre</strong>
+                          <p className="muted">Current values include: {bulkPreview.fields.genre.current_values.join(', ')}</p>
+                          <p>New value: <strong>{bulkPreview.fields.genre.new_value}</strong></p>
+                        </div>
+                      )}
+                      <div className="settings-actions">
+                        <button className="btn btn--primary btn--sm" disabled={bulkApplying} onClick={() => void doBulkApply()}>
+                          {bulkApplying ? 'Applying…' : `Apply to ${bulkPreview.eligible_count} track${bulkPreview.eligible_count === 1 ? '' : 's'}`}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {bulkResult && (
+                    <StatusStrip tone={bulkResult.failed_count ? 'warn' : 'good'}>
+                      {bulkResult.succeeded_count} succeeded, {bulkResult.unchanged_count} unchanged
+                      {bulkResult.skipped_count ? `, ${bulkResult.skipped_count} skipped` : ''}
+                      {bulkResult.failed_count ? `, ${bulkResult.failed_count} failed` : ''}.
+                    </StatusStrip>
+                  )}
+                </div>
+              )}
+
               <div className="card settings-card table-scroll">
                 <table>
                   <thead>
@@ -340,12 +644,19 @@ export default function Inbox() {
                           aria-label="Select all Inbox tracks"
                         />
                       </th>
-                      <th>Track</th><th>Artist</th><th>Title</th><th>Genre</th><th>BPM</th><th>Key</th><th>Readiness</th>
+                      <SortTh label="Track / file" sortKey="filename" sort={sort} onSort={onSort} title="Managed Inbox filename — click to sort" />
+                      <SortTh label="Artist" sortKey="artist" sort={sort} onSort={onSort} />
+                      <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} />
+                      <SortTh label="Genre" sortKey="genre" sort={sort} onSort={onSort} />
+                      <SortTh label="BPM" sortKey="bpm" sort={sort} onSort={onSort} />
+                      <SortTh label="Key" sortKey="key" sort={sort} onSort={onSort} />
+                      <SortTh label="Readiness" sortKey="readiness" sort={sort} onSort={onSort} />
                     </tr>
                   </thead>
                   <tbody>
                     {tracks.items.map((track) => {
                       const readiness = readinessByTrackId.get(track.id)
+                      const { base, ext } = splitExt(track.filename)
                       return (
                         <tr key={track.id}>
                           <td>
@@ -356,10 +667,41 @@ export default function Inbox() {
                               aria-label={`Select ${track.filename}`}
                             />
                           </td>
-                          <td>{track.filename}</td>
-                          <td>{track.artist || '—'}</td>
+                          <td>
+                            <EditableCell
+                              value={base}
+                              suffix={ext}
+                              ariaLabel={`Track filename for ${track.filename}`}
+                              onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
+                              onSave={async (nextBase) => {
+                                await patchInboxTrack(track.id, { filename: nextBase })
+                                await load()
+                              }}
+                            />
+                          </td>
+                          <td>
+                            <EditableCell
+                              value={track.artist ?? ''}
+                              ariaLabel={`Artist for ${track.filename}`}
+                              onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
+                              onSave={async (next) => {
+                                await patchInboxTrack(track.id, { artist: next })
+                                await load()
+                              }}
+                            />
+                          </td>
                           <td>{track.title || '—'}</td>
-                          <td>{track.genre || '—'}</td>
+                          <td>
+                            <EditableCell
+                              value={track.genre ?? ''}
+                              ariaLabel={`Genre for ${track.filename}`}
+                              onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
+                              onSave={async (next) => {
+                                await patchInboxTrack(track.id, { genre: next })
+                                await load()
+                              }}
+                            />
+                          </td>
                           <td>{track.bpm ?? '—'}</td>
                           <td>{track.key_camelot || track.key_musical || '—'}</td>
                           <td>
