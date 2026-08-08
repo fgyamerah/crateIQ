@@ -2,7 +2,7 @@
 
 Status: strategy document — no code changes accompany this file.
 Date: 2026-07-24
-Related documents: `AGENTS.md`, `AUDIT_REPORT.md`, `docs/CRATEIQ_ROADMAP.md`,
+Related documents: `AGENTS.md`, `docs/archive/AUDIT_REPORT.md`, `docs/CRATEIQ_ROADMAP.md`,
 `docs/CRATEIQ_PRODUCT_AUDIT.md`, `PROJECT_CONTEXT.md`, `README.md`, `COMMANDS.md`.
 
 This document defines what crateIQ currently is, what it should become, the gap
@@ -50,7 +50,7 @@ and only then build the player, playlists, and export bridges on top.
 
 The single best next task (section 16): implement the **local-runtime
 preflight and readiness contract** — it is already the top recommendation of
-`AUDIT_REPORT.md`, `NEXT_TASKS.txt`, and Phase 1 of the existing roadmap, and
+`docs/archive/AUDIT_REPORT.md`, `NEXT_TASKS.txt`, and Phase 1 of the existing roadmap, and
 everything else in this document builds on a reliably bootable app.
 
 ---
@@ -125,7 +125,7 @@ preview. It cannot write tags or move files directly.
   weak parses rather than inventing metadata.
 - 860 passing tests on a normal host.
 
-### 2.6 Known weak points (from `AUDIT_REPORT.md` and verified here)
+### 2.6 Known weak points (from `docs/archive/AUDIT_REPORT.md` and verified here)
 
 - No auth; permissive local CORS; destructive toggles reachable via API.
 - Hardcoded path defaults in `config.py` (`/music`, `/mnt/music_ssd/KKDJ`,
@@ -844,7 +844,7 @@ result, safety levels) govern all new work.
 ## 16. Best Next Implementation Task
 
 **Implement the local-runtime preflight and readiness contract (Phase 1,
-step 1).** It is already the #1 recommendation of `AUDIT_REPORT.md` §15, an
+step 1).** It is already the #1 recommendation of `docs/archive/AUDIT_REPORT.md` §15, an
 open P1 in `NEXT_TASKS.txt`, and the entry requirement of existing-roadmap
 Phase 1 — and every feature in this document assumes an app that can honestly
 report whether it is ready.

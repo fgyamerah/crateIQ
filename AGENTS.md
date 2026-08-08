@@ -536,9 +536,10 @@ Do not update docs for purely read-only inspection unless the user asked for a r
 
 Current-state sources, in order of authority: current source code, then
 `AGENTS.md`, `README.md`, `PROJECT_CONTEXT.md`, `NEXT_TASKS.txt`, and
-`CHANGELOG.txt`. Historical or archived documents (including
-`DJToolkit_CONTEXT.txt`) are not authoritative for current architecture and
-are not required reading for active project memory.
+`CHANGELOG.txt`. Historical or archived documents under `docs/archive/`
+(including `docs/archive/DJToolkit_CONTEXT.txt`) are not authoritative for
+current architecture and are not required reading for active project
+memory.
 
 ---
 

@@ -1,33 +1,10 @@
 ======================================================================
-DJTOOLKIT — NEXT TASKS / OPEN WORK
+CRATEIQ — NEXT TASKS / OPEN WORK
 ======================================================================
-
-Post-audit stabilization note (2026-07-02):
-- Full repository audit completed in `AUDIT_REPORT.md`.
-- Frontend route/navigation consolidation completed: supported operational pages
-  are mounted, legacy/placeholder pages redirect safely, and navigation matches
-  the router.
-- Frontend package metadata and documented install/typecheck/build commands were
-  normalized for a clean workspace.
-- Backend test environment stabilization completed: the dev requirements now
-  include backend/TestClient dependencies, test runs use an isolated temporary
-  pipeline/backend library root, and `python -m pytest -q` passes in Python 3.12.
-- Next recommended task: add a reproducible local-runtime preflight with a
-  non-secret environment template and smoke tests for supported UI/API routes.
-
-Backend hang diagnosis note (2026-07-15):
-- The original bounded run stalled at the first FastAPI health test because the
-  restricted execution sandbox did not wake a cross-thread asyncio event loop,
-  which is required by AnyIO/Starlette TestClient.
-- A minimal bare FastAPI reproduction and the CrateIQ suite pass outside that
-  sandbox with the same installed packages. No application lifecycle fix was
-  warranted; this was pre-existing environment behavior, not the rename.
-- The complete suite now passes twice: 860 tests per run, exiting normally.
 
 Legend:
 [ ] = open
 [~] = in progress
-[x] = done
 
 Priority:
 P0 = critical (affects core functionality)
@@ -35,1795 +12,314 @@ P1 = high
 P2 = medium
 P3 = low
 
+Completed work is not tracked here. See CHANGELOG.txt for the dated
+change history and docs/history/ for summarized completed-cycle
+narrative. This file is the active work queue only.
 
 ----------------------------------------------------------------------
-CURRENT FOCUS
+P0 / CRITICAL
+----------------------------------------------------------------------
 
-[x] (P0) Managed Library Cycle 15 -- Inbox Inline Editing + Bulk Edit + Sortable Columns (2026-08-08)
-    Closes the "Inbox has no inline metadata editor yet" gap noted in
-    Cycle 9. Track/file (managed Inbox filename, extension always locked),
-    Artist, and Genre are now directly editable inline. New safe rename
-    contract (workspace_service.rename_inbox_track) rejects separators/
-    traversal/control chars/empty/reserved Windows names/trailing dot-or-
-    space, preserves Unicode, never overwrites on collision (no silent
-    "(2)" suffix), rejects symlinks, is a no-op for an identical name, and
-    attempts to roll back the filesystem rename if the DB update after it
-    fails. Artist/Genre edits (single via new
-    PATCH /api/workspace/inbox/tracks/{id}, and bulk via new
-    POST /api/workspace/inbox/bulk-edit/preview + .../apply, confirm
-    required, Artist/Genre only -- never filename) reuse
-    tag_write_service's exact backup/write/re-read/verify contract through
-    preparation_service.write_tracks() -- no second writer. No new
-    provenance column: "manual edit survives Process All" already holds via
-    enrich_tracks()'s existing never-overwrite-non-empty-non-junk rule,
-    now regression-tested. Inbox columns are sortable server-side
-    (track_service.VALID_SORT_KEYS extended with genre/key/readiness;
-    unknown sort key now 422s instead of silently falling back; blank/NULL
-    values sort last in both directions; deterministic id tiebreak).
-    Readiness sort is an explicit field-completeness proxy, not the same
-    computation as the live per-track Ready badge (documented distinction
-    -- avoids O(n) disk I/O per list request). 73 new backend tests; 1703
-    backend tests pass total (zero regressions); frontend typecheck/build
-    pass. Live-verified end to end against the real running dev backend
-    and the already-prepared managed workspace at
-    /home/paak/Music/djcoco (its intentional Traveler/Traveller duplicate
-    pair used only as a do-not-touch check); every test mutation was
-    reverted afterward. See PROJECT_CONTEXT.md for full detail. On
-    feat/crateiq-workspace-onboarding; not merged to main.
-[ ] (P2) No frontend automated test framework exists in this repo (no
-    vitest/jest, no `test` npm script). Cycle 15's Inbox editing/sorting
-    frontend work relied on typecheck + build + manual/live verification
-    instead, per this repo's "don't add dependencies casually" rule --
-    adding one was judged out of proportion for a single feature. Worth
-    a dedicated task to introduce one deliberately (e.g. vitest +
-    @testing-library/react) with its own justification/scope, not bundled
-    into a feature cycle.
-[ ] (P3) Bulk/manual filename rename across multiple selected Inbox tracks
-    is intentionally out of scope for Cycle 15 (collision handling for a
-    *bulk* rename is materially harder than the single-track contract
-    shipped this cycle) -- single-track rename only for now.
-[ ] (P3) Genre Taxonomy suggestions are not wired into the new inline/bulk
-    Genre editors (Cycle 15) -- they accept any valid non-empty string, by
-    product decision not to force a taxonomy mapping over deliberate user
-    input. Worth reconsidering once/if taxonomy-assisted entry (autocomplete)
-    is prioritized.
-[x] (P0) Managed Library Cycle 14 -- Workspace Onboarding + Settings UX (2026-08-08)
-    Fixes the confusing first-run experience where Settings exposed the
-    legacy direct-library wizard as the primary onboarding path alongside
-    the managed workspace, and there was no way to create a brand-new
-    workspace folder from the UI. Workspace is now the first Settings tab;
-    legacy setup (Initialize index/Scan preview/Import previewed tracks)
-    plus active/pending root and internal DB paths moved to a new Advanced
-    tab behind a collapsed "Legacy Direct Library" disclosure. New
-    WorkspacePanel component covers five states (Ready, Not Set Up,
-    Pending Restart with current-vs-new columns, Legacy Detected, first-run
-    setup form). New backend safe-creation endpoints
-    POST /api/workspace/root/classify and .../root/create (single-directory
-    only, confirm required, no recursive parent creation), built on a
-    shared core/library_root.assert_safe_new_root_path() so legacy and
-    managed-workspace validation can't drift. Closed a self-import
-    containment gap: importing a source that *contains* the managed root is
-    now rejected (previously only source == or inside root was caught).
-    Inbox's not_configured/legacy states now route to /settings#workspace
-    instead of duplicating setup UI. 51 new backend tests; 1630 backend
-    tests pass total (zero regressions); frontend typecheck/build pass.
-    Live-verified end to end against the already-running local dev
-    environment (found mid-scenario in exactly the bug state this cycle
-    fixes -- pending root distinct from active, both disposable test
-    dirs): restart -> empty-root init -> real MP3 import with SHA-256
-    verification -> self-import rejection -> legacy detection, all
-    confirmed through the real UI. Responsive check at 760px/390px could
-    not be verified live (browser automation's resize did not change
-    window.innerWidth in this environment) -- verified by CSS review of
-    the existing 640px breakpoints instead; disclosed, not claimed as
-    tested. On feat/crateiq-workspace-onboarding; not merged to main.
-[ ] (P3) Inbox import result doesn't surface per-source `warnings` text
-    (e.g. the new self-import containment rejection message) in the UI --
-    only imported/duplicate/failed counts are shown. Noticed during Cycle
-    14 browser verification; the backend already returns the message via
-    WorkspaceImportResult.warnings, this is purely a frontend display gap
-    in frontend/src/pages/Inbox.tsx's importResult rendering.
-[x] (P0) Managed Library Cycle 13 -- Provider Consensus Wired into Process All (2026-08-08)
-    Closes the P1 follow-up below. preparation_service.enrich_tracks() now
-    calls provider_routing_service.gather_evidence() + consensus_service.
-    build_track_consensus() instead of Cycle 10's Beets+MB-only rule; HIGH
-    field verdicts auto-apply, MEDIUM/LOW/CONFLICT never do, a HIGH track
-    identity never forces genre to HIGH, and existing valid metadata is
-    never silently replaced (only the approved junk/placeholder exception,
-    via export_validation's now-public UNKNOWN_ARTISTS/is_junk_genre).
-    Provenance flows through a new small enrichment_review_service.
-    queue_consensus_suggestions() into the *same* snapshot/decision queue
-    online_lookup() already populates -- no new review table. 14 new
-    mocked-provider tests (tests/test_process_all_consensus.py); 1604
-    backend tests pass (+14, zero regressions); frontend unchanged.
-    Live-verified through the actual running Inbox/Needs Review/
-    Enrichment Review UI against a disposable workspace + disposable
-    external source: real Deezer + Beets/MusicBrainz calls, credential-
-    requiring providers (Discogs/Beatport/Spotify/Last.fm/YouTube) skipped
-    cleanly every time. Four real live tracks all landed on CONFLICT (real
-    catalogs are noisy -- alt versions, tribute recordings, same-titled
-    unrelated songs); each correctly stayed unapplied and surfaced in
-    Needs Review with full evidence. The HIGH-auto-apply path itself is
-    proven deterministically by the mocked test suite rather than forced
-    from non-deterministic live data -- see CHANGELOG.txt for full detail,
-    including exactly which real tracks were tried. On
-    feat/crateiq-managed-library; not merged to main.
-[x] (P0) Managed Library Cycle 12 -- Product Navigation + Final End-to-End Workflow (2026-08-08)
-    Final cycle of the Managed Library & Batch Preparation Program.
-    Sidebar reorganized into LIBRARY (Inbox, Library, Needs Review) / DJ
-    (Crates, Set Builder, Publish) / TOOLS (Jobs, Maintenance) / SYSTEM
-    (Settings) -- one unified "Needs Review" badge replaces four
-    scattered ones. New Maintenance.tsx hub (route /maintenance) links
-    to Quality/Duplicates/Reconciliation/Folders/Audit without rewriting
-    any of them. /library-prep now redirects to /inbox (materially
-    superseded, avoiding a duplicate competing workflow); the old page
-    stays in source, unrouted, matching existing Dashboard/Collection/
-    Tracks precedent. Settings gained a Workspace card (managed root/
-    Inbox/Library/Quarantine paths) reusing the existing Cycle 9 status
-    endpoint -- zero new backend code. Impeccable's own review caught and
-    fixed a real issue in this cycle's first Maintenance.tsx draft:
-    a redundant duplicate-link tabs row misusing ARIA role="tab" on
-    plain navigation links. Re-ran the full real journey (import ->
-    Process All -> promote -> Library -> visible to Crates' track
-    picker) end to end through the new navigation to confirm zero
-    regression from the reorg. 1590 backend tests pass (unchanged --
-    no backend logic touched this cycle); frontend typecheck/build pass.
-    Final safety audit passed in full (88 sanctioned files unchanged,
-    no-beet-CLI-invocation guard, credentials still gitignored, no
-    secret-shaped strings in the diff). README.md gained a "Managed
-    Library workflow" section and corrected feature-status rows. See
-    CHANGELOG.txt, PROJECT_CONTEXT.md, and the session's final report
-    for complete detail. On feat/crateiq-managed-library; not merged
-    to main.
-[x] (P0) Managed Library Cycle 11 -- Multi-Provider Identification & Enrichment (2026-08-08)
-    Real adapters for AcoustID, Discogs, Beatport, Spotify, Deezer,
-    Last.fm, and YouTube (new backend/app/services/providers/ package),
-    each researched against current official docs before writing code --
-    corrected two wrong assumptions already in the Settings registry:
-    Deezer needs no credentials for basic search (verified with a real
-    live request, and again through the real UI's Test button), and
-    Beatport uses OAuth 2.0 authorization-code grant, not a simple key.
-    New consensus_service.py (explainable HIGH/MEDIUM/LOW/CONFLICT,
-    field-by-field, never inherited blindly from track-level identity;
-    genre mapped through the existing genre_mappings table with
-    Beatport/Discogs authority weighting) and provider_routing_service.py
-    (staged evidence gathering, stops early on HIGH confidence, skips
-    unconfigured providers). Settings -> Metadata Sources needed zero
-    frontend changes (already fully generic/data-driven) to correctly
-    show and mask credentials for all 7 new providers. None have real
-    credentials in this environment, so Settings truthfully reports
-    "Needs Setup" for 6 of 7 (Deezer needs none); this is disclosed, not
-    hidden. 1590 backend tests pass (+60 new); frontend typecheck/build
-    pass. Live-verified: real local AcoustID fingerprinting against a
-    real audio file, real Deezer search through curl, through direct
-    Python, and through the actual running Settings UI's Test button.
-    See CHANGELOG.txt and PROJECT_CONTEXT.md Latest Milestone for full
-    detail, including the specific provider research findings and the
-    consensus-preview-endpoint read-only framing bug found and fixed
-    mid-cycle by a dedicated regression test. On
-    feat/crateiq-managed-library; not merged to main.
-[x] (P1) Wire the Cycle 11 consensus engine's multi-provider results into
-    Process All's automatic write-back path -- done in Cycle 13 above.
-[ ] (P3) If/when real credentials for Discogs/Spotify/Last.fm/YouTube/
-    AcoustID/Beatport become available, re-run this cycle's live
-    verification for each (see Settings -> Metadata Sources -> Test) to
-    confirm genuinely successful requests, not just truthful
-    "needs_setup" reporting.
-[x] (P0) Managed Library Cycle 10 -- Batch Preparation & Unified Review (2026-08-08)
-    Process All: one explicitly confirmed, cancellable, restart-safe
-    background operation (new preparation_operations table/service,
-    mirrors analysis_operations_service exactly) chaining deterministic
-    clean (modules.sanitizer reuse) -> bounded HIGH-confidence enrichment
-    (enrichment_review_service.online_lookup reuse, Beets+MB agreement
-    rule) -> verified write-back (tag_write_service reuse) -> best-effort
-    BPM/key analysis (analysis_jobs_service reuse, global-queue scoping
-    caveat disclosed in CHANGELOG.txt). New unified Needs Review
-    (/needs-review): read-only aggregation across metadata_repair_queue_
-    service, enrichment_review_service, and quality_review_service --
-    zero new review/decision state. Found and fixed two real latent
-    bugs while building this: (1) Cycle 9's promotion_preview/
-    promote_tracks crashed or silently created a broken empty DB against
-    an uninitialized root, now fails closed; (2) Needs Review's first
-    draft wrote to the DB from a GET, breaking the app's read-only smoke
-    contract -- moved that refresh into Process All instead. Also fixed
-    empty-list vs None ambiguity in promotion_preview's track_ids param.
-    Inbox gained pipeline-stage KPIs, Process All preflight/confirm/
-    progress/cancel, per-track selection with a header select-all
-    (added during Impeccable review), and Clean/Enrich Selected. Frontend
-    zone=library-default audit extended to ApplyToFiles.tsx/CrateMind.tsx
-    (need zone=all) vs Crates.tsx (correctly stays zone=library). 1530
-    backend tests pass (+30 new); frontend typecheck/build pass. Live
-    end-to-end verified with real ffmpeg-generated MP3 fixtures: junk-
-    token cleanup, real Beets/MusicBrainz enrichment, verified ID3 tag
-    write-back, genre still correctly blocking, Needs Review correctly
-    surfacing remaining exceptions with working deep links -- see
-    CHANGELOG.txt and PROJECT_CONTEXT.md Latest Milestone for full
-    detail. On feat/crateiq-managed-library; not merged to main.
-[ ] (P2) Needs Review has no cross-category bulk "Accept N high-
-    confidence recommendations" action yet -- deliberately deferred
-    rather than shipped half-safe under time pressure. Resolution
-    currently routes through each item's existing specialist page
-    (Enrichment Review, Genre Taxonomy, BPM Review, Metadata Repair).
-[ ] (P2) Batch analysis (Process All's ANALYZE stage, and any future
-    "Analyze Selected") reuses analysis_jobs_service's existing *global*
-    missing-BPM/key queue -- it is not scoped to only the current batch's
+(none currently open)
+
+----------------------------------------------------------------------
+P1 / HIGH
+----------------------------------------------------------------------
+
+[ ] Design and test a reconciliation APPLY workflow (backups, per-action
+    confirmation, restore path). Cycle 4 shipped DETECT/PROPOSE/REVIEW/
+    VALIDATE only; no apply/execute endpoint exists anywhere yet
+    (`_path_reconcile_apply_auto_safe`/`_path_reconcile_mark_stale_pstate`
+    remain unreachable from the API by design). See
+    docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md and
+    docs/history/PUBLISH_RECONCILIATION_AND_WAVEFORM.md.
+    WARNING: back up <root>/logs/processed.db before any apply work.
+
+[ ] Duplicate resolution plan and explicit review/backup design. Define
+    any future cleanup workflow separately with per-file actions,
+    backups, confirmations, and zero destructive defaults. Do not attach
+    file actions to the current Duplicate Review page.
+
+[ ] Metadata model extension (strategy Phase 2): additive tracks columns
+    for identity + structured artist/title/version, field_provenance
+    table, optional fpcalc fingerprinting. Preflight has landed, so this
+    is now unblocked.
+
+[ ] Genre intelligence layer (strategy Phase 3): genre_taxonomy.json,
+    genre_mappings.json, deterministic resolver, genre-normalize
+    preview/apply command, review integration.
+
+[ ] Review and approve docs/CRATEIQ_ROADMAP.md, then implement Phase 1
+    Foundation and design system per the approved roadmap.
+
+----------------------------------------------------------------------
+P2 / MEDIUM
+----------------------------------------------------------------------
+
+[ ] No frontend automated test framework exists in this repo (no
+    vitest/jest, no `test` npm script). Recent feature cycles relied on
+    typecheck + build + manual/live verification instead, per this
+    repo's "don't add dependencies casually" rule. Worth a dedicated
+    task to introduce one deliberately (e.g. vitest +
+    @testing-library/react) with its own justification/scope.
+
+[ ] If/when real credentials for Discogs/Spotify/Last.fm/YouTube/
+    AcoustID/Beatport become available, re-run live verification for
+    each (Settings -> Metadata Sources -> Test) to confirm genuinely
+    successful requests, not just truthful "needs_setup" reporting.
+
+[ ] Needs Review has no cross-category bulk "Accept N high-confidence
+    recommendations" action yet -- deliberately deferred rather than
+    shipped half-safe. Resolution currently routes through each item's
+    specialist page (Enrichment Review, Genre Taxonomy, BPM Review,
+    Metadata Repair).
+
+[ ] Batch analysis (Process All's ANALYZE stage, and any future "Analyze
+    Selected") reuses analysis_jobs_service's existing *global*
+    missing-BPM/key queue -- not scoped to only the current batch's
     track_ids, since no per-track-id-scoped analysis contract exists yet.
-    Disclosed, not hidden; revisit if this causes confusion in practice.
-[x] (P0) Managed Library Cycle 9 -- Managed Music Workspace (2026-08-08)
-    New Inbox/Library/Quarantine managed workspace, additive to the
-    existing legacy direct-library model (never auto-restructured).
-    workspace_service.py: state classification, idempotent configure,
-    copy-based import (verified, deterministic collisions, symlink-safe,
-    never touches the external original), and "Move Ready to Library"
-    promotion (artist/title/genre required, metadata-write-verified via
-    tag_write_service reuse, BPM/key/waveform warnings-only,
-    Library/<Genre>/<Artist>/<Artist> - <Title>.<ext> destination,
-    truthful collision/failure handling). New tracks.storage_zone column
-    (idempotent migration for pre-Cycle-9 DBs). GET /api/tracks now
-    defaults to zone=library; ApplyToFiles.tsx and CrateMind.tsx updated
-    to zone=all so Inbox tracks stay reachable for write-back/issue
-    triage. New /inbox page and sidebar entry. 1500 backend tests pass
-    (+36 new); frontend typecheck/build pass. Impeccable pass on Inbox.tsx
-    fixed a missing textarea label and untruncated readiness-blocker
-    badge text. Live end-to-end verified against disposable fixtures
-    (nested-folder import, byte-identical original verification,
-    real promotion through the UI, final Library path confirmed) -- see
-    CHANGELOG.txt and PROJECT_CONTEXT.md Latest Milestone for full
-    detail, including a live migration side effect on the sanctioned
-    library's processed.db schema (additive column only, no row/file
-    changes, confirmed). On feat/crateiq-managed-library (base
-    feat/crateiq-core-usability 78e0dfe); not merged to main.
-[ ] (P2) Library overview/quality KPI cards (/api/library/overview,
+
+[ ] Library overview/quality KPI cards (/api/library/overview,
     /api/library/quality) are not yet storage_zone-aware -- they still
-    aggregate across all zones rather than Library-only. Not a regression
-    (pre-existing behavior, unaffected by Cycle 9), but should be reconciled
-    once Inbox tracks are common, likely alongside Cycle 10's Inbox pipeline
-    stage counts.
-[ ] (P2) Inbox has no inline metadata editor yet -- genre/artist/title
-    fixes for Inbox tracks currently require the existing Metadata
-    Repair/Sanitation/Apply to Files pages (which now see Inbox tracks via
-    zone=all). Cycle 10's unified Needs Review may be the right place to
-    surface this inline instead of routing away.
-[x] (P0) Core Usability Cycle 5 -- Core Library Workflow (2026-08-08)
-    New unified `/library-prep` workspace presents the full target workflow
-    (Import -> Clean -> Enrich -> Review -> Apply -> Analyze -> Ready) as
-    seven steps; steps 1-2 (Import, Clean metadata) are genuinely
-    functional and reuse existing backend contracts unchanged; steps 3-7
-    are truthful "not available yet" placeholders, not faked functionality.
-    Closed a real gap: web import now reads embedded file tags (read-only
-    mutagen lookup) before falling back to filename parsing, matching the
-    CLI pipeline's approach; reports a new tags_read_count. No source-file
-    writes anywhere in this cycle. 1444 backend tests pass (+13 new: 8 in
-    tests/test_library_setup_service.py, 1 route-contract addition);
-    frontend typecheck/build pass. One Impeccable critique pass found and
-    fixed a real CSS bug (wrong wrapper class), a locked-step link
-    affordance issue, a silently-swallowed load-error state, and a
-    duplicate icon. See CHANGELOG.txt and PROJECT_CONTEXT.md Latest
-    Milestone for full detail. On feat/crateiq-core-usability (base main
-    4119013); not merged to main.
-[x] (P0) Core Usability Cycle 6 -- Real Enrichment (2026-08-08)
-    Real Beets (distance-scored, via beets' own MusicBrainz-backed
-    matching) and MusicBrainz (raw search) suggestions, both wrapping
-    beets' upstream-tested MB HTTP client rather than a new one. New
-    POST /api/enrichment/review/tracks/{id}/online-lookup: explicit,
-    single-track, bounded, cached 30 days, never overwrites non-empty
-    fields. Built on the existing Enrichment Review page (new
-    "Look up on Beets/MusicBrainz" buttons + existing N-source compare
-    table), not a parallel tool. Live-verified against the real backend
-    (not just mocks): both sources returned real candidates for a real
-    sanctioned-library track. 1459 backend tests pass; frontend
-    typecheck/build pass. One Impeccable pass fixed stale
-    now-false safety copy and added visual/spinner consistency for the
-    new network-triggering buttons. See CHANGELOG.txt and
-    PROJECT_CONTEXT.md Latest Milestone for full detail, including a
-    real incident (accidental `beet` CLI invocation touched the real
-    ~/.config/beets/library.db during manual testing; restored from
-    beets' own pre-migration backup) and the resulting hard rule: never
-    invoke the `beet` CLI binary from CrateIQ code.
-[ ] (P2) Consider a live "test connection" check for the MusicBrainz
-    source in Settings (currently the Test button reports readiness
-    without making a network call; the real check only happens via
-    Enrichment Review's online-lookup action).
-[x] (P0) Pre-merge hardening pass (2026-08-08)
-    Three fixes found via code inspection and a real disposable-library
-    browser walkthrough of Import -> Clean metadata -> Enrich & review
-    (real Beets + real MusicBrainz lookups) -> Apply to Files (write,
-    verify, restore) -> Analyze -> Ready -> Manual/Smart Crates continuation:
-    (1) library_setup_service._target_root() no longer falls back to the
-    pending (not-yet-active) library root when a mutating call omits an
-    explicit library_root -- it now always uses the canonical
-    selected_library_root() for the running process and fails closed if
-    none is configured, closing the exact near-miss documented in Cycle 7
-    below. (2) modules/organizer.py's default beets-CLI subprocess path
-    (`_run_beets`) is removed -- it always uses the Python fallback
-    organizer now; added a static AST-based regression guard
-    (tests/test_no_beet_cli_invocation.py) that fails the suite if any
-    production code ever invokes the `beet` binary again. (3) Found live in
-    the browser: every real UI-driven Apply-to-Files write failed as a
-    false "stale plan" because expected_mtime_ns (a nanosecond epoch
-    timestamp) exceeds JS's safe-integer range and got silently corrupted
-    on the JSON round-trip; fixed by sending it as a string end-to-end.
-    Also added an inline hint for Enrichment Review's confirm checkbox,
-    which was silently disabled with no explanation. 1474 backend tests
-    pass; frontend typecheck/build pass. See CHANGELOG.txt for full detail.
-[x] (P0) Core Usability Cycle 7 -- Controlled Metadata Write-Back (2026-08-08)
-    Real writes to actual file tags, the highest-risk cycle: exact
-    read-only write plan (diff local index vs current file tags for
-    artist/title/album/genre only) -> stale-file check (blocks if the
-    file changed since preview) -> byte-for-byte hash-verified backup
-    outside the scanned tree -> explicit confirm -> mutagen easy-tag
-    write of only the diffed fields -> re-read verify -> restore (atomic,
-    hash-verified). New /api/tag-write/* routes, new ApplyToFiles.tsx
-    page, new tag_write_operations history table with restart recovery.
-    Real acceptance run against disposable copies of two real sanctioned
-    files (never the originals) through the actual backend service
-    functions, backups landing in the real backup store, all cleaned up
-    afterward; all 88 original sanctioned audio files confirmed
-    byte-unchanged. See PROJECT_CONTEXT.md Latest Milestone for full
-    detail, including a real (harmless) near-miss during manual
-    acceptance scripting and the resulting documented trap in
-    library_setup_service's explicit-root parameter. 1465 backend tests
-    pass (10 new using real ffmpeg-generated audio fixtures, not mocks);
-    frontend typecheck/build pass. One Impeccable pass on the only
-    file-mutating page in the app fixed a real issue: the actual write
-    button was styled identically to the harmless preview button.
-[x] (P0) Core Usability Cycle 8 -- DJ Preparation (2026-08-08)
-    Final cycle: Library Prep's Analyze step now launches real BPM/key
-    analysis and waveform generation (three inline buttons, each reusing
-    the existing analysis_jobs_service/waveform_bulk_service contracts
-    the Jobs/BpmReview pages already use -- no new engine, no new
-    scheduler). New library_readiness_service.build_readiness()
-    composes existing signals (overview, sanitation/repair pending
-    counts, waveform coverage, write-back failure history) into
-    BLOCKER/WARNING/OPTIONAL reason codes; ready = zero blockers.
-    New GET /api/library/readiness. Ready step shows real blockers/
-    warnings (capped, "+N more") and links to Manual/Smart Crates.
-    Also fixed (found during the final full-workflow Impeccable pass):
-    steps 3/4 still had Cycle-5-era copy falsely claiming Beets/
-    MusicBrainz "land in the next cycle" even though Cycle 6 shipped
-    them -- merged into one real step and removed the now-fully-dead
-    "unavailable"/locked step state (value, two CSS rules, unused Lock
-    import) since every step is genuinely functional now. FINAL
-    END-TO-END ACCEPTANCE: one script chained the full 17-step
-    orchestrator journey against a disposable copy library (import ->
-    sanitation detects a real seeded issue -> approved -> real Beets +
-    MusicBrainz lookups -> field comparison -> approved -> exact write
-    plan -> backup -> confirmed write -> re-read verify -> restore
-    byte-identical -> real BPM analysis launched and completed -> key/
-    waveform launch paths exercised -> readiness correctly ready=true
-    with 2 truthful warnings) -- all temporary artifacts cleaned up, all
-    88 original sanctioned files confirmed byte-unchanged throughout the
-    entire 4-cycle program. 1468 backend tests pass; frontend typecheck/
-    build pass; validate-docs --strict passes. See CHANGELOG.txt and
-    PROJECT_CONTEXT.md Latest Milestone for full detail. Not merged to
-    main.
-[ ] (P2) Consider consolidating Settings.tsx's own import scan/import UI
-    into a pointer at /library-prep, or vice versa, so Import has exactly
-    one home instead of two UI entry points calling the same API
-    (noted as an accepted tradeoff in the Cycle 5 entry above).
-[x] (P1) Cycle 3 Stage 5 -- Final publish safety audit (2026-08-07)
-    Full-branch diff audit vs main; added a missing restart-recovery test
-    for publish_operations (mirrors the Cycle 2 analysis_operations
-    pattern); re-verified all 88 test-library source audio files
-    byte-identical before/after the full Cycle 3 session; validate-docs
-    --strict and git diff --check both clean. 1378 backend tests pass,
-    frontend typecheck/build pass. See CHANGELOG.txt. Cycle 3 (roadmap
-    Phase 7 Publish: readiness, guarded export, guarded sync, guided UI)
-    is complete on feat/crateiq-publish; not merged to main.
-[x] (P1) Cycle 3 Stage 4 -- Guided Publish workspace (2026-08-07)
-    New `/publish` route turns Stages 1-3 into one guided flow: crate +
-    format + sync-source selection -> readiness -> Export preview ->
-    confirm -> verify -> SSD Sync preview -> confirm -> live status ->
-    verify, plus a Recent publish operations table. Export/Sync are
-    visibly separate cards; Confirm stays disabled without a fresh
-    blocker-free preview for the current selection. Live headless-Chrome
-    verification against the real crateiq-test-library found and fixed a
-    real bug: existing jobs.db files predating Stage 3 were missing the
-    publish_operations.job_id column (CREATE TABLE IF NOT EXISTS doesn't
-    alter existing tables) -- fixed via the same _add_column_safe()
-    migration pattern used everywhere else, plus a regression test. See
-    CHANGELOG.txt for full detail. 1377 backend tests pass; frontend
-    typecheck/build pass.
-[x] (P1) Cycle 3 Stage 3 -- Guarded SSD sync workflow (2026-08-07)
-    `publish_sync_service.py` builds validate -> preview (dry-run) ->
-    confirm -> execute -> verify on the existing rsync_runner. Guarded
-    confirm always calls allow_delete=False (the request schema has no
-    allow_delete field at all); verification re-runs the safe dry-run
-    preview and checks it now reports zero pending files. Fixed a real
-    pre-existing bug: the dry-run parser never recognized rsync's
-    --no-inc-recursive header, so every preview (old and new) silently
-    reported zero pending files. See CHANGELOG.txt. 1376 backend tests
-    pass. No real SSD used; no --delete ever issued by the guarded flow.
-[x] (P1) Cycle 3 Stage 2 -- Guarded publish export flow (2026-08-07)
-    `publish_export_service.py` unifies the existing crate exporters
-    (portable/Rekordbox XML/Serato) behind validate -> preview -> confirm
-    -> execute -> verify. Preview is side-effect-free; execute requires
-    body.confirm=true; confirmed writes are recorded in a new
-    `publish_operations` jobs.db table (root-relative destination only)
-    and verified afterward (existence + format-specific shape), with
-    verification failure reported separately from execution failure. See
-    CHANGELOG.txt for full detail. 1365 backend tests pass.
-[x] (P1) Cycle 3 Stage 1 -- Publish readiness contract (2026-08-07)
-    `GET /api/publish/readiness/{crate_id}` composes the existing crate
-    export services and SSD sync config into one read-only readiness
-    snapshot (blockers/warnings/conflicts, export_ready, sync_ready,
-    confirmation_required, next_operation) without exporting or syncing
-    anything. See CHANGELOG.txt for full detail. 1355 backend tests pass.
-[x] (P1) Cycle 3 -- Guided Publish, Export, and SSD Sync (roadmap Phase 7)
-    All 5 stages complete: readiness contract, guarded export lifecycle,
-    guarded SSD sync lifecycle, Guided Publish UI, final safety audit.
-    Not merged to main per instruction.
+    aggregate across all zones rather than Library-only.
 
-[x] (P1) Crate/set-building improvements: transition context + funnel feedback
-    (2026-08-07). Manual Crates now show a deterministic, explainable
-    harmonic+BPM transition read between each consecutive track pair
-    (smooth/workable/clash/unknown, reusing modules/harmonic.py's public
-    camelot_score/bpm_score helpers; missing data degrades to "unknown", never
-    a fabricated score). Smart Crates now return a filter funnel (Library ->
-    BPM range -> Genre -> Issue-free -> Harmonic match -> Shown) so a DJ can
-    see which criterion narrowed the pool. Both are read-only annotations —
-    crate order, eligibility, and Smart Crate rules are unchanged. Verified
-    against the real crateiq-test-library backend via live API calls in
-    addition to 2 new targeted tests (1331 total). Live Chrome UI
-    verification not performed — extension unavailable this session.
+[ ] Consider consolidating Settings.tsx's own import scan/import UI into
+    a pointer at /inbox, or vice versa, so Import has exactly one home
+    instead of two UI entry points calling the same API.
 
-[ ] (P2) Live Chrome UI verification of the Stage 4 transition/funnel UI
-    Manual Crates connector rows and the Smart Crates funnel pill chain were
-    only verified via live backend API calls this session (extension was
-    unavailable). Do a real-browser pass next session: visual check of the
-    connector row placement/wrapping and the funnel pill chain on narrow
-    viewports, plus a11y label review.
+[ ] Live browser UI verification of the Manual Crates transition-context
+    row and Smart Crates filter-funnel pill chain (only verified via
+    live backend API calls so far): connector row placement/wrapping and
+    funnel pill chain on narrow viewports, plus an a11y label review.
 
-[x] (P1) Persistent Spotify-style bottom player (2026-08-05)
-    App-shell audio state now persists the selected browser-preview track and
-    queue across routes. The bottom player provides play/pause, previous/next,
-    progress/seek, volume, loading/error/unavailable states, minimize/close,
-    and the visual-only three-band signal. Library uses its visible filtered
-    page as the queue; Music Review keeps page and player navigation synced.
-    No tag, music/audio file, metadata, crate, or DJ-database writes were added.
+[ ] Safe Beets suggestion adapter and selected-field confidence review,
+    if Beets can supply suggestions without touching its user config or
+    library (temporary-config, no-tag-write adapter). Keep broad
+    automatic enrichment and overwrites out of scope.
 
-[x] (P2) Apply the Library mockup style to priority secondary pages (2026-08-05)
-    Settings, Jobs, Quality Review, Beets Review, Manual/Smart Crates, Metadata
-    Repair, and Genre Taxonomy now share the full-width dark dashboard, compact
-    controls, cyan/teal/violet accents, and dense panel/table treatment without
-    changing workflow logic or safety behavior.
+[ ] Quality remediation planning and explicit backup/review design.
+    Define any future transcode/replace workflow separately with file
+    backups, explicit per-track confirmation, and zero automatic action.
 
-[x] (P2) Verify full persistent playback with representative browser-playable files
-    (2026-08-05). Chrome verified MP3 and FLAC through the normal DB-backed
-    endpoint in the explicit `crateiq-test-library`, including seek/ranges,
-    play/pause/resume, non-wrapping boundaries, next-track autoplay on ended,
-    safe final-track stop, route persistence, Library/Music Review queue and
-    selection synchronization, rapid switching, and unavailable recovery.
-    The one exposed defect was fixed: the bottom player no longer displays an
-    absolute local filepath. No source audio was copied, modified, analyzed,
-    moved, renamed, deleted, or retagged.
+[ ] Extract an intelligence/harmonic/ pure engine from modules/harmonic.py
+    (strategy Phase 4), with golden-file tests pinning current
+    set-builder scoring first; add notation conversion (Camelot <->
+    traditional <-> Open Key) and half/double-time BPM awareness; switch
+    the compatible-tracks endpoint's genre scoring to taxonomy-driven
+    relations instead of the hardcoded _GENRE_RELATIONS.
 
-[x] (P3) Design real waveform extraction as a separately safe feature (2026-08-05)
-    `docs/architecture/WAVEFORM_ARCHITECTURE.md` defines the accepted backend-
-    extraction/frontend-rendering architecture, decoder-only FFmpeg primary,
-    disposable app-owned cache, explicit generation API, bounded job/resource
-    model, privacy contract, failure fallback, tests, and W1-W8 rollout. This is
-    architecture only; no waveform extraction or cache exists yet.
+[ ] Promote enrichment response caching (provider, query-hash, TTL) from
+    P3 to a pre-MusicBrainz-scale requirement.
 
-[x] (P2) Implement Waveform Phase W1 — backend state and capability foundation
-    (2026-08-05). Added validated conservative configuration, canonical cache
-    overlap/cleanup containment, privacy-safe library identity and source-stat
-    snapshots, explicit artifact/job/capability state models, idempotent
-    `waveform_track_state` and `waveform_jobs` tables in backend `jobs.db`, and
-    passive readiness/capability reporting. `source_sha256` is nullable and no
-    source content was hashed. No audio tool was executed, no artifact/worker/
-    endpoint/frontend was added, and trusted `processed.db` remains untouched.
+[ ] Contract coverage for deferred mutating endpoints (see
+    DEFERRED_ENDPOINTS in tests/test_supported_route_contracts.py).
+    Exports/validate and reconciliation/validate-plan are in-process and
+    could be tested with fixtures; job-spawning and rsync endpoints need
+    a mocked runner layer.
 
-[x] (P2) Implement Waveform Phase W2 — safe extractor wrapper only (2026-08-06)
-    Added the fixed read-only descriptor/probe/decode wrapper
-    (`waveform_probe.py`, `waveform_extractor.py`), a bounded doubling-merge
-    peak accumulator with extrema-preserving downsampling (`waveform_peaks.py`),
-    an argv-only no-shell subprocess supervisor with cancellation/timeout/
-    process-group termination (`waveform_process.py`), and 92 fake-process/
-    synthetic-PCM tests. No generation API, job worker, or cache artifact was
-    wired. Strong content-identity/cache-key strategy remains deferred to W3+
-    exactly as W1 already decided — W2 never reads source contents to hash them.
-[x] (P2) Implement Waveform Phase W3 — cache and API (2026-08-06)
-    Wired the W2 extractor into an explicit generation POST, a side-effect-free
-    GET, job status/cancel endpoints, active-job deduplication, atomic gzip-JSON
-    cache publication, and ETag/304 support. Added a stat-based `generation_key`
-    (SHA-256 of a small metadata structure, never audio content), a bounded
-    single-worker scheduler with a 32-job queue, supersede-on-changed-source,
-    a publication cancellation cutoff, and restart recovery that never resumes
-    analysis. Also fixed a pre-existing jobs.db WAL/synchronous=FULL fsync cost
-    (~372ms -> ~15ms per commit). 139 new tests; suite 1191 passed. No waveform
-    was generated from the real music library and no audio path reached an
-    external executable. Full-content SHA-256 remains deferred.
-[x] (P2) Implement Waveform Phase W4 — frontend real waveform presentation
-    (2026-08-06). Added `frontend/src/api/waveforms.ts` (typed discriminated
-    union), `hooks/useTrackWaveform.ts`, `components/player/TrackWaveform.tsx`
-    (DPR-aware canvas + ResizeObserver), and `waveformGeometry.ts` pure helpers.
-    The persistent player renders real min/max peaks with a progress overlay and
-    falls back to `ThreeBandWaveform` for every non-ready state. Generation is
-    explicit-only (verified zero automatic POSTs; six rapid clicks produced one
-    POST), track changes abort/ignore stale responses, and job polling stops on
-    terminal states. No waveform seeking (W5). No waveform was generated from the
-    real music library; ready-state rendering was verified with stubbed peaks.
-[x] (P2) Implement Waveform Phase W5 — waveform seeking and accessibility
-    (2026-08-06). Moved the existing native range input from a separate row
-    into a transparent full-box overlay directly on the waveform visual (real
-    canvas or ThreeBandWaveform fallback), so pointer/drag/touch/keyboard all
-    come from the browser's native range implementation with no custom
-    slider code. Replaced the old control rather than duplicating it (one
-    accessible seek slider, not two); restyled the thumb into a cyan playhead
-    needle visible over both real and fallback waveforms; raised step to 5s
-    for usable arrow-key seeking; added formatted aria-valuetext. Verified
-    with real CDP-dispatched mouse/keyboard events: click/drag/boundary seeks,
-    play/pause preservation across seek+resume, real-Tab focus ring, native
-    keyboard controls, fallback-state seeking, track-change mid-gesture
-    safety, zero generation traffic from seeking, responsive at three widths,
-    and Music Review shortcut guarding. No backend change.
-[x] (P2) Implement Waveform Phase W6 — lifecycle, cleanup, and resource controls
-    (2026-08-06). Added `backend/app/services/waveform_cache_service.py` with
-    bounded accounting, tiered cleanup (abandoned temps >24h, superseded
-    schema/algorithm layouts >7d, orphans, non-ready artifacts, then LRU ready
-    artifacts), 2 GiB -> 80% pruning with just-published protection, and
-    startup reconciliation. LRU ordering uses a new app-owned
-    `last_accessed_at` column instead of unreliable filesystem atime, with
-    access writes rate-limited to once per track per hour. Scheduler shutdown
-    is now ordered and idempotent (cancel tokens, bounded drain, then task
-    cancel) and records `BACKEND_SHUTDOWN` rather than a user cancellation; a
-    crashed runner now fails its job instead of stranding it in `processing`.
-    Added 30-day retention for failed/cancelled job rows and quiet
-    artifact-less track states (rows only). Completed W3's deferred
-    `detected` -> `ready` transition via a startup-only, cached
-    `ffmpeg/ffprobe -version` check, keeping the readiness GET a pure read.
-    Added `GET /api/waveform-cache` and a confirmation-gated
-    `POST /api/waveform-cache/clear`. Also fixed a latent import-time
-    `asyncio.Lock` loop-binding hazard in the shared maintenance lock.
-    1327 tests pass twice; frontend typecheck unchanged; no frontend file
-    changed. No waveform was generated from the real music library and no real
-    cache directory was cleared.
+[ ] Resolve the FastAPI/Starlette TestClient HTTP client deprecation
+    warning (evaluate the supported httpx2 migration separately; current
+    tests pass).
 
-[x] (P2) Implement Waveform Phase W7 — controlled browser and performance
-    verification (2026-08-06). Verification only; no production code changed.
-    Ran the full pipeline against 7 of 88 files in the explicitly configured
-    isolated test library (5 MP3 + 2 FLAC), leaving 81 untouched. FFmpeg/
-    ffprobe 6.1.1. RTF 108x-178x; artifacts 389x-1256x smaller than source;
-    detail peaked at 10,420 of 32,768 pairs; cached GETs 11-30 ms with zero
-    subprocesses. Bounded memory proven on real media (RSS delta flat ~32 KB
-    regardless of duration). CPU ~59% of one core of four. Canvas pixels
-    correlated against the API's own peaks at r=0.998 for both formats.
-    Pointer, keyboard and touch seeking verified — touch closes the gap W5
-    left open, including pan-y vertical scroll passthrough. Real cancellation
-    killed the decoder in 46 ms inside the SIGTERM grace with no partial
-    artifact; restart resumed 0 jobs; LRU and the confirmation-gated clear
-    behaved exactly as specified. All 7 sources byte-identical afterwards
-    (size/mtime_ns/ctime/dev/ino/SHA-256), no sidecars, trusted metadata
-    unchanged, logs privacy-clean. 1327 tests still pass.
+[ ] Frontend build-tool dependency upgrade: plan and test the Vite major
+    upgrade required to clear the remaining development-only npm audit
+    advisories. Do not use `npm audit fix --force`.
 
-[x] (P2) Implement Waveform Phase W8 — documentation and safety audit
-    (2026-08-06). Source-level, non-generative audit of the full
-    persistent-player + waveform arc (988ac08..254c688, 16 commits, 62 files).
-    No production code changed. Zero blockers found: every cache delete
-    traces through one containment gate, ffmpeg/ffprobe execution has one
-    entry point with no shell=True anywhere in backend, path validation is a
-    single symlink-resolving implementation used everywhere, jobs.db/
-    processed.db separation and synchronous=NORMAL scoping are both correct,
-    generation_key vs source_sha256 naming is unambiguous, the API surface
-    takes only track_id/job_id (never a path), frontend generation is
-    single-onClick-only, exactly one seek slider and one app-wide <audio>
-    element exist, no waveform log line carries a path, no dependency changed,
-    and no secret/binary/media/hardcoded-path was found in the 62-file diff.
-    `validate-docs --strict` fails on 6 stale COMMANDS.txt entries, confirmed
-    pre-existing (reproduced at the arc's base commit in an isolated
-    worktree; neither COMMANDS.txt nor pipeline.py has any diff in the arc) —
-    classified as an unrelated repository issue, not a branch blocker.
-    1327 tests + 402 waveform tests pass; typecheck and build pass.
-    GO — ready to merge after normal human review. See the classification
-    table and decision recorded in this file and in the waveform ADR
-    (Phase W8 section) for full detail.
+[ ] artist-repair: wire HIGH-confidence auto-apply through the tagger on
+    --apply (currently write-eligible but not yet wired through).
 
-    Remaining-item classification:
-    | Item | Class | Note |
-    |---|---|---|
-    | validate-docs --strict (6 stale COMMANDS.txt entries) | RESOLVED (2026-08-06) | Pre-existing, unrelated to this branch; see the P2 entry below |
-    | >11:06 real-media duration untested | NON-BLOCKING FOLLOW-UP | Covered by synthetic tests + hard ceilings (32,768 pairs, MAX_TIMEOUT_SECONDS); no real file that long exists in the test library |
-    | Touch verified only via CDP emulation | NON-BLOCKING FOLLOW-UP | Behaviorally correct (pan-y proven); physical hardware unverified |
-    | Non-Chrome browser unverified | NON-BLOCKING FOLLOW-UP | Standard canvas/range-input APIs used throughout; no browser-specific code path exists to diverge |
-    | Cache-clear manual action has no UI | OPTIONAL | API-only by design; already confirmation-gated |
-    | source_sha256 / strong content hash | OPTIONAL | Deliberately deferred since W1; nullable, never written |
-    | 4x `# type: ignore[arg-type]` | OPTIONAL | Cosmetic type-narrowing only, no safety implication |
+[ ] artist-repair: build-known-artists scan uses folder depth 1+2; add a
+    tag-sample depth option for deeper libraries.
 
-[x] (P2) Use real waveform in the Track Inspector (2026-08-06)
-    The Track Inspector's "Three-band signal preview" was the same decorative
-    `ThreeBandWaveform` used pre-W4, presented next to a "no waveform analysis
-    is performed" disclaimer even though the persistent player had real
-    waveforms since W4. Replaced it with the shared `useTrackWaveform` +
-    `TrackWaveform` real-waveform lifecycle (same hook/component the player
-    uses), keeping `ThreeBandWaveform` only as the non-ready-state fallback.
-    Generation remains explicit-only (inherited from the already-audited
-    hook); no new `<audio>` element or seek control was added — the inspector
-    waveform is display-only, and the persistent player stays playback
-    authority. Files: frontend/src/components/library/TrackInspector.tsx,
-    frontend/src/index.css. typecheck/build/git diff --check pass. Live
-    Chrome verification was not run this session (extension not connected).
+[ ] artist-repair review queue approval workflow
+    (artist-repair --approve-queue).
 
-[x] (P2) Refine Library and Track Inspector polish pass (2026-08-06)
-    Source+CSS audit (Chrome MCP unavailable this session) found and fixed
-    four genuine issues: (1) player overlap — sticky Track Inspector
-    max-height didn't subtract the fixed persistent player's height, now
-    width-scoped `@media (min-width: 1181px)` overrides account for
-    active/minimized player height; (2) duplicate-looking status UI — the
-    Library status strip and runtime readiness strip stacked with identical
-    AlertOctagon+rose styling for their worst state, Library status now uses
-    AlertTriangle (also a better severity match); (3) removed the always-
-    visible disabled "Save filter" pill (no backing feature, dead-feature
-    clutter); (4) added aria-label/aria-expanded to two icon-only buttons
-    that only had `title`, matching the rest of the codebase. Files:
-    LibraryView.tsx, LibraryToolbar.tsx, LibraryFilters.tsx, index.css.
-    typecheck/build/git diff --check pass. Live Chrome verification
-    (1440x900/~760x900/phone-width) not performed — extension unavailable.
+[ ] Collection workspace follow-ups (pagination for large folders,
+    duplicate scan review UI, virtual list for very large track sets).
+    NOTE: /collection now redirects to Library in the current app
+    (superseded by Inbox/Library) -- confirm this work is still wanted
+    before resuming.
 
-[x] (P2) Waveform generation UX + bulk waveform jobs (2026-08-07)
-    Stage 1: replaced the decorative LOW/MID/HIGH `ThreeBandWaveform`
-    placeholder in Track Inspector and the Persistent Player with a new
-    `EmptyWaveform` component (thin muted center line, cannot be mistaken
-    for analyzed audio); unified lifecycle copy/actions via
-    `presentWaveformState()`. `ThreeBandWaveform` itself is untouched and
-    remains in use on the unrelated Music Review (Listening) page — see
-    follow-up below. Stage 2: added an explicit bulk "Generate missing
-    waveforms" contract (`GET /api/waveform-bulk/preview`, `POST
-    .../generate-missing`, a new `waveform_operations` jobs.db table)
-    that reuses the existing per-track waveform pipeline end to end —
-    one track submitted at a time through the existing
-    `waveform_job_service` + `WaveformScheduler`, waiting for each job to
-    finish before the next, so the existing bounded queue/concurrency
-    stays authoritative. Cancellation stops scheduling new tracks but
-    lets any in-flight job finish; a run left running by a backend
-    restart reconciles to failed/backend_restarted at startup (same
-    pattern as `analysis_operations`/`publish_operations`). Stage 3:
-    added a Waveform Generation card to the Jobs page with truthful KPI
-    counts, live progress, and a completion/cancellation summary read
-    from persisted history. Files: frontend/src/components/player/
-    EmptyWaveform.tsx, frontend/src/components/waveform/
-    WaveformGenerationCard.tsx, backend/app/services/
-    waveform_bulk_service.py, backend/app/services/
-    waveform_operations_service.py, backend/app/api/routes/
-    waveform_bulk.py, backend/app/core/db.py, backend/app/main.py,
-    frontend/src/pages/Jobs.tsx, plus 35 new tests in
-    tests/test_waveform_bulk.py. 1436 backend tests pass; typecheck and
-    build pass; validate-docs --strict OK. Live-verified against the
-    real 88-track test library via headless Chrome + CDP (extension not
-    connected this session): empty state, explicit single-track
-    generation, and bulk generate/cancel all behave exactly as designed.
+[ ] set-builder: honour quality_tier -- exclude LOW tracks from auto
+    sets, or add an --exclude-low flag.
 
-[ ] (P3) Unify the Music Review (Listening) page's decorative waveform
-    `frontend/src/pages/Listening.tsx` still renders `ThreeBandWaveform`
-    (the same LOW/MID/HIGH placeholder retired everywhere else in this
-    session) for its browser-preview-only queue. It already carries an
-    honest "no waveform analysis is performed" aria-label, but for full
-    consistency with the new truthful empty state it could swap to
-    `EmptyWaveform` too — deliberately left out of the 2026-08-07 branch
-    to keep that change scoped to Track Inspector/Persistent Player.
+[ ] Deezer/Spotify album-detail call to retrieve record label.
 
-[ ] (P3) Add a persisted-history table for bulk waveform runs
-    `WaveformGenerationCard` shows only the most recent run
-    (`waveform_operations` already persists full history in jobs.db). A
-    drillable table + detail rail, matching
-    `AnalysisOperationsHistory.tsx`'s pattern for BPM/key runs, would let
-    a DJ check whether an earlier bulk waveform run finished cleanly.
+[ ] Per-run config snapshots: store config JSON in pipeline_runs table to
+    enable debugging of historical runs.
 
-[ ] (P3) Represent long-form DJ mixes in a future waveform sample
-    The W7 sample topped out at 11:06. Multi-hour behavior is still covered
-    only by synthetic tests and the timeout/pair ceilings, not by a measured
-    real file.
+[ ] Inject fewshot_examples.jsonl into the Ollama prompt via
+    _build_prompt(); add a --min-confidence filter flag to build-fewshot.
 
-[ ] (P3) Verify waveform rendering on a physical touch device and a non-Chrome
-    browser. W7's touch verification used CDP touch emulation in headless
-    Chrome; Firefox/Safari and real hardware remain unmeasured.
-
-[x] (P2) Resolve pre-existing `validate-docs --strict` failure in COMMANDS.txt (2026-08-06)
-    Root cause: the six entries (ai-normalize, artist-intelligence,
-    filename-normalize, metadata-enrich-online, metadata-sanitize,
-    review-queue) were, and still are, real active pipeline.py subcommands —
-    they were simply never added to modules/doc_registry.py, the source of
-    truth generate-docs/validate-docs reads. COMMANDS.txt itself was also
-    stale against the registry for 18 other already-registered commands.
-    Fix: added registry entries for all six under a new "METADATA
-    INTELLIGENCE" category (flags/examples sourced from each command's
-    argparse definition in pipeline.py), bumped doc_registry.VERSION to
-    1.7.0, then regenerated COMMANDS.txt/COMMANDS.md/COMMANDS.html/README.md
-    via `python3 pipeline.py generate-docs` — no generated file was hand-
-    edited. `validate-docs --strict` and
-    scripts/pre_commit_validate_docs.sh now pass.
-    Note: `scripts/pre_commit_validate_docs.sh` still needs DJ_MUSIC_ROOT set,
-    or it defaults to `/music` and dies with a PermissionError before it can
-    validate anything. No pre-commit hook is currently installed.
-
-[ ] (P3) Add a Settings surface for the waveform cache
-    The W6 footprint/preview and confirmation-gated clear exist only as API
-    routes. A UI panel would make the manual action discoverable, but it must
-    keep the explicit confirmation step and must not present clearing as
-    routine maintenance.
-
-[ ] (P3) Decide whether waveform cleanup ever needs a scheduled pass
-    W6 deliberately runs cleanup only at startup, after each publication, and
-    on the manual action. A daily timer would be the only part of this feature
-    that acts without a trigger; revisit only if real usage shows the cache
-    growing between publications.
-
-[ ] (P3) Continue deeper page-by-page visual polish where real workflows need it
-    Prioritize observed usability defects and responsive behavior; preserve the
-    incumbent Night Deck system and avoid business-logic or write-boundary drift.
-
-[x] Show Music Review status/rating context in Manual Crate order/finder rows
-    and Smart Crate preview rows without changing order, eligibility, or rules.
-
-[x] Align Music Review with the Library DJ dashboard while preserving deep
-    links, DB-only review controls, audio preview, and form-safe shortcuts.
-
-[x] Add a reusable visual-only low/mid/high equalizer-style waveform to the
-    Library inspector and Music Review; no audio analysis or file access.
-
-[x] Align the Library workspace to `docs/mockups/library.webp` with compact
-    metrics, polished DJ-style rows, a clear selected state, and an integrated
-    inspector/player/harmonic rail while preserving the Camelot wheel.
-
-[x] Add read-only Music Review badges to Library rows and honor track-specific
-    `/music-review?track_id=…` deep links.
-
-[x] Complete DB-only Music Review with local status/rating/notes state and a
-    query-preserving `/listening` compatibility redirect.
-
-[x] Add unified DB-only Metadata Repair Queue with safe workflow routing.
-
-[x] Complete DB-only Genre Taxonomy preferred-genre and mapping management.
-
-[x] Add DB-only Genre Taxonomy review with conservative mappings and raw genre
-    preservation. Future work: richer mapping editing and local review notes.
-
-[x] Add Metadata Sources settings foundation with local-only masked credential
-    storage and disabled-by-default external source registry.
-[x] Add local-only multi-source enrichment review foundation; defer provider
-    connectors and matching until each has an explicit review contract.
-[x] Design multi-source enrichment comparison/review using safe local-only
-    candidate data (2026-08-06). Added a second candidate source,
-    `local_tags` (reads a track's own embedded file tags read-only via the
-    existing `modules.metadata_clean._read_tags`), alongside the existing
-    `filename_hints` source, so tracks can now show two independently
-    sourced candidates for the same field. Frontend detail panel is now a
-    field-by-field Current/Source A/Source B comparison table; only the
-    selected suggestion's column is editable. No real external provider
-    (Spotify/Deezer/Discogs/etc.) is called — those remain settings-only
-    placeholders as decided. `apply_selected`'s existing never-overwrite
-    check already made same-field conflicts safe without changes. Added
-    targeted tests: provenance, comparison, conflict/no-overwrite, apply
-    safety, persistence, missing-file degrade. Files:
-    enrichment_review_service.py, EnrichmentReview.tsx, index.css,
-    test_backend_api.py. 1329 backend tests pass, typecheck/build pass.
-    Live Chrome verification not performed — extension unavailable.
-
-[x] (P1) Selected-field Beets enrichment review (2026-08-05)
-         `/beets-review` now records review state and applies only explicitly
-         entered/saved/confirmed artist, title, or genre fields to the local
-         index. Beets itself is not invoked; no tags, files, BPM/key/Camelot,
-         cue, or DJ-database values are changed.
-
-[ ] (P2) Safe Beets suggestion adapter and selected-field confidence review
-         If Beets can supply suggestions without touching its user config or
-         library, add a temporary-config, no-tag-write adapter. Keep broad
-         automatic enrichment and overwrites out of scope.
-
-[x] (P1) Safe Audio Quality Review workspace (2026-08-05)
-         `/quality-review` now saves bounded ffprobe findings plus
-         reviewed/ignore/review-later/unresolved notes only in the selected
-         library's local index. No transcode, remediation, file/tag write, or
-         cleanup action exists; any remediation design remains deferred.
-
-[ ] (P2) Quality remediation planning and explicit backup/review design
-         Define any future transcode/replace workflow separately with file
-         backups, explicit per-track confirmation, and zero automatic action.
-
-[x] (P1) Safe Duplicate Review workspace (2026-08-05)
-         `/duplicates` now saves keep/ignore/review-later/unresolved decisions
-         and optional notes only in the selected library's local index, scoped
-         to a safe rmlint preview snapshot. No destructive cleanup action
-         exists; file-resolution design remains intentionally deferred.
-
-[ ] (P1) Duplicate resolution plan and explicit review/backup design
-         Define any future cleanup workflow separately with per-file actions,
-         backups, confirmations, and zero destructive defaults. Do not attach
-         file actions to the current Duplicate Review page.
-
-[x] (P1) Duplicate evidence + keeper recommendation (Cycle 4 Stage 1) (2026-08-07)
-         `/api/duplicates/review` groups and items now carry safe, already-
-         indexed evidence (genre, bpm, key, duration, extension-derived
-         format, missing-metadata list, filename copy-marker) plus a
-         group-level `match_basis`/`checksum_prefix` explaining why rmlint
-         grouped the files, and an advisory-only `recommendation`
-         (track_id/reason_code/evidence) that is never authorization to
-         remove another item. Recommendation is deterministic only when a
-         single item's filename lacks a copy-style marker (e.g. "(1)",
-         "copy"); otherwise it returns `reason_code: insufficient_evidence`
-         and `track_id: null`. Legacy snapshots saved before these fields
-         existed still read back safely with unknown/empty defaults. No
-         file, tag, or destructive action was added.
-
-[x] (P2) Full-workspace application layout (2026-08-05)
-         The shared document page shell no longer caps content at a narrow
-         desktop width. Primary routes now use the full sidebar-adjacent
-         workspace while preserving route-specific responsive cards, tables,
-         inspectors, and scroll behavior.
-
-[x] (P2) Analysis Jobs visual polish (2026-08-05)
-         `/jobs` now matches the compact Settings dashboard language with
-         workflow filters, safety chips, status summaries, clearer
-         preview/confirmation panels, and explicit preview-only states. No
-         workflow behavior or write boundary changed.
-
-[x] (P2) Settings visual alignment (2026-08-05)
-         `/settings` now follows the compact dark dashboard direction with
-         section navigation, status/metric cards, locked policy chips, tool
-         rows, and an honest planned-maintenance panel. Existing setup/import,
-         analysis preference, and diagnostics behavior remains unchanged.
-
-[x] (P1) Safe ffprobe audio-quality preview (2026-08-05)
-         `/jobs` now runs a bounded, read-only JSON metadata probe on at most
-         ten validated imported tracks when ffprobe is available. It returns
-         only safe relative paths and neutral probe states; no transcode,
-         media/tag/local-DB write, or remediation action exists.
-
-[x] (P1) Safe rmlint duplicate detection preview (2026-08-05)
-         `/jobs` scans a bounded set of validated imported paths only through
-         rmlint JSON output. It returns duplicate groups for review with no
-         delete/move/rename/quarantine/tag/file/DB action; resolution remains
-         a future review workflow.
-
-[x] (P1) Safe Beets enrichment preview (2026-08-05)
-         `/jobs` now reviews only local-index rows missing artist/title/genre.
-         It never invokes beet or modifies tags/files. Selected-field local
-         DB acceptance now lives in `/beets-review`; suggestions remain local
-         candidate inputs until a safe Beets adapter is designed.
-
-[x] (P0) Safe key/Camelot analysis runner (2026-08-05)
-         `/jobs` now supports a preview-first, explicitly confirmed
-         keyfinder-cli-only key pass. Only rows missing both key fields are
-         eligible; recognized values use the existing Camelot mapping and are
-         saved to local DB with lower authority. No tags/media are written and
-         MIK/trusted/existing keys cannot be overwritten.
-
-[x] (P0) Safe aubio BPM analysis runner (2026-08-05)
-         `/jobs` now supports a preview-first, explicitly confirmed aubio-only
-         BPM pass with a 1–50 track limit. Only null BPM records are eligible;
-         accepted 40–250 BPM values are written to `processed.db` with
-         lower-authority `aubio` provenance. No tags/media are written and
-         MIK/trusted/existing BPM cannot be overwritten.
-
-[x] (P0) Analysis Jobs catalog and candidate-preview foundation (2026-08-05)
-         `/jobs` now presents MIK coverage plus BPM/key, Beets, duplicate, and
-         quality workflow cards. It reads only local-index candidates; missing
-         tools gate only their own card; MIK import stays explicit in Settings;
-         all other runners are clearly preview-only/pending with no job/tool
-         launch, tag/file, or DJ database writes.
-
-[x] (P0) Mixed In Key-compatible coverage and DB-only import foundation
-         (2026-08-05). Settings can now run explicit read-only tag previews
-         and import only missing BPM/key values into CrateIQ's local index with
-         `mik_compatible_tag` provenance. Existing values are never
-         overwritten, no external analyzer runs, and cue-tag support is
-         honestly reported as unavailable. MIK remains optional for every core
-         workflow.
-
-[x] (P0) Optional analysis settings and per-workflow capability gating
-         (2026-08-05). Settings now separates always-ready core workflows from
-         tool/source-specific advanced capability cards, persists default-off
-         BPM/key and external-tool preferences, and locks MIK preservation,
-         existing BPM/key/cue preservation, and missing-data-only behavior.
-         Import remains analysis-free; unavailable tools disable only their
-         named future workflow.
-
-[x] (P1) Add safe persisted Analysis Jobs history/progress (2026-08-07)
-         Stage 1/Cycle 2 (backend persistence): new app-owned
-         `analysis_operations` table in jobs.db (never processed.db) records
-         every explicit, confirmed BPM/key analysis run: type, scope/limit,
-         considered/processed/succeeded/skipped/failed counts,
-         remaining-missing, truthful incremental progress, and a real
-         running/completed/failed/cancelled lifecycle. Candidate previews
-         are still never persisted. The run loop checks a polled
-         cancel_requested flag between tracks (genuine mid-batch stop, not
-         fake) and preserves partial progress on cancel. A backend restart
-         closes out any stranded 'running' row as failed/backend_restarted
-         rather than leaving a false-running state. `GET
-         /api/analysis/jobs/history` now returns real records. No absolute
-         paths/secrets stored; warnings capped at 50. Files:
-         backend/app/core/db.py,
-         backend/app/services/analysis_operations_service.py (new),
-         backend/app/services/analysis_jobs_service.py, backend/app/main.py,
-         backend/app/schemas/analysis_jobs.py, tests/test_analysis_operations.py
-         (new), tests/test_backend_api.py.
-         Stage 2/Cycle 2 (structured API): `GET
-         /api/analysis/jobs/history/{operation_id}` returns one operation's
-         full detail; `POST /api/analysis/jobs/history/{operation_id}/cancel`
-         requests cancellation (idempotent -- unknown id is 404, an
-         already-terminal or already-flagged operation just returns its
-         current record, never an error). The confirmed-run response now
-         carries `operation_id`/`cancelled` for direct traceability. The run
-         route is dispatched via `run_in_threadpool` instead of being
-         awaited inline, which is what actually lets a concurrent cancel
-         request reach the server while a batch is still executing -- without
-         it the event loop stayed blocked for the whole batch and
-         cancellation could never be serviced. Files:
-         backend/app/api/routes/analysis.py, tests/test_backend_api.py.
-         Stage 3/Cycle 2 (Operations UI, 2026-08-07): `/jobs`'s "Analysis
-         history" section (previously a permanent empty-state placeholder)
-         is now a real workspace: a compact, keyboard-selectable table of
-         persisted BPM/key operations plus a detail rail with truthful
-         counts (considered/succeeded/skipped/failed/remaining), a real
-         progress bar shown only while genuinely running (built from actual
-         processed/considered counts, never a fabricated percentage), a
-         plain-language failure/cancellation reason, and an explicit Cancel
-         action only while status is 'running'. A "Completed" run that had
-         at least one per-track failure gets an amber badge instead of
-         plain green, so a degraded result can never visually read as
-         fully fine. Layout collapses to one column below 1180px (matches
-         the Library breakpoint); the history list/detail panel reuses
-         `.table--jobs`, `Badge`, `.lib-defs`, and `.job-progress-*`
-         verbatim rather than inventing new visual language. Files:
-         frontend/src/components/analysis/AnalysisOperationsHistory.tsx
-         (new), frontend/src/components/analysis/AnalysisJobsCatalog.tsx,
-         frontend/src/types/analysis.ts, frontend/src/api/analysis.ts,
-         frontend/src/index.css. Verified via headless-Chrome screenshots
-         (Chrome MCP unavailable) at 1440/760/390px against real backend
-         data (including a temporarily seeded synthetic running/cancelled
-         row for visual coverage, deleted after verification) -- confirmed
-         list rendering, status-tone logic, and responsive collapse; the
-         click-to-select detail panel itself was verified by code review
-         and direct API testing rather than a live click, since no
-         interactive browser tool was available this session.
-
-[x] (P1) Full functionality, workflow, dependency, and product-surface audit
-         (2026-08-05). `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md`
-         inventories the supported UI/API/CLI surface, external-tool contracts,
-         standalone usability, MIK gaps, optional-analysis design, first-run
-         workflow, route/sidebar UX, safety risks, phased roadmap, and the next
-         three implementation prompts. No runtime or library behavior changed.
-
-[x] (P1) Library Initialization / Import Wizard foundation (2026-08-05)
-         Settings now initializes a pending configured root with CrateIQ's
-         local `logs/processed.db` index only. Explicit preview scans report
-         audio filenames without writes; confirmed import writes local index
-         records only. Metadata analysis and all music/tag/MIK/DJ app changes
-         remain deferred.
-
-[x] (P1) Library Import Wizard UX polish (2026-08-05)
-         Settings now presents the first-use path as select → initialize →
-         scan preview → review → import, with clear local-index-only safety
-         copy, relative samples, counts, warnings, import idempotency status,
-         and next actions. Empty libraries route to this flow instead of
-         suggesting analysis before tracks are imported.
-
-[x] (P1) Local-first Settings page (2026-08-05)
-         `/settings` now exposes selected-library, optional-tool, runtime, and
-         locked safety diagnostics. Its only editable value is the persisted
-         default export path mode in ignored `logs/app_settings.json` plus a
-         validated pending library root in ignored `.run/local/crateiq.env`.
-         The service helper uses that root only on a configured-library restart;
-         binary overrides remain read-only process-start environment settings.
-         No scanning or library/DJ application mutation is introduced.
-
-[x] (P1) Audio Preview Player foundation (2026-08-04)
-         Browser-native preview is available from Library, Manual Crates, and
-         Smart Crates through a scoped DB-backed endpoint. It only serves
-         existing files below the selected root, supports seek ranges, and
-         does not scan/transcode or alter audio/tags/BPM/key/cues/MIK/DJ data.
-         Missing demo placeholder audio is shown as unavailable. The global
-         player and visual-only three-band display are now complete; real
-         waveform extraction, cue, and beat-grid controls remain future work.
-
-[x] (P1) Rekordbox XML Export foundation (2026-08-04)
-         Saved Manual Crates now support preview-first, staged XML exports
-         under `<library-root>/exports/rekordbox/`, with ordered collection and
-         playlist nodes. Files are for manual XML import only; no live
-         Rekordbox database/device/USB path is writable in this workflow.
-         No music, metadata, BPM/key/cues, MIK, or Serato data is modified.
-
-[x] (P1) Serato Export / Crate Writer foundation (2026-08-04)
-         Saved Manual Crates now support preview-first staged Serato handoff as
-         M3U8 plus manifest under `<library-root>/exports/serato/`. The flow
-         never writes live `_Serato_` folders, never replaces outputs, and
-         does not claim binary `.crate` support; direct writers are deferred.
-         No music, metadata, BPM/key/cues, or MIK data is modified.
-
-[x] (P1) Crate Export Foundation (2026-08-04)
-         Manual Crates can be previewed/exported as CSV, JSON, M3U, or M3U8
-         under `<library-root>/exports/`, with filename/relative/absolute path
-         modes and no-overwrite output naming. This is portable-file-only;
-         Rekordbox-specific writers remain a future phase.
-
-[x] (P1) Smart Crates / Smart Playlists suggestions (2026-08-04)
-         Deterministic local previews now filter/rank existing BPM, Camelot,
-         genre, and issue data, then explicitly save to editable Manual Crates.
-         Energy/vibe and date-added remain unavailable until trusted track
-         fields exist; no files, metadata, MIK values, or exports are changed.
-
-[x] (P1) Manual crates / playlists (2026-08-04)
-         Local-first manual crate CRUD, ordered track membership, demo crates,
-         focused API coverage, and the `/crates` frontend workflow are complete.
-         State is scoped to `<library-root>/logs/manual_crates.db`; it never
-         touches files, tags, BPM/key/cues, or Mixed In Key data. This is the
-         foundation for later smart-playlist and export integration.
-
-[x] (P1) Document optional local music-analysis tooling and readiness guidance
-         (2026-07-29): added docs/operations/LOCAL_TOOLING.md, explicit blank
-         KEYFINDER_BIN/AUBIO_BIN/BEET_BIN PATH-search defaults in .env.example,
-         and focused preflight override coverage. Beets remains an optional
-         `beet` CLI runtime tool, not a Python requirements dependency;
-         keyfinder-cli remains a manual/package/build installation depending
-         on the Linux distribution. No scanning or pipeline behavior changed.
-[x] (P1) Document a safe Linux Mint/Ubuntu keyfinder-cli source-build path
-         (2026-08-02): verified the upstream keyfinder-cli v1.2.0 and
-         Mixxx-maintained libkeyfinder 2.2.8 sources; documented a pinned,
-         user-local, source-only CMake build with the needed Ubuntu/Mint
-         development packages and KEYFINDER_BIN readiness check. No helper,
-         automated package installation, binaries, or pipeline changes added.
-----------------------------------------------------------------------
-[x] (P1) Library view: split out of CrateMind.tsx + mockup-faithful visual
-         pass (2026-07-26) — frontend/src/components/library/* (new),
-         compact LibraryRuntimeStrip replacing the global banner on "/",
-         6-card overview row (added tracks_analyzed to
-         GET /api/library/overview), Quality-meter table column,
-         auto-selected first row, always-populated inspector, camelot-hue
-         color coding, Inter font app-wide, scripts/seed_demo_library.py
-         (52 demo tracks). See CHANGELOG.txt 2026-07-26 entry.
-[x] (P3) Inspector: add a real Camelot-wheel graphic next to the BPM/Key/
-         Camelot tiles (2026-07-26) — frontend/src/components/library/
-         CamelotWheel.tsx (SVG, 24 wedges, highlights selected/adjacent/
-         relative keys + API-returned compatible keys, accessible aria-
-         label + aria-describedby, graceful "no key" state). See
-         CHANGELOG.txt 2026-07-26 "Compatible-tracks API + real Camelot
-         wheel" entry.
-[x] (P1) App-wide visual system rollout from the Library view (2026-07-26)
-         Extended the Library view's visual system to the rest of the app via
-         shared CSS tokens/primitives instead of a per-page redesign. New:
-         frontend/src/components/ui/{StatusStrip,KpiCard,EmptyState,Badge}.tsx.
-         ReadinessBanner.tsx now renders <StatusStrip>. Fixed both
-         Impeccable-flagged side-tab-border warnings (Export.tsx, SsdSync.tsx)
-         via StatusStrip. Removed ~26 leftover pre-teal-swap blue color
-         instances across index.css (Metadata Repair/Sanitation, Quality, Set
-         Builder, CrateMind workspace) that were never migrated when --accent
-         changed from blue to teal. Added a shared atmospheric gradient wash
-         to .app-main so every non-Library/CrateMind page gets the same
-         background treatment. See CHANGELOG.txt 2026-07-26 entry for full
-         detail. No backend/pipeline/route/API changes.
-[x] (P2) Adopt KpiCard/EmptyState/Badge — the visual rollout's three unused
-         shared primitives (2026-07-26). Quality.tsx: top metric row now uses
-         KpiCard (ring-progress for the 3 percentage metrics, icon-based for
-         the other 2); HIGH/MEDIUM/LOW confidence chips now use Badge (also
-         fixed a real pre-existing bug — `.conf-chip--high/medium/low` had no
-         CSS, so all three tiers rendered identically uncolored); "Recommended
-         Next Actions" now uses EmptyState when genuinely empty instead of a
-         silent blank grid. BpmReview.tsx: both "no anomalies" messages now
-         use EmptyState (same copy, same trigger conditions). KpiCard/Badge
-         were deliberately NOT forced into BpmReview — no metric-card grid,
-         and its anomaly reason/status labels already have a working, more
-         granular color taxonomy than Badge's 6 tones support. See
-         CHANGELOG.txt 2026-07-26 entry for full detail.
-[x] (P2) Follow-up from the 2026-07-26 visual rollout — completed 2026-08-02.
-         Jobs.tsx (StatusStrip + EmptyState + React key fix), SetBuilder.tsx
-         (StatusStrip for both error sites, EmptyState for no-saved-sets,
-         Badge for job-status/Camelot-key/vibe chips), and Reconciliation.tsx
-         (Badge-based LedgerBadge, StatusStrip for both error sites,
-         EmptyState x3, index-based validation-records key replaced with a
-         stable content-derived key) all adopted the shared primitives where
-         they naturally fit — see CHANGELOG.txt 2026-08-02 entries.
-         Deliberately left bespoke: phase-badge's 5-color semantic taxonomy,
-         set-stat-card/recon-stat detail tiles (KpiCard not forced — compact
-         detail-panel tiles, not page-level overview rows), live-indicator
-         chips, loading text, and inline table-cell fallback messages.
-[x] (P3) Jobs.tsx: pre-existing React "missing key prop" warning in
-         JobsTable's rendered list — fixed 2026-08-02. Root cause:
-         jobs.map() returned a <> fragment with the keys on the inner
-         <tr> elements; React requires the key on the map callback's
-         top-level element. Now <Fragment key={job.id}> (stable real job
-         ID, no array index). Verified gone via headless Chrome against
-         the demo library.
-[ ] (P3) Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
-         current "Quality" column is a compact vertical 4-bar meter driven
-         by the real quality_tier field. Revisit only if an actual
-         per-track energy/loudness metric becomes available — do not
-         fabricate one to match the mockup's shape.
-[x] (P2) Library view redesign — emerald/teal/cyan/violet theme (2026-07-25)
-         frontend/src/pages/CrateMind.tsx (library section), Sidebar.tsx,
-         index.css. Status strip, filter chips, overview cards, table
-         columns (#, Key, Camelot, Quality), inspector stat tiles/waveform
-         placeholder/compatible-tracks deferred note, sidebar badges +
-         Library Health card. Fixed a pre-existing sidebar overflow bug and
-         reconciled inspector-stacking responsive behavior at <=860px
-         (previously the inspector was hidden outright below that width).
-         See CHANGELOG.txt for the full functionality classification.
-[ ] (P3) Wire genre/BPM/has-key filter chips into the Issues/Enrichment
-         sections too if useful, or keep them Library-only by design —
-         currently scoped to the library UI section only.
-[x] (P3) Expose a per-track "compatible tracks" (harmonic match) read API
-         so the Library inspector's deferred placeholder can go live
-         (2026-07-26) — GET /api/tracks/{id}/compatible, reusing
-         modules/harmonic.py's existing Camelot/BPM/genre scoring (no
-         duplicate algorithm). Same-key/adjacent/relative-key matching
-         only; energy-tier boost remains deferred (no persisted energy
-         field yet). See CHANGELOG.txt 2026-07-26 entry.
-[ ] (P2) Follow-up: extract intelligence/harmonic/ pure engine from
-         modules/harmonic.py per docs/strategy roadmap Phase 4, add
-         notation conversion (Camelot ↔ traditional ↔ Open Key) and half/
-         double-time BPM awareness, and switch the compatible-tracks
-         endpoint's genre scoring to the taxonomy-driven relations instead
-         of the hardcoded _GENRE_RELATIONS — deferred out of the 2026-07-26
-         compatible-tracks pass to keep that change minimal/reuse-only.
-[ ] (P3) docs/generated/repo_file_index.md is stale (predates this
-         session): missing the entire frontend/src/components/library/*
-         split from 2026-07-25/26 and this session's CamelotWheel.tsx.
-         Regenerate via tools/static_analysis/generate_repo_inventory.py
-         when convenient — not run as part of the 2026-07-26 compatible-
-         tracks change to keep that diff focused.
-[ ] (P3) Expose a duplicates count via a read API (dedupe is CLI-only
-         today) so the Library overview "Duplicates" card can show a real
-         number instead of "Not available".
-[x] (P0) Document crateIQ target product vision and capability roadmap (2026-07-24)
-         docs/strategy/CRATEIQ_PRODUCT_VISION_AND_ROADMAP.md — current state,
-         gap analysis, metadata/genre/harmonic/player/playlist/export strategy,
-         9-phase capability roadmap mapped to docs/CRATEIQ_ROADMAP.md.
-[x] (P1) Implement local-runtime preflight and readiness contract (2026-07-24)
-         backend/app/core/preflight.py (read-only checks: root safety,
-         pipeline DB, entrypoint, backend data dir, 7 external binaries) +
-         GET /api/runtime/readiness + tests/test_preflight.py + expanded
-         .env.example. Frontend banner intentionally deferred (see below).
-[x] (P2) Frontend readiness banner: surface /api/runtime/readiness as a small
-         dismissible banner in the Layout when status is not "ready" (2026-07-25)
-         frontend/src/api/runtime.ts (client), frontend/src/hooks/useReadiness.ts
-         (single fetch on Layout mount, no polling), frontend/src/components/
-         ReadinessBanner.tsx (warn styling for degraded, error styling for
-         not_ready, neutral notice if the fetch itself fails, session-scoped
-         dismiss, top 3 failing/warning checks only, no raw JSON/paths).
-         Wired into Layout.tsx above <Outlet/>. No routing changes, no backend
-         changes.
-[x] (P2) Local service helper: scripts/crateiq-local-services.sh (2026-07-25)
-         start/stop/restart/status/logs subcommands + crate_* shell functions
-         via `source ... --aliases`. Ports: backend 8020, frontend 5175
-         (LedgerIQ keeps 5173/8000; OpsIQ uses 5174/8010). PID files/logs in
-         .run/ (gitignored). Dev proxy overridable via
-         CRATEIQ_API_PROXY_TARGET (default unchanged).
-[ ] (P3) Resolve duplicate Vite config: frontend/vite.config.js shadows
-         frontend/vite.config.ts (Vite resolves .js first). Both currently
-         carry identical config. Decide which to keep and delete the other
-         (needs explicit approval to delete a tracked file).
-[x] (P3) Repo hygiene: stop tracking generated TypeScript build metadata (2026-07-25)
-         frontend/tsconfig.app.tsbuildinfo and frontend/tsconfig.node.tsbuildinfo
-         removed from tracking via `git rm --cached`; `*.tsbuildinfo` added to
-         .gitignore (NODE / FRONTEND section). Typecheck/build no longer dirty
-         the working tree. Flagged during the readiness-banner review.
-[ ] (P3) Wire readiness awareness into the Jobs page (disable submission
-         hints when relevant binaries are missing) — optional polish.
-[ ] (P1) Metadata model extension (strategy Phase 2): additive tracks columns
-         for identity + structured artist/title/version, field_provenance
-         table, optional fpcalc fingerprinting — after preflight lands.
-[ ] (P1) Genre intelligence layer (strategy Phase 3): genre_taxonomy.json,
-         genre_mappings.json, deterministic resolver, genre-normalize
-         preview/apply command, review integration.
-[ ] (P2) Extract intelligence/harmonic pure engine from modules/harmonic.py
-         with golden-file tests pinning current set-builder scoring first
-         (strategy Phase 4).
-[ ] (P2) Promote enrichment response caching (provider, query-hash, TTL)
-         from P3 to pre-MusicBrainz requirement (strategy section 7).
-[x] (P0) CrateIQ fork foundation, identity rename, baseline audit, and roadmap (2026-07-14)
-         Upstream retained as `upstream`; no `origin`; work isolated on
-         feat/crateiq-foundation-audit. Future phases are documented only.
-[x] (P0) Diagnose the baseline FastAPI health-test hang (2026-07-15)
-         The exact test stalled before TestClient entered. A minimal AnyIO/
-         asyncio reproduction isolated the failure to the restricted execution
-         sandbox's cross-thread event-loop wakeup. Host verification passes.
-[ ] (P1) Review and approve docs/CRATEIQ_ROADMAP.md before Phase 1 implementation
-[ ] (P1) Implement Phase 1 Foundation and design system only after review
-[x] (P1) Resolve COMMANDS.md / commands.md macOS case conflict (2026-07-02)
-         COMMANDS.md remains canonical; the distinct legacy DJ Toolkit guide is
-         archived at docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md.
-[x] (P1) Post-audit frontend route/navigation consolidation (2026-07-02)
-         Supported: library/quality/issues/enrichment/repair/sanitation/BPM/audit/
-         folders/jobs/set-builder/exports/sync/reconciliation.
-         Hidden via redirects: legacy Dashboard, Collection, Tracks, and placeholder Settings.
-[x] (P1) Backend test environment stabilization (2026-07-02)
-         requirements-dev includes pipeline/backend/test dependencies; tests
-         isolate both library-root environment variables; 860 tests pass twice
-         under Python 3.12 in the normal host environment.
-[x] (P1) Local-runtime preflight and smoke-test contract (2026-07-24)
-         Preflight + non-secret env example + readiness endpoint, plus
-         tests/test_supported_route_contracts.py: all 14 supported frontend
-         routes mapped to their primary read-only backend endpoints, with
-         App.tsx route-drift detection, missing-DB degradation checks, and a
-         no-subprocess/read-only guard. Mutating endpoints (job submit/cancel,
-         sync preview/run, export validate/run, review actions, apply paths,
-         bpm-check/reanalyze, set-builder dispatch, reconciliation
-         validate-plan) are intentionally NOT smoke-tested; they are listed in
-         DEFERRED_ENDPOINTS in the test file.
-[ ] (P2) Contract coverage for deferred mutating endpoints
-         Design safe fixture-based tests for the POST surfaces listed in
-         DEFERRED_ENDPOINTS (e.g. exports/validate and reconciliation/
-         validate-plan are in-process and could be tested with fixtures;
-         job-spawning and rsync endpoints need a mocked runner layer).
-[ ] (P2) Resolve FastAPI/Starlette TestClient HTTP client deprecation warning
-         Evaluate the supported httpx2 migration separately; current tests pass.
-[ ] (P2) Frontend build-tool dependency upgrade
-         Plan and test the Vite major upgrade required to clear the remaining
-         development-only npm audit advisories; do not use npm audit fix --force.
-[~] (P0) Phase 7 Full Reconciliation — next recommended phase after README Phase 1-8 platform milestone (2026-05-06)
-         README.md has been updated for the Phase 1-8 platform milestone.
-         Current stable commit hash: b4c6ffb4048c4c98d225f6c65e40a7cce7f1a8e3
-         WARNING: back up <root>/logs/processed.db before any reconciliation apply work.
-         Scope reminder: design and test reconciliation apply behavior before enabling writes.
-         UPDATE (2026-08-07, Cycle 4 Stage 3): `POST /api/reconciliation/
-         plans/propose` now generates+persists a plan (DETECT -> PROPOSE) by
-         reusing `pipeline._path_reconcile_plan()` unchanged, writing the
-         same `logs/path_reconcile/{day}_path_reconcile_plan.json` artifact
-         the CLI already uses. `POST /api/reconciliation/validate-plan` now
-         additionally runs plan-wide `target_path_collision` and
-         `ambiguous_candidate_for_old_path` checks the per-action CLI
-         validator could not see. Fixed a real pre-existing bug found while
-         wiring propose->validate end-to-end: `_path_reconcile_validate_action`
-         flagged every `update_path_reference` action as invalid via
-         `old_path_missing_on_disk`, even though that action type exists
-         specifically because old_path is missing (see
-         `_path_reconcile_plan`) -- no generated plan could ever validate as
-         valid before this fix; no test asserted on the removed check.
-         Apply remains fully deferred: no apply endpoint was added or
-         exposed; `_path_reconcile_apply_auto_safe`/`_path_reconcile_mark_
-         stale_pstate` are untouched and unreachable from the API.
-         UPDATE (2026-08-07, Cycle 4 Stage 5 final audit): full branch
-         verified -- 1401 backend tests pass, frontend typecheck/build
-         clean, validate-docs --strict OK, live end-to-end propose/
-         validate against the real crateiq-test-library confirmed
-         truthful 0-finding/0-action empty state and that
-         `/reconciliation/plans/apply` and `/reconciliation/apply` both
-         404. Source audio byte-identical before/after; only the two
-         intended, contract-safe writes occurred (one duplicate_review_
-         snapshots row, one path_reconcile plan JSON artifact). Cycle 4
-         (Duplicate, Orphan, Quarantine, Plan-First Reconciliation) is
-         complete for its scoped DETECT/PROPOSE/REVIEW/VALIDATE goal.
-         Remaining, explicitly out-of-scope-for-Cycle-4 follow-up:
-         designing and testing an actual reconciliation APPLY workflow
-         (backups, per-action confirmation, restore path) stays a
-         separate future task -- do not treat this update as apply being
-         ready.
-[x] (P1) Cycle 4 -- Duplicate, Orphan, Quarantine, and Plan-First Library
-         Reconciliation (all 5 stages) (2026-08-07)
-         See CHANGELOG.txt entries dated 2026-08-07 (Stages 1-5) and the
-         PROJECT_CONTEXT.md Latest Milestone log for full detail.
-[x] (P1) artist-repair-review — human approval workflow; queue state persistence; 158 tests (2026-05-03)
-[x] (P1) bare-number guard v6 — numeric/ordinal second token preserved; 71 tests (2026-05-03)
-[x] (P1) title-number-recover — filename-based recovery for bad bare-number strips; number>=10 guard; v5 rules (2026-05-03)
-[x] (P1) metadata-sanitize-rollback — revert bad title_bare_number_stripped with bare-number guard (2026-05-03)
-         _BARE_NUM_PROTECTED_WORDS guard; v4 rules; run_metadata_sanitize_rollback; 8 new tests
-[x] (P1) metadata-sanitize — new title rules: bare number strip, trailing BPM, domain tokens, label suffix, feat casing (2026-05-02)
-         _strip_label_suffix() helper; protected-paren guard; 37 new tests in test_metadata_sanitize.py
-[x] (P1) artist-repair subcommand — detect merged artist names before artist-intelligence (2026-05-02)
-         modules/artist_repair.py; HIGH/MEDIUM/LOW confidence; review queue; --move-artist-review;
-         36 tests in test_artist_repair.py; pipeline order: sanitize → repair → intelligence
-[ ] (P2) artist-repair: HIGH-confidence auto-apply on --apply (currently write-eligible but not yet wired through tagger)
-[ ] (P2) artist-repair: build-known-artists scan uses folder depth 1+2; add tag-sample depth option for deeper libraries
-[ ] (P2) artist-repair review queue approval workflow (artist-repair --approve-queue)
-[x] (P1) metadata-sanitize command — offline deterministic tag sanitation (2026-04-18)
-[x] (P1) metadata-sanitize → ai-normalize integration via --pre-sanitize flag (2026-04-19)
-[x] (P1) Collection workspace UI — Phase 1 static shell (2026-04-19)
-[x] (P1) Collection workspace UI — Phase 2: interactions, search, sort, presets, responsive (2026-04-19)
-[x] (P1) Collection workspace UI — Phase 3: metadata-sanitize live job (2026-04-19)
-[x] (P1) Collection workspace: real filesystem directory tree via API (2026-04-19)
-[x] (P1) Collection workspace — Phase 4: real tracks + counts + maintenance + sidebar collapse (2026-04-19)
-[x] (P1) Collection workspace — run results browser: Results panel in Collection UI (2026-04-23)
-[x] (P1) Library maintenance — dedupe preview-first + quarantine with source_root (2026-04-23)
-[x] (P1) Library maintenance — orphan-scan: stale_db_rows + untracked_files (2026-04-23)
-[x] (P1) Library maintenance — quarantine path isolation: MUSIC_ROOT/QUARANTINE, skip dirs, nested-move guard (2026-04-23)
-[x] (P1) Operational storage refactor: all maintenance paths consolidated under MUSIC_ROOT/.BIN/ (2026-04-23)
-[x] (P2) tests: dedupe fixture generator — 9 controlled test cases, mutagen-parseable stubs (2026-04-23)
-[x] (P1) filename-normalize subcommand — rename files to {artist} - {title} ({version}).ext (2026-04-24)
-[x] (P1) filename-normalize — artist review queue + --move-artist-review flag (2026-04-25)
-[x] (P1) dedupe — quarantine placed under --path library root, not global /music/.BIN (2026-04-25)
-[x] (P1) library-organize subcommand — sort into letter/artist folders, processed-state tracking (2026-04-25)
-         data/review/artist_review_queue.jsonl; .BIN/ARTIST_REVIEW/ quarantine; album in tags
-[x] (P1) Persistent per-stage processed-state tracking — skip unchanged files, --force, --reset-stage (2026-04-23)
-         db.py: processed_state table + 4 helpers; modules/run_logger.py (new);
-         integrated into metadata-sanitize, ai-normalize, artist-intelligence,
-         metadata-enrich-online, filename-normalize; pipeline.py subparser flags;
-         COMMANDS.md Incremental Processing section; README.md note
-[ ] (P2) Collection workspace — Phase 5: pagination for large folders (>500 tracks)
-[ ] (P2) Collection workspace — duplicate scan review UI (show found dupes in table)
-[ ] (P2) Collection workspace — virtual list for very large track sets
-[x] (P2) Library maintenance — expose orphan-scan results via API endpoint (2026-08-07)
-         `GET /api/reconciliation/findings` reshapes the existing pipeline.py
-         path-audit engine (`_path_audit_report`) into a bounded,
-         relative-path-only finding contract: indexed_missing_file,
-         untracked_file, stale_path, path_candidate. Read-only; no file, tag,
-         or DB write. Frontend workspace for this landed in Cycle 4 Stage 4.
-[x] (P3) Library maintenance — quarantine browser (read-only) (2026-08-07)
-         `GET /api/reconciliation/quarantine` lists files under
-         `<library_root>/.BIN/QUARANTINE`, read-only. Original location,
-         reason, operation id, and timestamp are not persisted for legacy
-         quarantine moves, so every item reports `restore_supported: false`
-         rather than fabricating provenance. No permanent-delete or restore
-         action exists. UI landed in Cycle 4 Stage 4 (Quarantine tab).
-[x] (P1) Cycle 4 Stage 4 — Unified Library Reconciliation UI (2026-08-07)
-         `/reconciliation` (sidebar label now "Library Reconciliation")
-         became a tabbed workspace: Duplicates (summary + link to the
-         existing `/duplicates` workspace, not duplicated), Missing /
-         Orphaned (indexed_missing_file + stale_path findings),
-         Untracked (untracked_file findings), Quarantine (read-only
-         listing), Plans (existing ledger + validate-plan, plus a new
-         "Propose plan" action calling POST /reconciliation/plans/propose).
-         Also surfaced Stage 1's duplicate evidence (genre/bpm/key/
-         duration/format, missing-metadata chips, copy-marker flag,
-         match_basis/checksum_prefix, advisory keeper recommendation) on
-         the existing `/duplicates` page, deferred there until this stage.
-         No destructive primary action anywhere on the page (no delete/
-         apply/resolve-all control). frontend typecheck + build pass;
-         Impeccable audit found 0 issues in the new code (4 pre-existing
-         findings elsewhere in index.css, unrelated Jobs/Collection
-         progress-bar CSS, left untouched). Verified at ~1440/~760/~390px
-         via headless Chrome screenshots (Chrome MCP extension was not
-         connected this session); confirmed the persistent sidebar not
-         collapsing below ~1440px is a pre-existing, app-wide issue
-         reproduced identically on the untouched `/jobs` page, not a
-         regression from this stage.
-[x] (P1) Artist Intelligence — Phase 2 hardening complete (2026-04-19)
-[x] (P1) Artist Intelligence — Phase 3: pollution guards, feat dedup, personal-name split (2026-04-19)
-[x] (P1) Artist Intelligence — Phase 4: nested separator split, casing normalization, confidence boost (2026-04-19)
-
+[ ] Artist Intelligence Phase 3 follow-ups: populate the alias store from
+    an existing library scan (auto-discover variants); add an
+    --add-alias CLI flag; add a review-queue approval workflow
+    (artist-intelligence --approve-queue).
 
 ----------------------------------------------------------------------
-ONLINE ENRICHMENT (completed 2026-04-18)
+P3 / LOW
 ----------------------------------------------------------------------
-[x] (P1) intelligence/enrichment/ package: schema, matcher, Spotify, Deezer, runner
-[x] (P1) enrichment: review queue CLI + move-ignored operational features (2026-04-20)
-         review-queue subcommand, _enqueue_for_review, _move_to_ignored, --move-ignored flag
-[x] (P1) metadata_matcher: title normalization — non-trailing label brackets, bare BPM, dupe collapse (2026-04-20)
-[x] (P1) metadata_matcher: album filter + title pre-clean + label reason codes (2026-04-20)
-         album_rejected_compilation, title_cleaned_for_match, label_match_boost/label_alias_boost
-[x] (P1) metadata_matcher: multi-artist subset matching + version tolerance (2026-04-20)
-         subset_artist_match (0.88), partial_artist_match (0.82/logged), version_missing_tolerated
-[x] (P1) metadata-enrich-online: strict multi-factor validation layer (2026-04-20)
-         Gates: title_sim>=0.92, artist_sim>=0.85, version alignment
-         Scoring: title(50%)+artist(30%)+version(20%), label as booster
-         Thresholds: apply>=0.90, review 0.75-0.89, skip<0.75
-         decision_code on EnrichmentMatch, canonical artist from artist-intelligence
-[x] (P1) metadata-enrich-online CLI subcommand wired into pipeline.py
-[x] (P1) config.py: SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET, ENRICH_ONLINE_MIN_CONFIDENCE
-[x] (P1) Dataset JSONL logging: enrichment_queue, enrichment_accepted, enrichment_rejected
-[x] (P1) Lower default threshold 0.92 → 0.80 (config.py + runner.py + pipeline.py)
-[ ] (P3) metadata-enrich-online: duration booster — add duration_ms to EnrichmentCandidate
-         and parse from Spotify/Deezer/Traxsource responses (+0.03 boost when within 3s)
-[x] (P1) Version mismatch safeguard: block apply when both titles carry different version tokens
-         (metadata_matcher.py: _extract_version_label + best_match() safeguard block)
-[x] (P1) Scoring weights rebalanced: title 0.45→0.30, version 0.10→0.25
-[x] (P1) Hard safeguards: version mismatch cap 0.74, artist sim < 0.90 cap 0.74
-[x] (P1) Label alias boost: +0.05 when labels are known aliases (13 groups seeded)
-[x] (P2) Traxsource lookup (traxsource_lookup.py) — dance-music specialist fallback
-         Genre-aware trigger: house/Afro/deep/soulful → always try Traxsource
-         Confidence-based trigger: best_conf < 0.80 → try Traxsource
-[x] (P2) EnrichmentMatch.sources_tried — tracks which APIs were queried
-[x] (P2) EnrichmentCandidate.genre — Traxsource genre/subgenre field
-[x] (P2) Junk metadata cleaner pre-enrichment step (is_junk_album + _clean_junk_fields)
-[x] (P2) --clean-junk-only CLI flag (skip API, clean only)
-[ ] (P2) Deezer/Spotify album-detail call to retrieve record label
-[ ] (P3) Traxsource: verify CSS selectors against live site before production use
-         (selectors in _SEL_* constants in traxsource_lookup.py)
-[ ] (P3) Cache Spotify/Deezer/Traxsource results to avoid re-hitting APIs on re-runs
-[ ] (P3) ISRC → MusicBrainz lookup as a zero-credential fallback
-
-
-----------------------------------------------------------------------
-REPO STRUCTURE (completed 2026-04-18)
-----------------------------------------------------------------------
-[x] (P1) Move artist_intelligence/ → intelligence/artist/
-[x] (P1) Move label_intel/ → intelligence/label/
-[x] (P1) Update all imports: artist_intelligence.* → intelligence.artist.*
-[x] (P1) Update all imports: label_intel.* → intelligence.label.*
-[x] (P1) Remove djtoolkit_label_intelligence_feature/ (legacy scaffold)
-[x] (P1) Remove sample_codes/ (scratch files)
-[x] (P2) Remove preview.txt and root-level preview JSON files from tree
-
-
-----------------------------------------------------------------------
-REVIEW DATASET / FEW-SHOT PIPELINE (completed 2026-04-18)
-----------------------------------------------------------------------
-[x] (P1) ai/review_dataset.py — write_queue_entry, write_accepted, write_rejected,
-         build_fewshot, load_fewshot_examples
-[x] (P1) Stub JSONL files in data/intelligence/ (5 files)
-[x] (P1) config.py — AI_REVIEW_QUEUE, AI_ACCEPTED_EXAMPLES, AI_REJECTED_EXAMPLES,
-         AI_REVIEW_DECISIONS, AI_FEWSHOT_EXAMPLES paths
-[x] (P1) pipeline.py — build-fewshot subcommand
-[x] (P1) ai/normalizer.py — hooked dataset writes into run_ai_normalize (--apply mode)
-[ ] (P2) Inject fewshot_examples.jsonl into Ollama prompt via _build_prompt()
-[ ] (P2) build-fewshot: add --min-confidence filter flag
-[ ] (P3) Interactive review workflow: review_decisions.jsonl populated by a
-         future 'ai-review' CLI command
-
-
-----------------------------------------------------------------------
-ARTIST INTELLIGENCE (Phase 2 hardening complete 2026-04-19)
-----------------------------------------------------------------------
-[x] (P1) artist_intelligence package: schema, normalizer, parser, alias store, runner
-[x] (P1) CLI: artist-intelligence subcommand wired into pipeline.py
-[x] (P1) Config: ARTIST_ALIAS_STORE, ARTIST_REVIEW_QUEUE paths added
-[x] (P1) Seed alias: Heavy K / Heavy-K in data/intelligence/artist_aliases.json
-[x] (P1) Phase 2 hardening: structured change reasons, conservative alias, feat normalization
-[x] (P1) Phase 3 hardening: multi-artist split, pollution guards, feat dedup (2026-04-19)
-         ArtistAliasStore.lookup_with_method() tracks exact/normalized/ci match type.
-         CI-only alias matches cap confidence to 0.70 → go to review queue as skipped_ambiguous_alias.
-         _propose_artist uses direct == (not names_are_equivalent) so feat_normalized changes surface.
-         _compute_change_reasons: feat_normalized, alias_resolved, separator_normalized,
-         spacing_fixed. Reasons in diff, preview, JSON output, APPLIED log line, summary breakdown.
-         47 unit tests in tests/test_artist_intelligence.py (all passing).
-[ ] (P2) Phase 3: populate alias store from existing library scan (auto-discover variants)
-[ ] (P2) Phase 3: add --add-alias CLI flag (artist-intelligence --add-alias "Heavy-K" "Heavy K")
-[ ] (P2) Phase 3: review queue approval workflow (artist-intelligence --approve-queue)
-[ ] (P3) Future: label_intelligence package mirroring this same pattern
-
-
-----------------------------------------------------------------------
-DOCUMENTATION (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P2) README.md — full rewrite: web app, all API routes, folder structure,
-         two-terminal start, troubleshooting, next steps, current status table
-[x] (P2) CHANGELOG.txt — docs entry added
-[x] (P2) DJToolkit_CONTEXT.txt — backend section expanded to reflect v0.6.x
-         (process_registry, SSD sync, BPM analysis, all 7 route files, frontend)
-
-
-----------------------------------------------------------------------
-FRONTEND UI POLISH (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P1) Fix .log-inline CSS — all inline log views now constrained (max-height 55vh,
-         overflow-x/y: auto, white-space: pre, monospace font). Affected: SetBuilder,
-         Export, SsdSync. Previously the class had zero CSS, causing overflow.
-[x] (P2) Sidebar icons — lucide-react SVG icons replace Unicode glyphs
-[x] (P2) Sidebar active state — 2px left-border accent on active link
-[x] (P2) Font upgrade — IBM Plex Sans loaded via Google Fonts; replaces system-ui
-[x] (P2) .badge--info — added for Camelot key badges in SetBuilder
-[x] (P2) .table-wrap — added table/th/td rules; SetBuilder bare tables now styled
-[x] (P2) PageHeader component — reusable title/subtitle/badge/actions; applied to all pages
-[x] (P2) Jobs page — lucide buttons, JobProgress bar (numeric + indeterminate), running-row accent
-[x] (P2) SetBuilder — collapsible log section, set-detail stat cards
-[x] (P2) SsdSync — mounted status badge in PageHeader
-[x] (P2) Table polish — improved header contrast (#8490b0), row padding, rgba borders
-[x] (P2) spin/@keyframes — Loader2 spinner on async buttons (Jobs, BpmReview, Export, SsdSync)
-
-[ ] (P2) Dashboard: improve stat cards (left-border accent coloring, tighter layout)
-[ ] (P2) Export: output path copy-to-clipboard button
-[ ] (P3) BpmReview: collapsible re-analysis log panel (same pattern as SetBuilder)
-[ ] (P3) SsdSync: make sync history use .table/.table-wrapper for consistency
-[ ] (P3) Dashboard: show last-run timestamp + quick-launch buttons for common commands
-
-
-----------------------------------------------------------------------
-EXPORT WORKFLOW (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P1) POST /api/exports/validate — in-process validation, no subprocesses
-[x] (P1) POST /api/exports/run — dispatch rekordbox-export job (async, returns job_id)
-[x] (P1) GET /api/exports — list past export jobs (filtered view of jobs table)
-[x] (P1) GET /api/exports/{id} — single export job by ID
-[x] (P1) Export page — validation summary, excluded tracks table, run panel, history
-[x] (P1) ErrorBanner onDismiss prop + TS build fixed
-
-
-----------------------------------------------------------------------
-SSD SYNC / JOB CANCELLATION / PROGRESS (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P1) process_registry — shared subprocess table; SIGTERM cancel for all job types
-[x] (P1) Job model extended: pid, progress_current/total/percent/message, 'cancelled' status
-[x] (P1) DB migration: _add_column_safe() — idempotent ALTER TABLE on startup
-[x] (P1) job_service: mark_pid(), mark_progress(), clear_pid()
-[x] (P1) toolkit_runner: registers process, stores PID, checks cancellation flag on exit
-[x] (P1) rsync_runner: preview_sync (dry-run), start_sync_job, _run_rsync_job with
-         progress parsing from --info=progress2 (to-chk=N/M, throttled 1s writes)
-[x] (P1) POST /api/jobs/{id}/cancel — SIGTERM + 'cancelled' status
-[x] (P1) GET /api/sync/config, POST /api/sync/preview, POST /api/sync/run
-[x] (P1) GET /api/sync, GET /api/sync/{id}
-[x] (P1) SsdSync page — config panel, preview list, run panel (allow_delete opt-in),
-         active job with progress bar + cancel, sync history
-[x] (P1) Jobs page — Cancel button on running rows, inline progress bar
-[x] (P1) CSS: cancelled badge, danger button, progress bars, sync page classes
-
-[ ] (P2) POST /api/jobs/{id}/cancel: handle SIGKILL fallback if SIGTERM is ignored after timeout
-[ ] (P2) GET /api/jobs/{id}/logs: SSE streaming for live log tail (currently polls 2s)
-[ ] (P2) WebSocket /ws/jobs/{id}/logs — real-time log streaming
-[ ] (P2) rsync --bwlimit option for bandwidth throttling during sync
-[ ] (P3) Job retention policy — auto-clean logs older than N days
-[ ] (P3) SSD Sync: show last-synced timestamp from most recent succeeded sync job
-
-
-----------------------------------------------------------------------
-BACKEND — PHASE 1 (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P1) FastAPI backend skeleton
-    Files: backend/app/main.py, backend/app/core/config.py, backend/app/core/db.py
-
-[x] (P1) Routes: GET /api/health, GET /api/version
-    File: backend/app/api/routes/health.py
-
-[x] (P1) Routes: GET /api/jobs, GET /api/jobs/{id}, GET /api/jobs/{id}/logs, POST /api/jobs
-    File: backend/app/api/routes/jobs.py
-
-[x] (P1) SQLite-backed Job model (backend/data/jobs.db — separate from pipeline DB)
-    Files: backend/app/models/job.py, backend/app/schemas/job.py,
-           backend/app/core/db.py, backend/app/services/job_service.py
-
-[x] (P1) toolkit_runner service — safe subprocess execution with allowlists
-    File: backend/app/services/toolkit_runner.py
-    - ALLOWED_COMMANDS (18 subcommands)
-    - _ALLOWED_BOOL_FLAGS, _ALLOWED_VALUE_FLAGS with value validators
-    - Commands built as argument lists; never shell strings
-    - asyncio background tasks with task registry (prevents GC)
-
-[x] (P1) stdout+stderr → log files; /logs endpoint returns file contents + ?tail=N
-[x] (P2) README Backend section with run commands and API table
-
-
-----------------------------------------------------------------------
-BACKEND — PHASE 2 (open)
-----------------------------------------------------------------------
-[x] (P1) Frontend: React/Vite/TS shell — entry point, routing, CSS, Settings page
-    Files: frontend/src/main.tsx, frontend/src/App.tsx,
-           frontend/src/pages/Settings.tsx, frontend/src/index.css
-    Note: node/npm must be installed on the host to run
-[ ] (P2) POST /api/jobs: support --path override (validated absolute path)
-[ ] (P2) GET /api/jobs/{id}/logs: SSE streaming for live log tail
-[ ] (P2) POST /api/jobs/{id}/cancel — SIGTERM the subprocess if still running
-[x] (P2) GET /api/tracks, /stats, /issues, /{id} — read-only track browsing from pipeline DB
-    Files: backend/app/core/pipeline_db.py, backend/app/models/track.py,
-           backend/app/schemas/track.py, backend/app/services/track_service.py,
-           backend/app/api/routes/tracks.py
-[x] (P2) Frontend Tracks page — search/filter/sort/paginate + slide-in detail panel
-    Files: frontend/src/types/track.ts, frontend/src/api/tracks.ts,
-           frontend/src/hooks/useTracks.ts, frontend/src/pages/Tracks.tsx,
-           frontend/src/components/TrackPanel.tsx
-[x] (P1) BPM anomaly detection + review workflow
-    Backend: bpm_analysis.py service, analysis.py routes, bpm_anomalies table in jobs.db
-    Frontend: BpmReview page, types/analysis.ts, api/analysis.ts
-[x] (P2) Set Builder UI — form + job dispatch + playlist history + track detail
-    Backend: schemas/playlist.py, services/playlist_service.py,
-             api/routes/playlists.py — POST /set-builder, GET /playlists, GET /playlists/{id}
-    Frontend: types/playlist.ts, api/playlists.ts, pages/SetBuilder.tsx
-    Also: toolkit_runner.py extended with all set-builder flags
-[ ] (P2) BPM anomaly: per-track reanalyze (requires pipeline support for --track-id)
-[ ] (P2) POST /api/jobs: support --path override (validated absolute path)
-[ ] (P2) GET /api/jobs/{id}/logs: SSE streaming for live log tail
-[ ] (P2) POST /api/jobs/{id}/cancel — SIGTERM the subprocess if still running
-[ ] (P3) WebSocket /ws/jobs/{id}/logs — real-time log streaming
-[ ] (P3) Job retention policy — auto-clean logs older than N days
-
-
-----------------------------------------------------------------------
-ARTIST MERGE (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P1) Fix _classify_merge() normalization bug
-    Old code compared fi.primary_artist.lower() directly; "Heavy-K" and "Heavy K"
-    produced different lowercase strings → incorrectly flagged as AMBIGUOUS.
-    Fix: _normalize_primary_for_compare() applies same transforms as normalize_artist_key()
-    (strip periods, hyphen→space) before comparison.
-    File: modules/artist_merge.py
-
-[x] (P1) Three-category merge classification
-    SAFE_ALIAS          — formatting/punctuation/casing differences only
-    SAME_PRIMARY_COLLAB — same primary after normalization; ≥1 folder has collab suffix
-    AMBIGUOUS           — primary artists genuinely differ; never auto-merged
-    File: modules/artist_merge.py
-
-[x] (P2) _describe_alias_differences() helper
-    Generates human-readable reason strings for SAFE_ALIAS groups:
-    "capitalization variant", "dotted-initials variant", "hyphen/space variant",
-    "trailing period variant", "period variant", etc.
-    File: modules/artist_merge.py
-
-[x] (P2) _pick_canonical() all-uppercase penalty
-    All-uppercase canonical names (HOSH) penalized; mixed-case preferred (H.O.S.H).
-    File: modules/artist_merge.py
-
-[x] (P1) Tests for artist merge (77 tests)
-    File: tests/test_artist_merge.py
-    Covers: extract_primary_artist, _has_collab_suffix, normalize_artist_key,
-    _normalize_primary_for_compare, _describe_alias_differences, _classify_merge,
-    _pick_canonical — all variant types: punctuation, casing, hyphen/space,
-    trailing period, dotted initials, feat/ft/featuring, comma-collab, ambiguous
-
-
-----------------------------------------------------------------------
-DEV EXPERIENCE (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P2) direnv support — .envrc activates .venv on cd into project
-[x] (P2) requirements-dev.txt — separate dev deps; -r requirements.txt + pytest
-[x] (P2) requirements.txt — added tqdm, argcomplete, anthropic
-[x] (P2) venv warning in pipeline.py — advisory stderr message if no venv active
-[x] (P2) argcomplete wiring — PYTHON_ARGCOMPLETE_OK + autocomplete(parser)
-[x] (P2) README Developer Setup section — direnv + autocomplete activation docs
-
-
-----------------------------------------------------------------------
-DOCS / CLI HELP (completed 2026-04-12)
-----------------------------------------------------------------------
-[x] (P1) Centralized command registry (modules/doc_registry.py)
-    Single source of truth for all commands, flags, examples.
-    Used to generate COMMANDS.txt, README.md sections, COMMANDS.html.
-
-[x] (P1) generate-docs subcommand
-    python3 pipeline.py generate-docs [--dry-run] [--format ...] [--output-dir DIR]
-    Regenerates COMMANDS.txt, README.md (spliced), COMMANDS.html.
-
-[x] (P1) validate-docs subcommand
-    python3 pipeline.py validate-docs [--strict]
-    Reports missing/stale commands. --strict exits 1 for CI/pre-commit use.
-
-[x] (P2) Pre-commit hook script
-    scripts/pre_commit_validate_docs.sh — copy to .git/hooks/pre-commit.
-    Blocks commits when docs are out of sync with the registry.
-
-[ ] (P3) When adding a new subcommand:
-    1. Add entry to modules/doc_registry.py REGISTRY list
-    2. Run: python3 pipeline.py generate-docs
-    3. Commit COMMANDS.txt, README.md, COMMANDS.html alongside pipeline.py changes
-
-
-----------------------------------------------------------------------
-ANALYSIS / CORE PIPELINE
-----------------------------------------------------------------------
-[ ] (P1) Validate _read_existing_analysis() against real MIK-tagged files
-    Test with MP3, FLAC, M4A files that MIK has already processed.
-    Confirm TKEY / TBPM / INITIALKEY / tmpo are read correctly.
-    File: modules/analyzer.py
-
-[ ] (P1) Tagger: skip BPM/key writes when values came from MIK (no-op write prevention)
-    Currently tagger.py writes BPM/key from DB on every run.
-    If MIK values were promoted to DB by analyzer, tagger may re-write them
-    (harmless but noisy). Add a "source=mik" marker to DB to detect this.
-
-[ ] (P1) Energy tag write-back
-    Write energy tier (Peak/Mid/Chill) into tags:
-      - MP3: TXXX:ENERGY
-      - FLAC: ENERGY
-    Enables Rekordbox filtering and smart playlists.
-
-[ ] (P2) BPM normalization layer (lower priority now that MIK is authoritative)
-    For tracks MIK has not processed, BPM scaling issues still possible.
-    Implement normalization if/when needed as fallback only.
-    File: modules/analyzer.py
-
-
-----------------------------------------------------------------------
-CONVERT AUDIO
-----------------------------------------------------------------------
-[ ] (P2) Support 24-bit AIFF output for ALAC source M4A
-    Currently always uses pcm_s16be regardless of source bit depth.
-    Detect ALAC codec via ffprobe streams and use pcm_s24be for lossless M4A.
-    File: modules/convert_audio.py
-
-[ ] (P2) Post-convert MIK analysis trigger
-    After convert-audio completes, optionally queue the new .aiff files for
-    Mixed In Key (via a shell open or a file watch trigger).
-    Blocked on MIK offering a CLI interface.
-
-[ ] (P3) convert-audio: configurable output codec via --codec flag
-    Allow pcm_s16be / pcm_s24be / pcm_f32be for advanced use cases.
-    File: modules/convert_audio.py
-
-
-----------------------------------------------------------------------
-REKORDBOX / EXPORT
-----------------------------------------------------------------------
-[ ] (P2) Rekordbox hot-cue write-back (blocked by MIK-first policy)
-    MIK is now the authoritative cue source.
-    If/when implementing: must only write cues to tracks MIK has NOT touched.
-    Must never overwrite POSITION_MARK entries already in the XML.
-    Map:
-      intro_start → cue 1
-      drop → cue 2
-      outro_start → cue 3
-
-[ ] (P2) Route tracks in letter playlists
-    Decide:
-      - Exclude route folders OR
-      - Assign correct letter instead of '#'
-    Validate behaviour in Rekordbox UI first.
-
-[ ] (P2) Windows transfer automation
-    Automate sync of /music → SSD:
-      - rsync or dedicated subcommand
-      - Trigger rekordbox-export after sync
-
-
-----------------------------------------------------------------------
-LABEL INTELLIGENCE
-----------------------------------------------------------------------
-[ ] (P2) label-clean Phase 2: Discogs provider
-    Implement Discogs API lookup
-    File: label_intel/providers/discogs.py
-
-[ ] (P2) label-clean Phase 2: Beatport provider
-    Implement single-track label resolution
-    (separate from scraper)
-
-
-----------------------------------------------------------------------
-PIPELINE INFRASTRUCTURE
-----------------------------------------------------------------------
-[x] (P1) Automatic persistent run logging for intelligence pipeline (2026-04-20)
-    .log + .jsonl + _summary.json written to logs/<command>/ on every run.
-    RunLogger in utils/prompt_logger.py; --log-dir flag on all 4 commands.
-    Files: config.py, utils/prompt_logger.py, pipeline.py
-[x] (P1) Production-grade observability: paged detail files + rich summary JSON (2026-04-21)
-    record_outcome() → modified/skipped/errors paged JSON (max 200/page).
-    inc()/set_counter() → nested results/ai/quality/sanitize summary.
-    Pre-sanitize context detection (sanitize_changed/sanitize_clean prefixes).
-    Memory-safe for 8000+ file runs. Files: all 6 modified.
-
-[ ] (P2) Per-run config snapshots
-    Store config JSON in pipeline_runs table
-    Enables debugging of historical runs
-
-[x] (P2) Local AI metadata normalization (ai-normalize subcommand, 2026-04-15)
-    Ollama-backed; preview-first; safe write with --apply + --min-confidence gate.
-    Files: ai/__init__.py, ai/ollama_client.py, ai/metadata_schema.py, ai/normalizer.py
-    Config keys: OLLAMA_BASE_URL, OLLAMA_DEFAULT_MODEL, OLLAMA_TIMEOUT
-[x] (P1) ai-normalize production hardening (2026-04-19)
-    MIN_AI_CONFIDENCE=0.80 constant; NormalizeResult type; structured rejection reasons
-    (low_confidence, schema_invalid, guardrail_violation, parsed_conflict, ai_error);
-    _check_parsed_alignment(); _apply_hard_guards returns tuple; guardrail_fired flag;
-    all rejections logged at INFO; JSON output includes rejection_reason.
-
-[ ] (P3) ai-normalize: add --resume / skip-already-normalized flag
-    Skip files whose tags were already written by a previous --apply run
-    (detect via a TXXX:AI_NORMALIZED custom ID3 marker, similar to TXXX:PROCESSED)
-
-[ ] (P3) ai-normalize: batch mode with rate limiting for large libraries
-    Currently processes one file at a time. Could parallelize with a thread pool
-    and add a --workers flag (safe since Ollama handles concurrent requests).
-
-[ ] (P3) LLM metadata assist integration via Claude API
-    Use Claude for genre inference / metadata disambiguation (cloud fallback
-    when Ollama is not available). Wire through utils/llm_client.py.
-    File: utils/llm_client.py
-
-
-----------------------------------------------------------------------
-DISCOVERED DURING SESSION (2026-04-07)
-----------------------------------------------------------------------
-- MIK-first policy now enforced; analyzer _read_existing_analysis() needs
-  real-file validation before relying on it in production
-- convert-audio codec is hard-coded to pcm_s16be; ALAC M4A sources would
-  benefit from pcm_s24be to avoid lossy downsampling
-
-
-----------------------------------------------------------------------
-AUDIT-QUALITY FOLLOW-UPS
-----------------------------------------------------------------------
-[ ] (P2) set-builder: honour quality_tier — exclude LOW tracks from auto sets
-    Filter LOW from the set-builder candidate pool, or add --exclude-low flag.
-    File: modules/set_builder.py + pipeline.py set-builder subcommand
-
-[ ] (P3) audit-quality: quality-tier playlists
-    Generate LOW.m3u8 / MEDIUM.m3u8 / HIGH.m3u8 / LOSSLESS.m3u8 under M3U_DIR/Quality/
-    Useful for reviewing problem tracks in Rekordbox.
-    File: modules/playlists.py or audit_quality.py
-
-[ ] (P3) audit-quality: re-check already-tagged files incrementally
-    If quality_tier is already set in DB and file is unchanged, skip re-probe.
-    Speeds up repeated runs on large libraries.
-    File: modules/audit_quality.py
-
-
-----------------------------------------------------------------------
-DONE
-----------------------------------------------------------------------
-[x] Initial pipeline implementation
-[x] CLI subcommands
-[x] SQLite schema
-[x] Label intelligence scraper
-[x] Rekordbox export
-[x] MIK-first refactor (v1.1.0)
-[x] convert-audio subcommand: .m4a → .aiff (v1.2.0)
-[x] Sanitizer: strip leading track-index junk before pipe (v1.3.0)
-[x] audit-quality subcommand: codec/bitrate audit, report, move, tag (v1.4.0)
-[x] Artist merge: three-category classification + normalization fix + 77 tests (v1.7.0)
 
+[ ] Bulk/manual filename rename across multiple selected Inbox tracks
+    (collision handling for a *bulk* rename is materially harder than
+    the single-track contract already shipped).
+
+[ ] Wire Genre Taxonomy suggestions into the inline/bulk Genre editors
+    (they currently accept any valid non-empty string by product
+    decision). Worth reconsidering once taxonomy-assisted entry
+    (autocomplete) is prioritized.
+
+[ ] Inbox import result doesn't surface per-source `warnings` text (e.g.
+    the self-import containment rejection message) in the UI -- only
+    imported/duplicate/failed counts are shown. The backend already
+    returns it via WorkspaceImportResult.warnings; this is a frontend
+    display gap in frontend/src/pages/Inbox.tsx.
+
+[ ] Unify the Music Review (Listening) page's decorative waveform:
+    frontend/src/pages/Listening.tsx still renders the retired
+    ThreeBandWaveform placeholder for its browser-preview-only queue.
+    Could swap to EmptyWaveform for full consistency.
+
+[ ] Add a persisted-history table for bulk waveform runs (a drillable
+    table + detail rail matching AnalysisOperationsHistory.tsx's pattern
+    for BPM/key runs).
+
+[ ] Represent long-form DJ mixes in a future waveform sample -- real
+    verification topped out at 11:06; multi-hour behavior is covered
+    only by synthetic tests and timeout/pair ceilings.
+
+[ ] Verify waveform rendering on a physical touch device and a
+    non-Chrome browser (touch verification so far used CDP emulation in
+    headless Chrome).
+
+[ ] Add a Settings surface for the waveform cache (footprint/preview and
+    confirmation-gated clear currently exist only as API routes).
+
+[ ] Decide whether waveform cleanup ever needs a scheduled pass (it
+    currently runs only at startup, after each publication, and on the
+    manual action).
+
+[ ] Continue deeper page-by-page visual polish where real workflows need
+    it; prioritize observed usability defects and responsive behavior.
+
+[ ] Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
+    current "Quality" column is a compact vertical 4-bar meter driven by
+    the real quality_tier field. Revisit only if an actual per-track
+    energy/loudness metric becomes available.
+
+[ ] Wire genre/BPM/has-key filter chips into the Issues/Enrichment
+    sections too, or keep them Library-only by design.
+
+[ ] docs/generated/repo_file_index.md is stale. Regenerate via
+    tools/static_analysis/generate_repo_inventory.py when convenient.
+
+[ ] Expose a duplicates count via a read API (dedupe is CLI-only today)
+    so the Library overview "Duplicates" card can show a real number.
+
+[ ] Resolve duplicate Vite config: frontend/vite.config.js shadows
+    frontend/vite.config.ts (Vite resolves .js first; both currently
+    carry identical config). Needs explicit approval to delete the
+    unused one.
+
+[ ] Wire readiness awareness into the Jobs page (disable submission
+    hints when relevant binaries are missing).
+
+[ ] metadata-enrich-online: duration booster -- add duration_ms to
+    EnrichmentCandidate and parse from Spotify/Deezer/Traxsource
+    responses (+0.03 boost when within 3s).
+
+[ ] Traxsource: verify CSS selectors against the live site before
+    production use (selectors in _SEL_* constants in
+    traxsource_lookup.py). NOTE: Traxsource is legacy/pipeline.py-era,
+    not part of the current provider_routing_service set (see AGENTS.md
+    Section 4.5).
+
+[ ] Cache Spotify/Deezer/Traxsource results to avoid re-hitting APIs on
+    re-runs.
+
+[ ] ISRC -> MusicBrainz lookup as a zero-credential fallback.
+
+[ ] Future: a label_intelligence package mirroring the artist_intelligence
+    pattern.
+
+[ ] label-clean Phase 2: Discogs and Beatport providers (single-track
+    label resolution).
+
+[ ] BpmReview: collapsible re-analysis log panel (same pattern as
+    SetBuilder).
+
+[ ] SsdSync: make sync history use .table/.table-wrapper for
+    consistency; show last-synced timestamp from the most recent
+    succeeded sync job.
+
+[ ] Job retention policy -- auto-clean logs older than N days.
+
+[ ] POST /api/jobs/{id}/cancel: handle SIGKILL fallback if SIGTERM is
+    ignored after timeout.
+
+[ ] GET /api/jobs/{id}/logs: SSE streaming for live log tail (currently
+    polls 2s); consider a WebSocket alternative.
+
+[ ] rsync --bwlimit option for bandwidth throttling during sync.
+
+[ ] BPM anomaly: per-track reanalyze (requires pipeline support for
+    --track-id).
+
+[ ] Rekordbox hot-cue write-back (blocked by MIK-first policy -- MIK is
+    the authoritative cue source; if/when implementing, must only write
+    cues to tracks MIK has NOT touched and never overwrite existing
+    POSITION_MARK entries).
+
+[ ] Route tracks in letter playlists: decide whether to exclude route
+    folders or assign the correct letter instead of '#'; validate in
+    Rekordbox UI first.
+
+[ ] Windows transfer automation: automate sync of the library to an SSD
+    (rsync or a dedicated subcommand), triggering rekordbox-export after
+    sync.
+
+[ ] Support 24-bit AIFF output for ALAC source M4A in convert-audio
+    (currently always uses pcm_s16be regardless of source bit depth).
+
+[ ] Post-convert MIK analysis trigger: after convert-audio completes,
+    optionally queue new .aiff files for Mixed In Key. Blocked on MIK
+    offering a CLI interface.
+
+[ ] convert-audio: configurable output codec via --codec flag
+    (pcm_s16be / pcm_s24be / pcm_f32be).
+
+[ ] BPM normalization layer as a fallback for tracks MIK has not
+    processed (lower priority now that MIK is authoritative).
+
+[ ] Validate _read_existing_analysis() against real MIK-tagged MP3/FLAC/
+    M4A files; confirm TKEY/TBPM/INITIALKEY/tmpo are read correctly.
+
+[ ] Tagger: skip BPM/key writes when values came from MIK (no-op write
+    prevention) -- add a "source=mik" marker to detect this.
+
+[ ] Energy tag write-back: write energy tier (Peak/Mid/Chill) into tags
+    (MP3 TXXX:ENERGY, FLAC ENERGY) to enable Rekordbox filtering and
+    smart playlists.
+
+[ ] ai-normalize: add a --resume/skip-already-normalized flag (detect
+    via a TXXX:AI_NORMALIZED marker, similar to TXXX:PROCESSED).
+
+[ ] ai-normalize: batch mode with rate limiting and a --workers flag
+    (safe since Ollama handles concurrent requests).
+
+[ ] LLM metadata assist integration via the Claude API for genre
+    inference/metadata disambiguation (cloud fallback when Ollama is
+    unavailable), wired through utils/llm_client.py.
+
+[ ] audit-quality: quality-tier playlists (LOW.m3u8 / MEDIUM.m3u8 /
+    HIGH.m3u8 / LOSSLESS.m3u8 under M3U_DIR/Quality/).
+
+[ ] audit-quality: re-check already-tagged files incrementally (skip
+    re-probe when quality_tier is already set and the file is
+    unchanged).
+
+[ ] Interactive review workflow: populate review_decisions.jsonl via a
+    future 'ai-review' CLI command.
 
 ======================================================================
 END OF NEXT TASKS

@@ -19,4 +19,4 @@
 # To add another source (e.g. MusicBrainz):
 #   1. Add <source>_lookup.py with search_by_artist_title() → List[EnrichmentCandidate]
 #   2. Wire into runner._search_with_fallback() following the Traxsource pattern
-#   3. Update this file and DJToolkit_CONTEXT.txt
+#   3. Update this file
