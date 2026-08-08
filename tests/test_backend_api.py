@@ -3403,6 +3403,74 @@ def test_online_lookup_rejects_unknown_source_and_missing_track(client):
     assert test_client.post("/api/enrichment/review/tracks/999999/online-lookup", json={"source": "beets"}).status_code == 404
 
 
+def test_tag_write_plan_apply_restore_round_trip_through_http(client, monkeypatch, tmp_path):
+    """Real HTTP-level acceptance for Cycle 7: plan (read-only) -> apply (backed
+    up, written, verified) -> restore (byte-identical), using a real disposable
+    ffmpeg-generated MP3, never the sanctioned test library."""
+    import shutil as _shutil
+    if _shutil.which("ffmpeg") is None:
+        pytest.skip("ffmpeg not available")
+    from backend.app.services import tag_write_service
+    monkeypatch.setattr(tag_write_service, "TAG_WRITE_BACKUP_DIR", tmp_path / "tag_write_backups")
+    test_client, root = client
+
+    track_path = root / "library" / "writeback.mp3"
+    track_path.parent.mkdir(parents=True, exist_ok=True)
+    subprocess.run(
+        ["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=44100:cl=mono", "-t", "1", "-c:a", "libmp3lame", "-b:a", "32k", str(track_path)],
+        check=True,
+    )
+    import mutagen
+    audio = mutagen.File(str(track_path), easy=True)
+    audio["artist"] = ["Old Artist"]
+    audio.save()
+    original_bytes = track_path.read_bytes()
+
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute("ALTER TABLE tracks ADD COLUMN album TEXT")
+        cursor = conn.execute(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, status) VALUES (?, ?, ?, ?, ?, 'ok')",
+            (str(track_path), "writeback.mp3", "New Artist", "New Title", None),
+        )
+        track_id = cursor.lastrowid
+
+    plan_response = test_client.post("/api/tag-write/plan", json={"track_ids": [track_id]})
+    assert plan_response.status_code == 200
+    plan = plan_response.json()
+    item = plan["items"][0]
+    assert {f["field"] for f in item["fields"]} == {"artist", "title"}
+    assert track_path.read_bytes() == original_bytes, "plan must be side-effect-free"
+
+    unconfirmed = test_client.post("/api/tag-write/apply", json={"track_ids": [track_id], "expected": {}, "confirm": False})
+    assert unconfirmed.status_code == 422
+
+    expected = {str(track_id): {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+    apply_response = test_client.post("/api/tag-write/apply", json={"track_ids": [track_id], "expected": expected, "confirm": True})
+    assert apply_response.status_code == 200
+    result = apply_response.json()
+    assert result["status"] == "completed" and result["applied"] == 1
+    operation_id = result["operation_id"]
+
+    reread = mutagen.File(str(track_path), easy=True)
+    assert reread["artist"][0] == "New Artist"
+    assert reread["title"][0] == "New Title"
+
+    history = test_client.get("/api/tag-write/operations")
+    assert history.status_code == 200
+    assert any(op["id"] == operation_id for op in history.json())
+    detail = test_client.get(f"/api/tag-write/operations/{operation_id}")
+    assert detail.status_code == 200 and detail.json()["status"] == "completed"
+
+    restore_unconfirmed = test_client.post(f"/api/tag-write/operations/{operation_id}/restore/{track_id}", json={"track_id": track_id, "confirm": False})
+    assert restore_unconfirmed.status_code == 422
+    restore_response = test_client.post(f"/api/tag-write/operations/{operation_id}/restore/{track_id}", json={"track_id": track_id, "confirm": True})
+    assert restore_response.status_code == 200
+    assert restore_response.json()["verified"] is True
+    assert track_path.read_bytes() == original_bytes, "restore must return the file to its exact pre-write bytes"
+
+    assert test_client.get("/api/tag-write/operations/does-not-exist").status_code == 404
+
+
 def test_listening_review_is_db_only_and_validates_review_fields(client):
     test_client, root = client
     with sqlite3.connect(root / "logs" / "processed.db") as conn:

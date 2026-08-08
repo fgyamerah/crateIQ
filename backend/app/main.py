@@ -42,12 +42,14 @@ from .api.routes import reviews as reviews_router
 from .api.routes import settings as settings_router
 from .api.routes import sync as sync_router
 from .api.routes import smart_crates as smart_crates_router
+from .api.routes import tag_write as tag_write_router
 from .api.routes import tracks as tracks_router
 from .api.routes import waveforms as waveforms_router
 from .api.routes import waveform_bulk as waveform_bulk_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
 from .services import analysis_operations_service, publish_operations_service, read_only as read_only_service
+from .services import tag_write_service
 from .services import waveform_cache_service, waveform_job_service, waveform_operations_service
 from .services.waveform_readiness_service import (
     WaveformRuntimeError,
@@ -126,6 +128,15 @@ async def lifespan(app: FastAPI):
         waveform_operations_service.recover_interrupted_operations()
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("waveform bulk operation recovery skipped")
+
+    # Close out any tag write-back operation left 'running' by a previous
+    # process. A restart must never silently resume writing file tags, and
+    # any file already backed up before the interruption keeps its backup
+    # regardless -- this only rewrites the operational history row.
+    try:
+        tag_write_service.recover_interrupted_operations()
+    except Exception:  # pragma: no cover - recovery must never block startup
+        log.exception("tag write-back operation recovery skipped")
 
     # Lightweight cache reconciliation: sweep abandoned temp files and repair
     # tracks claiming a `ready` artifact whose file is gone. This touches only
@@ -245,3 +256,4 @@ app.include_router(reconciliation_router.router, prefix=API_PREFIX)
 app.include_router(exports_router.router,    prefix=API_PREFIX)
 app.include_router(sync_router.router,       prefix=API_PREFIX)
 app.include_router(publish_router.router,    prefix=API_PREFIX)
+app.include_router(tag_write_router.router,  prefix=API_PREFIX)

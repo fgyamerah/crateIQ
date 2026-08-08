@@ -69,6 +69,15 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/apply-to-files",
+        "purpose": "Controlled metadata write-back: exact plan, backup, confirm, apply, verify, restore",
+        "access": "read-only track search and operation history; plan/apply/restore actions deferred",
+        "endpoints": [
+            ("/api/tracks", "dict", ("items", "limit", "offset", "total")),
+            ("/api/tag-write/operations", "list", ()),
+        ],
+    },
+    {
         "route": "/issues",
         "purpose": "Track issue review",
         "access": "read-only",

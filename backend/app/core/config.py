@@ -28,6 +28,13 @@ BACKEND_DATA_DIR = _BACKEND_ROOT / "data"
 JOBS_DB_PATH     = BACKEND_DATA_DIR / "jobs.db"
 JOBS_LOG_DIR     = BACKEND_DATA_DIR / "logs"
 
+# Byte-for-byte backups of source files taken immediately before a
+# confirmed tag write-back (Cycle 7). Deliberately outside any possible
+# scanned music library root (settings_service._forbidden_library_roots
+# blocks the whole repo tree, this directory included, from ever being
+# selected as a library root) and never itself scanned/imported as music.
+TAG_WRITE_BACKUP_DIR = BACKEND_DATA_DIR / "tag_write_backups"
+
 # ---------------------------------------------------------------------------
 # Pipeline DB — read from toolkit config.py at import time.
 # The pipeline writes to processed.db; the backend only ever reads it.

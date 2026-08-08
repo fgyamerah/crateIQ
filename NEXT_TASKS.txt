@@ -79,11 +79,27 @@ CURRENT FOCUS
     source in Settings (currently the Test button reports readiness
     without making a network call; the real check only happens via
     Enrichment Review's online-lookup action).
-[ ] (P1) Core Usability Cycle 7 -- Controlled Metadata Write-Back
-    Exact write plan -> mandatory full-file backup outside the scanned
-    music tree -> explicit confirm -> write -> re-read verify -> restore.
-    Test only against disposable copies of sanctioned fixtures, never the
-    original 88-file crateiq-test-library.
+[x] (P0) Core Usability Cycle 7 -- Controlled Metadata Write-Back (2026-08-08)
+    Real writes to actual file tags, the highest-risk cycle: exact
+    read-only write plan (diff local index vs current file tags for
+    artist/title/album/genre only) -> stale-file check (blocks if the
+    file changed since preview) -> byte-for-byte hash-verified backup
+    outside the scanned tree -> explicit confirm -> mutagen easy-tag
+    write of only the diffed fields -> re-read verify -> restore (atomic,
+    hash-verified). New /api/tag-write/* routes, new ApplyToFiles.tsx
+    page, new tag_write_operations history table with restart recovery.
+    Real acceptance run against disposable copies of two real sanctioned
+    files (never the originals) through the actual backend service
+    functions, backups landing in the real backup store, all cleaned up
+    afterward; all 88 original sanctioned audio files confirmed
+    byte-unchanged. See PROJECT_CONTEXT.md Latest Milestone for full
+    detail, including a real (harmless) near-miss during manual
+    acceptance scripting and the resulting documented trap in
+    library_setup_service's explicit-root parameter. 1465 backend tests
+    pass (10 new using real ffmpeg-generated audio fixtures, not mocks);
+    frontend typecheck/build pass. One Impeccable pass on the only
+    file-mutating page in the app fixed a real issue: the actual write
+    button was styled identically to the harmless preview button.
 [ ] (P1) Core Usability Cycle 8 -- DJ Preparation
     Wire existing BPM/key analysis and waveform generation into the
     Library Prep Analyze step; conservative readiness contract

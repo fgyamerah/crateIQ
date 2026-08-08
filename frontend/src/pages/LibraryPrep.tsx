@@ -239,11 +239,16 @@ export default function LibraryPrep() {
           <p className="prep-step-desc">Field-by-field candidate review becomes meaningful once real enrichment is available.</p>
         </PrepStep>
 
-        <PrepStep index={5} icon={<FileCheck2 size={16} />} title="Apply to files" state="unavailable">
+        <PrepStep index={5} icon={<FileCheck2 size={16} />} title="Apply to files" state="not_started">
           <p className="prep-step-desc">
-            Controlled, backed-up, confirmed writes to actual file tags are not implemented yet.
-            No step in CrateIQ writes to your audio files today.
+            Write approved artist/title/album/genre values to real file tags — the only step in CrateIQ
+            that modifies your audio files. Every write is backed up first and can be restored.
           </p>
+          <div className="prep-step-actions">
+            <Link className="btn btn--primary btn--sm" to="/apply-to-files">
+              <FileCheck2 size={14} /> Open Apply to Files
+            </Link>
+          </div>
         </PrepStep>
 
         <PrepStep index={6} icon={<Clock size={16} />} title="Analyze" state="unavailable">

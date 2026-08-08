@@ -9063,3 +9063,95 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
   .publish-select-row { flex-direction: column; align-items: stretch; }
   .publish-select-row label { min-width: 0; }
 }
+
+/* ── Apply to Files ── */
+
+.apply-files-section {
+  background: var(--panel-gradient);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 16px 18px;
+}
+
+.apply-files-section h2 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0;
+}
+
+.apply-files-track-list {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.apply-files-track-row {
+  align-items: center;
+  border-bottom: 1px solid var(--border-soft);
+  display: flex;
+  font-size: 12.5px;
+  gap: 8px;
+  padding: 7px 10px;
+}
+.apply-files-track-row:last-child { border-bottom: none; }
+
+.apply-files-summary {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.apply-files-plan-scroll {
+  border: 1px solid rgba(67,77,108,.58);
+  border-radius: var(--radius-md);
+  overflow-x: auto;
+}
+
+.apply-files-plan-table {
+  border-collapse: collapse;
+  font-size: 12px;
+  width: 100%;
+}
+.apply-files-plan-table th,
+.apply-files-plan-table td {
+  border-bottom: 1px solid var(--border-soft);
+  padding: 7px 10px;
+  text-align: left;
+  white-space: nowrap;
+}
+.apply-files-plan-table th { color: var(--text-muted); font-weight: 600; }
+
+.apply-files-confirm {
+  background: rgba(251,113,133,.07);
+  border: 1px solid rgba(251,113,133,.3);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 12px;
+}
+.apply-files-confirm .form-check { font-size: 12px; }
+
+.apply-files-history { display: flex; flex-direction: column; gap: 10px; }
+.apply-files-history-row {
+  border: 1px solid var(--border-soft);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px 12px;
+}
+.apply-files-history-row > div:first-child { align-items: center; display: flex; gap: 8px; }
+.apply-files-restore-list { display: flex; flex-wrap: wrap; gap: 6px; }
+
+@media (max-width: 760px) {
+  .apply-files-plan-table { font-size: 11px; }
+}

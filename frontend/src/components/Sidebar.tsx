@@ -25,6 +25,7 @@ import {
   CopyCheck,
   AudioLines,
   FolderInput,
+  ShieldAlert,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { fetchReviewSummary } from '../api/insights'
@@ -81,6 +82,7 @@ const NAV: NavSection[] = [
     title: 'Operations',
     items: [
       { to: '/jobs',        label: 'Jobs',        Icon: ListChecks },
+      { to: '/apply-to-files', label: 'Apply to Files', Icon: ShieldAlert },
       { to: '/duplicates',  label: 'Duplicates',  Icon: CopyCheck },
       { to: '/crates',      label: 'Manual Crates', Icon: ListMusic },
       { to: '/smart-crates', label: 'Smart Crates', Icon: Sparkles },

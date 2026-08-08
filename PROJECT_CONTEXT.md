@@ -6,6 +6,90 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 7 (Controlled Metadata Write-Back) of the crateIQ Core
+  Usability Program, on `feat/crateiq-core-usability` (base Cycle 6
+  `c48dd5e`), no merge to main. The highest-risk cycle: real writes to
+  actual audio file tags, guarded end to end. New
+  `backend/app/services/tag_write_service.py`: `build_plan()` (read-only
+  exact diff between the local index's approved artist/title/album/genre
+  and the file's current embedded tags -- ADD when the file field is
+  empty, REPLACE when it differs, nothing when they already match),
+  `apply_plan()` (revalidate fresh size+mtime_ns against what the client's
+  own prior preview reported -- blocks as stale if the file changed
+  underneath the plan, never silently rebases -- then byte-for-byte
+  hash-verified backup, then mutagen easy-tag write of *only* the diffed
+  fields, then re-read and verify), `restore_file()` (atomic
+  copy-to-temp-then-rename restore of one file from its recorded backup,
+  hash-verified both before and after). Write surface is deliberately
+  four fields only -- artist, title, album, genre, exactly what the local
+  index already models reliably through Cycles 5-6 -- never BPM, key,
+  Camelot, cues, artwork, or any other tag; only MP3/FLAC are supported,
+  every other format is an explicit blocker in the preview, never a
+  silent skip. New `tag_write_operations` jobs.db table (mirrors
+  analysis_operations/publish_operations/waveform_operations, extended
+  with `restored` as a distinct terminal status) plus restart recovery
+  (`tag_write_service.recover_interrupted_operations()`, wired in
+  `main.py` alongside the others). New `TAG_WRITE_BACKUP_DIR =
+  backend/data/tag_write_backups/` (backend/app/core/config.py) -- outside
+  any possible scanned library root by construction, since
+  `settings_service._forbidden_library_roots()` already blocks the whole
+  repo tree from ever being selected as a library root. New routes: `POST
+  /api/tag-write/plan`, `POST /api/tag-write/apply`, `GET
+  /api/tag-write/operations[/{id}]`, `POST /api/tag-write/operations/{id}
+  /restore/{track_id}`. New frontend page
+  `frontend/src/pages/ApplyToFiles.tsx` (route `/apply-to-files`, sidebar
+  entry, and Library Prep step 5 now links to it instead of showing
+  "unavailable"): select tracks -> preview exact plan (FIELD/CURRENT
+  FILE VALUE/APPROVED VALUE/ACTION table, blocked-track warnings shown
+  before the confirm gate) -> explicit confirm checkbox -> backup/write/
+  verify -> operations history with a per-track restore action.
+  **Incident-free this cycle in the write-back code itself, but a real
+  near-miss during manual acceptance scripting**: a hand-written
+  acceptance script called `library_setup_service.initialize_library()`/
+  `import_previewed_library()` without an explicit `library_root`
+  argument; those two Cycle-5 functions fall back to
+  `settings_service._pending_library_root()` (a *file*,
+  `.run/local/crateiq.env`) before the `CRATEIQ_LIBRARY_ROOT` env var when
+  no explicit root is passed, and that file already pointed at the real
+  sanctioned library -- so the script's first run silently
+  scanned/imported against the real `crateiq-test-library/logs/
+  processed.db` instead of the intended disposable temp copy. Confirmed
+  harmless (the only write was a no-op `UPDATE ... SET filename =
+  excluded.filename, filesize_bytes = excluded.filesize_bytes` on values
+  that were already correct; artist/title/genre are never touched by that
+  conflict clause; all 88 sanctioned audio files confirmed byte-unchanged
+  throughout). Fixed by passing `library_root` explicitly in the script
+  and re-running clean. Documented here because the same trap exists for
+  any future script/tooling that calls those two functions with no
+  explicit root -- `backend.app.core.library_root.selected_library_root()`
+  (used by `tag_write_service` and most other services) has no such
+  pending-root fallback and only reads the env var, so this is specific
+  to `library_setup_service`'s two entry points.
+  **Real acceptance, disposable copies only**: two real files copied
+  (never moved) out of the sanctioned library into a temp directory,
+  given deliberately messy embedded tags, then imported, "approved"
+  (simulating a completed sanitation/enrichment review), planned, backed
+  up, written, re-read-verified, and one restored -- through the actual
+  `library_setup_service`/`tag_write_service` functions, backups landing
+  in the real `backend/data/tag_write_backups/` path (proving the real
+  backup store, not a mock), all cleaned up afterward. All 88 original
+  sanctioned audio files confirmed byte-unchanged (mtime + count check)
+  before and after. 1465 backend tests pass (10 new: 9 in
+  `tests/test_tag_write_service.py` using real ffmpeg-generated MP3/FLAC
+  fixtures -- real mutagen read/write/backup/restore round trips, not
+  mocks -- plus 1 new HTTP-level round-trip test in
+  `tests/test_backend_api.py`); frontend typecheck/build pass. One
+  Impeccable pass on `ApplyToFiles.tsx` (the only file-mutating page in
+  the app) found and fixed: the real "Backup, write, and verify" button
+  was styled identically to the harmless "Preview write plan" button
+  (now uses the app's existing `.btn--danger` treatment, matching how
+  other destructive actions like crate/job deletion are styled elsewhere
+  -- DESIGN.md: "don't obscure write boundaries behind friendly labels or
+  visual polish"), the error banner was missing `role="alert"` present on
+  equivalent banners in Publish.tsx/Reconciliation.tsx, and
+  preview/apply/restore lacked an in-function re-entrancy guard beyond
+  the disabled prop (added `if (busy !== null) return`).
+
 - 2026-08-08: Cycle 6 (Real Enrichment) of the crateIQ Core Usability
   Program, on `feat/crateiq-core-usability` (base Cycle 5 `ae6dae7`), no
   merge to main. Added real, verified-live Beets and MusicBrainz metadata

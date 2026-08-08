@@ -237,6 +237,42 @@ CREATE INDEX IF NOT EXISTS idx_waveform_operations_created
     ON waveform_operations(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_waveform_operations_status
     ON waveform_operations(status);
+
+-- Persisted history for controlled metadata write-back (Cycle 7). A row is
+-- created only when an explicit, confirmed apply is about to begin -- a
+-- read-only preview is never persisted. Mirrors the analysis_operations /
+-- publish_operations / waveform_operations lifecycle contract, extended
+-- with 'previewed' (reserved for future use) and 'restored' -- a write-back
+-- operation is the one operation type in this app that can itself be
+-- undone, so its terminal state needs to reflect that distinctly from
+-- 'completed'. No absolute source paths: only root-relative safe paths
+-- inside plan_json/backup_manifest_json/result_json.
+CREATE TABLE IF NOT EXISTS tag_write_operations (
+    id                   TEXT    PRIMARY KEY,
+    status               TEXT    NOT NULL DEFAULT 'running'
+                                  CHECK (status IN (
+                                      'previewed', 'running', 'completed',
+                                      'failed', 'partially_failed', 'restored'
+                                  )),
+    track_count          INTEGER NOT NULL DEFAULT 0,
+    applied_count        INTEGER NOT NULL DEFAULT 0,
+    skipped_count        INTEGER NOT NULL DEFAULT 0,
+    failed_count         INTEGER NOT NULL DEFAULT 0,
+    plan_json            TEXT,
+    backup_manifest_json TEXT,
+    result_json          TEXT,
+    warnings_json         TEXT,
+    error_reason          TEXT,
+    created_at            TEXT   NOT NULL,
+    started_at            TEXT,
+    finished_at            TEXT,
+    restored_at            TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_tag_write_operations_created
+    ON tag_write_operations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_tag_write_operations_status
+    ON tag_write_operations(status);
 """
 
 
