@@ -37,7 +37,10 @@ export default function ApplyToFiles() {
   const loadTracks = useCallback(async (query: string) => {
     setBusy('search')
     try {
-      setTracks(await fetchTracks({ search: query || undefined, limit: 50 }))
+      // zone: 'all' -- write-back is exactly how an Inbox track's metadata
+      // gets verified before it can be promoted, so this tool must reach
+      // Inbox tracks too, not just the default Library-only zone.
+      setTracks(await fetchTracks({ search: query || undefined, limit: 50, zone: 'all' }))
     } catch (e) { setError(errorMessage(e)) } finally { setBusy(null) }
   }, [])
 

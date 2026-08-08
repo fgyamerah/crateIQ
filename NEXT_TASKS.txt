@@ -39,6 +39,41 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 9 -- Managed Music Workspace (2026-08-08)
+    New Inbox/Library/Quarantine managed workspace, additive to the
+    existing legacy direct-library model (never auto-restructured).
+    workspace_service.py: state classification, idempotent configure,
+    copy-based import (verified, deterministic collisions, symlink-safe,
+    never touches the external original), and "Move Ready to Library"
+    promotion (artist/title/genre required, metadata-write-verified via
+    tag_write_service reuse, BPM/key/waveform warnings-only,
+    Library/<Genre>/<Artist>/<Artist> - <Title>.<ext> destination,
+    truthful collision/failure handling). New tracks.storage_zone column
+    (idempotent migration for pre-Cycle-9 DBs). GET /api/tracks now
+    defaults to zone=library; ApplyToFiles.tsx and CrateMind.tsx updated
+    to zone=all so Inbox tracks stay reachable for write-back/issue
+    triage. New /inbox page and sidebar entry. 1500 backend tests pass
+    (+36 new); frontend typecheck/build pass. Impeccable pass on Inbox.tsx
+    fixed a missing textarea label and untruncated readiness-blocker
+    badge text. Live end-to-end verified against disposable fixtures
+    (nested-folder import, byte-identical original verification,
+    real promotion through the UI, final Library path confirmed) -- see
+    CHANGELOG.txt and PROJECT_CONTEXT.md Latest Milestone for full
+    detail, including a live migration side effect on the sanctioned
+    library's processed.db schema (additive column only, no row/file
+    changes, confirmed). On feat/crateiq-managed-library (base
+    feat/crateiq-core-usability 78e0dfe); not merged to main.
+[ ] (P2) Library overview/quality KPI cards (/api/library/overview,
+    /api/library/quality) are not yet storage_zone-aware -- they still
+    aggregate across all zones rather than Library-only. Not a regression
+    (pre-existing behavior, unaffected by Cycle 9), but should be reconciled
+    once Inbox tracks are common, likely alongside Cycle 10's Inbox pipeline
+    stage counts.
+[ ] (P2) Inbox has no inline metadata editor yet -- genre/artist/title
+    fixes for Inbox tracks currently require the existing Metadata
+    Repair/Sanitation/Apply to Files pages (which now see Inbox tracks via
+    zone=all). Cycle 10's unified Needs Review may be the right place to
+    surface this inline instead of routing away.
 [x] (P0) Core Usability Cycle 5 -- Core Library Workflow (2026-08-08)
     New unified `/library-prep` workspace presents the full target workflow
     (Import -> Clean -> Enrich -> Review -> Apply -> Analyze -> Ready) as

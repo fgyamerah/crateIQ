@@ -46,9 +46,12 @@ CREATE TABLE IF NOT EXISTS tracks (
     cue_source TEXT,
     cue_count INTEGER NOT NULL DEFAULT 0,
     metadata_trusted INTEGER NOT NULL DEFAULT 0,
-    metadata_imported_at TEXT
+    metadata_imported_at TEXT,
+    storage_zone TEXT NOT NULL DEFAULT 'LIBRARY'
+        CHECK (storage_zone IN ('INBOX', 'LIBRARY', 'QUARANTINE'))
 );
 CREATE INDEX IF NOT EXISTS idx_tracks_filepath ON tracks(filepath);
+CREATE INDEX IF NOT EXISTS idx_tracks_storage_zone ON tracks(storage_zone);
 CREATE INDEX IF NOT EXISTS idx_tracks_status ON tracks(status);
 CREATE INDEX IF NOT EXISTS idx_tracks_artist_lc ON tracks(LOWER(COALESCE(artist, '')));
 CREATE INDEX IF NOT EXISTS idx_tracks_title_lc ON tracks(LOWER(COALESCE(title, '')));
@@ -78,6 +81,29 @@ def _db_path(root: Path) -> Path:
     return assert_path_under_root(root / "logs" / "processed.db", root)
 
 
+def ensure_storage_zone_column(root: Path) -> None:
+    """
+    Idempotently add the storage_zone column to an existing processed.db that
+    predates the Cycle 9 managed workspace model. No-op if the DB does not
+    exist yet or the column is already present. Existing rows backfill to
+    'LIBRARY' via the column DEFAULT, matching current pipeline behavior
+    exactly: a track imported before Cycle 9 already lived directly in the
+    library, so its visibility must not change.
+    """
+    db_path = _db_path(root)
+    if not db_path.is_file():
+        return
+    with sqlite3.connect(db_path) as conn:
+        try:
+            conn.execute(
+                "ALTER TABLE tracks ADD COLUMN storage_zone TEXT NOT NULL DEFAULT 'LIBRARY'"
+            )
+            conn.execute("CREATE INDEX IF NOT EXISTS idx_tracks_storage_zone ON tracks(storage_zone)")
+        except sqlite3.OperationalError as exc:
+            if "duplicate column name" not in str(exc).lower():
+                raise
+
+
 def library_status(library_root: str | None = None) -> dict[str, Any]:
     root = _target_root(library_root)
     db_path = _db_path(root)
@@ -98,6 +124,7 @@ def initialize_library(library_root: str | None = None) -> dict[str, Any]:
     db_path = _db_path(root)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(_TRACKS_SCHEMA)
+    ensure_storage_zone_column(root)
     return {
         "library_root": redact_path(root),
         "initialized": True,

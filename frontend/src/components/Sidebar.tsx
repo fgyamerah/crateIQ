@@ -26,6 +26,7 @@ import {
   AudioLines,
   FolderInput,
   ShieldAlert,
+  Inbox as InboxIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { fetchReviewSummary } from '../api/insights'
@@ -62,6 +63,7 @@ const NAV: NavSection[] = [
     title: 'Browse',
     items: [
       { to: '/',             label: 'Library',          Icon: Library,       end: true },
+      { to: '/inbox',        label: 'Inbox',            Icon: InboxIcon },
       { to: '/library-prep', label: 'Library Prep',     Icon: FolderInput },
       { to: '/quality',      label: 'Quality',          Icon: BarChart3 },
       { to: '/quality-review', label: 'Quality Review', Icon: AudioLines },

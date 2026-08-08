@@ -95,14 +95,20 @@ def _file_bytes(path: Path, start: int, end: int, chunk_size: int = 64 * 1024):
 # ---------------------------------------------------------------------------
 
 @router.get("/tracks/stats", response_model=TrackStats)
-async def get_track_stats() -> TrackStats:
+async def get_track_stats(
+    zone: str = Query(
+        default="library",
+        pattern="^(library|inbox|quarantine|all)$",
+        description="Managed storage zone. 'library' (default) counts only promoted tracks.",
+    ),
+) -> TrackStats:
     """
-    Return aggregate counts for the whole library:
+    Return aggregate counts for the Library zone by default:
     - total tracks and breakdown by status
     - breakdown by quality tier
     - counts of tracks missing BPM, key, artist, or title
     """
-    return track_service.get_stats()
+    return track_service.get_stats(storage_zone=None if zone == "all" else zone)
 
 
 # ---------------------------------------------------------------------------
@@ -130,12 +136,24 @@ async def list_tracks(
     has_key: Optional[bool] = Query(default=None, description="Filter tracks with or without a key"),
     genre: Optional[str] = Query(default=None, description="Case-insensitive genre filter"),
     parse_confidence: Optional[str] = Query(default=None, description="Filter by filename parse confidence"),
+    zone: str = Query(
+        default="library",
+        pattern="^(library|inbox|quarantine|all)$",
+        description="Managed storage zone. 'library' (default) returns only promoted tracks.",
+    ),
     sort: str = Query(default="artist", description="Sort key"),
     order: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=100, ge=1, le=MAX_TRACK_LIMIT),
     offset: int = Query(default=0, ge=0),
 ) -> TrackPageResponse:
-    """List library tracks with read-only filtering and pagination."""
+    """
+    List library tracks with read-only filtering and pagination.
+
+    Defaults to the Library zone only -- Inbox tracks being prepared do not
+    appear in the main Library listing until explicitly promoted. Pass
+    zone=all to bypass this (used by internal tooling, not the main Library
+    page).
+    """
     tracks, _total = track_service.list_tracks(
         q=search,
         status=status,
@@ -146,6 +164,7 @@ async def list_tracks(
         has_key=has_key,
         genre=genre,
         parse_confidence=parse_confidence,
+        storage_zone=None if zone == "all" else zone,
         sort=sort,
         order=order,
         limit=limit,

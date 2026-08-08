@@ -35,6 +35,7 @@ class Track:
     pipeline_ver:   Optional[str]
     quality_tier:   Optional[str]
     parse_confidence: Optional[str]
+    storage_zone:   Optional[str] = None
     issues:         List[str] = field(default_factory=list)
 
     @classmethod
@@ -63,6 +64,7 @@ class Track:
             pipeline_ver=_get("pipeline_ver"),
             quality_tier=_get("quality_tier"),
             parse_confidence=_get("parse_confidence"),
+            storage_zone=_get("storage_zone"),
         )
         t.issues = _compute_issues(t)
         return t

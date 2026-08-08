@@ -39,6 +39,7 @@ export interface TrackSummary {
   status:       TrackStatus
   quality_tier: QualityTier | null
   parse_confidence: ParseConfidence | null
+  storage_zone?: 'INBOX' | 'LIBRARY' | 'QUARANTINE' | null
   issues:       TrackIssue[]
   recommended_action?: string | null
   recommended_route?: string | null
@@ -93,6 +94,8 @@ export interface TrackListParams {
   has_key?:      boolean
   issue?:        TrackIssue | string
   parse_confidence?: ParseConfidence | string
+  /** Managed storage zone. Defaults server-side to 'library' (promoted tracks only). */
+  zone?:         'library' | 'inbox' | 'quarantine' | 'all'
   sort?:         'artist' | 'title' | 'bpm' | 'processed_at' | 'filename'
   order?:        'asc' | 'desc'
   limit?:        number

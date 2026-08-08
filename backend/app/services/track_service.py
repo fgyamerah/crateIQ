@@ -134,6 +134,7 @@ def list_tracks(
     has_key: Optional[bool] = None,
     issue: Optional[str] = None,
     parse_confidence: Optional[str] = None,
+    storage_zone: Optional[str] = None,
     sort: str = _DEFAULT_SORT,
     order: str = "asc",
     limit: int = 100,
@@ -197,6 +198,19 @@ def list_tracks(
     if parse_confidence:
         where_clauses.append("UPPER(COALESCE(parse_confidence,'')) = ?")
         params.append(parse_confidence.upper())
+
+    if storage_zone:
+        # Pre-Cycle-9 DBs may not have this column yet; ensure it exists
+        # (idempotent, defaults existing rows to 'LIBRARY') rather than
+        # letting the filtered query silently fail closed to empty results.
+        from ..core.library_root import selected_library_root as _selected_root
+        from . import library_setup_service as _lib_setup
+        try:
+            _lib_setup.ensure_storage_zone_column(_selected_root())
+        except Exception:
+            pass
+        where_clauses.append("COALESCE(storage_zone, 'LIBRARY') = ?")
+        params.append(storage_zone.upper())
 
     if bpm_min is not None:
         where_clauses.append("bpm >= ?")
@@ -280,7 +294,7 @@ def get_track(track_id: int) -> Optional[Track]:
 # get_stats
 # ---------------------------------------------------------------------------
 
-def get_stats() -> TrackStats:
+def get_stats(storage_zone: Optional[str] = None) -> TrackStats:
     empty = TrackStats(
         total=0,
         by_status={},
@@ -292,10 +306,21 @@ def get_stats() -> TrackStats:
     )
     if not pipeline_db_exists():
         return empty
+    where_sql = ""
+    params: list[object] = []
+    if storage_zone:
+        try:
+            from ..core.library_root import selected_library_root as _selected_root
+            from . import library_setup_service as _lib_setup
+            _lib_setup.ensure_storage_zone_column(_selected_root())
+        except Exception:
+            pass
+        where_sql = "WHERE COALESCE(storage_zone, 'LIBRARY') = ?"
+        params.append(storage_zone.upper())
     try:
         with get_pipeline_conn() as conn:
             agg = conn.execute(
-                """SELECT
+                f"""SELECT
                        COUNT(*)                                                     AS total,
                        SUM(CASE WHEN bpm IS NULL THEN 1 ELSE 0 END)                AS missing_bpm,
                        SUM(CASE WHEN key_camelot IS NULL
@@ -304,22 +329,25 @@ def get_stats() -> TrackStats:
                                 THEN 1 ELSE 0 END)                                 AS missing_artist,
                        SUM(CASE WHEN TRIM(COALESCE(title,''))  = ''
                                 THEN 1 ELSE 0 END)                                 AS missing_title
-                   FROM tracks"""
+                   FROM tracks {where_sql}""",
+                params,
             ).fetchone()
 
             by_status: Dict[str, int] = {
                 row["status"]: row["cnt"]
                 for row in conn.execute(
-                    "SELECT status, COUNT(*) AS cnt FROM tracks GROUP BY status"
+                    f"SELECT status, COUNT(*) AS cnt FROM tracks {where_sql} GROUP BY status",
+                    params,
                 ).fetchall()
             }
 
             by_quality: Dict[str, int] = {
                 (row["quality_tier"] or "UNKNOWN"): row["cnt"]
                 for row in conn.execute(
-                    """SELECT COALESCE(quality_tier,'UNKNOWN') AS quality_tier,
+                    f"""SELECT COALESCE(quality_tier,'UNKNOWN') AS quality_tier,
                               COUNT(*) AS cnt
-                       FROM tracks GROUP BY quality_tier"""
+                       FROM tracks {where_sql} GROUP BY quality_tier""",
+                    params,
                 ).fetchall()
             }
 

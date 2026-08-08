@@ -41,6 +41,7 @@ class TrackSummary(BaseModel):
     status:       str
     quality_tier: Optional[str] = None
     parse_confidence: Optional[str] = None
+    storage_zone: Optional[str] = None
     issues:       List[str] = []
     recommended_action: Optional[str] = None
     recommended_route: Optional[str] = None
@@ -63,6 +64,7 @@ class TrackSummary(BaseModel):
             status=t.status,
             quality_tier=t.quality_tier,
             parse_confidence=t.parse_confidence,
+            storage_zone=t.storage_zone,
             issues=t.issues,
             recommended_action=recommended_action,
             recommended_route=recommended_route,

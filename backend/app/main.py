@@ -46,9 +46,12 @@ from .api.routes import tag_write as tag_write_router
 from .api.routes import tracks as tracks_router
 from .api.routes import waveforms as waveforms_router
 from .api.routes import waveform_bulk as waveform_bulk_router
+from .api.routes import workspace as workspace_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
+from .core.library_root import selected_library_root
 from .services import analysis_operations_service, publish_operations_service, read_only as read_only_service
+from .services import library_setup_service
 from .services import tag_write_service
 from .services import waveform_cache_service, waveform_job_service, waveform_operations_service
 from .services.waveform_readiness_service import (
@@ -95,6 +98,14 @@ async def lifespan(app: FastAPI):
     log.debug("Pipeline DB: %s", read_only_service.get_db_path())
 
     init_db()
+
+    # Cycle 9: backfill the storage_zone column on a pre-existing processed.db
+    # so managed-workspace queries never fail closed on an un-migrated DB.
+    # Existing rows default to 'LIBRARY' -- their visibility is unchanged.
+    try:
+        library_setup_service.ensure_storage_zone_column(selected_library_root())
+    except Exception:  # pragma: no cover - migration must never block startup
+        log.exception("storage_zone column migration skipped")
 
     # Close out waveform jobs left active by a previous process. A restart
     # must never silently resume music-library analysis, so interrupted work
@@ -257,3 +268,4 @@ app.include_router(exports_router.router,    prefix=API_PREFIX)
 app.include_router(sync_router.router,       prefix=API_PREFIX)
 app.include_router(publish_router.router,    prefix=API_PREFIX)
 app.include_router(tag_write_router.router,  prefix=API_PREFIX)
+app.include_router(workspace_router.router,  prefix=API_PREFIX)

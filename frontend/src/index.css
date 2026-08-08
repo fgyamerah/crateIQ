@@ -8617,6 +8617,7 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
 .quality-review-option small { color: var(--text-muted); font-size: 11px; }
 .quality-review-option .badge { font-size: 10px; max-width: 155px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .quality-review-path { background: rgba(8,12,19,.46); border-radius: 8px; color: #b9f5ff; font-size: 12px; overflow-wrap: anywhere; padding: 8px 10px; }
+.inbox-page .badge { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .quality-review-metrics { display: grid; gap: 7px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .quality-review-metrics span { background: rgba(8,12,19,.38); border: 1px solid rgba(67,77,108,.58); border-radius: 9px; color: var(--text-muted); display: grid; font-size: 11px; gap: 3px; padding: 8px; }
 .quality-review-metrics strong { color: var(--text); font-size: 12px; overflow-wrap: anywhere; }

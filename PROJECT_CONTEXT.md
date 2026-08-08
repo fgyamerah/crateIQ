@@ -6,6 +6,135 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 9 (Managed Music Workspace) of the crateIQ Managed
+  Library & Batch Preparation Program, on `feat/crateiq-managed-library`
+  (base `feat/crateiq-core-usability` at `78e0dfe`), no merge to main.
+  Introduces a physically separated managed workspace --
+  `<root>/Inbox/`, `<root>/Library/`, `<root>/Quarantine/` -- additive to
+  the existing "legacy direct library" model (a root scanned in place via
+  `library_setup_service.import_previewed_library`, unchanged). A root is
+  classified read-only as `managed_workspace` (a `.crateiq-workspace.json`
+  marker is present), `legacy_direct_library` (audio files or a
+  `processed.db` already exist directly under the root with no marker), or
+  `not_configured`. `configure_workspace()` refuses to touch a
+  `legacy_direct_library` root -- per product decision, existing
+  installations are never silently restructured; the message directs the
+  user to choose a new dedicated root.
+  New `backend/app/services/workspace_service.py` owns this: state
+  classification, idempotent configure (creates the three zone dirs +
+  marker, reuses `library_setup_service.initialize_library()` for the
+  local index rather than a parallel schema), `import_sources()` (copies
+  external files/folders into Inbox -- read-only source validation,
+  `os.walk(followlinks=False)` with symlinked dirs/files skipped and
+  reported as warnings rather than silently included or excluded,
+  deterministic `" (2)"`/`" (3)"` collision suffixes so an existing Inbox
+  file is never overwritten, a separate identical-content-duplicate path
+  that skips the copy rather than doubling it, and a re-hash-after-copy
+  verification before the local index is ever updated -- the external
+  original is never indexed, only the verified Inbox copy), and
+  `promotion_preview()`/`promote_tracks()` (the "Move Ready to Library"
+  flow: artist/title/genre required; metadata-write verification reuses
+  `tag_write_service.build_plan()` rather than a new check -- if the
+  file's current tags don't yet match the approved index values, that's a
+  blocker, not silently ignored; BPM/key/waveform absence are warnings
+  only, matching the product decision; destination is
+  `Library/<Genre>/<Artist>/<Artist> - <Title>.<ext>` via a new
+  `safe_path_segment()` sanitizer -- blocks path separators, `..`
+  traversal, NUL/control characters, and Windows-reserved trailing
+  dots/spaces while preserving Unicode, since the library is ultimately
+  synced to a Windows-compatible DJ drive; prefers atomic `Path.rename()`
+  since Inbox and Library share one filesystem root, falls back to
+  `shutil.move`; a destination collision blocks that track with the Inbox
+  copy left in place -- never silently numbered or overwritten for a
+  final Library file, matching the product decision that only Inbox
+  import collisions get the "(2)" treatment).
+  Schema: `tracks.storage_zone` (`INBOX`/`LIBRARY`/`QUARANTINE`, default
+  `'LIBRARY'`) added to `library_setup_service._TRACKS_SCHEMA` for new
+  DBs, plus `ensure_storage_zone_column()` -- an idempotent `ALTER TABLE`
+  migration (mirrors the existing `_add_column_safe` pattern in
+  `backend/app/core/db.py`) called at backend startup whenever a library
+  root is already configured, so a pre-Cycle-9 `processed.db` backfills
+  the column with all existing rows defaulting to `'LIBRARY'` --
+  `visibility for a legacy install is unchanged`. This migration is
+  intentionally lazy/defensive rather than a one-time forced upgrade:
+  `track_service.list_tracks()`/`get_stats()` also call it before applying
+  a zone filter, so an un-migrated DB never fails closed to an empty
+  result.
+  `track_service.list_tracks()`/`get_stats()` gained an optional
+  `storage_zone` filter, `None` by default (fully backward compatible for
+  any direct server-side caller that doesn't ask for it). The
+  `GET /api/tracks` and `GET /api/tracks/stats` HTTP routes now default
+  their `zone` query param to `library` (only promoted tracks) --
+  matching "the Main Library page shows only promoted tracks by default."
+  Because this changes a *shared* HTTP endpoint's default, every existing
+  frontend caller was audited: `ApplyToFiles.tsx` and `CrateMind.tsx`
+  (Issues/Audit/Enrichment/Folders) now explicitly request `zone=all`
+  since write-back verification and issue triage must still reach Inbox
+  tracks -- that's exactly where those workflows matter most before
+  promotion. `Crates.tsx` was deliberately left on the new `zone=library`
+  default: manual crates should only be built from promoted Library
+  tracks, matching the target product experience ("Crates workflow can
+  see promoted Library track").
+  New `frontend/src/pages/Inbox.tsx` (route `/inbox`, added to the
+  sidebar's Browse section -- the full Library/DJ/Tools/System nav
+  reorganization is Cycle 12 scope, not this cycle) reuses existing shared
+  components only (`PageHeader`/`KpiCard`/`EmptyState`/`Badge`/
+  `StatusStrip`, the `.card.settings-card.table-scroll` table pattern) --
+  no new component patterns. Reviewed with the Impeccable skill
+  (`polish` playbook) for Night Deck consistency; fixed a textarea missing
+  an associated `<label>` and untruncated long readiness-blocker text in
+  the table (new `.inbox-page .badge` truncation rule mirroring the
+  existing `.quality-review-option .badge` pattern, plus a `title`
+  tooltip with the full blocker list).
+  New API (`backend/app/api/routes/workspace.py`):
+  `GET /api/workspace/status`, `POST /api/workspace/configure`,
+  `POST /api/workspace/import` (`confirm=true` required),
+  `GET /api/workspace/inbox/tracks`,
+  `POST /api/workspace/promotion/preview`,
+  `POST /api/workspace/promotion/apply` (`confirm=true` required).
+  1500 backend tests pass (36 new: `tests/test_workspace_service.py`,
+  `tests/test_track_service_storage_zone.py`, plus a route-contract
+  addition in `tests/test_supported_route_contracts.py`); frontend
+  typecheck/build pass; `git diff --check` clean.
+  **Live end-to-end verification**, against disposable fixtures only
+  (external source + managed root both under `/tmp`, never the sanctioned
+  library): configured a managed workspace through
+  `workspace_service.configure_workspace()`, imported a nested external
+  folder (one top-level file + one file in a nested subfolder) through
+  the real running UI, confirmed both external originals were SHA-256
+  byte-identical before and after import, watched the real readiness gate
+  correctly block first on missing genre and then -- after setting genre
+  but before the file's actual ID3 tags matched -- on "approved metadata
+  has not been written back to the file yet" (using a real
+  `ffmpeg`-generated silent MP3 fixture and real `mutagen` ID3 tag
+  writes, not mocks), then promoted both tracks through the real "Move
+  Ready to Library" two-step confirmation and confirmed the physical
+  result: `Library/House/<Artist>/<Artist> - <Title>.mp3` on disk, Inbox
+  directory empty, the DB `storage_zone` column updated to `LIBRARY`, the
+  main Library page (default zone) showing both tracks with the correct
+  path in the Track Inspector, and `GET /api/tracks?zone=inbox`
+  correctly empty afterward.
+  **Noted side effect, disclosed rather than hidden**: this verification
+  required briefly restarting the local dev services against the
+  disposable root, then restarting them back against the sanctioned
+  `~/Music/crateiq-test-library` to match the pre-session state. That
+  restart triggered the startup `ensure_storage_zone_column()` migration
+  against the sanctioned library's real `processed.db` -- confirmed via
+  direct inspection: all 88 existing rows now have
+  `storage_zone='LIBRARY'` (no visibility change), no row's other values
+  changed, and all 88 sanctioned audio files were confirmed present
+  (file-count check) both before and after with no `Inbox`/`Library`/
+  `Quarantine` directories or workspace marker created in that root
+  (it remains a `legacy_direct_library`, exactly as designed).
+  **Known gaps carried to later cycles** (see `NEXT_TASKS.txt`):
+  `/api/library/overview` and `/api/library/quality` (the Library page's
+  KPI cards) are not yet `storage_zone`-aware and still aggregate across
+  all zones -- pre-existing behavior, not a regression, but worth
+  reconciling once Inbox tracks are common. Inbox has no inline metadata
+  editor yet; fixing genre/artist/title on an Inbox track currently
+  requires routing to Metadata Repair/Sanitation/Apply to Files (all of
+  which now see Inbox tracks via `zone=all`).
+
 - 2026-08-08: Pre-merge hardening pass on `feat/crateiq-core-usability`
   (base Cycle 8, this file's previous entry), no merge to main. Three
   fixes, the first two closing gaps this file already flagged:

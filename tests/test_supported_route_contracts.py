@@ -55,6 +55,15 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/inbox",
+        "purpose": "Managed workspace preparation dashboard: import, readiness, promotion",
+        "access": "read-only status/listing/preview; import and promotion actions deferred",
+        "endpoints": [
+            ("/api/workspace/status", "dict", ("state", "library_root", "message")),
+            ("/api/workspace/inbox/tracks", "dict", ("items", "limit", "offset", "total")),
+        ],
+    },
+    {
         "route": "/library-prep",
         "purpose": "Unified import → clean → enrich → apply → analyze → ready workflow",
         "access": "read-only status; scan/import actions deferred",
@@ -290,6 +299,10 @@ INFRA_ENDPOINTS: list[tuple[str, str, tuple[str, ...]]] = [
 # Mutating / job-submitting endpoints per route that the smoke suite must
 # never call. Kept here so the boundary is explicit and testable.
 DEFERRED_ENDPOINTS: dict[str, list[str]] = {
+    "/inbox": [
+        "/api/workspace/configure (POST)", "/api/workspace/import (POST, copies files)",
+        "/api/workspace/promotion/preview (POST)", "/api/workspace/promotion/apply (POST, moves files)",
+    ],
     "/smart-crates": ["/api/smart-crates/preview (POST)", "/api/smart-crates/save (POST)"],
     "/crates": [
         "/api/crates (POST)", "/api/crates/{id} (PATCH, DELETE)",

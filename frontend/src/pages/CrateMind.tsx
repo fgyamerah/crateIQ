@@ -561,6 +561,9 @@ export default function CrateMind() {
     order: activeUi.order,
     limit: LIMIT,
     offset: activeUi.offset,
+    // Issue/audit triage must still surface Inbox tracks -- that is exactly
+    // where these issues need resolving before a track can be promoted.
+    zone: 'all',
   }), [activeUi.search, activeUi.issueFilter, activeUi.sort, activeUi.order, activeUi.offset])
 
   const queueParams = useMemo(() => ({
