@@ -13,11 +13,12 @@ from pydantic import BaseModel, Field
 # ---------------------------------------------------------------------------
 
 class SyncPreviewRequest(BaseModel):
-    source: Literal["library", "inbox"] = Field(
+    source: Literal["library"] = Field(
         "library",
         description=(
-            "'library' → /home/koolkatdj/Music/music/library  "
-            "'inbox'   → /home/koolkatdj/Music/music/inbox"
+            "The only supported source: the active workspace's Library "
+            "folder (or, in Legacy Direct Library compatibility mode, the "
+            "legacy root itself). Never the managed Inbox or Quarantine."
         ),
     )
 
@@ -44,7 +45,7 @@ class SyncPreviewResponse(BaseModel):
 # ---------------------------------------------------------------------------
 
 class SyncRunRequest(BaseModel):
-    source: Literal["library", "inbox"] = "library"
+    source: Literal["library"] = "library"
     allow_delete: bool = Field(
         False,
         description=(
@@ -65,7 +66,10 @@ class SyncRunResponse(BaseModel):
 
 class SyncConfigResponse(BaseModel):
     """Read-only config shown on the Sync page."""
-    sources:  dict[str, str]   # name → resolved path
-    dest:     str
+    sources:  dict[str, str]   # name → resolved path ("" if not resolvable)
+    dest:     Optional[str] = None   # None if no destination is configured yet
+    destination_status:   Literal["ready", "needs_setup", "not_mounted", "unsafe"]
+    destination_blockers: List[str] = []
+    destination_warnings: List[str] = []
     rsync_bin: str
     ssd_mounted: bool

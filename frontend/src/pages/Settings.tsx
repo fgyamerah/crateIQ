@@ -25,12 +25,15 @@ import {
   importLibrary,
   initializeLibrary,
   scanLibraryPreview,
+  updatePublishDestination,
   updateSettings,
+  validatePublishDestination,
 } from '../api/settings'
 import type {
   AnalysisPreferences,
   CheckStatus,
   LibrarySetupResult,
+  PublishDestinationValidation,
   RuntimeReadiness,
   SettingsResponse,
   WorkflowCapability,
@@ -56,6 +59,19 @@ function capabilityTone(capability: WorkflowCapability) {
     : capability.status === 'missing'
       ? 'failed'
       : 'pending'
+}
+
+function publishSyncStatusTone(status: SettingsResponse['publish_sync']['status']) {
+  if (status === 'ready') return 'succeeded'
+  if (status === 'needs_setup') return 'pending'
+  return 'failed'
+}
+
+function publishSyncStatusLabel(status: SettingsResponse['publish_sync']['status']) {
+  if (status === 'ready') return 'Ready'
+  if (status === 'needs_setup') return 'Needs Setup'
+  if (status === 'not_mounted') return 'Not Mounted'
+  return 'Unsafe'
 }
 
 function errorMessage(error: unknown, fallback: string) {
@@ -122,11 +138,17 @@ export default function Settings() {
   const [mikImport, setMikImport] = useState<MikImportResult | null>(null)
   const [mikBusy, setMikBusy] = useState(false)
   const [workspace, setWorkspace] = useState<WorkspaceStatus | null>(null)
+  const [destinationInput, setDestinationInput] = useState('')
+  const [destinationBusy, setDestinationBusy] = useState(false)
+  const [destinationValidation, setDestinationValidation] = useState<PublishDestinationValidation | null>(null)
+  const [destinationError, setDestinationError] = useState<string | null>(null)
+  const [destinationSaved, setDestinationSaved] = useState(false)
 
   const applySettings = (next: SettingsResponse) => {
     setSettings(next)
     setPathMode(next.preferences.default_export_path_mode)
     setAnalysis(next.preferences.analysis)
+    setDestinationInput(next.publish_sync.destination ?? '')
   }
 
   const load = useCallback(async () => {
@@ -217,6 +239,34 @@ export default function Settings() {
       setError(errorMessage(err, 'Could not import MIK-compatible metadata into the local index.'))
     } finally {
       setMikBusy(false)
+    }
+  }
+
+  const runValidateDestination = async () => {
+    setDestinationBusy(true)
+    setDestinationError(null)
+    setDestinationSaved(false)
+    try {
+      setDestinationValidation(await validatePublishDestination(destinationInput))
+    } catch (err) {
+      setDestinationValidation(null)
+      setDestinationError(errorMessage(err, 'Could not validate that destination.'))
+    } finally {
+      setDestinationBusy(false)
+    }
+  }
+
+  const runSaveDestination = async () => {
+    setDestinationBusy(true)
+    setDestinationError(null)
+    try {
+      applySettings(await updatePublishDestination(destinationInput))
+      setDestinationValidation(null)
+      setDestinationSaved(true)
+    } catch (err) {
+      setDestinationError(errorMessage(err, 'Could not save the Publish/SSD Sync destination.'))
+    } finally {
+      setDestinationBusy(false)
     }
   }
 
@@ -317,6 +367,7 @@ export default function Settings() {
             <a href="#workspace">Workspace</a>
             <a href="#metadata-sources">Metadata Sources</a>
             <a href="#analysis-tools">Analysis &amp; Tools</a>
+            <a href="#publish-sync">Publish / SSD Sync</a>
             <a href="#safety-behavior">Safety &amp; Behavior</a>
             <a href="#job-defaults">Job Defaults</a>
             <a href="#backup-restore">Backup &amp; Restore</a>
@@ -387,6 +438,49 @@ export default function Settings() {
           </section>
 
           <MetadataSourcesPanel />
+
+          <section className="section settings-anchor-section" id="publish-sync">
+            <div className="card settings-card">
+              <div className="card-title-row">
+                <div><h2 className="card-title"><HardDrive size={16} /> Publish / SSD Sync</h2><p className="muted">Source is always derived from the active workspace and cannot be typed here. Only the destination is configured.</p></div>
+                <Badge tone={publishSyncStatusTone(settings.publish_sync.status)}>{publishSyncStatusLabel(settings.publish_sync.status)}</Badge>
+              </div>
+              <dl className="def-list settings-def-list">
+                <dt>Library source</dt>
+                <dd><code>{settings.publish_sync.source_path ?? 'Not available yet — configure a workspace above first'}</code></dd>
+              </dl>
+              <div className="settings-preference">
+                <label>Destination
+                  <input
+                    className="form-input"
+                    type="text"
+                    placeholder="/media/you/DJSSD"
+                    value={destinationInput}
+                    onChange={(event) => { setDestinationInput(event.target.value); setDestinationValidation(null); setDestinationSaved(false) }}
+                    disabled={destinationBusy}
+                  />
+                </label>
+                <div className="settings-action-row">
+                  <button className="btn btn--ghost" disabled={destinationBusy || !destinationInput.trim()} onClick={() => void runValidateDestination()}>
+                    {destinationBusy ? 'Working…' : 'Validate'}
+                  </button>
+                  <button
+                    className="btn btn--primary"
+                    disabled={destinationBusy || !destinationInput.trim() || destinationInput === (settings.publish_sync.destination ?? '')}
+                    onClick={() => void runSaveDestination()}
+                  >
+                    Save destination
+                  </button>
+                </div>
+              </div>
+              {destinationError && <StatusStrip tone="danger" role="alert" onDismiss={() => setDestinationError(null)}>{destinationError}</StatusStrip>}
+              {destinationValidation && <StatusStrip tone={destinationValidation.valid ? 'good' : 'danger'}>{destinationValidation.message}</StatusStrip>}
+              {destinationSaved && <StatusStrip tone="good" onDismiss={() => setDestinationSaved(false)}>Saved. Publish and SSD Sync will use this destination immediately — no restart required.</StatusStrip>}
+              {settings.publish_sync.blockers.length > 0 && <StatusStrip tone="danger" details={settings.publish_sync.blockers}>Blockers</StatusStrip>}
+              {settings.publish_sync.warnings.length > 0 && <StatusStrip tone="warn" details={settings.publish_sync.warnings}>Warnings</StatusStrip>}
+              <p className="muted settings-note">No destination is ever chosen automatically. Preview and sync execution stay blocked until a safe destination is configured here.</p>
+            </div>
+          </section>
 
           <section className="section settings-anchor-section" id="job-defaults">
             <div className="card settings-card">

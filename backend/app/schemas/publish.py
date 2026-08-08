@@ -17,7 +17,10 @@ from .export import CrateLineEndings, CratePathMode
 from .sync import SyncFileChange
 
 PublishExportTarget = Literal["csv", "json", "m3u", "m3u8", "rekordbox_xml", "serato"]
-PublishSyncSource = Literal["library", "inbox"]
+# "library" is the only supported value: the active workspace's Library
+# folder (or the legacy root itself in Legacy Direct Library compatibility
+# mode). Never the managed Inbox or Quarantine.
+PublishSyncSource = Literal["library"]
 
 
 class PublishReadiness(BaseModel):
@@ -36,8 +39,8 @@ class PublishReadiness(BaseModel):
     sync_source: PublishSyncSource
     sync_destination_category: str = Field(
         description="Category description of the configured sync destination, "
-        "e.g. 'external_ssd'. Never implies the destination is user-configurable "
-        "from this contract."
+        "e.g. 'external_ssd'. The actual destination path is configured in "
+        "Settings, not from this contract."
     )
     sync_ready: bool
 

@@ -36,11 +36,6 @@ const EXPORT_TARGETS: { value: PublishExportTarget; label: string }[] = [
   { value: 'serato', label: 'Serato handoff (staged M3U8 + manifest)' },
 ]
 
-const SYNC_SOURCES: { value: PublishSyncSource; label: string }[] = [
-  { value: 'library', label: 'Library' },
-  { value: 'inbox', label: 'Inbox' },
-]
-
 function messageOf(error: unknown): string {
   return error instanceof ApiError ? error.displayMessage : 'Could not complete that publish action. Please try again.'
 }
@@ -62,7 +57,8 @@ export default function Publish() {
   const [crates, setCrates] = useState<CrateSummary[]>([])
   const [crateId, setCrateId] = useState<number | null>(null)
   const [exportTarget, setExportTarget] = useState<PublishExportTarget>('m3u8')
-  const [syncSource, setSyncSource] = useState<PublishSyncSource>('library')
+  // The only supported value: derived from the active workspace, never user-editable.
+  const syncSource: PublishSyncSource = 'library'
 
   const [readiness, setReadiness] = useState<PublishReadiness | null>(null)
   const [readinessLoading, setReadinessLoading] = useState(false)
@@ -214,11 +210,9 @@ export default function Publish() {
                   {EXPORT_TARGETS.map((t) => <option key={t.value} value={t.value}>{t.label}</option>)}
                 </select>
               </label>
-              <label>Sync source
-                <select className="form-input" value={syncSource} onChange={(e) => setSyncSource(e.target.value as PublishSyncSource)}>
-                  {SYNC_SOURCES.map((s) => <option key={s.value} value={s.value}>{s.label}</option>)}
-                </select>
-              </label>
+              <span className="muted" style={{ alignSelf: 'flex-end', fontSize: 12 }}>
+                Sync source: Library (derived from active workspace)
+              </span>
               <button type="button" className="btn btn--ghost btn--sm" disabled={!crateId || readinessLoading} onClick={() => loadReadiness()}>
                 {readinessLoading ? <Loader2 size={13} className="spin" /> : <RefreshCw size={13} />} Recheck
               </button>

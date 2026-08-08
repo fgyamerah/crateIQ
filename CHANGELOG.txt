@@ -2,6 +2,74 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Fix Publish/SSD Sync source portability and hardcoded destination
+
+- What changed: backend/app/core/config.py hardcoded a personal machine's
+  paths (/home/koolkatdj/Music/music/{library,inbox} as sync sources,
+  /mnt/music_ssd/KKDJ as the only sync destination). Publish/Sync now
+  derives its source from the active workspace at call time -- the managed
+  workspace's Library/ folder, or the legacy root itself in Legacy Direct
+  Library compatibility mode -- and never from Inbox or Quarantine. The
+  "inbox" sync-source option (which let a caller sync unprepared,
+  unreviewed tracks) was removed; "library" is now the only supported
+  value, enforced at the schema level. The sync destination is no longer
+  hardcoded: it is an explicit, user-configured absolute path with no
+  default, persisted locally, and structurally validated (absolute path
+  required; rejects the filesystem root, repo/runtime directories, the
+  managed Inbox/Library/Quarantine folders, the source itself, nested/
+  ancestor relationships, and symlink escapes). With no destination
+  configured, readiness/preview/execution all truthfully report "Needs
+  Setup" and execution is blocked -- CrateIQ never silently falls back to
+  a personal default. Settings gained a new "Publish / SSD Sync" section
+  to configure and validate the destination (source is shown read-only,
+  derived from the active workspace). No rsync safety behavior changed:
+  still no --delete/allow_delete by default, preview remains read-only,
+  and execution still requires explicit confirmation.
+- Why it changed: the Legacy Architecture Cleanup Audit found this was a
+  current, live portability defect (not dormant legacy code) -- anyone
+  other than the original developer running CrateIQ would have Publish/
+  SSD Sync silently pointed at a nonexistent machine-specific path with no
+  way to configure it.
+- Files affected:
+  - backend/app/core/config.py -- removed SYNC_SOURCE_LIBRARY,
+    SYNC_SOURCE_INBOX, SYNC_SOURCE_MAP, SYNC_DEST_SSD.
+  - backend/app/services/sync_destination_service.py (new) -- source
+    resolution from the active workspace; destination persistence
+    (.run/local/publish_sync_settings.json, repo-scoped so it survives a
+    workspace switch), validation, and read-only status (ready/
+    needs_setup/not_mounted/unsafe).
+  - backend/app/services/publish_safety.py -- describe_sync_destination_safety
+    now also rejects the managed Inbox/Quarantine folders as a destination
+    when the source is a managed Library folder.
+  - backend/app/services/rsync_runner.py, publish_sync_service.py,
+    publish_readiness_service.py -- resolve source/destination via
+    sync_destination_service instead of the removed hardcoded constants;
+    added a pre-execution writability check.
+  - backend/app/schemas/sync.py, schemas/publish.py -- source Literal
+    narrowed to "library" only (removed "inbox"); SyncConfigResponse gained
+    destination_status/destination_blockers/destination_warnings and an
+    Optional dest.
+  - backend/app/services/settings_service.py, api/routes/settings.py --
+    new publish_sync settings block, POST /api/settings/publish-destination/
+    validate, PATCH /api/settings/publish-destination.
+  - frontend/src/pages/Settings.tsx -- new "Publish / SSD Sync" section
+    (destination input, Validate/Save, status badge, blockers/warnings).
+  - frontend/src/pages/SsdSync.tsx, Publish.tsx -- removed the Inbox
+    sync-source picker; source now shown as read-only/derived, with a link
+    to Settings when the destination needs setup.
+  - frontend/src/types/{sync,publish,settings}.ts, api/{sync,settings}.ts --
+    matching type/client updates.
+  - tests/test_publish_sync_workspace.py (new) -- source resolution
+    (managed/legacy/switching/pending-root-inert), destination validation
+    (all rejection rules, not-mounted/non-writable truthful reporting),
+    rsync safety (no --delete, read-only preview, confirmation required),
+    and Legacy Direct Library compatibility.
+  - tests/test_backend_api.py -- existing sync/publish fixtures updated to
+    patch sync_destination_service instead of the removed config constants.
+- Migration notes: any local `.run/local/crateiq.env`-style override of the
+  old sync paths has no effect now; configure the destination in Settings
+  -> Publish / SSD Sync instead. No database migration required.
+
 [2026-08-08] — Add Inbox inline Track/Artist/Genre editing, bulk edit, and sortable columns
 
 - What changed: The Inbox table's Track/file (managed Inbox filename, extension

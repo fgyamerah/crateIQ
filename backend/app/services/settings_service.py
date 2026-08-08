@@ -11,6 +11,7 @@ from typing import Any
 from ..core.crate_db import crates_db_path
 from ..core.library_root import assert_path_under_root, assert_safe_new_root_path, library_db_path, selected_library_root
 from ..core.preflight import redact_path, run_preflight
+from . import sync_destination_service
 from .providers import (
     acoustid_client, beatport_client, deezer_client, discogs_client,
     lastfm_client, spotify_client, youtube_client,
@@ -476,6 +477,36 @@ def get_capabilities(
     }
 
 
+def get_publish_sync_settings() -> dict[str, Any]:
+    try:
+        source_path: str | None = redact_path(sync_destination_service.get_sync_source())
+    except ValueError:
+        source_path = None
+    destination = sync_destination_service.get_configured_destination()
+    status, blockers, warnings = sync_destination_service.describe_destination_status()
+    return {
+        "source_path": source_path,
+        "destination": redact_path(destination) if destination else None,
+        "status": status,
+        "blockers": blockers,
+        "warnings": warnings,
+    }
+
+
+def validate_publish_destination(value: str) -> dict[str, Any]:
+    resolved = sync_destination_service.validate_destination_path(value)
+    return {
+        "destination": redact_path(resolved),
+        "valid": True,
+        "message": "Destination is safe. Saving it takes effect immediately -- no restart required.",
+    }
+
+
+def update_publish_destination(value: str) -> dict[str, Any]:
+    sync_destination_service.set_destination(value)
+    return get_settings()
+
+
 def get_settings() -> dict[str, Any]:
     root = selected_library_root()
     pending_root = _pending_library_root()
@@ -506,6 +537,7 @@ def get_settings() -> dict[str, Any]:
         },
         "preferences": preferences,
         "capabilities": get_capabilities(report, preferences),
+        "publish_sync": get_publish_sync_settings(),
     }
 
 

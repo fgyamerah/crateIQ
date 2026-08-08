@@ -8,7 +8,6 @@ import importlib.util
 import shutil
 import sys
 from pathlib import Path
-from typing import Dict
 
 # ---------------------------------------------------------------------------
 # Project layout
@@ -90,28 +89,15 @@ PYTHON_BIN = sys.executable
 BACKEND_VERSION = "0.1.0"
 
 # ---------------------------------------------------------------------------
-# SSD sync configuration
-# Source of truth: working library on the local machine.
-# Destination:     external SSD used as the Rekordbox deployment target.
+# SSD sync / Publish
 #
-# These are validated against every sync request — raw paths are never
-# accepted from clients.
+# Source is never hardcoded here — it is derived from the active workspace
+# at call time by services.sync_destination_service.get_sync_source() (the
+# managed workspace's Library/ folder, or the legacy root itself in Legacy
+# Direct Library compatibility mode). Destination is a user-configured
+# absolute path with no default, persisted and validated by the same
+# service. See services.sync_destination_service for the full contract.
 # ---------------------------------------------------------------------------
-
-# Named sync sources.  "library" is the primary working collection;
-# "inbox" is the staging area for new downloads before pipeline processing.
-SYNC_SOURCE_LIBRARY: Path = Path("/home/koolkatdj/Music/music/library")
-SYNC_SOURCE_INBOX:   Path = Path("/home/koolkatdj/Music/music/inbox")
-
-SYNC_SOURCE_MAP: Dict[str, Path] = {
-    "library": SYNC_SOURCE_LIBRARY,
-    "inbox":   SYNC_SOURCE_INBOX,
-}
-
-# Only valid destination — the external SSD target.
-# The SSD is write-only from the pipeline's perspective (never read for
-# analysis results or stale-path detection).
-SYNC_DEST_SSD: Path = Path("/mnt/music_ssd/KKDJ")
 
 # rsync binary (resolved at import time)
 RSYNC_BIN: str = shutil.which("rsync") or "/usr/bin/rsync"

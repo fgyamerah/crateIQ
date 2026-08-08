@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, musicbrainz_client, publish_readiness_service, publish_sync_service, rsync_runner, settings_service
+from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, musicbrainz_client, publish_readiness_service, publish_sync_service, rsync_runner, settings_service, sync_destination_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -1600,15 +1600,13 @@ def test_rekordbox_staged_export_escapes_metadata_and_handles_edge_cases(client)
 
 
 def _safe_sync_fixture(tmp_path, monkeypatch):
-    """Point the publish readiness service's sync config at safe temp fixtures."""
+    """Point sync_destination_service's source/destination resolution at safe temp fixtures."""
     source_dir = tmp_path / "sync_source"
     dest_dir = tmp_path / "sync_dest"
     source_dir.mkdir()
     dest_dir.mkdir()
-    monkeypatch.setattr(
-        publish_readiness_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir}
-    )
-    monkeypatch.setattr(publish_readiness_service, "SYNC_DEST_SSD", dest_dir)
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: dest_dir)
     return source_dir, dest_dir
 
 
@@ -1650,10 +1648,8 @@ def test_publish_readiness_blocks_on_missing_sync_destination(client, tmp_path, 
     test_client, _root = client
     source_dir = tmp_path / "sync_source"
     source_dir.mkdir()
-    monkeypatch.setattr(
-        publish_readiness_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir}
-    )
-    monkeypatch.setattr(publish_readiness_service, "SYNC_DEST_SSD", tmp_path / "not_mounted")
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: tmp_path / "not_mounted")
     crate = test_client.post("/api/crates", json={"name": "Sync Blocked"}).json()
     track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
     assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
@@ -1672,13 +1668,11 @@ def test_publish_readiness_blocks_destination_outside_allowed_scope(client, tmp_
     test_client, _root = client
     source_dir = tmp_path / "sync_source"
     source_dir.mkdir()
-    monkeypatch.setattr(
-        publish_readiness_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir}
-    )
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
     # Destination nested inside the source is unsafe regardless of mount state.
     nested_dest = source_dir / "nested_dest"
     nested_dest.mkdir()
-    monkeypatch.setattr(publish_readiness_service, "SYNC_DEST_SSD", nested_dest)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: nested_dest)
     crate = test_client.post("/api/crates", json={"name": "Nested Scope"}).json()
     track_id = test_client.get("/api/tracks", params={"limit": 1}).json()["items"][0]["id"]
     assert test_client.post(f"/api/crates/{crate['id']}/tracks", json={"track_id": track_id}).status_code == 201
@@ -1929,14 +1923,10 @@ def _sync_fixture(tmp_path, monkeypatch, with_file: bool = True):
     dest_dir.mkdir()
     if with_file:
         (source_dir / "track.txt").write_text("fixture-track-content", encoding="utf-8")
-    source_map = {"library": source_dir, "inbox": source_dir}
-    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", source_map)
-    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", dest_dir)
-    # rsync_runner holds its own imported copies of these constants; both
-    # must be patched so the underlying preview/run calls it makes also
-    # target the fixture, not the real hardcoded legacy paths.
-    monkeypatch.setattr(rsync_runner, "SYNC_SOURCE_MAP", source_map)
-    monkeypatch.setattr(rsync_runner, "SYNC_DEST_SSD", dest_dir)
+    # publish_sync_service and rsync_runner both resolve source/destination
+    # through sync_destination_service, so patching it here covers both.
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: dest_dir)
     return source_dir, dest_dir
 
 
@@ -1973,8 +1963,8 @@ def test_publish_sync_preview_blocks_invalid_destination(client, tmp_path, monke
     test_client, _root = client
     source_dir = tmp_path / "sync_source"
     source_dir.mkdir()
-    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir})
-    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", tmp_path / "not_mounted")
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: tmp_path / "not_mounted")
 
     response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
     assert response.status_code == 200
@@ -1988,8 +1978,8 @@ def test_publish_sync_preview_blocks_self_sync(client, tmp_path, monkeypatch):
     test_client, _root = client
     same_dir = tmp_path / "same"
     same_dir.mkdir()
-    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": same_dir, "inbox": same_dir})
-    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", same_dir)
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: same_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: same_dir)
 
     response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
     assert response.status_code == 200
@@ -2002,8 +1992,8 @@ def test_publish_sync_preview_blocks_nested_destination(client, tmp_path, monkey
     source_dir.mkdir()
     nested_dest = source_dir / "nested_dest"
     nested_dest.mkdir()
-    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir})
-    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", nested_dest)
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: nested_dest)
 
     response = test_client.post("/api/publish/sync/preview", json={"sync_source": "library"})
     assert response.status_code == 200
@@ -2023,8 +2013,8 @@ def test_publish_sync_confirm_blocked_when_destination_invalid_creates_no_operat
     test_client, _root = client
     source_dir = tmp_path / "sync_source"
     source_dir.mkdir()
-    monkeypatch.setattr(publish_sync_service, "SYNC_SOURCE_MAP", {"library": source_dir, "inbox": source_dir})
-    monkeypatch.setattr(publish_sync_service, "SYNC_DEST_SSD", tmp_path / "not_mounted")
+    monkeypatch.setattr(sync_destination_service, "get_sync_source", lambda: source_dir)
+    monkeypatch.setattr(sync_destination_service, "get_configured_destination", lambda: tmp_path / "not_mounted")
 
     response = test_client.post("/api/publish/sync/confirm", json={"sync_source": "library", "confirm": True})
     assert response.status_code == 409

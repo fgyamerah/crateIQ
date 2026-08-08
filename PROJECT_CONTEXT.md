@@ -104,6 +104,13 @@ Service map (`backend/app/services/`), current primary surfaces:
   waveform generation/cache/lifecycle
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
+* `sync_destination_service` — Publish/SSD Sync source and destination
+  resolution: source always derives from the active workspace (managed
+  `<root>/Library`, or the legacy root itself in Legacy Direct Library
+  compatibility mode) — never Inbox/Quarantine, never a hardcoded personal
+  path. Destination is an explicit, user-configured absolute path (Settings
+  -> Publish / SSD Sync) with no default; execution is blocked until it is
+  configured and validated safe.
 * reconciliation services — duplicate/orphan/quarantine detection, plan
   propose/validate (apply remains unimplemented — see Known Issues)
 * `pipeline.py` compatibility — see Legacy Compatibility below
@@ -218,22 +225,23 @@ task-level backlog):
 1. **Trusted-local, no-auth security model** — no login, sessions, user
    model, roles, or route guards. Do not expose the backend remotely
    without addressing this first.
-2. **Publish/Sync configuration portability** — hardcoded local paths;
-   pending a fix.
-3. **Legacy `pipeline.py`/`config.py` coexistence** — remains partially
+2. **Legacy `pipeline.py`/`config.py` coexistence** — remains partially
    load-bearing alongside the current FastAPI/React application, a source
    of confusion for anyone reading old code first.
-4. **Legacy scripts under `scripts/`** — some are still present and
+3. **Legacy scripts under `scripts/`** — some are still present and
    potentially dangerous; not yet cleaned up. Verify before running.
-5. **"Legacy Direct Library" compatibility mode** remains alongside the
+4. **"Legacy Direct Library" compatibility mode** remains alongside the
    managed-workspace workflow.
-6. **Credential-dependent providers** (Discogs, Beatport, Spotify, Deezer,
+5. **Credential-dependent providers** (Discogs, Beatport, Spotify, Deezer,
    Last.fm) need live-credential verification before their real matching
    value can be confirmed in practice.
-7. **Reconciliation apply is unimplemented** — DETECT/PROPOSE/REVIEW/
+6. **Reconciliation apply is unimplemented** — DETECT/PROPOSE/REVIEW/
    VALIDATE exist; a real APPLY workflow (backups, per-action confirmation,
    restore path) is still only planned (see
    `docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md`).
+
+Publish/Sync configuration portability (hardcoded local paths) was fixed in
+this cycle — see Backend Architecture below.
 
 ## Development Priorities
 

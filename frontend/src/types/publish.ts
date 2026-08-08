@@ -1,5 +1,8 @@
 export type PublishExportTarget = 'csv' | 'json' | 'm3u' | 'm3u8' | 'rekordbox_xml' | 'serato'
-export type PublishSyncSource = 'library' | 'inbox'
+// "library" is the only supported value: the active workspace's Library
+// folder (or the legacy root itself in Legacy Direct Library compatibility
+// mode). Never the managed Inbox or Quarantine.
+export type PublishSyncSource = 'library'
 export type PublishOperationStatus = 'running' | 'completed' | 'failed' | 'cancelled'
 export type VerificationStatus = 'verified' | 'failed' | 'skipped'
 

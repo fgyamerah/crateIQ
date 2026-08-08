@@ -16,7 +16,6 @@ from __future__ import annotations
 
 from typing import List, Optional, Tuple
 
-from ..core.config import SYNC_DEST_SSD, SYNC_SOURCE_MAP
 from ..schemas.publish import (
     PublishSyncConfirmResponse,
     PublishSyncPreview,
@@ -24,7 +23,7 @@ from ..schemas.publish import (
     PublishSyncSource,
 )
 from ..schemas.sync import SyncPreviewRequest
-from . import job_service, publish_operations_service, rsync_runner
+from . import job_service, publish_operations_service, rsync_runner, sync_destination_service
 from .publish_safety import evaluate_sync_paths
 
 _JOB_TERMINAL_TO_OPERATION_STATUS = {
@@ -39,21 +38,31 @@ class PublishSyncBlocked(ValueError):
 
 
 def _validate(sync_source: PublishSyncSource) -> Tuple[List[str], List[str]]:
-    source_path = SYNC_SOURCE_MAP.get(sync_source)
-    return evaluate_sync_paths(source_path, SYNC_DEST_SSD)
+    try:
+        source_path = sync_destination_service.get_sync_source()
+    except ValueError as exc:
+        return [str(exc)], []
+    destination = sync_destination_service.get_configured_destination()
+    if destination is None:
+        return ["No Publish/SSD Sync destination is configured yet. Configure one in Settings."], []
+    return evaluate_sync_paths(source_path, destination)
 
 
 async def preview(sync_source: PublishSyncSource) -> PublishSyncPreview:
     blockers, warnings = _validate(sync_source)
-    source_path = SYNC_SOURCE_MAP.get(sync_source)
+    try:
+        source_path = sync_destination_service.get_sync_source()
+    except ValueError:
+        source_path = None
+    dest_path = sync_destination_service.get_configured_destination()
 
     if blockers:
         # Never spawn rsync when the destination/source is already unsafe.
         return PublishSyncPreview(
             sync_source=sync_source,
             source_path=str(source_path) if source_path else "",
-            dest_path=str(SYNC_DEST_SSD),
-            ssd_mounted=SYNC_DEST_SSD.exists() and SYNC_DEST_SSD.is_dir(),
+            dest_path=str(dest_path) if dest_path else "",
+            ssd_mounted=bool(dest_path and dest_path.exists() and dest_path.is_dir()),
             file_count=0,
             files=[],
             truncated=False,

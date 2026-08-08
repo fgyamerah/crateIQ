@@ -93,12 +93,34 @@ class SettingsCapabilities(BaseModel):
     policies: dict[str, bool]
 
 
+class PublishSyncSettings(BaseModel):
+    source_path: Optional[str] = Field(
+        default=None,
+        description="Derived read-only from the active workspace. Never user-editable.",
+    )
+    destination: Optional[str] = None
+    status: Literal["ready", "needs_setup", "not_mounted", "unsafe"]
+    blockers: list[str] = []
+    warnings: list[str] = []
+
+
 class SettingsResponse(BaseModel):
     library: SettingsLibrary
     tools: list[SettingsTool]
     safety: SettingsSafety
     preferences: SettingsPreferences
     capabilities: SettingsCapabilities
+    publish_sync: PublishSyncSettings
+
+
+class PublishDestinationRequest(BaseModel):
+    destination: str = Field(min_length=1, max_length=4096)
+
+
+class PublishDestinationValidationResponse(BaseModel):
+    destination: str
+    valid: bool
+    message: str
 
 
 class SettingsUpdateRequest(BaseModel):
@@ -187,6 +209,22 @@ async def validate_library_root(body: LibraryRootRequest) -> LibraryRootValidati
 async def patch_library_root(body: LibraryRootRequest) -> SettingsResponse:
     try:
         return SettingsResponse(**settings_service.update_library_root(body.library_root))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/settings/publish-destination/validate", response_model=PublishDestinationValidationResponse)
+async def validate_publish_destination(body: PublishDestinationRequest) -> PublishDestinationValidationResponse:
+    try:
+        return PublishDestinationValidationResponse(**settings_service.validate_publish_destination(body.destination))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.patch("/settings/publish-destination", response_model=SettingsResponse)
+async def patch_publish_destination(body: PublishDestinationRequest) -> SettingsResponse:
+    try:
+        return SettingsResponse(**settings_service.update_publish_destination(body.destination))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

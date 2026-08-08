@@ -74,6 +74,14 @@ def describe_sync_destination_safety(
             f"Sync destination resolves to a protected system path: {dst_resolved}"
         )
 
+    # A managed-workspace source resolves to <root>/Library. Inbox and
+    # Quarantine are siblings of Library, not nested inside it, so the
+    # nested/ancestor checks above never catch them -- reject explicitly.
+    if src_resolved.name == "Library":
+        for zone in ("Inbox", "Quarantine"):
+            if dst_resolved == src_resolved.parent / zone:
+                blockers.append(f"Sync destination cannot be the managed {zone} folder.")
+
     return blockers, warnings
 
 

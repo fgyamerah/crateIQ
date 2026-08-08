@@ -14,11 +14,10 @@ from __future__ import annotations
 from pathlib import Path
 from typing import List, Optional
 
-from ..core.config import SYNC_DEST_SSD, SYNC_SOURCE_MAP
 from ..core.library_root import selected_library_root
 from ..schemas.export import CrateExportRequest
 from ..schemas.publish import PublishExportTarget, PublishReadiness, PublishSyncSource
-from . import crate_export_service, crate_service
+from . import crate_export_service, crate_service, sync_destination_service
 from .publish_safety import evaluate_sync_paths
 
 _STAGED_TARGETS = {"rekordbox_xml", "serato"}
@@ -75,11 +74,17 @@ def get_readiness(
     export_ready = not blockers
 
     # --- Sync side -----------------------------------------------------
-    sync_source_path = SYNC_SOURCE_MAP.get(sync_source)
-    sync_dest_path = SYNC_DEST_SSD
+    try:
+        sync_source_path = sync_destination_service.get_sync_source()
+    except ValueError:
+        sync_source_path = None
+    sync_dest_path = sync_destination_service.get_configured_destination()
     sync_destination_category = "external_ssd"
 
-    raw_blockers, raw_warnings = evaluate_sync_paths(sync_source_path, sync_dest_path)
+    if sync_dest_path is None:
+        raw_blockers, raw_warnings = ["No Publish/SSD Sync destination is configured yet."], []
+    else:
+        raw_blockers, raw_warnings = evaluate_sync_paths(sync_source_path, sync_dest_path)
     sync_blockers = [f"[sync] {b}" for b in raw_blockers]
     sync_warnings = [f"[sync] {w}" for w in raw_warnings]
 

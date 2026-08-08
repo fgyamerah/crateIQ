@@ -99,6 +99,22 @@ export interface AnalysisPreferences {
   use_external_tools: boolean
 }
 
+export type PublishSyncDestinationStatus = 'ready' | 'needs_setup' | 'not_mounted' | 'unsafe'
+
+export interface PublishSyncSettings {
+  source_path: string | null
+  destination: string | null
+  status: PublishSyncDestinationStatus
+  blockers: string[]
+  warnings: string[]
+}
+
+export interface PublishDestinationValidation {
+  destination: string
+  valid: boolean
+  message: string
+}
+
 export interface SettingsResponse {
   library: SettingsLibrary
   tools: SettingsTool[]
@@ -108,6 +124,7 @@ export interface SettingsResponse {
     analysis: AnalysisPreferences
   }
   capabilities: SettingsCapabilities
+  publish_sync: PublishSyncSettings
 }
 
 export interface RuntimeReadiness {

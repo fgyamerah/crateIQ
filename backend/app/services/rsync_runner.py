@@ -3,9 +3,11 @@ rsync_runner — SSD sync via rsync as background jobs.
 
 Design constraints
 ------------------
-• Source must be one of the named keys in SYNC_SOURCE_MAP (library | inbox).
-  Never accepts raw user-supplied paths.
-• Destination is always SYNC_DEST_SSD — not user-configurable.
+• Source is always derived from the active workspace via
+  sync_destination_service.get_sync_source() — never a raw user-supplied
+  path, never the managed Inbox or Quarantine.
+• Destination is always the explicitly configured, validated destination
+  from sync_destination_service — never inferred or defaulted.
 • No --delete by default; user must explicitly request it via allow_delete=True.
 • Subprocess is built as an argument list; shell=False.
 • Both toolkit_runner jobs and rsync jobs share process_registry so the
@@ -25,24 +27,20 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import re
 import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from ..core.config import (
-    JOBS_LOG_DIR,
-    RSYNC_BIN,
-    SYNC_DEST_SSD,
-    SYNC_SOURCE_MAP,
-)
+from ..core.config import JOBS_LOG_DIR, RSYNC_BIN
 from ..schemas.sync import (
     SyncConfigResponse,
     SyncFileChange,
     SyncPreviewRequest,
     SyncPreviewResponse,
 )
-from . import job_service, process_registry
+from . import job_service, process_registry, sync_destination_service
 
 log = logging.getLogger(__name__)
 
@@ -65,22 +63,25 @@ _RE_SPEED = re.compile(r'([\d.]+\s*[kMGT]B/s)')
 # Path helpers
 # ---------------------------------------------------------------------------
 
-def _src_path(source_key: str) -> Path:
-    if source_key not in SYNC_SOURCE_MAP:
-        raise ValueError(
-            f"Unknown source key {source_key!r}. "
-            f"Allowed: {list(SYNC_SOURCE_MAP.keys())}"
-        )
-    return SYNC_SOURCE_MAP[source_key]
-
-
 def _validate_paths(source_key: str) -> Tuple[Path, Path]:
     """
     Return (src, dst) as resolved absolute paths, or raise ValueError with
     a user-friendly message.
+
+    source_key is retained for API/job-record compatibility (it is stored
+    against job/operation history) but is not used to select a path --
+    "library" is the only allowed value, and the actual source is always
+    resolved fresh from the active workspace.
     """
-    src = _src_path(source_key)
-    dst = SYNC_DEST_SSD
+    src = sync_destination_service.get_sync_source()
+
+    dst = sync_destination_service.get_configured_destination()
+    if dst is None:
+        raise ValueError(
+            "No Publish/SSD Sync destination is configured. "
+            "Configure one in Settings before running a sync."
+        )
+    status, blockers, _warnings = sync_destination_service.describe_destination_status()
 
     if not src.exists():
         raise ValueError(
@@ -89,14 +90,16 @@ def _validate_paths(source_key: str) -> Tuple[Path, Path]:
         )
     if not src.is_dir():
         raise ValueError(f"Source path is not a directory: {src}")
-    if not dst.exists():
+    if status == "unsafe":
+        raise ValueError("; ".join(blockers))
+    if status == "not_mounted":
         raise ValueError(
             f"Destination path does not exist: {dst}\n"
             "The SSD may not be mounted. Mount it first:\n"
             f"  ls {dst.parent}"
         )
-    if not dst.is_dir():
-        raise ValueError(f"Destination path is not a directory: {dst}")
+    if not os.access(dst, os.W_OK):
+        raise ValueError(f"Destination is not writable: {dst}")
 
     return src, dst
 
@@ -119,25 +122,41 @@ async def preview_sync(req: SyncPreviewRequest) -> SyncPreviewResponse:
 
     This is an async function that awaits the subprocess — it runs in the
     FastAPI event loop and does NOT spawn a job or write to the DB.
-    Times out after 60 seconds.
+    Times out after 60 seconds. Read-only: never creates the destination.
+
+    req.source is retained for API compatibility (only "library" is a valid
+    value); the source path itself always comes fresh from the active
+    workspace, never from the request.
     """
-    ssd_mounted = SYNC_DEST_SSD.exists() and SYNC_DEST_SSD.is_dir()
-    src_path    = _src_path(req.source)
+    try:
+        src_path = sync_destination_service.get_sync_source()
+    except ValueError as exc:
+        return SyncPreviewResponse(
+            source_path = "",
+            dest_path   = "",
+            file_count  = 0,
+            files       = [],
+            warnings    = [str(exc)],
+            ssd_mounted = False,
+        )
+
+    dest_path = sync_destination_service.get_configured_destination()
+    dest_status, dest_blockers, dest_warnings = sync_destination_service.describe_destination_status()
+    ssd_mounted = dest_status == "ready"
     src_exists  = src_path.exists() and src_path.is_dir()
 
-    base_warnings: List[str] = []
-    if not ssd_mounted:
-        base_warnings.append(
-            f"SSD not mounted at {SYNC_DEST_SSD}. "
-            "Mount the drive before running sync."
-        )
+    base_warnings: List[str] = list(dest_warnings)
+    if dest_status in ("needs_setup", "unsafe"):
+        base_warnings.extend(dest_blockers)
+    elif dest_status == "not_mounted":
+        base_warnings.append(f"SSD not mounted at {dest_path}. Mount the drive before running sync.")
     if not src_exists:
         base_warnings.append(f"Source path not found: {src_path}")
 
     if not ssd_mounted or not src_exists:
         return SyncPreviewResponse(
             source_path = str(src_path),
-            dest_path   = str(SYNC_DEST_SSD),
+            dest_path   = str(dest_path) if dest_path else "",
             file_count  = 0,
             files       = [],
             warnings    = base_warnings,
@@ -150,7 +169,7 @@ async def preview_sync(req: SyncPreviewRequest) -> SyncPreviewResponse:
         "--no-inc-recursive",
         "--dry-run",
         _rsync_src(src_path),
-        str(SYNC_DEST_SSD),
+        str(dest_path),
     ]
 
     log.info("preview_sync: %s", " ".join(cmd))
@@ -171,7 +190,7 @@ async def preview_sync(req: SyncPreviewRequest) -> SyncPreviewResponse:
             await proc.wait()
             return SyncPreviewResponse(
                 source_path = str(src_path),
-                dest_path   = str(SYNC_DEST_SSD),
+                dest_path   = str(dest_path),
                 file_count  = 0,
                 files       = [],
                 warnings    = ["Preview timed out after 60 seconds — library may be very large."],
@@ -180,7 +199,7 @@ async def preview_sync(req: SyncPreviewRequest) -> SyncPreviewResponse:
     except FileNotFoundError:
         return SyncPreviewResponse(
             source_path = str(src_path),
-            dest_path   = str(SYNC_DEST_SSD),
+            dest_path   = str(dest_path),
             file_count  = 0,
             files       = [],
             warnings    = [
@@ -203,7 +222,7 @@ async def preview_sync(req: SyncPreviewRequest) -> SyncPreviewResponse:
 
     return SyncPreviewResponse(
         source_path = str(src_path),
-        dest_path   = str(SYNC_DEST_SSD),
+        dest_path   = str(dest_path),
         file_count  = len(only_files),
         files       = only_files[:_MAX_PREVIEW_FILES],
         truncated   = truncated,
@@ -272,11 +291,20 @@ def _parse_dry_run_output(
 # ---------------------------------------------------------------------------
 
 def get_sync_config() -> SyncConfigResponse:
+    try:
+        sources = {"library": str(sync_destination_service.get_sync_source())}
+    except ValueError:
+        sources = {"library": ""}
+    dest = sync_destination_service.get_configured_destination()
+    status, blockers, warnings = sync_destination_service.describe_destination_status()
     return SyncConfigResponse(
-        sources      = {k: str(v) for k, v in SYNC_SOURCE_MAP.items()},
-        dest         = str(SYNC_DEST_SSD),
-        rsync_bin    = RSYNC_BIN,
-        ssd_mounted  = SYNC_DEST_SSD.exists() and SYNC_DEST_SSD.is_dir(),
+        sources              = sources,
+        dest                 = str(dest) if dest else None,
+        destination_status   = status,
+        destination_blockers = blockers,
+        destination_warnings = warnings,
+        rsync_bin            = RSYNC_BIN,
+        ssd_mounted          = status == "ready",
     )
 
 

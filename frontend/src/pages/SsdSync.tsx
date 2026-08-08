@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useState } from 'react'
+import { Link } from 'react-router-dom'
 import { RefreshCw, Loader2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { fetchJobLogs, fetchJob, cancelJob } from '../api/jobs'
 import { fetchSyncConfig, previewSync, startSync, fetchSyncJobs } from '../api/sync'
-import type { SyncConfigResponse, SyncPreviewResponse, SyncSource } from '../types/sync'
+import type { SyncConfigResponse, SyncPreviewResponse } from '../types/sync'
 import type { Job } from '../types/job'
 import { isActive } from '../types/job'
+import Badge from '../components/ui/Badge'
 import ErrorBanner from '../components/ErrorBanner'
 import PageHeader from '../components/PageHeader'
 import StatusBadge from '../components/StatusBadge'
@@ -44,40 +46,34 @@ function MountWarning() {
 // Config panel (read-only display)
 // ---------------------------------------------------------------------------
 
-function ConfigPanel({
-  cfg,
-  source,
-  onSourceChange,
-}: {
-  cfg: SyncConfigResponse
-  source: SyncSource
-  onSourceChange: (s: SyncSource) => void
-}) {
-  const srcPath = cfg.sources[source] ?? '—'
+function destinationStatusTone(status: SyncConfigResponse['destination_status']) {
+  if (status === 'ready') return 'succeeded' as const
+  if (status === 'needs_setup') return 'pending' as const
+  return 'failed' as const
+}
+
+function destinationStatusLabel(status: SyncConfigResponse['destination_status']) {
+  if (status === 'ready') return 'Ready'
+  if (status === 'needs_setup') return 'Needs Setup'
+  if (status === 'not_mounted') return 'Not Mounted'
+  return 'Unsafe'
+}
+
+function ConfigPanel({ cfg }: { cfg: SyncConfigResponse }) {
+  const srcPath = cfg.sources.library || '—'
   return (
     <div className="sync-config-panel">
       <div className="sync-path-row">
         <span className="sync-path-label">Source</span>
-        <div className="sync-path-val-group">
-          <div className="sync-source-tabs">
-            {(Object.keys(cfg.sources) as SyncSource[]).map((key) => (
-              <button
-                key={key}
-                className={`sync-source-tab ${source === key ? 'sync-source-tab--active' : ''}`}
-                onClick={() => onSourceChange(key)}
-              >
-                {key}
-              </button>
-            ))}
-          </div>
-          <code className="sync-path-code">{srcPath}</code>
-        </div>
+        <code className="sync-path-code">{srcPath}</code>
+        <span className="muted" style={{ fontSize: 11 }}>derived from active workspace</span>
       </div>
       <div className="sync-path-row">
         <span className="sync-path-label">Destination</span>
-        <code className="sync-path-code">{cfg.dest}</code>
-        {!cfg.ssd_mounted && (
-          <span className="sync-not-mounted-badge">not mounted</span>
+        <code className="sync-path-code">{cfg.dest ?? 'Not configured'}</code>
+        <Badge tone={destinationStatusTone(cfg.destination_status)}>{destinationStatusLabel(cfg.destination_status)}</Badge>
+        {cfg.destination_status === 'needs_setup' && (
+          <Link className="btn btn--ghost btn--xs" to="/settings#publish-sync">Configure in Settings</Link>
         )}
       </div>
       <div className="sync-path-row">
@@ -392,7 +388,6 @@ function SyncHistory({ jobs, onRefresh, loading }: { jobs: Job[]; onRefresh: () 
 export default function SsdSync() {
   const [cfg,           setCfg]          = useState<SyncConfigResponse | null>(null)
   const [cfgErr,        setCfgErr]       = useState<string | null>(null)
-  const [source,        setSource]       = useState<SyncSource>('library')
 
   const [previewing,    setPreviewing]   = useState(false)
   const [preview,       setPreview]      = useState<SyncPreviewResponse | null>(null)
@@ -421,17 +416,12 @@ export default function SsdSync() {
     finally { setHistLoading(false) }
   }, [])
 
-  // Re-fetch config whenever source changes to update mount status
-  useEffect(() => {
-    fetchSyncConfig().then(setCfg).catch(() => null)
-  }, [source])
-
   async function handlePreview() {
     setPreviewing(true)
     setPreviewErr(null)
     setPreview(null)
     try {
-      setPreview(await previewSync({ source }))
+      setPreview(await previewSync({ source: 'library' }))
     } catch (e) {
       setPreviewErr(e instanceof ApiError ? e.displayMessage : String(e))
     } finally {
@@ -443,7 +433,7 @@ export default function SsdSync() {
     setRunning(true)
     setRunErr(null)
     try {
-      const resp = await startSync({ source, allow_delete: allowDelete })
+      const resp = await startSync({ source: 'library', allow_delete: allowDelete })
       const job  = await fetchJob(resp.job_id)
       setActiveJob(job)
       loadHistory()
@@ -494,7 +484,7 @@ export default function SsdSync() {
           {!ssdMounted && <MountWarning />}
 
           {cfg ? (
-            <ConfigPanel cfg={cfg} source={source} onSourceChange={setSource} />
+            <ConfigPanel cfg={cfg} />
           ) : !cfgErr && (
             <p className="muted">Loading config…</p>
           )}

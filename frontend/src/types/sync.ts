@@ -1,4 +1,7 @@
-export type SyncSource = 'library' | 'inbox'
+// "library" is the only supported value: the active workspace's Library
+// folder (or the legacy root itself in Legacy Direct Library compatibility
+// mode). Never the managed Inbox or Quarantine.
+export type SyncSource = 'library'
 
 export interface SyncFileChange {
   path:   string
@@ -30,9 +33,14 @@ export interface SyncRunResponse {
   message: string
 }
 
+export type SyncDestinationStatus = 'ready' | 'needs_setup' | 'not_mounted' | 'unsafe'
+
 export interface SyncConfigResponse {
-  sources:      Record<string, string>   // name → resolved path
-  dest:         string
-  rsync_bin:    string
-  ssd_mounted:  boolean
+  sources:              Record<string, string>   // name → resolved path
+  dest:                 string | null             // null if not configured yet
+  destination_status:   SyncDestinationStatus
+  destination_blockers: string[]
+  destination_warnings: string[]
+  rsync_bin:            string
+  ssd_mounted:          boolean
 }
