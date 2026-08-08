@@ -16,6 +16,13 @@ Batch preparation (Cycle 10):
   GET  /api/workspace/prepare/operations/{id}  — poll an operation's progress/result
   GET  /api/workspace/prepare/operations       — recent operation history
   POST /api/workspace/prepare/operations/{id}/cancel — request cancellation
+
+Multi-provider enrichment (Cycle 11):
+  POST /api/workspace/enrichment/consensus/{track_id} — gathers multi-
+       provider evidence (real bounded network calls for configured
+       providers) and returns a field-by-field consensus verdict. No
+       track metadata is changed; POST because it is explicit and
+       network-triggering, matching the existing online-lookup action.
 """
 from __future__ import annotations
 
@@ -29,6 +36,7 @@ from ...schemas.track import TrackSummary
 from ...services import (
     preparation_operations_service,
     preparation_service,
+    provider_routing_service,
     track_service,
     workspace_service,
 )
@@ -197,3 +205,26 @@ async def cancel_prepare_operation(operation_id: str):
     if operation is None:
         raise HTTPException(status_code=404, detail="Operation not found.")
     return operation
+
+
+# ---------------------------------------------------------------------------
+# Multi-provider consensus preview (Cycle 11)
+# ---------------------------------------------------------------------------
+
+@router.post("/workspace/enrichment/consensus/{track_id}")
+async def preview_track_consensus(track_id: int):
+    """
+    Gathers evidence from every currently-configured provider for one
+    track and returns the full explainable field-by-field HIGH/MEDIUM/
+    LOW/CONFLICT verdict. Makes no metadata/tag changes to the track
+    itself -- but, like every other "online lookup" action in this app,
+    a stage of this gathering (Beets/MusicBrainz, and AcoustID/Discogs/
+    etc. once configured) makes real bounded network calls and persists
+    them to the existing enrichment_review_service decision queue, the
+    same shared bookkeeping the Enrichment Review page already writes to.
+    This is why it is a POST, explicit and user-triggered, not a GET.
+    """
+    try:
+        return provider_routing_service.preview_consensus(_root(), track_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))

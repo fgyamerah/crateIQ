@@ -2,6 +2,157 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Cycle 11: multi-provider identification & enrichment
+
+- What changed: adds real adapters for 7 metadata providers (AcoustID,
+  Discogs, Beatport, Spotify, Deezer, Last.fm, YouTube) on top of the
+  existing local tags/Beets/MusicBrainz sources, plus an explainable
+  field-by-field evidence consensus engine and staged provider routing.
+  Every provider was researched against its current official
+  documentation before writing any adapter code (see PROJECT_CONTEXT.md
+  for the full findings) rather than assumed from memory -- two
+  assumptions in the pre-existing Settings registry turned out to be
+  wrong and were corrected: Deezer needs no credentials at all for
+  basic search (proved with a real live request), and Beatport uses
+  OAuth 2.0 authorization-code grant, not a simple API key.
+- Provider adapters (new backend/app/services/providers/ package, one
+  module per provider + a shared base.py contract): each exposes
+  capability(credentials) -> ready/needs_setup/unavailable/misconfigured
+  and search_track(...) -> candidates, never raising for ordinary
+  failure modes (401/403/429/timeout/no-match) so a batch caller can
+  continue past one provider's failure. Official REST APIs only, no
+  scraping, no undocumented endpoints:
+    - AcoustID: local Chromaprint fingerprinting (fpcalc, real local
+      subprocess, no network/account) + official lookup-only API
+      (never submits fingerprints). Verified live: real fpcalc runs
+      against a real generated audio file produced a real fingerprint.
+    - Discogs: database/search with a self-serve personal access
+      token; attribution/link-back preserved on every candidate.
+    - Beatport: v4 catalog/search with a partner-issued bearer token
+      pasted in after Beatport's own external OAuth flow (no public
+      self-service signup exists; this app does not implement the
+      interactive OAuth consent redirect).
+    - Spotify: Client Credentials flow (in-process token cache) against
+      the caller's own Developer app; Settings truthfully discloses the
+      February 2026 Development Mode changes (app owner needs an active
+      Premium subscription, 5-user cap, endpoints removed) and that
+      Extended Quota Mode's 250k-MAU requirement is unreachable for
+      local-first software.
+    - Deezer: public search, no credentials needed -- verified live
+      with a real unauthenticated request during research, confirmed
+      again through the real running UI's "Test source" button
+      ("Live test search succeeded, 5 candidates returned").
+    - Last.fm: track.search + track.getTopTags with a free self-serve
+      API key; community tags are evidence, never an unquestionable
+      genre.
+    - YouTube: Data API v3 search.list with a Google Cloud API key,
+      exactly one call per lookup (no follow-up videos.list, to avoid
+      doubling the 100-unit cost against the 10,000/day default quota);
+      low-authority corroboration only, per the product's evidence
+      hierarchy -- every candidate is tagged accordingly.
+  None of these providers have real credentials configured in this
+  development environment, so none could be live-tested beyond Deezer
+  and AcoustID's local half -- reported truthfully as "needs_setup" in
+  Settings, not faked as connected. See FINAL REPORT for the per-
+  provider implemented/needs-setup/unavailable status.
+- Consensus engine (new backend/app/services/consensus_service.py):
+  explainable HIGH/MEDIUM/LOW/CONFLICT verdicts, never a fabricated
+  pseudo-probability. Track-level identity: exact ISRC agreement across
+  >=2 providers, a real AcoustID fingerprint match, or >=2 providers
+  agreeing on normalized artist+title all reach HIGH; disagreement
+  reaches CONFLICT; a single high-tier source alone reaches MEDIUM.
+  Field-by-field confidence is computed independently per field -- a
+  HIGH track-level identity does not blindly promote every field to
+  HIGH, matching the explicit product rule. Genre gets its own
+  resolution: raw provider genre/style strings are mapped through the
+  existing genre_mappings table (the same one Genre Taxonomy already
+  owns, backend/app/api/routes/genres.py) rather than used verbatim,
+  and Beatport/Discogs are weighted as genre authorities once identity
+  is already strong -- but an authority's value that conflicts with
+  another source is surfaced as CONFLICT, never silently overridden,
+  and distinct electronic subgenres (verified with Afro House vs.
+  Amapiano) are never collapsed into one bucket.
+- Provider routing (new backend/app/services/provider_routing_service.py):
+  stages evidence gathering (Beets/MusicBrainz first since they need no
+  extra credentials, then AcoustID fingerprint, then Discogs/Beatport,
+  then Spotify/Deezer, then Last.fm, then YouTube last) and stops early
+  once the consensus engine already reports HIGH identity confidence --
+  never queries every provider for every track. Each stage silently
+  skips any provider whose capability() isn't "ready" rather than
+  erroring.
+- New read-only-in-effect but POST (see below) endpoint
+  POST /api/workspace/enrichment/consensus/{track_id}: gathers evidence
+  from every currently-configured provider for one track and returns
+  the full explainable verdict. No track metadata is changed by this
+  endpoint -- but it is a POST, not a GET, because gathering evidence
+  reuses enrichment_review_service.online_lookup() for the Beets/
+  MusicBrainz stage, which makes real network calls and persists them
+  to the existing enrichment_review_service decision queue (exactly
+  like the existing single-track online-lookup action already does).
+  Framing this as a side-effect-free GET was this cycle's own first
+  draft mistake, caught immediately by a dedicated regression test
+  (test_consensus_preview_*) before it shipped.
+- Settings integration: extended the existing (already-designed but
+  previously stubbed "settings_only"/"planned") metadata-source registry
+  in settings_service.py with acoustid and youtube (new) and wired real
+  capability()-based connection_status for all 7 providers plus a real
+  bounded "Test source" connectivity check (settings_service.
+  test_metadata_source) that now makes one genuine bounded live request
+  for a configured provider instead of returning a canned
+  "not_implemented". New get_metadata_source_credentials() accessor is
+  server-side-only by contract -- never called from an API response
+  path. The existing Settings -> Metadata Sources UI
+  (MetadataSourcesPanel.tsx) is fully generic/data-driven and required
+  zero frontend changes to correctly render and mask credentials for
+  all 7 new providers (verified live in the browser).
+- Deliberately deferred rather than risked under time pressure: wiring
+  the consensus engine's multi-provider results into Process All's
+  automatic write-back path (preparation_service.enrich_tracks still
+  uses Cycle 10's simpler Beets+MB-only agreement rule for actual
+  writes). Doing so safely requires extending enrichment_review_
+  service's snapshot/decision model to accept externally-sourced
+  candidates (currently only Beets/MusicBrainz populate it), which is a
+  deeper change to an existing, well-tested write path that deserves
+  focused review rather than a hasty change under this cycle's time
+  budget -- especially since, with zero real provider credentials
+  configured anywhere in this environment, the change would have been
+  unobservable/untestable live in this session regardless. The
+  consensus engine and provider routing are real, tested, and callable
+  today via the new read/POST preview endpoint; full write-path
+  integration is next in NEXT_TASKS.txt.
+- Tests: tests/test_providers.py (31 cases: capability detection per
+  provider, response parsing against realistic mocked payloads, 401/
+  403/429/network-error handling, real local AcoustID fingerprinting
+  against a real generated audio file), tests/test_consensus_service.py
+  (18 cases: identity verdict rules, field-level independence, genre
+  authority weighting/conflict/no-collapsing), tests/
+  test_provider_routing_and_settings.py (11 cases: staged early-stop,
+  unconfigured-provider skipping, credential-leak prevention, real
+  Deezer request through the settings dispatch), plus consensus-preview
+  route tests. Fixed one pre-existing test
+  (test_metadata_sources_are_safe_local_settings_and_never_echo_
+  credentials) that pinned the old 10-source set and Spotify's old
+  "not_implemented" test response -- updated to the real 12-source set
+  and Spotify's now-real (mocked-401) test behavior. 1590 backend tests
+  pass; frontend typecheck/build pass (no frontend changes needed);
+  git diff --check clean.
+- Files affected: backend/app/services/providers/ (new package: base.py,
+  acoustid_client.py, discogs_client.py, beatport_client.py,
+  spotify_client.py, deezer_client.py, lastfm_client.py,
+  youtube_client.py), backend/app/services/consensus_service.py (new),
+  backend/app/services/provider_routing_service.py (new),
+  backend/app/services/settings_service.py,
+  backend/app/api/routes/workspace.py, tests/test_providers.py (new),
+  tests/test_consensus_service.py (new),
+  tests/test_provider_routing_and_settings.py (new),
+  tests/test_workspace_prepare_routes.py,
+  tests/test_supported_route_contracts.py, tests/test_backend_api.py.
+- Migration notes: no destructive migration, no schema changes. No
+  secrets committed -- all credential fields are stored only in the
+  existing gitignored .run/local/metadata_sources.json, masked in every
+  API response. Cycle 12 (navigation) is next; wiring the consensus
+  engine into automatic write-back remains open follow-up work.
+
 [2026-08-08] — Cycle 10: batch Inbox preparation and unified Needs Review
 
 - What changed: makes processing hundreds of Inbox tracks practical.

@@ -11,7 +11,17 @@ from typing import Any
 from ..core.crate_db import crates_db_path
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 from ..core.preflight import redact_path, run_preflight
+from .providers import (
+    acoustid_client, beatport_client, deezer_client, discogs_client,
+    lastfm_client, spotify_client, youtube_client,
+)
 from .waveform_readiness_service import get_waveform_readiness
+
+_PROVIDER_ADAPTERS = {
+    "acoustid": acoustid_client, "discogs": discogs_client, "beatport": beatport_client,
+    "spotify": spotify_client, "deezer": deezer_client, "lastfm": lastfm_client,
+    "youtube": youtube_client,
+}
 
 _DEFAULT_ANALYSIS_PREFERENCES = {
     "analyze_bpm": False,
@@ -45,11 +55,13 @@ _METADATA_SOURCE_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {"id": "filename_hints", "label": "Filename hints", "category": "local", "requires_credentials": False, "default_enabled": True, "priority": 90, "best_for": ["Low-confidence fallback hints"], "current_behavior": "implemented"},
     {"id": "beets", "label": "Beets", "category": "installed_tool", "requires_credentials": False, "default_enabled": True, "priority": 60, "best_for": ["Missing non-critical local-index metadata review"], "current_behavior": "implemented", "configuration_note": "Explicit per-track lookup only, via Enrichment Review's online-lookup action. Distance-scored MusicBrainz-backed matching from beets' own matching engine."},
     {"id": "musicbrainz", "label": "MusicBrainz", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 40, "best_for": ["Official releases and albums"], "current_behavior": "implemented", "configuration_note": "Explicit per-track lookup only, via Enrichment Review's online-lookup action. Rate-limited to MusicBrainz's own 1 request/second limit; results are cached locally."},
-    {"id": "discogs", "label": "Discogs", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 50, "best_for": ["Electronic, vinyl, remix, and release metadata"], "current_behavior": "settings_only", "credential_fields": ("personal_access_token",)},
-    {"id": "spotify", "label": "Spotify", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 70, "best_for": ["Mainstream track, artist, and album matching"], "current_behavior": "settings_only", "credential_fields": ("client_id", "client_secret")},
-    {"id": "deezer", "label": "Deezer", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 80, "best_for": ["Alternate track, artist, and album matching"], "current_behavior": "settings_only", "credential_fields": ("app_id", "app_secret")},
-    {"id": "beatport", "label": "Beatport", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 55, "best_for": ["DJ, electronic, genre, and style metadata"], "current_behavior": "planned", "configuration_note": "A supported API path has not been implemented."},
-    {"id": "lastfm", "label": "Last.fm", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 85, "best_for": ["Genre and tag hints"], "current_behavior": "settings_only", "credential_fields": ("api_key",)},
+    {"id": "acoustid", "label": "AcoustID", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 35, "best_for": ["Strong fingerprint-based identity evidence"], "current_behavior": "implemented", "credential_fields": ("client_key",), "configuration_note": "Lookup only against a Chromaprint fingerprint of the managed Inbox copy; fingerprints are never submitted to AcoustID. Requires a free self-serve application client key from acoustid.org. Rate-limited to 3 requests/second per AcoustID's published terms."},
+    {"id": "discogs", "label": "Discogs", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 50, "best_for": ["Electronic, vinyl, remix, and release metadata"], "current_behavior": "implemented", "credential_fields": ("personal_access_token",), "configuration_note": "Uses a self-serve Discogs personal access token (Settings -> Developers on discogs.com). Rate-limited to Discogs' own 60 requests/minute authenticated limit. Discogs-derived results must retain provider attribution/link-back per Discogs API terms."},
+    {"id": "spotify", "label": "Spotify", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 70, "best_for": ["Mainstream track, artist, and album matching via ISRC"], "current_behavior": "implemented", "credential_fields": ("client_id", "client_secret"), "configuration_note": "Uses the Client Credentials flow against your own Spotify Developer app. As of the February 2026 Web API changes, Development Mode requires the app owner to hold an active Spotify Premium subscription, is capped at 5 users, and several endpoint families were removed; Extended Quota Mode requires a registered organization with 250k+ monthly active users, which CrateIQ as local-first software does not have. Spotify's own track-level genre field is unreliable/absent in practice; genre is never inferred from artist-level data here."},
+    {"id": "deezer", "label": "Deezer", "category": "external_api", "requires_credentials": False, "default_enabled": False, "priority": 80, "best_for": ["Alternate track, artist, and album matching, ISRC corroboration"], "current_behavior": "implemented", "configuration_note": "Deezer's public search endpoint (api.deezer.com/search) requires no credentials -- verified with a real live request during this cycle's research. OAuth app_id/app_secret would only be needed for user-level actions (playlists, favorites) this adapter does not use, and Deezer is not currently issuing new OAuth app credentials in any case."},
+    {"id": "beatport", "label": "Beatport", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 55, "best_for": ["DJ, electronic, genre, and style metadata; high genre authority for strong identity matches"], "current_behavior": "implemented", "credential_fields": ("access_token",), "configuration_note": "Beatport's v4 API (api.beatport.com/v4) uses OAuth 2.0 authorization-code grant, not a simple API key -- there is no public self-service signup, and access is brokered case-by-case through Beatport's Partner Portal / business-development team. Once approved, complete Beatport's OAuth flow externally and paste the resulting bearer access token here; CrateIQ does not implement the interactive OAuth consent redirect itself."},
+    {"id": "lastfm", "label": "Last.fm", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 85, "best_for": ["Community tag/genre corroboration, track correction"], "current_behavior": "implemented", "credential_fields": ("api_key",), "configuration_note": "Uses a free self-serve Last.fm API key (last.fm/api/account/create). Community tags are evidence, not an unquestionable canonical genre -- always mapped through the existing Genre Taxonomy. Free for non-commercial use only."},
+    {"id": "youtube", "label": "YouTube", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 95, "best_for": ["Low-authority corroboration/discovery only"], "current_behavior": "implemented", "credential_fields": ("api_key",), "configuration_note": "Uses the official YouTube Data API v3 via a Google Cloud API key. Never used alone for high-confidence metadata. Default quota is 10,000 units/day and a single search.list call costs 100 units (~100 searches/day); queried only as a late-stage fallback after stronger providers, never scraped."},
 )
 _METADATA_SOURCE_BY_ID = {source["id"]: source for source in _METADATA_SOURCE_DEFINITIONS}
 
@@ -96,6 +108,9 @@ def get_metadata_sources() -> dict[str, Any]:
             connection_status = "ready" if _metadata_source_tool_available(source_id) else "unavailable"
         elif source_id == "musicbrainz":
             connection_status = "ready"
+        elif source_id in _PROVIDER_ADAPTERS:
+            saved_credentials = {field: credentials[field] for field in saved_fields}
+            connection_status = _PROVIDER_ADAPTERS[source_id].capability(saved_credentials).status
         elif definition["category"] == "external_api":
             connection_status = "not_implemented"
         else:
@@ -141,6 +156,23 @@ def update_metadata_sources(updates: list[dict[str, Any]]) -> dict[str, Any]:
     return get_metadata_sources()
 
 
+def get_metadata_source_credentials(source_id: str) -> dict[str, str]:
+    """
+    Server-side-only accessor for a source's saved credential values.
+
+    Never call this from an API response path -- credentials must never
+    appear in an HTTP response body, only ever be used in-process to build
+    an outbound request to that provider's own API. Returns only the
+    fields that are actually saved (missing keys mean "not configured").
+    """
+    if source_id not in _METADATA_SOURCE_BY_ID:
+        raise ValueError("Unknown metadata source")
+    stored = _load_metadata_source_settings()["sources"]
+    state = stored.get(source_id, {}) if isinstance(stored.get(source_id), dict) else {}
+    credentials = state.get("credentials", {})
+    return {k: v for k, v in credentials.items() if isinstance(v, str) and v.strip()} if isinstance(credentials, dict) else {}
+
+
 def clear_metadata_source_credentials(source_id: str) -> dict[str, Any]:
     if source_id not in _METADATA_SOURCE_BY_ID:
         raise ValueError("Unknown metadata source")
@@ -162,6 +194,29 @@ def test_metadata_source(source_id: str) -> dict[str, Any]:
         return {"source_id": source_id, "connection_status": "ready", "message": "Local metadata source is available; no scan or tag write was performed.", "network_used": False}
     if source_id == "musicbrainz":
         return {"source_id": source_id, "connection_status": "ready", "message": "MusicBrainz lookup is implemented as an explicit, per-track action in Enrichment Review. This button does not perform a live network check.", "network_used": False}
+    if source_id == "acoustid":
+        # No generic artist/title search exists for AcoustID -- lookup needs
+        # a real fingerprint from a real track. Capability check only.
+        cap = acoustid_client.capability(get_metadata_source_credentials(source_id))
+        return {"source_id": source_id, "connection_status": cap.status, "message": f"{cap.message} A live fingerprint lookup runs per-track during enrichment, not from this generic test.", "network_used": False}
+    if source_id in _PROVIDER_ADAPTERS:
+        adapter = _PROVIDER_ADAPTERS[source_id]
+        credentials = get_metadata_source_credentials(source_id)
+        cap = adapter.capability(credentials)
+        if cap.status != "ready":
+            return {"source_id": source_id, "connection_status": cap.status, "message": cap.message, "network_used": False}
+        # A bounded, real, single search call -- the smallest genuine proof
+        # of connectivity this API supports. Not cached: this is an explicit
+        # user-triggered test, not part of any automatic/batch path.
+        result = adapter.search_track("Daft Punk", "One More Time", credentials=credentials)
+        if result.error:
+            status = "failed" if result.network_used else cap.status
+            return {"source_id": source_id, "connection_status": status, "message": result.error, "network_used": result.network_used}
+        return {
+            "source_id": source_id, "connection_status": "ready",
+            "message": f"Live test search succeeded ({len(result.candidates)} candidate(s) returned).",
+            "network_used": result.network_used,
+        }
     return {"source_id": source_id, "connection_status": "not_implemented", "message": "External connection testing and track lookup are not implemented in this local-only foundation.", "network_used": False}
 
 

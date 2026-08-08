@@ -3177,9 +3177,14 @@ def test_metadata_sources_are_safe_local_settings_and_never_echo_credentials(cli
     initial = test_client.get("/api/settings/metadata-sources")
     assert initial.status_code == 200
     sources = {source["id"]: source for source in initial.json()["sources"]}
-    assert {"local_tags", "filename_hints", "mixed_in_key", "beets", "musicbrainz", "discogs", "spotify", "deezer", "beatport", "lastfm"} == set(sources)
+    assert {
+        "local_tags", "filename_hints", "mixed_in_key", "beets", "musicbrainz",
+        "acoustid", "discogs", "spotify", "deezer", "beatport", "lastfm", "youtube",
+    } == set(sources)
     assert sources["spotify"]["enabled"] is False
     assert sources["mixed_in_key"]["credentials_status"] == "not_required"
+    assert sources["deezer"]["credentials_status"] == "not_required"
+    assert sources["deezer"]["connection_status"] == "ready"
 
     saved = test_client.patch("/api/settings/metadata-sources", json={"sources": [{
         "id": "spotify", "enabled": True, "priority": 33,
@@ -3200,10 +3205,16 @@ def test_metadata_sources_are_safe_local_settings_and_never_echo_credentials(cli
     unknown = test_client.patch("/api/settings/metadata-sources", json={"sources": [{"id": "unknown", "enabled": True}]})
     assert unknown.status_code == 422
 
+    # Spotify is genuinely implemented as of Cycle 11: testing configured
+    # (but fake) credentials makes a real bounded token request and reports
+    # the real rejection truthfully, rather than a canned "not_implemented".
+    import requests as _requests
+    from types import SimpleNamespace as _SimpleNamespace
+    monkeypatch.setattr(_requests, "post", lambda *a, **k: _SimpleNamespace(status_code=401, json=lambda: {}))
     tested = test_client.post("/api/settings/metadata-sources/spotify/test")
     assert tested.status_code == 200
-    assert tested.json()["connection_status"] == "not_implemented"
-    assert tested.json()["network_used"] is False
+    assert tested.json()["connection_status"] == "failed"
+    assert tested.json()["network_used"] is True
 
     cleared = test_client.post("/api/settings/metadata-sources/spotify/clear-credentials")
     assert cleared.status_code == 200

@@ -124,3 +124,33 @@ def test_needs_review_get_never_mutates_the_pipeline_db(client):
     resp = test_client.get("/api/needs-review")
     assert resp.status_code == 200
     assert db_path.read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# Cycle 11: multi-provider consensus preview
+# ---------------------------------------------------------------------------
+
+def test_consensus_preview_succeeds_and_never_500s(client):
+    """
+    A POST (not GET) since, like the existing single-track online-lookup
+    action, gathering evidence makes real bounded network calls (Beets/
+    MusicBrainz here; more providers once configured) and persists them
+    to the shared enrichment_review_service decision queue -- it must
+    never claim to be a side-effect-free GET.
+    """
+    test_client, root = client
+    track_id = _seed_inbox_track(root)
+
+    resp = test_client.post(f"/api/workspace/enrichment/consensus/{track_id}")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["track_id"] == track_id
+    assert body["identity_confidence"] in ("HIGH", "MEDIUM", "LOW", "CONFLICT")
+    assert "fields" in body and set(body["fields"]) == {"artist", "title", "genre"}
+
+
+def test_consensus_preview_unknown_track_422(client):
+    test_client, _root = client
+    resp = test_client.post("/api/workspace/enrichment/consensus/999999")
+    assert resp.status_code == 422

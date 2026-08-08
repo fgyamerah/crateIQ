@@ -39,6 +39,50 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 11 -- Multi-Provider Identification & Enrichment (2026-08-08)
+    Real adapters for AcoustID, Discogs, Beatport, Spotify, Deezer,
+    Last.fm, and YouTube (new backend/app/services/providers/ package),
+    each researched against current official docs before writing code --
+    corrected two wrong assumptions already in the Settings registry:
+    Deezer needs no credentials for basic search (verified with a real
+    live request, and again through the real UI's Test button), and
+    Beatport uses OAuth 2.0 authorization-code grant, not a simple key.
+    New consensus_service.py (explainable HIGH/MEDIUM/LOW/CONFLICT,
+    field-by-field, never inherited blindly from track-level identity;
+    genre mapped through the existing genre_mappings table with
+    Beatport/Discogs authority weighting) and provider_routing_service.py
+    (staged evidence gathering, stops early on HIGH confidence, skips
+    unconfigured providers). Settings -> Metadata Sources needed zero
+    frontend changes (already fully generic/data-driven) to correctly
+    show and mask credentials for all 7 new providers. None have real
+    credentials in this environment, so Settings truthfully reports
+    "Needs Setup" for 6 of 7 (Deezer needs none); this is disclosed, not
+    hidden. 1590 backend tests pass (+60 new); frontend typecheck/build
+    pass. Live-verified: real local AcoustID fingerprinting against a
+    real audio file, real Deezer search through curl, through direct
+    Python, and through the actual running Settings UI's Test button.
+    See CHANGELOG.txt and PROJECT_CONTEXT.md Latest Milestone for full
+    detail, including the specific provider research findings and the
+    consensus-preview-endpoint read-only framing bug found and fixed
+    mid-cycle by a dedicated regression test. On
+    feat/crateiq-managed-library; not merged to main.
+[ ] (P1) Wire the Cycle 11 consensus engine's multi-provider results into
+    Process All's automatic write-back path. Currently
+    preparation_service.enrich_tracks() still uses Cycle 10's simpler
+    Beets+MB-only agreement rule for actual writes; the fuller consensus
+    engine is built, tested, and reachable via the new POST
+    /api/workspace/enrichment/consensus/{track_id} preview endpoint, but
+    not yet wired into what Process All auto-applies. Deferred
+    deliberately (see CHANGELOG.txt) because it requires extending
+    enrichment_review_service's snapshot/decision model to accept
+    externally-sourced (non-Beets/MB) candidates safely -- a deeper
+    change to an existing, well-tested write path that deserves focused
+    review of its own, not a hasty change under this cycle's time budget.
+[ ] (P3) If/when real credentials for Discogs/Spotify/Last.fm/YouTube/
+    AcoustID/Beatport become available, re-run this cycle's live
+    verification for each (see Settings -> Metadata Sources -> Test) to
+    confirm genuinely successful requests, not just truthful
+    "needs_setup" reporting.
 [x] (P0) Managed Library Cycle 10 -- Batch Preparation & Unified Review (2026-08-08)
     Process All: one explicitly confirmed, cancellable, restart-safe
     background operation (new preparation_operations table/service,

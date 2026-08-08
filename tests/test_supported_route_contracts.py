@@ -315,6 +315,7 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/workspace/prepare/clean (POST, writes to the local index)",
         "/api/workspace/prepare/enrich (POST, network calls + writes to the local index)",
         "/api/workspace/prepare/operations/{id}/cancel (POST)",
+        "/api/workspace/enrichment/consensus/{track_id} (POST, network calls + writes to the enrichment review queue)",
     ],
     "/smart-crates": ["/api/smart-crates/preview (POST)", "/api/smart-crates/save (POST)"],
     "/crates": [
