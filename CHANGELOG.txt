@@ -2,6 +2,91 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Core Usability Cycle 8: DJ preparation + final readiness
+
+- What changed: the final cycle of the crateIQ Core Usability Program.
+  Connects the already-built BPM/key analysis and waveform generation
+  systems into Library Prep's Analyze step, and adds a conservative
+  "ready for crates" readiness contract to the Ready step. No new
+  analysis engine and no new job scheduler -- both reuse the exact
+  analysis_jobs_service/waveform_bulk_service contracts the existing
+  Jobs and BpmReview pages already call.
+- New backend/app/services/library_readiness_service.py:
+  build_readiness() composes existing, already-computed signals only
+  (read_only_service.build_overview_payload(), metadata_sanitation/
+  metadata_repair pending counts, waveform_bulk_service.preview_missing(),
+  tag_write_service.list_operations() failure history) into BLOCKER /
+  WARNING / OPTIONAL reason codes. Blockers: no tracks imported, missing
+  required artist/title, any failed or partially-failed write-back
+  operation. Warnings: unresolved sanitation/repair review, missing BPM
+  coverage, missing key coverage, missing waveform coverage. Optional:
+  missing genre. ready = (blockers.length === 0) -- warnings and
+  optional items are surfaced, never blocking.
+- New GET /api/library/readiness route in backend/app/api/routes/
+  library.py, alongside the existing /library/quality it reuses pieces
+  of composition from.
+- Frontend: LibraryPrep.tsx's Analyze step gained three real launch
+  buttons -- "Analyze missing BPM (N pending)", "Analyze missing key (N
+  pending)", "Generate missing waveforms (N pending)" -- each calling the
+  same preview/run API functions the dedicated pages already use, with
+  a live outstanding count in the label matching the Clean metadata
+  step's existing "(N pending)" convention. The Ready step fetches the
+  real readiness contract and renders blocker/warning StatusStrips
+  (capped at 4 each, "+N more" beyond that) plus "Continue to Manual
+  Crates"/"Continue to Smart Crates" links.
+- Also fixed (found during this cycle's required final full-workflow
+  Impeccable pass, not new scope creep): steps 3 ("Enrich") and 4
+  ("Review candidates") still carried Cycle-5-era copy claiming
+  Beets/MusicBrainz suggestions "land in the next cycle" -- false since
+  Cycle 6 shipped them, and step 4 had no action of its own, just a
+  restatement of step 3's same target page. Merged into one step
+  ("Enrich & review candidates") with real, current copy. This made the
+  `unavailable`/locked step state (dimmed header chrome + Lock icon)
+  fully unreachable from any step for the first time -- removed the
+  state value, its two CSS rules, and the now-unused Lock import rather
+  than leave dead code behind.
+- Why it changed: Cycle 8 of the crateIQ Core Usability Program --
+  closes the loop from "library is clean and written to disk" (Cycles
+  5-7) to "library is DJ-ready," the original product goal.
+- Files affected: backend/app/services/library_readiness_service.py
+  (new), backend/app/schemas/library_readiness.py (new),
+  backend/app/api/routes/library.py (readiness route),
+  frontend/src/pages/LibraryPrep.tsx (Analyze/Ready wiring, step 3/4
+  merge, dead-state removal), frontend/src/api/libraryReadiness.ts
+  (new), frontend/src/types/libraryReadiness.ts (new),
+  frontend/src/index.css (prep-step cleanup),
+  tests/test_backend_api.py (3 new readiness tests),
+  tests/test_supported_route_contracts.py (readiness endpoint added to
+  the /library-prep contract entry).
+- Verification: .venv/bin/python -m compileall -q backend/app clean;
+  .venv/bin/python -m pytest -q -> 1468 passed; npm --prefix frontend
+  run typecheck clean; npm --prefix frontend run build clean; git diff
+  --check clean; pipeline.py validate-docs --strict -> OK, 24/24
+  registry commands present.
+- FINAL END-TO-END ACCEPTANCE for the whole Core Usability Program: one
+  script chained the orchestrator's full journey against a fresh
+  disposable copy library (never the sanctioned originals): configure/
+  import (2 tracks) -> tracks appear -> sanitation detects a real
+  seeded junk-artist token -> cleanup approved and applied to the local
+  index -> real Beets lookup (5 distance-scored candidates) -> real
+  MusicBrainz lookup (5 search candidates) -> field-by-field comparison
+  -> selected metadata approved -> exact write plan (1 replacement) ->
+  byte-for-byte backup -> confirmed write -> re-read verification ->
+  restore proven byte-identical -> real BPM analysis launched and
+  completed (2/2 analyzed) -> key analysis and waveform generation
+  launch paths exercised -> Library Prep readiness correctly reported
+  ready=true with two truthful warnings (missing key coverage, missing
+  waveform coverage) -> the same crates links Ready already exposes.
+  All temporary artifacts (disposable library, the real backup
+  directory this run created, its tag_write_operations row) cleaned up
+  afterward. All 88 original sanctioned crateiq-test-library audio
+  files confirmed byte-unchanged (count + mtime check) before and after
+  this cycle, and after the entire 4-cycle program.
+- Migration notes: none -- no schema changes beyond the additive
+  library_readiness aggregation, which reads existing tables only.
+- Branch: feat/crateiq-core-usability (base Cycle 7 580b0e7). Not
+  merged to main.
+
 [2026-08-08] — Core Usability Cycle 7: controlled metadata write-back
 
 - What changed: the highest-risk cycle of the crateIQ Core Usability

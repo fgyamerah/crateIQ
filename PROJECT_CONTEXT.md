@@ -6,6 +6,83 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 8 (DJ Preparation) of the crateIQ Core Usability
+  Program, on `feat/crateiq-core-usability` (base Cycle 7 `580b0e7`), no
+  merge to main. Final cycle: connects the already-built BPM/key analysis
+  and waveform generation systems into Library Prep and adds a conservative
+  readiness contract -- no new analysis engine, no new job scheduler,
+  everything routes through the existing `analysis_jobs_service`/
+  `waveform_bulk_service` contracts already used by the Jobs/BpmReview
+  pages. New `backend/app/services/library_readiness_service.py`:
+  `build_readiness()` composes existing signals only (library overview,
+  sanitation/repair pending counts, waveform coverage preview,
+  tag_write_operations failure history) into BLOCKER / WARNING / OPTIONAL
+  reason codes, never recomputing anything itself. Blockers: no tracks
+  imported, missing required artist/title, any failed/partially-failed
+  write-back operation. Warnings: unresolved sanitation/repair review,
+  missing BPM/key coverage, missing waveform coverage. Optional: missing
+  genre. `ready = (blockers.length === 0)` -- warnings and optional items
+  never block progress, matching the orchestrator's "not every item has to
+  be a blocker" guidance. New `GET /api/library/readiness` route (in
+  `library.py`, alongside the existing `/library/quality` it reuses
+  pieces of). Frontend: `LibraryPrep.tsx` steps 5 (Analyze) and 6 (Ready,
+  renumbered after a step-3/4 merge, see below) are now genuinely
+  functional instead of "unavailable" placeholders -- Analyze has three
+  inline buttons (Analyze missing BPM/key, Generate missing waveforms)
+  each showing a live "(N pending)" count and calling the same
+  preview/run contracts the dedicated Jobs/BpmReview pages already use;
+  Ready fetches the real readiness contract and shows blocker/warning
+  StatusStrips (capped at 4 each, "+N more" beyond that) plus "Continue
+  to Manual Crates"/"Continue to Smart Crates" links.
+  **Also fixed in this cycle** (found during the final full-workflow
+  Impeccable pass, not new scope): steps 3 ("Enrich") and 4 ("Review
+  candidates") were stale leftovers from Cycle 5 still claiming
+  Beets/MusicBrainz "land in the next cycle" -- false since Cycle 6
+  shipped them. Merged into one step ("Enrich & review candidates",
+  since step 4 had no distinct action of its own, just a description of
+  step 3's same page) and updated the copy to describe the real
+  Enrichment Review online-lookup buttons. This also resolved a
+  leftover design inconsistency: the `unavailable`/locked step state
+  (dimmed chrome + Lock icon) is no longer reachable from any step now
+  that every step is genuinely functional, so the state value, its two
+  CSS rules, and the unused `Lock` import were removed rather than left
+  as dead code.
+  **Final end-to-end acceptance**, chaining the full journey in one
+  script against a fresh disposable copy library (never the originals):
+  configure/import (2 tracks) -> tracks appear in local index ->
+  sanitation detects a real seeded junk-artist token
+  (`source_token_removed`) -> cleanup approved and applied to the local
+  index -> real Beets lookup (5 distance-scored candidates) -> real
+  MusicBrainz lookup (5 search candidates) -> field-by-field comparison
+  via `enrichment_review_service.online_lookup` -> exact write plan (1
+  replacement) -> byte-for-byte backup -> confirmed write -> re-read
+  verification -> restore proven byte-identical -> real BPM analysis
+  launched and completed (`runner_implemented=True`, 2/2 analyzed) ->
+  key analysis and waveform generation previewed (launch path
+  exercised; not run to completion in this bounded script, since both
+  already have dedicated full acceptance elsewhere: Cycle 8's own
+  compact run above and the pre-existing waveform-jobs branch history)
+  -> readiness correctly reported `ready=true` with two truthful
+  warnings (missing key coverage, missing waveform coverage) -> the
+  same crates links Ready already exposes. All temporary artifacts (the
+  disposable library, the real backup directory this run created, and
+  its `tag_write_operations` row) cleaned up afterward. All 88 original
+  sanctioned audio files confirmed byte-unchanged (count + mtime check)
+  before and after this entire cycle, and after the whole 4-cycle
+  program.
+  1468 backend tests pass (3 new in `tests/test_backend_api.py` for the
+  readiness endpoint); frontend typecheck/build pass;
+  `pipeline.py validate-docs --strict` passes (24/24 registry commands
+  present). One Impeccable pass (see "also fixed" above) plus a
+  standard count-display-consistency fix (Analyze step buttons now use
+  the same "(N pending)" convention as the Clean metadata step) and a
+  cap on the Ready step's rendered blocker/warning list (4 each, "+N
+  more" beyond that, to avoid a wall of stacked strips on a messy
+  library). Live browser verification at 1440/760/390px could not run
+  in this session (no Chrome extension connected, consistent with
+  Cycles 5-7) -- verified via code/CSS review, the detector-equivalent
+  Impeccable pass, and the real end-to-end acceptance script instead.
+
 - 2026-08-08: Cycle 7 (Controlled Metadata Write-Back) of the crateIQ Core
   Usability Program, on `feat/crateiq-core-usability` (base Cycle 6
   `c48dd5e`), no merge to main. The highest-risk cycle: real writes to

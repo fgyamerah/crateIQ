@@ -1,15 +1,16 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { Link } from 'react-router-dom'
 import {
+  Activity,
   CheckCircle2,
   Clock,
   Eraser,
   FileCheck2,
   FolderInput,
   ListMusic,
-  Lock,
   ScanSearch,
   Sparkles,
+  Waves,
   Wrench,
 } from 'lucide-react'
 import { ApiError } from '../api/client'
@@ -17,33 +18,38 @@ import { fetchSettings, importLibrary, scanLibraryPreview } from '../api/setting
 import { fetchLibraryOverview } from '../api/library'
 import { fetchMetadataSanitationSummary } from '../api/metadataSanitation'
 import { fetchMetadataRepairSummary } from '../api/metadataRepair'
+import { previewAnalysisJob, runBpmAnalysis, runKeyAnalysis } from '../api/analysis'
+import { fetchWaveformBulkPreview, startWaveformBulkGenerate } from '../api/waveformBulk'
+import { fetchLibraryReadiness } from '../api/libraryReadiness'
 import type { LibrarySetupResult, SettingsResponse } from '../types/settings'
 import type { LibraryOverview } from '../api/library'
 import type { MetadataSanitationSummary } from '../types/metadataSanitation'
 import type { MetadataRepairSummary } from '../types/metadataRepair'
+import type { AnalysisJobPreview } from '../types/analysis'
+import type { WaveformBulkPreview } from '../types/waveformBulk'
+import type { LibraryReadiness } from '../types/libraryReadiness'
 import PageHeader from '../components/PageHeader'
 import StatusStrip from '../components/ui/StatusStrip'
 import Badge, { type BadgeTone } from '../components/ui/Badge'
 
-type StepState = 'complete' | 'needs_review' | 'not_started' | 'unavailable'
+type StepState = 'complete' | 'needs_review' | 'not_started'
+
+const READINESS_DISPLAY_CAP = 4
 
 const STATE_LABEL: Record<StepState, string> = {
   complete: 'Complete',
   needs_review: 'Needs review',
   not_started: 'Not started',
-  unavailable: 'Not available yet',
 }
 
 const STATE_TONE: Record<StepState, BadgeTone> = {
   complete: 'succeeded',
   needs_review: 'pending',
   not_started: 'info',
-  unavailable: 'info',
 }
 
 function StepIcon({ state }: { state: StepState }) {
   if (state === 'complete') return <CheckCircle2 size={16} className="prep-step-icon prep-step-icon--done" />
-  if (state === 'unavailable') return <Lock size={16} className="prep-step-icon prep-step-icon--locked" />
   return <Clock size={16} className="prep-step-icon" />
 }
 
@@ -61,7 +67,7 @@ function PrepStep({
   children: ReactNode
 }) {
   return (
-    <section className={`prep-step${state === 'unavailable' ? ' prep-step--locked' : ''}`}>
+    <section className="prep-step">
       <div className="prep-step-header">
         <span className="prep-step-number">{index}</span>
         <span className="prep-step-title-icon">{icon}</span>
@@ -82,27 +88,45 @@ export default function LibraryPrep() {
   const [sanitation, setSanitation] = useState<MetadataSanitationSummary | null>(null)
   const [repair, setRepair] = useState<MetadataRepairSummary | null>(null)
   const [setupResult, setSetupResult] = useState<LibrarySetupResult | null>(null)
-  const [busy, setBusy] = useState<'preview' | 'import' | null>(null)
+  const [bpmPreview, setBpmPreview] = useState<AnalysisJobPreview | null>(null)
+  const [keyPreview, setKeyPreview] = useState<AnalysisJobPreview | null>(null)
+  const [waveformPreview, setWaveformPreview] = useState<WaveformBulkPreview | null>(null)
+  const [readiness, setReadiness] = useState<LibraryReadiness | null>(null)
+  const [busy, setBusy] = useState<'preview' | 'import' | 'bpm' | 'key' | 'waveform' | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [loadError, setLoadError] = useState<string | null>(null)
+  const [analyzeMessage, setAnalyzeMessage] = useState<string | null>(null)
   const [loaded, setLoaded] = useState(false)
 
   const loadAll = useCallback(async () => {
-    const [settingsResult, overviewResult, sanitationResult, repairResult] = await Promise.allSettled([
-      fetchSettings(),
-      fetchLibraryOverview(),
-      fetchMetadataSanitationSummary(),
-      fetchMetadataRepairSummary(),
-    ])
+    const [settingsResult, overviewResult, sanitationResult, repairResult, bpmResult, keyResult, waveformResult, readinessResult] =
+      await Promise.allSettled([
+        fetchSettings(),
+        fetchLibraryOverview(),
+        fetchMetadataSanitationSummary(),
+        fetchMetadataRepairSummary(),
+        previewAnalysisJob('bpm_analysis'),
+        previewAnalysisJob('key_analysis'),
+        fetchWaveformBulkPreview(),
+        fetchLibraryReadiness(),
+      ])
     if (settingsResult.status === 'fulfilled') setSettings(settingsResult.value)
     if (overviewResult.status === 'fulfilled') setOverview(overviewResult.value)
     if (sanitationResult.status === 'fulfilled') setSanitation(sanitationResult.value)
     if (repairResult.status === 'fulfilled') setRepair(repairResult.value)
+    if (bpmResult.status === 'fulfilled') setBpmPreview(bpmResult.value)
+    if (keyResult.status === 'fulfilled') setKeyPreview(keyResult.value)
+    if (waveformResult.status === 'fulfilled') setWaveformPreview(waveformResult.value)
+    if (readinessResult.status === 'fulfilled') setReadiness(readinessResult.value)
     const failedLabels: string[] = []
     if (settingsResult.status === 'rejected') failedLabels.push('settings')
     if (overviewResult.status === 'rejected') failedLabels.push('library overview')
     if (sanitationResult.status === 'rejected') failedLabels.push('sanitation summary')
     if (repairResult.status === 'rejected') failedLabels.push('repair summary')
+    if (bpmResult.status === 'rejected') failedLabels.push('BPM analysis status')
+    if (keyResult.status === 'rejected') failedLabels.push('key analysis status')
+    if (waveformResult.status === 'rejected') failedLabels.push('waveform status')
+    if (readinessResult.status === 'rejected') failedLabels.push('readiness')
     setLoadError(
       failedLabels.length
         ? `Could not load ${failedLabels.join(', ')} — status shown below may be incomplete.`
@@ -142,6 +166,54 @@ export default function LibraryPrep() {
     }
   }
 
+  const runBpm = async () => {
+    if (!bpmPreview?.candidate_count) return
+    setBusy('bpm')
+    setError(null)
+    setAnalyzeMessage(null)
+    try {
+      const result = await runBpmAnalysis(bpmPreview.candidate_count)
+      setAnalyzeMessage(`BPM analysis: ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed.`)
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'BPM analysis failed.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const runKey = async () => {
+    if (!keyPreview?.candidate_count) return
+    setBusy('key')
+    setError(null)
+    setAnalyzeMessage(null)
+    try {
+      const result = await runKeyAnalysis(keyPreview.candidate_count)
+      setAnalyzeMessage(`Key analysis: ${result.updated} updated, ${result.skipped} skipped, ${result.failed} failed.`)
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Key analysis failed.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const runWaveforms = async () => {
+    if (!waveformPreview?.eligible_to_generate) return
+    setBusy('waveform')
+    setError(null)
+    setAnalyzeMessage(null)
+    try {
+      const result = await startWaveformBulkGenerate()
+      setAnalyzeMessage(`Waveform generation started for ${result.eligible_total} track(s) — track progress on the Jobs page.`)
+      await loadAll()
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : 'Waveform generation failed to start.')
+    } finally {
+      setBusy(null)
+    }
+  }
+
   const libraryInitialized = settings?.library.library_initialized ?? false
   const totalTracks = overview?.total_tracks ?? 0
   const importState: StepState = totalTracks > 0 ? 'complete' : libraryInitialized ? 'needs_review' : 'not_started'
@@ -157,6 +229,12 @@ export default function LibraryPrep() {
       ? setupResult
       : null
   const importResult = setupResult && typeof setupResult.imported_count === 'number' ? setupResult : null
+
+  const analyzeOutstanding = (bpmPreview?.candidate_count ?? 0) + (keyPreview?.candidate_count ?? 0) + (waveformPreview?.eligible_to_generate ?? 0)
+  const analyzeState: StepState =
+    totalTracks === 0 ? 'not_started' : analyzeOutstanding > 0 ? 'needs_review' : 'complete'
+
+  const readyState: StepState = !readiness ? 'not_started' : readiness.ready ? 'complete' : 'needs_review'
 
   return (
     <div className="page library-prep-page">
@@ -227,19 +305,21 @@ export default function LibraryPrep() {
           )}
         </PrepStep>
 
-        <PrepStep index={3} icon={<Sparkles size={16} />} title="Enrich" state="unavailable">
+        <PrepStep index={3} icon={<Sparkles size={16} />} title="Enrich & review candidates" state="not_started">
           <p className="prep-step-desc">
-            Real Beets and MusicBrainz suggestions with field-by-field comparison land in the next cycle.
-            The <Link to="/beets-review">Beets Review</Link> and <Link to="/enrichment-review">Enrichment Review</Link> pages
-            exist today but do not yet source real provider candidates.
+            Open a track in <Link to="/enrichment-review">Enrichment Review</Link> and click "Look up on Beets" or
+            "Look up on MusicBrainz" for a real, bounded, per-track lookup — never automatic, never a whole-library scan.
+            The same page's field-by-field table then compares Current, Beets, MusicBrainz, and local-tag values side by
+            side — select which source wins per field, then save to CrateIQ's local index only.
           </p>
+          <div className="prep-step-links">
+            <Link className="btn btn--ghost btn--sm" to="/enrichment-review">
+              <Sparkles size={14} /> Open Enrichment Review
+            </Link>
+          </div>
         </PrepStep>
 
-        <PrepStep index={4} icon={<ListMusic size={16} />} title="Review candidates" state="unavailable">
-          <p className="prep-step-desc">Field-by-field candidate review becomes meaningful once real enrichment is available.</p>
-        </PrepStep>
-
-        <PrepStep index={5} icon={<FileCheck2 size={16} />} title="Apply to files" state="not_started">
+        <PrepStep index={4} icon={<FileCheck2 size={16} />} title="Apply to files" state="not_started">
           <p className="prep-step-desc">
             Write approved artist/title/album/genre values to real file tags — the only step in CrateIQ
             that modifies your audio files. Every write is backed up first and can be restored.
@@ -251,19 +331,58 @@ export default function LibraryPrep() {
           </div>
         </PrepStep>
 
-        <PrepStep index={6} icon={<Clock size={16} />} title="Analyze" state="unavailable">
+        <PrepStep index={5} icon={<Activity size={16} />} title="Analyze" state={analyzeState}>
           <p className="prep-step-desc">
-            BPM/key analysis and waveform generation already work today from the{' '}
-            <Link to="/jobs">Jobs</Link> page. They will be embedded directly in this workflow in a later cycle.
+            Launch BPM/key analysis and waveform generation directly from here, or track full history and cancel
+            running jobs on the <Link to="/jobs">Jobs</Link> page.
           </p>
+          {analyzeMessage && <StatusStrip tone="good">{analyzeMessage}</StatusStrip>}
+          <div className="prep-step-actions">
+            <button className="btn btn--ghost btn--sm" disabled={busy !== null || !bpmPreview?.candidate_count} onClick={() => void runBpm()}>
+              <Activity size={14} /> {busy === 'bpm' ? 'Analyzing…' : `Analyze missing BPM (${bpmPreview?.candidate_count ?? 0} pending)`}
+            </button>
+            <button className="btn btn--ghost btn--sm" disabled={busy !== null || !keyPreview?.candidate_count} onClick={() => void runKey()}>
+              <Activity size={14} /> {busy === 'key' ? 'Analyzing…' : `Analyze missing key (${keyPreview?.candidate_count ?? 0} pending)`}
+            </button>
+            <button className="btn btn--ghost btn--sm" disabled={busy !== null || !waveformPreview?.eligible_to_generate} onClick={() => void runWaveforms()}>
+              <Waves size={14} /> {busy === 'waveform' ? 'Starting…' : `Generate missing waveforms (${waveformPreview?.eligible_to_generate ?? 0} pending)`}
+            </button>
+          </div>
+          {totalTracks > 0 && analyzeOutstanding === 0 && (
+            <p className="prep-step-result">BPM, key, and waveform coverage are complete for this library.</p>
+          )}
         </PrepStep>
 
-        <PrepStep index={7} icon={<CheckCircle2 size={16} />} title="Ready" state="unavailable">
-          <p className="prep-step-desc">
-            A conservative readiness score with blockers and warnings arrives in a later cycle. Until then, use{' '}
-            <Link to="/crates">Manual Crates</Link> or <Link to="/smart-crates">Smart Crates</Link> directly once your
-            library is clean.
-          </p>
+        <PrepStep index={6} icon={<CheckCircle2 size={16} />} title="Ready" state={readyState}>
+          <p className="prep-step-desc">{readiness?.message ?? 'Readiness status will appear once tracks are imported.'}</p>
+          {readiness && readiness.blockers.length > 0 && (
+            <div className="prep-step-links">
+              {readiness.blockers.slice(0, READINESS_DISPLAY_CAP).map((reason) => (
+                <StatusStrip key={reason.code} tone="danger">{reason.message}</StatusStrip>
+              ))}
+              {readiness.blockers.length > READINESS_DISPLAY_CAP && (
+                <p className="prep-step-result">+{readiness.blockers.length - READINESS_DISPLAY_CAP} more blocker(s).</p>
+              )}
+            </div>
+          )}
+          {readiness && readiness.warnings.length > 0 && (
+            <div className="prep-step-links">
+              {readiness.warnings.slice(0, READINESS_DISPLAY_CAP).map((reason) => (
+                <StatusStrip key={reason.code} tone="warn">{reason.message}</StatusStrip>
+              ))}
+              {readiness.warnings.length > READINESS_DISPLAY_CAP && (
+                <p className="prep-step-result">+{readiness.warnings.length - READINESS_DISPLAY_CAP} more warning(s).</p>
+              )}
+            </div>
+          )}
+          <div className="prep-step-links">
+            <Link className="btn btn--primary btn--sm" to="/crates">
+              <ListMusic size={14} /> Continue to Manual Crates
+            </Link>
+            <Link className="btn btn--ghost btn--sm" to="/smart-crates">
+              <Sparkles size={14} /> Continue to Smart Crates
+            </Link>
+          </div>
         </PrepStep>
       </div>
     </div>

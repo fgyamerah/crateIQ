@@ -66,6 +66,7 @@ ROUTE_CONTRACTS: list[dict] = [
              ("queue_total", "pending_count", "approved_count")),
             ("/api/metadata-repair/summary", "dict",
              ("queue_total", "pending_count", "approved_count")),
+            ("/api/library/readiness", "dict", ("total_tracks", "ready", "blockers", "warnings")),
         ],
     },
     {

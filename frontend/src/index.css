@@ -8960,13 +8960,6 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
   gap: 10px;
 }
 
-/* Dim only the step's own chrome (number/icon/title) to signal the step
-   itself isn't active yet. The body keeps full contrast because it still
-   contains genuinely working links to existing pages (Jobs, Crates, etc). */
-.prep-step--locked .prep-step-header {
-  opacity: 0.72;
-}
-
 .prep-step-header {
   display: flex;
   align-items: center;
@@ -9010,10 +9003,6 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
 
 .prep-step-icon--done {
   color: var(--status-succeeded, var(--accent));
-}
-
-.prep-step-icon--locked {
-  color: var(--text-muted);
 }
 
 .prep-step-body {

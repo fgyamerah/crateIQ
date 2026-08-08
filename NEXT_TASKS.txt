@@ -100,11 +100,36 @@ CURRENT FOCUS
     frontend typecheck/build pass. One Impeccable pass on the only
     file-mutating page in the app fixed a real issue: the actual write
     button was styled identically to the harmless preview button.
-[ ] (P1) Core Usability Cycle 8 -- DJ Preparation
-    Wire existing BPM/key analysis and waveform generation into the
-    Library Prep Analyze step; conservative readiness contract
-    (blockers/warnings/optional); link into Manual/Smart Crates. Reuse
-    existing job/ops infrastructure only.
+[x] (P0) Core Usability Cycle 8 -- DJ Preparation (2026-08-08)
+    Final cycle: Library Prep's Analyze step now launches real BPM/key
+    analysis and waveform generation (three inline buttons, each reusing
+    the existing analysis_jobs_service/waveform_bulk_service contracts
+    the Jobs/BpmReview pages already use -- no new engine, no new
+    scheduler). New library_readiness_service.build_readiness()
+    composes existing signals (overview, sanitation/repair pending
+    counts, waveform coverage, write-back failure history) into
+    BLOCKER/WARNING/OPTIONAL reason codes; ready = zero blockers.
+    New GET /api/library/readiness. Ready step shows real blockers/
+    warnings (capped, "+N more") and links to Manual/Smart Crates.
+    Also fixed (found during the final full-workflow Impeccable pass):
+    steps 3/4 still had Cycle-5-era copy falsely claiming Beets/
+    MusicBrainz "land in the next cycle" even though Cycle 6 shipped
+    them -- merged into one real step and removed the now-fully-dead
+    "unavailable"/locked step state (value, two CSS rules, unused Lock
+    import) since every step is genuinely functional now. FINAL
+    END-TO-END ACCEPTANCE: one script chained the full 17-step
+    orchestrator journey against a disposable copy library (import ->
+    sanitation detects a real seeded issue -> approved -> real Beets +
+    MusicBrainz lookups -> field comparison -> approved -> exact write
+    plan -> backup -> confirmed write -> re-read verify -> restore
+    byte-identical -> real BPM analysis launched and completed -> key/
+    waveform launch paths exercised -> readiness correctly ready=true
+    with 2 truthful warnings) -- all temporary artifacts cleaned up, all
+    88 original sanctioned files confirmed byte-unchanged throughout the
+    entire 4-cycle program. 1468 backend tests pass; frontend typecheck/
+    build pass; validate-docs --strict passes. See CHANGELOG.txt and
+    PROJECT_CONTEXT.md Latest Milestone for full detail. Not merged to
+    main.
 [ ] (P2) Consider consolidating Settings.tsx's own import scan/import UI
     into a pointer at /library-prep, or vice versa, so Import has exactly
     one home instead of two UI entry points calling the same API

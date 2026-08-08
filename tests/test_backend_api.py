@@ -911,6 +911,55 @@ def test_library_quality_endpoint_reports_progress_and_actions(client):
     assert any(action["target"] == "/issues" for action in payload["recommended_next_actions"])
 
 
+def test_library_readiness_no_tracks_is_a_blocker(tmp_path, monkeypatch):
+    root = tmp_path / "empty_root"
+    root.mkdir(parents=True)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+    with TestClient(backend_main.app) as test_client:
+        response = test_client.get("/api/library/readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    assert payload["total_tracks"] == 0
+    assert payload["ready"] is False
+    assert payload["blockers"][0]["code"] == "no_tracks_imported"
+
+
+def test_library_readiness_flags_missing_required_fields_as_blockers_and_has_no_warnings_when_clean(client):
+    test_client, root = client
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, bpm, key_musical, key_camelot, status) "
+            "VALUES (?, ?, NULL, NULL, 'House', 120.0, '8A', '08A', 'ok')",
+            (str(root / "library" / "no-metadata.mp3"), "no-metadata.mp3"),
+        )
+
+    response = test_client.get("/api/library/readiness")
+
+    assert response.status_code == 200
+    payload = response.json()
+    codes = {b["code"] for b in payload["blockers"]}
+    assert "missing_required_artist" in codes
+    assert "missing_required_title" in codes
+    assert payload["ready"] is False
+
+
+def test_library_readiness_is_read_only(client):
+    test_client, root = client
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        before = conn.execute("SELECT artist, title, genre, bpm FROM tracks ORDER BY id").fetchall()
+
+    response = test_client.get("/api/library/readiness")
+    assert response.status_code == 200
+
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        after = conn.execute("SELECT artist, title, genre, bpm FROM tracks ORDER BY id").fetchall()
+    assert before == after
+
+
 def test_library_quality_endpoint_handles_missing_queue_files(tmp_path, monkeypatch):
     root = tmp_path / "quality_root"
     root.mkdir(parents=True)

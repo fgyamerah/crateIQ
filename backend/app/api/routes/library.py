@@ -25,7 +25,8 @@ from pydantic import BaseModel
 
 from ...core.library_root import selected_library_root
 from ...core.pipeline_db import get_pipeline_conn, pipeline_db_exists
-from ...services import read_only as read_only_service
+from ...schemas.library_readiness import LibraryReadinessResponse
+from ...services import library_readiness_service, read_only as read_only_service
 from ...services import track_service
 from modules import metadata_repair, metadata_sanitation
 
@@ -387,6 +388,16 @@ async def get_library_quality() -> LibraryQualityResponse:
         ),
     }
     return LibraryQualityResponse(**response)
+
+
+# ---------------------------------------------------------------------------
+# GET /api/library/readiness
+# ---------------------------------------------------------------------------
+
+@router.get("/library/readiness", response_model=LibraryReadinessResponse)
+async def get_library_readiness() -> LibraryReadinessResponse:
+    """Conservative, explainable "ready for crates" readiness contract (Cycle 8)."""
+    return LibraryReadinessResponse(**library_readiness_service.build_readiness())
 
 
 # ---------------------------------------------------------------------------
