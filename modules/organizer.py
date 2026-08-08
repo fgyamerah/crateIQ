@@ -1,9 +1,9 @@
 """
 File organizer — renames and moves files into the sorted library structure.
 
-Primary path: beets import (handles MusicBrainz lookup, artwork, genre).
-Fallback path: pure-Python organizer using existing tags when beets fails
-               or is not installed.
+Beets CLI import is disabled by policy (beet CLI binary is forbidden in
+CrateIQ application/tooling code); this module always uses the pure-Python
+organizer below, which relies on existing file tags.
 
 Naming convention:
     SORTED / first_letter / Artist Name / Artist Name - Track Title (Mix).ext
@@ -18,7 +18,6 @@ After organizing, the DB filepath is updated to the new location.
 import logging
 import re
 import shutil
-import subprocess
 import unicodedata
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
@@ -491,42 +490,15 @@ def _read_tags(path: Path) -> Tuple[str, str, str, str]:
 # ---------------------------------------------------------------------------
 def _run_beets(files: List[Path], dry_run: bool) -> Tuple[List[Path], List[Path]]:
     """
-    Call `beet import` on the inbox directory.
-    Returns (organized_paths, failed_paths).
-    Note: beets moves files and we lose the original paths — we re-scan SORTED.
+    Historically shelled out to the `beet` CLI. CrateIQ's invariant is now
+    Beets Python API = allowed, `beet` CLI binary = forbidden anywhere in
+    application/tooling code, so this always defers to the Python fallback
+    organizer below (`_organize_file`). `--skip-beets` remains accepted for
+    CLI compatibility but has no additional effect since beets CLI import was
+    removed.
     """
-    beet_cmd = [
-        config.BEET_BIN,
-        "--config", str(config.BEETS_CONFIG),
-        "import",
-        "--quiet",     # no interactive prompts
-        "--nowrite",   # we write tags ourselves after analysis
-        str(config.INBOX),
-    ]
-    if dry_run:
-        # Skip beets entirely on dry-run (no --pretend in beets 1.x)
-        log.info("DRY-RUN: skipping beets import")
-        return [], files
-
-    try:
-        result = subprocess.run(
-            beet_cmd,
-            capture_output=True,
-            text=True,
-            timeout=600,  # 10 min for large batches
-        )
-        log.debug("beets stdout: %s", result.stdout[-1000:])
-        if result.returncode != 0:
-            log.warning("beets exited with rc=%d: %s", result.returncode, result.stderr[-500:])
-            return [], files  # fall back to Python organizer
-        # beets has moved files — return empty failed list
-        return [], []
-    except FileNotFoundError:
-        log.warning("beets not found at '%s' — using Python fallback organizer", config.BEET_BIN)
-        return [], files
-    except subprocess.TimeoutExpired:
-        log.error("beets timed out — using Python fallback organizer")
-        return [], files
+    log.info("Beets CLI import is disabled by policy — using Python fallback organizer")
+    return [], files
 
 
 # ---------------------------------------------------------------------------

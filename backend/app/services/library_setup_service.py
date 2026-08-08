@@ -58,10 +58,20 @@ CREATE INDEX IF NOT EXISTS idx_tracks_bpm ON tracks(bpm);
 
 
 def _target_root(library_root: str | None) -> Path:
+    """
+    Resolve the library root a mutating/import operation must act on.
+
+    A pending root written by Settings (``.run/local/crateiq.env``) is only a
+    staged change that takes effect on process restart (see
+    ``scripts/crateiq-local-services.sh``); it must never be substituted here
+    just because a caller omitted an explicit ``library_root``, or a
+    same-process operation could silently scan/index a different library than
+    the one actually selected for this running backend. Omitting the argument
+    always means "use the canonical selected root for this process."
+    """
     if library_root is not None:
         return settings_service._validated_library_root(library_root)
-    pending = settings_service._pending_library_root()
-    return pending if pending is not None else selected_library_root()
+    return selected_library_root()
 
 
 def _db_path(root: Path) -> Path:

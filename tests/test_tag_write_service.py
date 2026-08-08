@@ -98,6 +98,39 @@ def test_build_plan_computes_exact_diff_and_is_side_effect_free(env):
     assert path.read_bytes() == original_bytes, "preview must never touch the file"
 
 
+def test_build_plan_expected_mtime_ns_is_a_string(env):
+    """
+    Regression: nanosecond epoch timestamps exceed Number.MAX_SAFE_INTEGER,
+    so a JS client that round-trips expected_mtime_ns as a JSON *number*
+    silently corrupts it, permanently failing apply_plan's staleness check
+    for every real browser-driven write. It must be serialized as a string.
+    """
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    track_id = _insert_track(root, filepath=path, artist="New Artist")
+
+    item = svc.build_plan([track_id])["items"][0]
+
+    assert isinstance(item["expected_mtime_ns"], str)
+    assert int(item["expected_mtime_ns"]) == path.stat().st_mtime_ns
+
+
+def test_apply_accepts_expected_mtime_ns_as_string(env):
+    """apply_plan must accept the string form echoed back by a JSON client."""
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    track_id = _insert_track(root, filepath=path, artist="New Artist")
+
+    item = svc.build_plan([track_id])["items"][0]
+    expected = {track_id: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+
+    result = svc.apply_plan([track_id], expected, confirm=True)
+
+    assert result["applied"] == 1 and result["failed"] == 0
+
+
 def test_build_plan_blocks_unsupported_format_and_missing_file(env):
     root = env
     wav_path = root / "library" / "track.wav"

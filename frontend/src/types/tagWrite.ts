@@ -15,7 +15,8 @@ export interface TagWritePlanItem {
   blocker: string | null
   fields: TagWritePlanField[]
   expected_size?: number
-  expected_mtime_ns?: number
+  /** JSON string: nanosecond epoch timestamps exceed Number.MAX_SAFE_INTEGER. */
+  expected_mtime_ns?: string
 }
 
 export interface TagWritePlan {

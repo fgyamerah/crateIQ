@@ -260,6 +260,7 @@ export default function EnrichmentReviewPage() {
                   <input type="checkbox" checked={confirm} disabled={!saved} onChange={(e) => setConfirm(e.target.checked)} />
                   I understand this writes only selected empty metadata fields to CrateIQ&rsquo;s local DB.
                 </label>
+                {!saved && <p className="lib-muted">Click &ldquo;Save selection&rdquo; above first to enable this.</p>}
                 <button className="btn btn--primary btn--sm" disabled={busy || !saved || !confirm || !Object.keys(fields).length} onClick={() => void runApply()}>
                   <Check size={13} />Apply selected fields
                 </button>

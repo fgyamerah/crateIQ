@@ -79,6 +79,28 @@ CURRENT FOCUS
     source in Settings (currently the Test button reports readiness
     without making a network call; the real check only happens via
     Enrichment Review's online-lookup action).
+[x] (P0) Pre-merge hardening pass (2026-08-08)
+    Three fixes found via code inspection and a real disposable-library
+    browser walkthrough of Import -> Clean metadata -> Enrich & review
+    (real Beets + real MusicBrainz lookups) -> Apply to Files (write,
+    verify, restore) -> Analyze -> Ready -> Manual/Smart Crates continuation:
+    (1) library_setup_service._target_root() no longer falls back to the
+    pending (not-yet-active) library root when a mutating call omits an
+    explicit library_root -- it now always uses the canonical
+    selected_library_root() for the running process and fails closed if
+    none is configured, closing the exact near-miss documented in Cycle 7
+    below. (2) modules/organizer.py's default beets-CLI subprocess path
+    (`_run_beets`) is removed -- it always uses the Python fallback
+    organizer now; added a static AST-based regression guard
+    (tests/test_no_beet_cli_invocation.py) that fails the suite if any
+    production code ever invokes the `beet` binary again. (3) Found live in
+    the browser: every real UI-driven Apply-to-Files write failed as a
+    false "stale plan" because expected_mtime_ns (a nanosecond epoch
+    timestamp) exceeds JS's safe-integer range and got silently corrupted
+    on the JSON round-trip; fixed by sending it as a string end-to-end.
+    Also added an inline hint for Enrichment Review's confirm checkbox,
+    which was silently disabled with no explanation. 1474 backend tests
+    pass; frontend typecheck/build pass. See CHANGELOG.txt for full detail.
 [x] (P0) Core Usability Cycle 7 -- Controlled Metadata Write-Back (2026-08-08)
     Real writes to actual file tags, the highest-risk cycle: exact
     read-only write plan (diff local index vs current file tags for

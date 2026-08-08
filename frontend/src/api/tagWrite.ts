@@ -6,7 +6,7 @@ export const fetchTagWritePlan = (trackIds: number[]) =>
 
 export const applyTagWritePlan = (items: TagWritePlanItem[]) => {
   const trackIds = items.map((item) => item.track_id)
-  const expected: Record<number, { expected_size: number; expected_mtime_ns: number }> = {}
+  const expected: Record<number, { expected_size: number; expected_mtime_ns: string }> = {}
   for (const item of items) {
     if (!item.blocked && item.expected_size !== undefined && item.expected_mtime_ns !== undefined) {
       expected[item.track_id] = { expected_size: item.expected_size, expected_mtime_ns: item.expected_mtime_ns }

@@ -136,6 +136,54 @@ def test_import_never_modifies_source_audio_bytes(tmp_path, monkeypatch):
     assert track.read_bytes() == original
 
 
+def test_omitted_root_never_uses_pending_root_over_selected_root(tmp_path, monkeypatch):
+    """
+    Regression for the Cycle 7 near-miss: a pending library root (library A,
+    staged via Settings but not yet active because the process hasn't
+    restarted) must never be silently substituted for the actual selected
+    root (library B) when a mutating call omits an explicit library_root.
+    """
+    library_a = tmp_path / "library-a-pending"
+    library_b = tmp_path / "library-b-selected"
+    library_a.mkdir()
+    library_b.mkdir()
+    _write(library_a / "a-track.mp3")
+    _write(library_b / "b-track.mp3")
+
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(library_b))
+    monkeypatch.setattr(
+        "backend.app.services.settings_service._pending_library_root",
+        lambda: library_a,
+    )
+
+    result = svc.initialize_library()
+    assert Path(result["library_root"]) == library_b.resolve()
+    assert (library_b / "logs" / "processed.db").is_file()
+    assert not (library_a / "logs" / "processed.db").exists()
+
+    import_result = svc.import_previewed_library()
+    assert import_result["imported_count"] == 1
+    with sqlite3.connect(library_b / "logs" / "processed.db") as conn:
+        rows = conn.execute("SELECT filepath FROM tracks").fetchall()
+    assert rows == [(str((library_b / "b-track.mp3").resolve()),)]
+    assert not (library_a / "logs" / "processed.db").exists()
+
+
+def test_target_root_fails_closed_when_no_root_is_configured(tmp_path, monkeypatch):
+    monkeypatch.delenv("CRATEIQ_LIBRARY_ROOT", raising=False)
+    monkeypatch.delenv("CRATEMINDAI_LIBRARY_ROOT", raising=False)
+    monkeypatch.setattr(
+        "backend.app.core.library_root._load_toolkit_music_root", lambda: None
+    )
+    monkeypatch.setattr(
+        "backend.app.services.settings_service._pending_library_root",
+        lambda: tmp_path / "some-pending-library",
+    )
+
+    with pytest.raises(RuntimeError):
+        svc.initialize_library()
+
+
 def test_scan_skips_unreadable_and_reports_sample(tmp_path):
     root = tmp_path / "lib"
     root.mkdir()

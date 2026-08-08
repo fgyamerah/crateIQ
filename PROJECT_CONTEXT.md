@@ -6,6 +6,73 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Pre-merge hardening pass on `feat/crateiq-core-usability`
+  (base Cycle 8, this file's previous entry), no merge to main. Three
+  fixes, the first two closing gaps this file already flagged:
+  1. **Closed the Cycle 7 near-miss documented below.**
+     `library_setup_service._target_root()` no longer falls back to
+     `settings_service._pending_library_root()` when a mutating call
+     (`initialize_library`, `scan_preview`, `import_previewed_library`)
+     omits an explicit `library_root` -- it now always resolves to
+     `selected_library_root()` (the same canonical source
+     `tag_write_service` and most other services already use) and raises
+     if none is configured, rather than silently substituting whatever
+     root happens to be staged in `.run/local/crateiq.env`. Regression
+     tests in `tests/test_library_setup_service.py` reproduce the exact
+     scenario: pending root -> library A, env-selected root -> library B,
+     omitted-argument call must act on B only.
+  2. **Closed the `beet` CLI risk this file's Cycle 6 entry flagged as a
+     hard rule.** `modules/organizer.py`'s `_run_beets()` was still
+     shelling out to the real `beet` binary via `subprocess.run()` by
+     default (only `--skip-beets` avoided it) -- a real violation of
+     "never invoke the `beet` CLI binary from CrateIQ code" hiding in the
+     legacy pipeline organizer, distinct from the sanctioned Beets Python
+     API usage in `musicbrainz_client.py`. It now always uses the
+     existing pure-Python fallback organizer; `--skip-beets` is accepted
+     for CLI compatibility but is a no-op. Added
+     `tests/test_no_beet_cli_invocation.py`, a static AST-based regression
+     guard scanning all production Python for any subprocess/os.system/
+     shell call referencing "beet", verified against a planted bad
+     snippet so the detector itself is tested.
+  3. **Found live during a real disposable-library browser walkthrough**
+     (Library Prep: Import -> Clean metadata -> Enrich & review, with
+     real Beets and real MusicBrainz per-track lookups -> Apply to Files
+     -> Analyze -> Ready -> Manual/Smart Crates continuation, at
+     `http://127.0.0.1:5175` against a 6-track disposable copy under
+     `/tmp`, never the sanctioned library): every real UI-driven
+     Apply-to-Files write failed as a false "File changed since preview
+     -- stale plan blocked", even immediately after a fresh preview.
+     Root cause: `expected_mtime_ns` is a nanosecond epoch timestamp
+     (~1.8x10^18), which exceeds JavaScript's `Number.MAX_SAFE_INTEGER`
+     (2^53); round-tripping it as a JSON *number* through the browser
+     silently corrupts the value (confirmed via `Number.isSafeInteger`
+     and a direct `curl` vs. browser comparison), so the apply-time
+     staleness check in `tag_write_service.apply_plan()` always failed --
+     a genuine defect blocking the single highest-risk step in the whole
+     app from ever working through the real UI. Fixed by serializing
+     `expected_mtime_ns` as a JSON string end-to-end (Pydantic coerces it
+     back to a full-precision int on the way in; `apply_plan()` now
+     `int()`-coerces defensively regardless of caller type, so direct
+     Python callers in tests are unaffected). Verified against the live
+     disposable fixture afterward: preview -> confirm -> write -> restore
+     all succeeded, byte-for-byte SHA-256-identical to the pre-write
+     backup. Also fixed a confirmed-live, non-blocking UX gap found in
+     the same walkthrough: Enrichment Review's confirm checkbox was
+     silently disabled with no explanation until "Save selection" was
+     clicked first (caused three failed attempts firsthand); added an
+     inline hint.
+  Real Beets and MusicBrainz lookups both confirmed live (network calls
+  measured at 6.4s and 0.8s respectively via backend request logs, not
+  mocked). No original sanctioned file or its `processed.db` was
+  touched (confirmed via mtime check spanning the whole session). 1474
+  backend tests pass (6 new); frontend typecheck/build pass;
+  `pipeline.py validate-docs --strict` passes. True responsive
+  verification at 1440/760/390px could not run in this session -- the
+  sandboxed browser's display is fixed at 1280x800 and `resize_window`
+  silently no-ops beyond it (confirmed via `window.innerWidth`/
+  `screen.width` after the call); the rest of the walkthrough ran at the
+  environment's native 1280px.
+
 - 2026-08-08: Cycle 8 (DJ Preparation) of the crateIQ Core Usability
   Program, on `feat/crateiq-core-usability` (base Cycle 7 `580b0e7`), no
   merge to main. Final cycle: connects the already-built BPM/key analysis

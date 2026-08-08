@@ -2,6 +2,66 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Pre-merge hardening pass: library-root safety, beets CLI guard, tag-write precision fix
+
+- What changed: a hardening pass on feat/crateiq-core-usability before merge
+  consideration. Fixes an ambiguous library-root fallback exposed during
+  Cycle 7 acceptance testing, adds a durable static guard against the app
+  ever invoking the `beet` CLI binary, and fixes a real defect (found via a
+  live browser walkthrough) that silently failed every UI-driven Apply-to-
+  Files write.
+- Library-root safety (backend/app/services/library_setup_service.py):
+  `_target_root()` no longer falls back to the pending library root
+  (`.run/local/crateiq.env`, written by Settings but only takes effect on
+  process restart) when a mutating call (`initialize_library`,
+  `scan_preview`, `import_previewed_library`) omits an explicit
+  `library_root`. It now always uses the canonical `selected_library_root()`
+  for this running process, and fails closed (raises) if no root is
+  configured, instead of silently scanning/indexing a different library
+  than the one actually selected. Regression tests in
+  tests/test_library_setup_service.py reproduce the exact near-miss: a
+  pending root pointing at library A and an env-selected root pointing at
+  library B; the operation must act on B only.
+- Beets CLI guard: modules/organizer.py's `_run_beets()` shelled out to the
+  real `beet` CLI via subprocess (default pipeline behavior unless
+  `--skip-beets`), violating the intended invariant that only the Beets
+  Python API is allowed in application/tooling code. It now always defers
+  to the existing pure-Python fallback organizer; `--skip-beets` remains
+  accepted for CLI compatibility but is now a no-op. Added
+  tests/test_no_beet_cli_invocation.py, a static AST-based regression guard
+  that scans all production Python (backend/app, modules, utils,
+  intelligence, ai, pipeline.py, config.py) for any subprocess/os.system/
+  shell invocation referencing "beet", verified against a planted bad
+  snippet. The Beets Python API (backend/app/services/musicbrainz_client.py)
+  is unaffected and remains the only sanctioned Beets usage.
+- Tag-write precision fix (backend/app/services/tag_write_service.py,
+  frontend/src/api/tagWrite.ts, frontend/src/types/tagWrite.ts): found live,
+  in the browser, during the Library Prep -> Apply to Files walkthrough --
+  every real UI-driven write failed as "File changed since preview -- stale
+  plan blocked" even immediately after a fresh preview. Root cause:
+  `expected_mtime_ns` is a nanosecond epoch timestamp (~1.8e18), which
+  exceeds JavaScript's Number.MAX_SAFE_INTEGER (2^53); round-tripping it as
+  a JSON number through the browser silently corrupts the value, so the
+  apply-time staleness check always failed. Fixed by serializing
+  `expected_mtime_ns` as a JSON string end-to-end (Pydantic coerces it back
+  to a full-precision int; `apply_plan()` now int()-coerces defensively
+  regardless of caller type). Verified against the disposable browser
+  fixture: preview -> confirm -> write -> byte-for-byte restore all
+  succeeded afterward. Added two regression tests in
+  tests/test_tag_write_service.py.
+- Also fixed a confirmed-live UX gap in the same walkthrough: Enrichment
+  Review's "I understand..." confirm checkbox was silently disabled with no
+  explanation until "Save selection" was clicked first, which caused
+  repeated failed attempts. Added an inline hint
+  (frontend/src/pages/EnrichmentReview.tsx).
+- Files affected: backend/app/services/library_setup_service.py,
+  backend/app/services/tag_write_service.py, modules/organizer.py,
+  frontend/src/api/tagWrite.ts, frontend/src/types/tagWrite.ts,
+  frontend/src/pages/EnrichmentReview.tsx, tests/test_library_setup_service.py,
+  tests/test_tag_write_service.py, tests/test_no_beet_cli_invocation.py (new).
+- Migration notes: none. No DB schema, config key, or CLI flag was removed;
+  `--skip-beets` is now always effectively on.
+
 [2026-08-08] — Core Usability Cycle 8: DJ preparation + final readiness
 
 - What changed: the final cycle of the crateIQ Core Usability Program.

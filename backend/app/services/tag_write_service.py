@@ -113,7 +113,11 @@ def _plan_row(track: sqlite3.Row, root: Path) -> dict[str, Any]:
     return {
         "track_id": track["id"], "filename": filename, "relative_path": relative_path,
         "blocked": False, "blocker": None, "fields": fields,
-        "expected_size": stat.st_size, "expected_mtime_ns": stat.st_mtime_ns,
+        # expected_mtime_ns is a JSON string: nanosecond epoch timestamps
+        # exceed Number.MAX_SAFE_INTEGER, so a JS client round-tripping it as
+        # a JSON number silently corrupts it, permanently failing the
+        # apply-time staleness check below.
+        "expected_size": stat.st_size, "expected_mtime_ns": str(stat.st_mtime_ns),
     }
 
 
@@ -211,7 +215,11 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
                 failed += 1
                 results.append({"track_id": track_id, "status": "failed", "reason": "Source file no longer exists."})
                 continue
-            if stat.st_size != exp.get("expected_size") or stat.st_mtime_ns != exp.get("expected_mtime_ns"):
+            try:
+                expected_mtime_ns = int(exp.get("expected_mtime_ns"))
+            except (TypeError, ValueError):
+                expected_mtime_ns = None
+            if stat.st_size != exp.get("expected_size") or stat.st_mtime_ns != expected_mtime_ns:
                 failed += 1
                 results.append({"track_id": track_id, "status": "failed",
                                 "reason": "File changed since preview -- stale plan blocked. Re-run preview and try again."})
