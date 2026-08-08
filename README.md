@@ -1,51 +1,49 @@
 # crateIQ
 
-**Local-first DJ music library intelligence for safer crates, metadata review, harmonic planning, and export prep.**
-
-crateIQ is a local app for DJs who want to inspect a music library, make
-deliberate crates, review existing metadata, and prepare portable exports
-without handing control of their collection to a cloud service or automatic
-file-writing workflow.
+**Local-first DJ library preparation: managed Inbox → Library workflow, multi-provider metadata intelligence, analysis, crates, and safe publishing.**
 
 ![crateIQ Library workspace](docs/screenshots/crateiq-library.webp)
 
 *The Library workspace: local index health, filtering, track review, harmonic context, and browser-native preview.*
 
-## What crateIQ does
+## What crateIQ is
 
-- Initializes and imports a local music folder into CrateIQ's own SQLite index.
-- Reviews library quality, issues, folders, and existing metadata.
-- Builds ordered Manual Crates and saves Smart Crate suggestions as editable
-  Manual Crates.
-- Uses a persistent browser-native bottom player to preview safely available
-  files across Library, Music Review, and route changes.
-- Creates portable CSV, JSON, M3U, and UTF-8 M3U8 crate exports.
-- Stages Serato handoffs and Rekordbox-importable XML; it does not write either
-  application's live database.
-- Reviews and imports Mixed In Key-compatible BPM/key metadata into CrateIQ's
-  local index only.
-- Offers optional, explicitly requested BPM and key/Camelot analysis for tracks
-  still missing trusted values.
+crateIQ is a local-first DJ music preparation and library-management app.
+You point it at raw downloads, it copies them into a managed workspace on
+your machine, cleans and identifies the metadata (deterministically first,
+then via multi-provider consensus), surfaces anything uncertain for you to
+resolve, and lets you explicitly promote finished tracks into a clean,
+Rekordbox-ready library — all without a cloud account, and without ever
+touching your original source files.
 
-## Local-first safety model
+## Core workflow
 
-- **Your source music files and tags are not modified** by library setup,
-  import, crate building, preview, or the portable/staged export workflows.
-- **Import does not run BPM or key analysis.** Analysis is optional,
-  preview-first, and only starts after explicit confirmation.
-- **Mixed In Key-compatible values are trusted and preserved.** crateIQ fills
-  only missing local-index values and never overwrites trusted BPM, key, or cue
-  information.
-- **Optional tools are scoped to their own jobs.** Their absence does not block
-  import, browsing, crates, preview, or portable exports.
-- **Serato and Rekordbox live databases are never written.** Exports are staged
-  artifacts for review or manual import.
-- **No cloud account is required.** crateIQ is intended for trusted local use;
-  it currently has no authentication for remote or multi-user deployment.
+```
+External Sources
+    │  copy (originals untouched)
+    ▼
+  Inbox  ───────────────►  Process All
+    │                          │
+    │                          ├─ deterministic cleanup
+    │                          ├─ multi-provider metadata consensus
+    │                          ├─ verified tag write-back (Inbox copy only)
+    │                          └─ BPM / key analysis
+    ▼
+Needs Review  (uncertainty & conflicts)
+    │  resolve
+    ▼
+  Ready
+    │  explicit "Move Ready to Library"
+    ▼
+ Library/<Genre>/<Artist>/<Artist> - <Title>.<ext>
+    │
+    ▼
+Crates → Set Builder → Publish
+```
 
-## Managed Library workflow
+### Managed workspace
 
-crateIQ can manage a music workspace with three physically separated zones
+crateIQ manages a music workspace with three physically separated zones
 under one **Managed Root** folder you choose (Settings → Workspace):
 
 ```
@@ -58,79 +56,216 @@ under one **Managed Root** folder you choose (Settings → Workspace):
 - **Import copies, never moves.** Selecting external files or folders in
   **Inbox** copies them into `Inbox/`; your original source files are never
   modified, renamed, or deleted.
-- **Inbox** is the preparation workspace: import, run **Process All**
-  (deterministic cleanup, bounded high-confidence metadata identification,
-  verified tag write-back to the Inbox copy only, and BPM/key analysis, all
-  behind one explicit confirmation), or use Clean/Enrich Selected on a
-  chosen subset.
-- **Needs Review** aggregates open exceptions -- missing metadata, identity/
-  enrichment uncertainty, genre, analysis, and quality findings -- from
-  crateIQ's existing review queues into one place, with links to resolve
-  each on its specialist page.
-- **Move Ready to Library** is an explicit, separate action. A track is only
-  promotable once artist, title, and genre are present and its metadata
-  write has been verified; missing BPM, key, or waveform are warnings, not
-  blockers. Promoted files move into `Library/<Genre>/<Artist>/<Artist> -
-  <Title>.<ext>` and no longer appear in Inbox.
+- **Inbox is crateIQ's working copy.** All metadata writes happen only
+  against managed Inbox copies, never against the external originals.
+- **Library contains only explicitly promoted finished tracks** — nothing
+  lands there automatically.
+- **Quarantine is never an automatic destination.** No workflow moves files
+  there on its own.
 - **An existing library you already point crateIQ at directly** (files
   scanned in place, no `Inbox`/`Library`/`Quarantine` folders) is never
-  silently restructured into this layout -- configuring a managed workspace
+  silently restructured into this layout — configuring a managed workspace
   requires a new, dedicated root.
-- **Metadata provider configuration** lives in Settings → Metadata Sources.
-  AcoustID, Discogs, Beatport, Spotify, Deezer, Last.fm, and YouTube each
-  show a truthful status (Ready / Needs Setup / Unavailable) based on real
-  credential/API checks -- crateIQ never claims a provider is connected
-  without a successful request. See that page for each provider's current
-  setup requirements and limitations (several require your own free
-  developer account; Beatport requires partner approval with no public
-  self-service signup).
+- Operational databases, backups, and caches (crateIQ's SQLite index, job
+  state, waveform cache) live under crateIQ's own runtime data directories,
+  outside the managed music tree.
 
-## Feature status
+## Batch preparation
 
-| Feature | Status | Notes |
+**Process All** is the main way tracks move through Inbox. Behind one
+explicit confirmation, it runs:
+
+1. **Deterministic metadata cleanup** — strips URL watermarks, promo junk,
+   and malformed fields; no network calls.
+2. **Multi-provider metadata routing and consensus** — gathers evidence from
+   the providers you have configured (see below) and reduces it to a
+   field-by-field verdict.
+3. **Verified tag write-back** — HIGH-confidence fields are written to the
+   managed Inbox copy through the existing preview/stale-check/backup/
+   re-read verification path; everything else is left untouched and queued
+   for review.
+4. **Analysis preparation** — BPM and key/Camelot for tracks still missing
+   trusted values.
+
+**Process All does not query every provider for every track.** Evidence
+gathering follows a bounded, staged order (Beets + MusicBrainz first, since
+they need no credentials; AcoustID fingerprinting next if configured; then
+Discogs/Beatport, Spotify/Deezer, Last.fm, and finally YouTube as a
+last-resort corroboration source), stopping early once identity confidence
+is already HIGH. Only providers whose credentials are configured and who
+report themselves ready are queried; an unconfigured provider is silently
+skipped, never an error.
+
+Existing non-empty metadata is never silently overwritten. The one
+exception: a field whose *current* value is already a known junk/placeholder
+(e.g. an "Unknown Artist" stand-in) is cleared before a HIGH-confidence
+replacement is applied — an explicit, logged step, not a weakening of the
+general no-overwrite rule.
+
+**Process All never promotes tracks into Library.** Promotion is always a
+separate, explicit action (see "Ready and promotion" below).
+
+You can also run **Clean Selected** or **Enrich Selected** on a chosen
+subset instead of the whole Inbox.
+
+## Metadata intelligence
+
+crateIQ draws on multiple evidence sources per track:
+
+| Source | Kind | Current support |
 | --- | --- | --- |
-| Managed workspace (Inbox/Library/Quarantine) | Implemented | Copy-based import, Process All batch preparation, unified Needs Review, explicit Move Ready to Library promotion. Additive to the existing direct-library model; an existing library is never auto-restructured. |
-| Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
-| Manual Crates | Implemented | Create, edit, reorder, and save local DJ working lists. |
-| Smart Crates | Implemented | Deterministic suggestions from existing local metadata; save as Manual Crates. |
-| Persistent audio preview | Implemented | App-shell bottom player with Library/Music Review queues, route persistence, seek, volume, and safe unavailable states. |
-| Portable exports | Implemented | CSV, JSON, M3U, and M3U8, with safe staged output paths. |
-| Staged Serato export | Implemented | M3U8 plus manifest handoff; exact binary `.crate` writing is deferred. |
-| Staged Rekordbox XML export | Implemented | Importable XML file only; no live Rekordbox database writer. |
-| MIK coverage/import | Implemented foundation | Explicit read-only metadata preview and DB-only import; cue-tag parsing is deferred. |
-| BPM analysis with `aubio` | Implemented safe runner | Preview and confirmation required; only missing BPM is eligible. |
-| Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
-| Beets enrichment | Selected-field DB-only review | Local missing-field candidates; explicit saved/confirmed artist/title/genre apply, no `beet` invocation or tag/file writes. |
-| Metadata Sources | Implemented | Local tags, MIK, Beets, MusicBrainz, plus real adapters for AcoustID, Discogs, Beatport, Spotify, Deezer, Last.fm, and YouTube against their official APIs. Each reports a truthful Ready/Needs Setup/Unavailable status; external providers are disabled by default and require your own credentials except Deezer (no credentials needed for search). |
-| Multi-provider consensus | Implemented | Explainable field-by-field HIGH/MEDIUM/LOW/CONFLICT evidence aggregation with staged provider routing and genre-authority weighting; reachable via a preview endpoint. Not yet wired into automatic batch write-back (see NEXT_TASKS.txt). |
-| Multi-source enrichment review | Implemented foundation | Compares conservative local suggestions and source status; selected empty local-index fields only. No provider API calls. |
-| Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
-| Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
-| Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Real waveforms | W1–W8 audited | Explicit, demand-driven backend generation (`POST` to request, side-effect-free `GET` to read, bounded single-worker scheduler, deduplication, cancellation, atomic gzip-JSON cache, ETag) plus a canvas waveform in the persistent player with click/drag/touch/keyboard seeking, a played/unplayed progress overlay, a decorative fallback for every non-ready state, and full native accessible slider semantics. The cache is bounded and self-maintaining, with a confirmation-gated manual clear. Verified end to end against real MP3 and FLAC in an isolated test library (see below); a full source-level safety/regression audit (W8) found zero blockers. |
-| Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
+| Embedded tags | local | Implemented and ready |
+| Filename hints | local | Implemented and ready |
+| Mixed In Key-compatible tags | local | Implemented and ready — read-only preview, DB-only import |
+| Beets | installed tool | Implemented and ready (isolated Python API, no `beet` CLI invocation) |
+| MusicBrainz | provider | Implemented and ready — credential-free |
+| AcoustID / Chromaprint | provider | Implemented — needs a free self-serve client key from acoustid.org |
+| Deezer | provider | Implemented and ready — credential-free search |
+| Discogs | provider | Implemented — needs a free self-serve personal access token |
+| Spotify | provider | Implemented — needs your own Spotify Developer app credentials |
+| Last.fm | provider | Implemented — needs a free self-serve API key |
+| YouTube | provider | Implemented — needs a Google Cloud API key |
+| Beatport | provider | Implemented in code — unavailable without Beatport Partner Portal approval (no public self-service signup) |
 
-### Browser playback notes
+Settings → Metadata Sources reports each provider's real status
+(Ready / Needs Setup / Unavailable) from a live credential/capability check —
+crateIQ never claims a provider is connected without a successful check.
 
-The persistent player streams only through the existing DB-backed
-`/api/tracks/{track_id}/preview-audio` endpoint. Playback availability depends
-on the selected file existing under the configured library root and on the
-browser supporting its audio format. Missing, out-of-root, or unsupported
-files show an unavailable state; crateIQ does not transcode them.
+### Consensus, not a score
 
-Library queues the currently visible filtered page. Music Review queues its
-current review list, keeps next/previous selection synchronized with the bottom
-player, and does not save a review merely because a track was selected or
-played. The low/mid/high display is a deterministic visual placeholder—not an
-extracted waveform or audio analysis. Player use never writes tags, audio
-files, BPM, key, Camelot, cues, MIK data, crate order, or DJ databases.
+Each metadata field gets its own explainable verdict, not a single fake
+confidence percentage:
 
-The 2026-08-05 playback pass verified MP3 and FLAC in Chrome using the explicit
-`crateiq-test-library`; this is evidence for those files in that browser, not a
-claim that every codec/container works everywhere. Queue boundaries do not
-wrap. A natural track end advances and continues when another queue item exists,
-while the final item stops safely. The player labels the source as Library or
-Music Review and does not display the indexed absolute local filepath.
+- **HIGH** — evidence agrees strongly enough to auto-apply during Process All.
+- **MEDIUM / LOW** — some evidence, not enough to auto-apply; goes to Needs Review.
+- **CONFLICT** — sources actively disagree; goes to Needs Review with every
+  candidate shown.
+
+Verdicts are field-by-field, not track-by-track: a HIGH-confidence
+artist/title identity match does **not** mean genre is also HIGH — genre
+keeps its own authority-weighted verdict (Beatport and Discogs carry more
+genre authority than a generic text match), so it's normal for identity to
+auto-apply while genre still lands in Needs Review with its own evidence.
+
+## Needs Review
+
+Needs Review is a single aggregated queue for everything that couldn't be
+resolved automatically, pulled from crateIQ's existing specialist review
+systems:
+
+- **Metadata** — missing or ambiguous fields
+- **Identity & Enrichment** — provider consensus MEDIUM/LOW/CONFLICT verdicts
+- **Genre** — taxonomy and authority conflicts
+- **Analysis** — BPM/key issues
+- **Quality** — audio quality findings
+
+The point is that day to day you work through Inbox; Needs Review exists so
+you only have to look at exceptions, with a link into the relevant
+specialist page to resolve each one — you don't need to understand every
+internal review system to use crateIQ.
+
+## Ready and promotion
+
+A track becomes promotable once:
+
+**Required (blockers):**
+- Artist is present
+- Title is present
+- Genre is present
+- Its approved metadata has been verified written back to the file
+- No unresolved serious errors (e.g. the source file must still exist)
+
+**Warnings only (do not block promotion):**
+- Missing BPM
+- Missing key
+
+Promotion (**Move Ready to Library**) is always an explicit, separate
+action — nothing is promoted automatically by Process All or by resolving a
+review item. A promoted file moves from `Inbox/` into
+`Library/<Genre>/<Artist>/<Artist> - <Title>.<ext>` and no longer appears in
+Inbox.
+
+> Waveform data is not part of the promotion gate — it plays no role in
+> whether a track is ready to promote.
+
+## DJ workflow
+
+Once tracks are in Library:
+
+```
+Library → Crates → Set Builder → Publish
+```
+
+- **Manual Crates** — create, edit, reorder, and save ordered DJ working
+  lists from Library tracks.
+- **Smart Crates** — deterministic suggestions from existing local metadata,
+  saved as editable Manual Crates.
+- **Set Builder** — build an energy-curve DJ set from your library.
+- **Publish** — guided, preview-then-confirm export and sync for one crate
+  at a time:
+  - Portable CSV, JSON, M3U, and UTF-8 M3U8 exports.
+  - Staged Rekordbox-importable XML — a file for manual import, not a live
+    database write.
+  - Staged Serato handoff — M3U8 plus manifest, for manual/handoff use.
+  - Optional SSD sync (rsync-based), previewed and explicitly confirmed
+    before any write.
+
+crateIQ does not write to live Serato or Rekordbox databases; all DJ-software
+integration is via staged, reviewable artifacts.
+
+## Safety model
+
+- **External import originals are never modified.** Import always copies;
+  nothing about setup, import, crate building, preview, or export/sync
+  touches the source files you imported from.
+- **crateIQ works on managed Inbox copies.** Controlled metadata write-back
+  is a real, supported capability of Process All and Enrich Selected — it is
+  *not* true that "crateIQ never modifies music tags." What's true is that
+  writes are scoped to managed Inbox copies, confidence-gated, and behind
+  explicit confirmation.
+- Metadata writes go through the existing protections: a preview, a
+  stale-check against the file on disk, a backup, an explicit confirmation,
+  a post-write re-read verification, and a restore path if verification
+  fails.
+- **Mixed In Key-compatible BPM, key, and cue values are trusted and
+  preserved.** crateIQ fills only missing values and never overwrites
+  trusted MIK data.
+- **Promotion moves the managed Inbox copy**, not the external original —
+  the original you imported from was never touched in the first place.
+- **Permanent deletion is not part of normal preparation.** Quarantine is a
+  reserved zone, never an automatic destination.
+- **The `beet` CLI is never invoked.** Beets integration uses its isolated
+  Python API only.
+- **Live Serato/Rekordbox database writes are not supported by design** —
+  crateIQ stages artifacts for manual import/handoff instead.
+- **No cloud account is required.** crateIQ is intended for trusted local
+  use; it currently has no authentication for remote or multi-user
+  deployment.
+
+## Navigation
+
+```
+LIBRARY
+  Inbox
+  Library
+  Needs Review
+
+DJ
+  Crates
+  Set Builder
+  Publish
+
+TOOLS
+  Jobs
+  Maintenance
+
+SYSTEM
+  Settings
+```
+
+**Maintenance** is a hub linking to the specialist pages behind day-to-day
+use — Quality, Duplicates, Reconciliation, Folders, and Audit — so they stay
+reachable without each competing for a permanent sidebar slot.
 
 ## Screenshots
 
@@ -150,12 +285,21 @@ Music Review and does not display the indexed absolute local filepath.
 
 ![crateIQ Exports](docs/screenshots/crateiq-exports.webp)
 
-The live Settings screenshot is deliberately not published because it displays
-the active local library location. The existing
-[`settings.webp`](docs/mockups/settings.webp) remains a visual mockup/reference,
-not a product screenshot.
+> **These four screenshots predate the Managed Library navigation** (Inbox /
+> Needs Review / the reorganized LIBRARY–DJ–TOOLS–SYSTEM sidebar shipped in
+> Cycles 9–12). They still accurately show Library, Jobs, Crates, and
+> Exports as those pages exist today, but the app now also has an Inbox
+> workspace and a Needs Review queue with no current screenshot. New
+> screenshots were not captured for this documentation pass — call this out
+> rather than fabricate them; capturing current Inbox/Needs Review/Settings
+> screenshots against a disposable demo library is good follow-up work.
 
-## Quick start
+The live Settings screenshot is deliberately not published because it
+displays the active local library location. The existing
+[`settings.webp`](docs/mockups/settings.webp) remains a visual
+mockup/reference, not a product screenshot.
+
+## Installation / Quick start
 
 Requirements:
 
@@ -185,18 +329,24 @@ For a non-interactive demo launch:
 scripts/crateiq-local-services.sh start-demo-local
 ```
 
-For a configured library, first open **Settings** to choose a folder,
-initialize CrateIQ's local `logs/processed.db`, scan it explicitly, and import
-the previewed audio paths. Restart with the configured profile after saving the
-root:
+**First-run flow for your own music:**
+
+1. Start crateIQ.
+2. Open **Settings** → **Workspace** and choose a Managed Root.
+3. Open **Inbox** and **Import Music** — this copies files in; your
+   originals are untouched.
+4. Run **Process All**, resolve anything in **Needs Review**, then
+   **Move Ready to Library**.
 
 ```bash
 scripts/crateiq-local-services.sh start-library-local
 ```
 
 The configured root is stored locally in ignored `.run/local/crateiq.env`.
-Initialization creates CrateIQ's `logs/` and `exports/` folders only; it does
-not scan or alter music files. Scanning is always an explicit later action.
+
+Pointing crateIQ directly at an existing library (no managed
+Inbox/Library/Quarantine folders) remains supported, but the managed
+workspace above is the recommended path for new users.
 
 ### Service commands
 
@@ -210,6 +360,64 @@ scripts/crateiq-local-services.sh logs
 The helper manages only crateIQ's ports (`8020` and `5175`). It does not stop
 or alter LedgerIQ or opsIQ.
 
+## Provider setup
+
+| Provider | Purpose | Credential / setup | Current support |
+| --- | --- | --- | --- |
+| Beets | Missing-field candidates via its own MusicBrainz-backed matcher | None (isolated Python API) | Ready |
+| MusicBrainz | Official releases and albums | None | Ready |
+| Deezer | Alternate track/artist/album matching, ISRC corroboration | None (public search endpoint) | Ready |
+| AcoustID / Chromaprint | Fingerprint-based identity evidence | Free client key at acoustid.org | Needs setup |
+| Discogs | Electronic/vinyl/remix/release metadata | Free personal access token (discogs.com → Settings → Developers) | Needs setup |
+| Spotify | Mainstream track/artist/album matching via ISRC | Your own Spotify Developer app (client ID + secret) | Needs setup |
+| Last.fm | Community tag/genre corroboration | Free API key (last.fm/api/account/create) | Needs setup |
+| YouTube | Low-authority corroboration/discovery only | Google Cloud API key (YouTube Data API v3) | Needs setup |
+| Beatport | DJ/electronic genre and style authority | OAuth access token via Beatport's Partner Portal | Unavailable without partner approval — no public self-service signup |
+
+No credentials are ever printed by crateIQ or committed to the repository;
+saved credentials live in gitignored local state. See Settings → Metadata
+Sources for each provider's live status and exact setup steps.
+
+## Feature status
+
+| Feature | Status | Notes |
+| --- | --- | --- |
+| Managed workspace (Inbox/Library/Quarantine) | Implemented | Copy-based import, Process All batch preparation, unified Needs Review, explicit Move Ready to Library promotion. Additive to the existing direct-library model; an existing library is never auto-restructured. |
+| Process All batch preparation | Implemented | Deterministic cleanup + staged multi-provider consensus enrichment + verified tag write-back + BPM/key analysis behind one confirmation. Never promotes to Library. |
+| Multi-provider consensus | Implemented, wired into Process All | Field-by-field HIGH/MEDIUM/LOW/CONFLICT evidence aggregation with staged provider routing and genre-authority weighting. HIGH fields auto-apply during Process All/Enrich Selected; MEDIUM/LOW/CONFLICT always go to Needs Review with full provenance. |
+| Direct per-track provider lookup (Enrichment Review) | Implemented | Manual, explicit Beets/MusicBrainz online lookup for a single track outside of batch consensus. |
+| Local-suggestion enrichment review | Implemented foundation | Compares conservative local suggestions (filename hints, embedded tags) against selected empty local-index fields only; no provider API calls — distinct from multi-provider consensus above. |
+| Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
+| Manual Crates | Implemented | Create, edit, reorder, and save local DJ working lists. |
+| Smart Crates | Implemented | Deterministic suggestions from existing local metadata; save as Manual Crates. |
+| Persistent audio preview | Implemented | App-shell bottom player with Library/Music Review queues, route persistence, seek, volume, and safe unavailable states. |
+| Portable exports | Implemented | CSV, JSON, M3U, and M3U8, with safe staged output paths. |
+| Staged Serato export | Implemented | M3U8 plus manifest handoff; exact binary `.crate` writing is deferred. |
+| Staged Rekordbox XML export | Implemented | Importable XML file only; no live Rekordbox database writer. |
+| SSD sync | Implemented | Preview → explicit confirm rsync-based sync from Publish, one crate at a time. |
+| MIK coverage/import | Implemented foundation | Explicit read-only metadata preview and DB-only import; cue-tag parsing is deferred. |
+| BPM analysis with `aubio` | Implemented safe runner | Preview and confirmation required; only missing BPM is eligible. |
+| Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
+| Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
+| Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
+| Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
+| Waveform generation and playback | Implemented | Explicit, demand-driven backend generation with a bounded worker, dedup, cancellation, atomic cache, and a real canvas waveform seek control in the player. Never generated automatically. See [Waveform Architecture](docs/architecture/WAVEFORM_ARCHITECTURE.md) for the full design, safety audit, and measured performance. |
+| Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
+
+### Browser playback notes
+
+The persistent player streams only through the existing DB-backed
+`/api/tracks/{track_id}/preview-audio` endpoint. Playback availability depends
+on the selected file existing under the configured library root and on the
+browser supporting its audio format. Missing, out-of-root, or unsupported
+files show an unavailable state; crateIQ does not transcode them.
+
+Library queues the currently visible filtered page. Music Review queues its
+current review list, keeps next/previous selection synchronized with the bottom
+player, and does not save a review merely because a track was selected or
+played. Player use never writes tags, audio files, BPM, key, Camelot, cues,
+MIK data, crate order, or DJ databases.
+
 ## Optional analysis tools
 
 Core crateIQ workflows do not require external analysis tools. Settings and
@@ -220,186 +428,24 @@ Analysis Jobs show each capability independently:
 | Mixed In Key-compatible metadata | Explicit coverage preview and local-index-only import. |
 | `aubio` | Preview-first, confirmed missing-BPM analysis. |
 | `keyfinder-cli` | Preview-first, confirmed missing key/Camelot analysis. |
-| `beet` | Preview-limited enrichment planning only. |
 | `rmlint` | Preview-only duplicate candidates only. |
 | `ffprobe` | Bounded preview-only audio metadata checks; no transcode or writes. |
-| `ffmpeg` | Reserved for separate, explicitly scoped decode/conversion workflows. |
+| `ffmpeg` | Powers waveform generation; also reserved for separate, explicitly scoped decode/conversion workflows. |
 
 See [local tooling guidance](docs/operations/LOCAL_TOOLING.md) for setup notes
 and exact safety boundaries.
-
-### Waveform W1 configuration
-
-Waveform Phase W1 adds only an optional backend foundation. The default cache
-root is `backend/data/cache/waveforms/`, inside the already ignored backend
-runtime-data tree. An override must be absolute and is rejected if it equals,
-contains, or sits below the selected music-library root, including after
-symlink resolution.
-
-| Environment variable | Default |
-| --- | --- |
-| `CRATEIQ_WAVEFORMS_ENABLED` | `1` |
-| `CRATEIQ_WAVEFORM_CACHE_DIR` | backend-owned cache root |
-| `CRATEIQ_WAVEFORM_MAX_CONCURRENCY` | `1` (valid 1–2) |
-| `CRATEIQ_WAVEFORM_MAX_QUEUE_SIZE` | `32` |
-| `CRATEIQ_WAVEFORM_MAX_CACHE_BYTES` | `2147483648` (2 GiB) |
-
-Runtime readiness reports `disabled`, `misconfigured`, `cache_unavailable`,
-`extractor_unavailable`, or `detected`. In W1, `detected` means FFmpeg and
-ffprobe were found passively; neither executable was run and versions remain
-unverified. `ready` is reserved for a future verified extractor contract.
-Waveform operational state is stored only in backend `jobs.db`; the trusted
-library `processed.db` is not extended or written by this foundation.
-
-Phase W2 adds the internal extraction engine
-(`backend/app/services/waveform_extractor.py` and supporting
-`waveform_probe.py`/`waveform_peaks.py`/`waveform_process.py` modules): a
-bounded, read-only ffprobe policy check, a fixed argument-vector FFmpeg decode
-command with no shell and no output file, and a bounded streaming min/max peak
-accumulator with extrema-preserving downsampling.
-
-### Waveform generation API (W3)
-
-Phase W3 connects that engine to an explicit, demand-driven lifecycle.
-
-| Endpoint | Behavior |
-| --- | --- |
-| `GET /api/tracks/{id}/waveform?resolution=compact\|player\|detail` | Read-only state; returns peaks only when `ready`. Sends an `ETag` and honors `If-None-Match` with `304`. |
-| `POST /api/tracks/{id}/waveform/generate` | The only way to create work. Body `{"force": false}`. Returns `202` queued, `200` when already ready, `429` when the queue is full, `503` when unavailable. |
-| `GET /api/waveform-jobs/{job_id}` | Privacy-safe job status. |
-| `DELETE /api/waveform-jobs/{job_id}` | Best-effort cancellation; idempotent, and never deletes an already-published waveform. |
-
-Waveforms are **never** generated automatically — not by starting CrateIQ,
-selecting or scanning a library, opening Library or Music Review, selecting a
-track, starting playback, or calling the waveform `GET`. Generation is always
-an explicit request.
-
-Artifacts are disposable gzip JSON under the app-owned cache root, named only
-by a `generation_key`: the SHA-256 of a small structure of `stat` identity plus
-schema/algorithm versions. **No music file is ever hashed** — full-content
-SHA-256 remains deferred. Deleting the entire waveform cache has no effect on
-playback, tags, metadata, crates, reviews, exports, or DJ software.
-
-Generation runs on one bounded worker (maximum two) with a 32-job queue,
-deduplicates concurrent requests for the same source generation, and supports
-cancellation. A backend restart closes out interrupted jobs and never resumes
-analysis on its own. Reading a cached waveform keeps working even if FFmpeg
-later disappears; only new generation requires the toolchain.
-
-### Waveform in the player (W4)
-
-The persistent bottom player draws the real waveform on a `<canvas>` when one
-is available, with a played/unplayed progress overlay driven by the existing
-player clock. Every other state — checking, not generated, queued, generating,
-failed, unsupported, out of date, cancelled — keeps the decorative three-band
-placeholder and adds a short status line.
-
-Generation is always an explicit click on **Generate waveform**. Opening the
-app, changing route, selecting a track, starting playback, or reading waveform
-state never generates anything. While a job runs, the player offers **Cancel**,
-which cancels waveform generation only and never affects audio playback.
-
-The waveform itself is now the seek control: click, drag, touch, and keyboard
-(Arrow Left/Right, Home, End, Page Up/Down) all work directly on the
-waveform box, whether or not a real waveform has been generated — seeking is
-an audio-player capability, not a waveform-generation capability. A thin
-cyan playhead needle marks the exact position over both the real waveform and
-the decorative fallback. The control has a clear accessible name ("Seek audio
-preview position"), an announced `m:ss of m:ss` position, and a visible focus
-ring; there is exactly one accessible seek slider per player, not two. A
-waveform failure never disables play, pause, next, previous, or the queue,
-and seeking never issues a waveform-generation request.
-
-### Waveform cache lifecycle (W6)
-
-The waveform cache is derived, disposable, CrateIQ-owned data. It is bounded
-and maintains itself; it is never allowed to grow without limit and never
-requires manual attention to stay correct.
-
-| Endpoint | Behavior |
-| --- | --- |
-| `GET /api/waveform-cache` | Read-only footprint: bytes used, the configured limit, artifact/temp/superseded counts, and how many tracks currently hold a ready waveform. Also the preview for the clear action. |
-| `POST /api/waveform-cache/clear` | Requires `{"confirm": true}`. Without it the request returns `400 WAVEFORM_CACHE_CLEAR_NOT_CONFIRMED` and deletes nothing. |
-
-Automatic maintenance runs at startup and after each publication:
-
-- abandoned `.tmp.*` files older than 24 hours are swept;
-- artifacts under a superseded schema/algorithm layout are removed after 7
-  days, since a version mismatch can never be served;
-- above the configured limit (2 GiB by default) the cache prunes to 80% of it,
-  removing orphans and non-ready artifacts before touching least-recently-used
-  ready ones, and never evicting the artifact that was just published;
-- tracks claiming a waveform whose file has disappeared are repaired to
-  `stale` rather than left advertising a missing file;
-- failed/cancelled job rows and quiet, artifact-less track states expire after
-  30 days. Rows only — no artifact and nothing in `processed.db`.
-
-Clearing the cache, by hand or by eviction, **cannot** affect source audio,
-tags, BPM/key/cue values, playlists, crates, review state, exports, or any DJ
-database. Affected tracks simply return to a non-ready state until a waveform
-is explicitly regenerated; nothing is re-queued automatically. Deletion is
-confined to CrateIQ's own artifact/temp filenames inside the validated cache
-root, symlinks are never followed out of it, and unknown files are left alone.
-
-A backend restart closes out interrupted jobs, repairs cache state, and
-verifies the extractor toolchain once with `ffmpeg -version` / `ffprobe
--version` — no media path is passed to either binary. Readiness reports
-`ready` only after that check passes; `GET /api/runtime/readiness` itself
-never spawns anything.
-
-### Measured waveform behavior (W7)
-
-These are measurements from a controlled end-to-end run against **7 real files
-(5 MP3, 2 FLAC) in an explicitly selected, isolated test library** — not
-projections. FFmpeg/ffprobe 6.1.1 on Linux, rendered in Chrome.
-
-| Track | Fmt | Duration | Source | Generate | gzip artifact | Detail pairs |
-| --- | --- | ---: | ---: | ---: | ---: | ---: |
-| Short MP3 | MP3 | 4:10 | 9.7 MB | 2.3 s | 25.5 KB | 3914 |
-| Long MP3 | MP3 | 11:06 | 25.6 MB | 5.0 s | 62.1 KB | 10420 |
-| Unicode MP3 | MP3 | 9:42 | 22.5 MB | 5.3 s | 55.4 KB | 9101 |
-| Apostrophe MP3 | MP3 | 8:28 | 19.5 MB | 4.7 s | 49.3 KB | 7951 |
-| FLAC (large) | FLAC | 7:46 | 55.7 MB | 2.7 s | 45.4 KB | 7297 |
-| FLAC | FLAC | 7:27 | 49.0 MB | 2.5 s | 43.1 KB | 6988 |
-
-- **Speed:** 108x–178x real time. Generation is bounded by the timeout policy,
-  not open-ended.
-- **Size:** artifacts are 389x–1256x smaller than the source audio.
-- **Memory:** backend RSS grew by a flat ~32 KB while decoding, regardless of
-  whether the input was 4 minutes or 11 minutes long. Memory is bounded by the
-  number of output points, not by track length.
-- **CPU:** roughly 59% of a single core (one decoder thread, one worker), so a
-  generation does not take over the machine.
-- **Cached reads:** 11–30 ms, with no FFmpeg or ffprobe process launched.
-- **Rendering:** the on-screen canvas matched the peak data the API returned at
-  r≈0.998 for both formats.
-
-Verified interaction: pointer, keyboard, and touch seeking (a vertical touch
-drag on the waveform scrolls the page rather than seeking), route persistence,
-playback continuing uninterrupted while a waveform is generating, real
-mid-decode cancellation leaving no partial artifact, and a restart resuming no
-work.
-
-**Scope of these claims:** MP3 and FLAC, on Linux, in Chrome, up to an 11-minute
-track. Other codecs, browsers, platforms, and multi-hour mixes are supported by
-the design and by synthetic tests but were not measured here. Waveform data is
-generated and stored entirely on this machine; nothing is uploaded anywhere.
-
-**Source safety, verified:** every analyzed file was byte-for-byte identical
-afterwards (size, `mtime_ns`, `ctime`, device, inode, and SHA-256), no file was
-created beside any audio, and BPM, key, Camelot, cue counts, and review state
-were unchanged. The pipeline database was never written.
 
 ## Development
 
 ```bash
 # Focused backend coverage for the current safe analysis workflows
 .venv/bin/python -m pytest -q tests/test_backend_api.py -k "analysis or jobs"
+.venv/bin/python -m pytest -q tests/test_process_all_consensus.py
 .venv/bin/python -m pytest -q tests/test_waveform_foundation.py tests/test_preflight.py
-.venv/bin/python -m pytest -q tests/test_waveform_peaks.py tests/test_waveform_process.py tests/test_waveform_probe.py tests/test_waveform_extractor.py
-.venv/bin/python -m pytest -q tests/test_waveform_artifact.py tests/test_waveform_scheduler.py tests/test_waveform_api.py
-.venv/bin/python -m pytest -q tests/test_waveform_operations.py tests/test_waveform_cache_cleanup.py
 .venv/bin/python -m pytest -q tests/test_supported_route_contracts.py
+
+# Full backend suite
+.venv/bin/python -m pytest -q
 
 # Frontend checks
 npm --prefix frontend run typecheck
@@ -422,6 +468,8 @@ Useful local endpoints:
 - `frontend/` — React/Vite interface.
 - `scripts/` — local service helper and demo-library seeding.
 - `docs/operations/LOCAL_TOOLING.md` — optional-tool setup and workflow scope.
+- `docs/architecture/WAVEFORM_ARCHITECTURE.md` — waveform design, safety audit,
+  and measured performance.
 - `docs/audits/CRATEIQ_FUNCTIONALITY_WORKFLOW_AUDIT.md` — current product,
   workflow, and dependency audit.
 

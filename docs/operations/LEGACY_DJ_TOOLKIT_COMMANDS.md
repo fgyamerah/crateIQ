@@ -2,7 +2,7 @@
 
 > Historical archive preserved from the former lowercase `commands.md`.
 > Commands and safety semantics may be outdated. Use the canonical
-> [CrateMindAI command reference](../../COMMANDS.md) for current operations.
+> [crateIQ command reference](../../COMMANDS.md) for current operations.
 
 All commands run from the project root:
 

@@ -2,6 +2,36 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Docs: refresh public-facing documentation for Cycle 13 baseline
+
+- What changed: README.md rewritten around the current product (Managed
+  Library + Batch Preparation + Provider Consensus, main @ 1dfb3b1) --
+  new Core workflow diagram, Batch preparation, Metadata intelligence,
+  Needs Review, Ready and promotion, Navigation, and Provider setup
+  sections; Feature status table corrected (multi-provider consensus is
+  now documented as wired into Process All, not preview-only); the
+  historical W1-W8 waveform narrative was condensed into a single Feature
+  status row linking to the existing docs/architecture/
+  WAVEFORM_ARCHITECTURE.md instead of duplicating it in-line; the
+  promotion-gate description was corrected to list only Artist/Title/
+  Genre as blockers and BPM/Key as warnings (waveform is not part of the
+  actual promotion gate in backend/app/services/workspace_service.py --
+  a documentation/implementation discrepancy, not a behavior change).
+  docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md's "CrateMindAI command
+  reference" pointer corrected to crateIQ.
+- Why: public docs still described the pre-Cycle-9 direct-library/
+  review-only product and an unwired consensus engine; this pass makes
+  README.md read as an accurate landing page for the shipped product.
+- Files affected: README.md, docs/operations/LEGACY_DJ_TOOLKIT_COMMANDS.md.
+  No application source changed.
+- Migration notes: none -- documentation only. Screenshots were not
+  recaptured (existing Library/Jobs/Crates/Exports screenshots predate
+  the Managed Library navigation but remain accurate for those pages;
+  no current screenshot exists yet for Inbox/Needs Review). The
+  fgyamerah/CrateMindAI GitHub repo is a confirmed predecessor
+  (docs/CRATEIQ_PRODUCT_AUDIT.md records the fork lineage) and was left
+  untouched pending explicit user approval to archive or annotate it.
+
 [2026-08-08] — Cycle 13: provider consensus wired into Process All
 
 - What changed: closes the Cycle 11 follow-up. Process All's enrich stage
