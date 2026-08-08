@@ -5,6 +5,7 @@ import Crates from './pages/Crates'
 import Duplicates from './pages/Duplicates'
 import SmartCrates from './pages/SmartCrates'
 import LibraryView from './components/library/LibraryView'
+import LibraryPrep from './pages/LibraryPrep'
 import ErrorBoundary from './components/ErrorBoundary'
 import BpmReview from './pages/BpmReview'
 import BeetsReview from './pages/BeetsReview'
@@ -41,6 +42,7 @@ export default function App() {
         <Routes>
           <Route element={<Layout />}>
           <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
+          <Route path="library-prep" element={<ErrorBoundary><LibraryPrep /></ErrorBoundary>} />
           <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="beets-review" element={<ErrorBoundary><BeetsReview /></ErrorBoundary>} />

@@ -2,6 +2,64 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Core Usability Cycle 5: unified Library Prep workflow
+
+- What changed: added a new "Library Prep" workspace
+  (frontend/src/pages/LibraryPrep.tsx, route /library-prep, sidebar item
+  between Library and Quality) presenting the target end-to-end workflow
+  as seven steps: Import, Clean metadata, Enrich, Review candidates,
+  Apply to files, Analyze, Ready. Steps 1-2 are fully functional and call
+  existing, unchanged backend contracts (POST /library/scan-preview,
+  POST /library/import, GET /api/metadata-sanitation/summary, GET
+  /api/metadata-repair/summary, GET /api/settings, GET
+  /api/library/overview) -- no new backend routes were added. Steps 3-7
+  are explicit "not available yet" states with truthful copy pointing at
+  what already works elsewhere (/jobs, /crates, /smart-crates,
+  /beets-review, /enrichment-review) rather than faked functionality.
+- Closed a real gap: backend/app/services/library_setup_service.py's web
+  import previously indexed filename-parsed artist/title only. It now
+  performs a read-only embedded-tag lookup via mutagen.File(path,
+  easy=True) (artist/title/album/genre) first, falling back to filename
+  parsing only when tags are absent -- mirrors the CLI pipeline's
+  modules/tagger.py/modules/sanitizer.py approach and the same
+  already-a-dependency library. Never writes tags; import/scan remain
+  local-index-only, confirmed by the existing test suite and new tests.
+  Reports a new tags_read_count field in scan/import responses.
+- Why it changed: Cycle 5 of the crateIQ Core Usability Program --
+  import/scan/sanitation/repair functionality already existed but was
+  scattered across Settings and separate specialist pages with no single
+  coherent "get a library ready" workflow surface.
+- Files affected: frontend/src/pages/LibraryPrep.tsx (new),
+  frontend/src/App.tsx, frontend/src/components/Sidebar.tsx,
+  frontend/src/types/settings.ts (added tags_read_count),
+  frontend/src/index.css (new .prep-* rules),
+  backend/app/services/library_setup_service.py (_embedded_tags,
+  _track_metadata; INSERT now includes album/genre),
+  tests/test_library_setup_service.py (new, 8 tests),
+  tests/test_supported_route_contracts.py (added /library-prep entry).
+- Impeccable: one critique pass (dual sub-agent; browser evidence
+  degraded because no Chrome extension was connected in this sandboxed
+  session -- reported honestly rather than faked; deterministic detector
+  scan was clean). Found and fixed: page wrapper used a nonexistent
+  page-content CSS class (zero padding bug) instead of the shared .page
+  class; locked-step opacity dimmed the whole card including its still-
+  working links, now scoped to just the step header chrome; initial-load
+  API failures were silently swallowed by Promise.allSettled with no
+  user-visible state, now surfaced via a StatusStrip tone="warn"; the
+  "Apply to files" step showed a duplicate Lock icon, now uses a distinct
+  icon.
+- Verification: .venv/bin/python -m compileall -q backend/app modules
+  clean; .venv/bin/python -m pytest -q -> 1444 passed; npm --prefix
+  frontend run typecheck clean; npm --prefix frontend run build clean;
+  git diff --check clean. Live browser verification at 1440/760/390px
+  could not run in this session (no Chrome extension connected) --
+  substituted static code/CSS review plus the automated checks above.
+- Migration notes: none. No schema migration required -- album/genre
+  columns already existed in the tracks table created by
+  initialize_library(); this only changes what import writes into them.
+- Branch: feat/crateiq-core-usability (base main 4119013). Not merged to
+  main.
+
 [2026-08-07] — Waveform generation UX + bulk waveform jobs (Stages 1-3)
 
 - Stage 1: replaced the decorative LOW/MID/HIGH ThreeBandWaveform

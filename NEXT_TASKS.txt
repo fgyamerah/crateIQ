@@ -39,6 +39,43 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Core Usability Cycle 5 -- Core Library Workflow (2026-08-08)
+    New unified `/library-prep` workspace presents the full target workflow
+    (Import -> Clean -> Enrich -> Review -> Apply -> Analyze -> Ready) as
+    seven steps; steps 1-2 (Import, Clean metadata) are genuinely
+    functional and reuse existing backend contracts unchanged; steps 3-7
+    are truthful "not available yet" placeholders, not faked functionality.
+    Closed a real gap: web import now reads embedded file tags (read-only
+    mutagen lookup) before falling back to filename parsing, matching the
+    CLI pipeline's approach; reports a new tags_read_count. No source-file
+    writes anywhere in this cycle. 1444 backend tests pass (+13 new: 8 in
+    tests/test_library_setup_service.py, 1 route-contract addition);
+    frontend typecheck/build pass. One Impeccable critique pass found and
+    fixed a real CSS bug (wrong wrapper class), a locked-step link
+    affordance issue, a silently-swallowed load-error state, and a
+    duplicate icon. See CHANGELOG.txt and PROJECT_CONTEXT.md Latest
+    Milestone for full detail. On feat/crateiq-core-usability (base main
+    4119013); not merged to main.
+[~] (P0) Core Usability Cycle 6 -- Real Enrichment
+    Next: safe Beets adapter (suggestions only, isolated temp
+    config/library, never touches the user's real Beets state or source
+    audio), real MusicBrainz provider (rate-limited, cached, mocked tests),
+    unified candidate/provenance model, field-by-field review UI built on
+    the existing Enrichment Review page. No source-file writes.
+[ ] (P1) Core Usability Cycle 7 -- Controlled Metadata Write-Back
+    Exact write plan -> mandatory full-file backup outside the scanned
+    music tree -> explicit confirm -> write -> re-read verify -> restore.
+    Test only against disposable copies of sanctioned fixtures, never the
+    original 88-file crateiq-test-library.
+[ ] (P1) Core Usability Cycle 8 -- DJ Preparation
+    Wire existing BPM/key analysis and waveform generation into the
+    Library Prep Analyze step; conservative readiness contract
+    (blockers/warnings/optional); link into Manual/Smart Crates. Reuse
+    existing job/ops infrastructure only.
+[ ] (P2) Consider consolidating Settings.tsx's own import scan/import UI
+    into a pointer at /library-prep, or vice versa, so Import has exactly
+    one home instead of two UI entry points calling the same API
+    (noted as an accepted tradeoff in the Cycle 5 entry above).
 [x] (P1) Cycle 3 Stage 5 -- Final publish safety audit (2026-08-07)
     Full-branch diff audit vs main; added a missing restart-recovery test
     for publish_operations (mirrors the Cycle 2 analysis_operations

@@ -1,10 +1,54 @@
 # CrateIQ Project Context
 
-**Updated:** 2026-08-07
+**Updated:** 2026-08-08
 
 **Purpose:** Canonical low-token engineering memory for future AI sessions.
 
 ## Latest Milestone
+
+- 2026-08-08: Cycle 5 (Core Library Workflow) of the crateIQ Core Usability
+  Program, on `feat/crateiq-core-usability` (base `main` `4119013`), no
+  merge to main. Added a new unified **Library Prep** workspace
+  (`frontend/src/pages/LibraryPrep.tsx`, route `/library-prep`, sidebar
+  entry between Library and Quality) presenting the full target workflow as
+  seven steps (Import, Clean metadata, Enrich, Review candidates, Apply to
+  files, Analyze, Ready). Steps 1-2 are fully functional today and reuse
+  existing backend contracts unchanged (`/library/scan-preview`,
+  `/library/import`, `/api/metadata-sanitation/summary`,
+  `/api/metadata-repair/summary`); steps 3-7 are explicit, truthfully-labeled
+  "not available yet" placeholders (locked-state styling dims only the step's
+  own header chrome, not its body links, so genuinely working pointers to
+  `/jobs`, `/crates`, `/smart-crates`, `/beets-review`, `/enrichment-review`
+  stay visually live) with no functionality claimed ahead of later cycles.
+  Closed a real gap versus the CLI pipeline: the backend's lightweight web
+  import (`backend/app/services/library_setup_service.py`) previously indexed
+  filename-parsed artist/title only; it now performs a read-only embedded-tag
+  lookup via `mutagen.File(..., easy=True)` first (artist/title/album/genre),
+  falling back to filename parsing only when tags are absent, and reports a
+  new `tags_read_count` in scan/import results. Never writes to source
+  files -- read-only `mutagen` lookup only, same dependency already used by
+  the CLI pipeline's `modules/tagger.py`/`modules/sanitizer.py`. New test
+  file `tests/test_library_setup_service.py` (8 tests: initialization is
+  scan-free, scan preview is read-only, embedded tags win over filename
+  parsing, filename fallback when tags are absent, idempotent rescans, no
+  source-file byte mutation, unreadable-file handling). Added the new route
+  to the supported-route smoke contract
+  (`tests/test_supported_route_contracts.py`). One Impeccable critique pass
+  (dual sub-agent; browser evidence degraded -- no Chrome extension connected
+  in this environment, detector scan clean) caught and fixed one real layout
+  bug (page wrapper used a nonexistent `page-content` CSS class instead of
+  the shared `.page` class -- would have rendered with zero padding), the
+  locked-link affordance issue above, a silently-swallowed initial-load API
+  failure (now surfaced via a `StatusStrip tone="warn"`), and a duplicate
+  Lock icon on the "Apply to files" step. Known, accepted tradeoff (not
+  fixed this cycle): Settings.tsx keeps its own separate import
+  scan/import UI calling the same underlying API functions --
+  intentional reuse of business logic, not a second implementation, but two
+  UI entry points exist; consider consolidating in a later cycle. 1444
+  backend tests pass; frontend typecheck/build pass. Live browser
+  verification at 1440/760/390px could not run -- no Chrome extension was
+  connected in this sandboxed session; verified via code/CSS review,
+  detector scan, and full type/build checks instead.
 
 - 2026-08-07: Waveform generation UX + bulk waveform jobs, on
   `feat/crateiq-waveform-jobs` (base `main` `9799e04`). Three stages, no
@@ -1339,10 +1383,16 @@
 - Repository audit completed on 2026-07-02; see `AUDIT_REPORT.md` for the current technical/product state and follow-up priorities.
 - First post-audit stabilization completed on 2026-07-02: the frontend router
   and sidebar now expose only supported workflows.
-- Supported frontend routes: `/`, `/quality`, `/issues`, `/enrichment`,
+- Supported frontend routes (as of the 2026-07-02 audit; see the
+  2026-08-08 Latest Milestone entry above for `/library-prep`, added
+  since): `/`, `/quality`, `/issues`, `/enrichment`,
   `/metadata-repair`, `/metadata-sanitation`, `/bpm-review`, `/audit`,
   `/folders`, `/jobs`, `/crates`, `/smart-crates`, `/music-review`,
-  `/set-builder`, `/exports`, `/sync`, and `/reconciliation`.
+  `/set-builder`, `/exports`, `/sync`, and `/reconciliation`. This list has
+  since drifted further from `frontend/src/App.tsx` (e.g. `/beets-review`,
+  `/enrichment-review`, `/genres`, `/publish`, `/settings`,
+  `/quality-review` also exist) -- `tests/test_supported_route_contracts.py`
+  is the enforced source of truth, not this prose list.
 - Legacy `Dashboard`, `Collection`, and `Tracks` pages and placeholder
   `Settings` remain in source but redirect to `/`; `/export` and `/ssd-sync`
   are compatibility redirects. `/listening` redirects to `/music-review` and

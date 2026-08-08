@@ -8924,6 +8924,124 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
 }
 .publish-result-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 
+/* ── Library Prep ── */
+
+.prep-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 16px;
+}
+
+.prep-step {
+  background: var(--panel-gradient);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* Dim only the step's own chrome (number/icon/title) to signal the step
+   itself isn't active yet. The body keeps full contrast because it still
+   contains genuinely working links to existing pages (Jobs, Crates, etc). */
+.prep-step--locked .prep-step-header {
+  opacity: 0.72;
+}
+
+.prep-step-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.prep-step-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--accent-dim);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  flex-shrink: 0;
+}
+
+.prep-step-title-icon {
+  display: inline-flex;
+  color: var(--text-muted);
+}
+
+.prep-step-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+  margin: 0;
+  flex: 1;
+}
+
+.prep-step-badge {
+  display: inline-flex;
+}
+
+.prep-step-icon {
+  color: var(--text-muted);
+}
+
+.prep-step-icon--done {
+  color: var(--status-succeeded, var(--accent));
+}
+
+.prep-step-icon--locked {
+  color: var(--text-muted);
+}
+
+.prep-step-body {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-left: 32px;
+}
+
+.prep-step-desc {
+  font-size: 12.5px;
+  color: var(--text-muted);
+  margin: 0;
+  line-height: 1.5;
+}
+
+.prep-step-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.prep-step-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.prep-step-hint {
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.prep-step-result {
+  font-size: 12px;
+  color: var(--text);
+  margin: 0;
+}
+
+@media (max-width: 760px) {
+  .prep-step-body { padding-left: 0; }
+  .prep-step-header { flex-wrap: wrap; }
+}
+
 @media (max-width: 760px) {
   .publish-select-row { flex-direction: column; align-items: stretch; }
   .publish-select-row label { min-width: 0; }

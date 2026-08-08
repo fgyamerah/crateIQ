@@ -187,6 +187,49 @@ def _filename_metadata(path: Path) -> tuple[str | None, str | None, str]:
     return None, stem or None, "LOW"
 
 
+def _embedded_tags(path: Path) -> dict[str, str]:
+    """Read-only embedded tag lookup. Never writes; never raises."""
+    try:
+        from mutagen import File as MFile
+        audio = MFile(str(path), easy=True)
+        if audio is None:
+            return {}
+        get = lambda key: (audio.get(key) or [''])[0].strip()
+        return {
+            "artist": get("artist"),
+            "title": get("title"),
+            "album": get("album"),
+            "genre": get("genre"),
+        }
+    except Exception:
+        return {}
+
+
+def _track_metadata(path: Path) -> tuple[str | None, str | None, str | None, str | None, str, bool]:
+    """
+    Resolve artist/title/album/genre for a discovered file.
+
+    Embedded tags take priority (source of truth for real metadata); filename
+    parsing is only a fallback for artist/title when tags are missing. Never
+    writes to the file — read-only lookup.
+    """
+    tags = _embedded_tags(path)
+    embedded_artist = tags.get("artist") or None
+    embedded_title = tags.get("title") or None
+    album = tags.get("album") or None
+    genre = tags.get("genre") or None
+
+    if embedded_artist and embedded_title:
+        return embedded_artist, embedded_title, album, genre, "HIGH", True
+
+    fallback_artist, fallback_title, fallback_confidence = _filename_metadata(path)
+    artist = embedded_artist or fallback_artist
+    title = embedded_title or fallback_title
+    confidence = "MEDIUM" if (embedded_artist or embedded_title) else fallback_confidence
+    tags_present = bool(embedded_artist or embedded_title or album or genre)
+    return artist, title, album, genre, confidence, tags_present
+
+
 def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
     root = _target_root(library_root)
     db_path = _db_path(root)
@@ -200,25 +243,29 @@ def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
             for row in conn.execute("SELECT filepath FROM tracks")
         }
         imported_count = 0
+        tags_read_count = 0
         for path in scan["track_paths"]:
             safe_path = assert_path_under_root(path, root)
-            artist, title, confidence = _filename_metadata(safe_path)
+            artist, title, album, genre, confidence, tags_present = _track_metadata(safe_path)
+            if tags_present:
+                tags_read_count += 1
             if str(safe_path) not in existing_paths:
                 imported_count += 1
             conn.execute(
                 """
-                INSERT INTO tracks (filepath, filename, artist, title, filesize_bytes, status, processed_at, pipeline_ver, parse_confidence)
-                VALUES (?, ?, ?, ?, ?, 'pending', ?, 'library-import-v1', ?)
+                INSERT INTO tracks (filepath, filename, artist, title, album, genre, filesize_bytes, status, processed_at, pipeline_ver, parse_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'library-import-v1', ?)
                 ON CONFLICT(filepath) DO UPDATE SET
                     filename = excluded.filename,
                     filesize_bytes = excluded.filesize_bytes
                 """,
-                (str(safe_path), safe_path.name, artist, title, safe_path.stat().st_size, now, confidence),
+                (str(safe_path), safe_path.name, artist, title, album, genre, safe_path.stat().st_size, now, confidence),
             )
         total_indexed_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     scan.pop("track_paths")
     scan["imported_count"] = imported_count
     scan["existing_count"] = scan["supported_audio_files"] - imported_count
+    scan["tags_read_count"] = tags_read_count
     scan["total_indexed_count"] = total_indexed_count
     scan["importable"] = bool(scan["supported_audio_files"])
     scan["next_actions"] = [

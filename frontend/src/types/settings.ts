@@ -34,6 +34,7 @@ export interface LibrarySetupResult {
   importable?: boolean
   imported_count?: number
   existing_count?: number
+  tags_read_count?: number
   total_indexed_count?: number
   sample_tracks?: string[]
   skipped_files?: string[]
