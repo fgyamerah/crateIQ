@@ -6,6 +6,132 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 12 (Product Navigation + Final End-to-End Workflow),
+  the final cycle of the crateIQ Managed Library & Batch Preparation
+  Program, on `feat/crateiq-managed-library` (base Cycle 11, this file's
+  previous entry), no merge to main. Turns four cycles of real backend
+  and workflow capability into a sidebar an ordinary DJ can navigate by
+  task rather than by crateIQ's internal subsystem names.
+
+  **Sidebar** (`frontend/src/components/Sidebar.tsx`) rebuilt from the
+  old flat `Browse`/`Operations`/`Reconciliation` grouping (17 + 10 + 1
+  items, undifferentiated) into the product's target shape: `LIBRARY`
+  (Inbox, Library, Needs Review) / `DJ` (Crates, Set Builder, Publish) /
+  `TOOLS` (Jobs, Maintenance) / `SYSTEM` (Settings). Every route from
+  Cycles 1-11 remains fully mounted -- nothing was deleted, only
+  un-listed from the permanent sidebar, matching the explicit "reuse
+  specialist pages underneath the simplified IA rather than deleting
+  blindly" instruction. The four previously-scattered sidebar badge
+  counts (issues, enrichment, repair, bpm -- each from a different
+  endpoint, each double-counting overlapping concerns) are replaced by
+  one `Needs Review` badge sourced from Cycle 10's own unified
+  aggregator (`GET /api/needs-review`), which is a more honest signal
+  than four partially-redundant ones ever were.
+
+  **New `frontend/src/pages/Maintenance.tsx`** (route `/maintenance`):
+  a hub linking to Quality, Duplicates, Reconciliation, Folders, and
+  Audit. Deliberately does not embed these pages inline as true tab
+  panels -- `CrateMind.tsx` (which owns Folders and Audit) derives its
+  active section from `window.location.pathname` via `sectionFromPath()`
+  rather than a prop, so genuine in-page tab-panel embedding would have
+  required either faking a pathname or refactoring CrateMind's own
+  routing coupling -- out of scope for a navigation-consolidation cycle
+  per the explicit "reuse, do not rewrite" instruction. Simple
+  navigational link-cards, each carrying real descriptive text, was the
+  correct-scoped choice instead.
+
+  **A real bug found and fixed by this cycle's own Impeccable pass**:
+  the first draft of `Maintenance.tsx` had both a compact "tabs" row
+  (styled with the existing `.reconciliation-tabs`/`.reconciliation-tab`
+  classes) *and* a card grid below it, both linking to the identical 5
+  destinations -- a redundant, confusing duplication. Worse, the tabs
+  row used `role="tab"`/`aria-selected={false}` on what were actually
+  plain navigation `<Link>`s: those ARIA roles are a contract that
+  implies in-page panel switching and keyboard arrow-key navigation
+  (per WAI-ARIA authoring practices), which never happens here --
+  clicking one just navigates to a different page. Fixed by removing
+  the redundant tabs row entirely and keeping one honest
+  `<nav aria-label="Maintenance areas">` of link-cards.
+
+  **Route consolidation** (`frontend/src/App.tsx`): `/library-prep` now
+  redirects to `/inbox` instead of staying independently mounted --
+  Inbox (built across Cycles 9-10: Process All, Clean/Enrich Selected,
+  explicit promotion) materially supersedes Library Prep's older
+  single-track step wizard, and leaving both live would have been
+  exactly the "duplicate competing main workflow" the product
+  explicitly said not to leave. `LibraryPrep.tsx` itself stays in
+  source, unrouted -- the same precedent this repo already established
+  for the legacy `Dashboard`/`Collection`/`Tracks` pages (documented
+  earlier in this file), not a new pattern invented for this cycle.
+  New `/maintenance` route contract entry added to
+  `tests/test_supported_route_contracts.py`; the old `/library-prep`
+  entry removed since it is now a `Navigate` redirect, which the
+  contract-sync test correctly excludes from "routes needing a
+  contract" (same treatment as `/dashboard`, `/collection`, etc.).
+
+  **Settings** (`frontend/src/pages/Settings.tsx`) gained a `Workspace`
+  card (new `#workspace` section plus a quick-jump tab link) showing
+  the managed root, Inbox path, Library path, and Quarantine path.
+  Reuses Cycle 9's existing `GET /api/workspace/status` endpoint end to
+  end -- zero new backend code was needed. Renders the existing state
+  message (not broken/empty fields) for a `not_configured` or
+  `legacy_direct_library` root.
+
+  **Live end-to-end re-verification**, against a fresh disposable
+  workspace (never the sanctioned library, real `ffmpeg`-generated
+  MP3): confirmed the reorganized sidebar renders exactly the target
+  4-section grouping; confirmed navigating to `/library-prep` redirects
+  to `/inbox` (tab URL updates automatically); confirmed the Settings
+  Workspace card shows the real managed-root/Inbox/Library/Quarantine
+  paths; confirmed a Maintenance card navigates to its real target page
+  (`/duplicates`); then re-ran the complete real journey through the
+  *new* navigation end to end to prove the reorg introduced zero
+  regression: import -> both KPI/preflight counts update -> Process All
+  is not needed since the fixture already had matching tags/genre ->
+  "Move Ready to Library" two-step confirm -> the file physically landed
+  at `Library/House/Final Artist/Final Artist - Final Track.mp3` ->
+  Inbox directory confirmed empty -> the external original confirmed
+  SHA-256 byte-identical before and after -> `GET /api/tracks` (the
+  exact query `Crates.tsx`'s track picker uses) confirmed to return the
+  promoted track with `storage_zone: "LIBRARY"`, proving the promised
+  "Crates workflow can see promoted Library track" outcome is real, not
+  assumed.
+
+  **Final safety audit**, run in full and passed: `compileall`, the
+  complete pytest suite (1590, unchanged from Cycle 11 since no backend
+  logic was touched this cycle), frontend `typecheck`/`build`,
+  `pipeline.py validate-docs --strict`, `git diff --check` (clean), the
+  88 sanctioned audio files confirmed still present (file-count check),
+  the existing static no-`beet`-CLI-invocation guard test (still
+  passing), confirmation that `.run/local/metadata_sources.json` (all
+  Cycle 11 provider credentials) remains gitignored, and a diff-wide
+  grep across the whole 4-cycle branch for hardcoded-secret-shaped
+  strings, which found none. `LedgerIQ` and `opsIQ` (sibling
+  directories outside this repo) were never touched or referenced this
+  session.
+
+  **Documentation**: added a "Managed Library workflow" section to
+  `README.md` explaining the Managed Root/Inbox/Library/Quarantine
+  layout, the copy-never-move import contract, Process All, Needs
+  Review, explicit promotion, and provider configuration in user-facing
+  terms; corrected the "Metadata Sources ... external APIs ... do not
+  yet perform lookup" feature-status row, which was accurate before
+  Cycle 11 and false afterward, and added rows for the managed
+  workspace and the multi-provider consensus engine.
+
+  **Known open follow-up work**, carried forward truthfully rather than
+  silently dropped (see `NEXT_TASKS.txt` for full detail): wiring the
+  Cycle 11 consensus engine into Process All's automatic write-back
+  path (currently still uses Cycle 10's simpler Beets+MB-only rule for
+  actual writes); a cross-category "Accept N high-confidence
+  recommendations" bulk action on Needs Review; re-verifying live
+  requests for the 6 providers that need credentials, if/when real
+  credentials become available; `/api/library/overview` and
+  `/api/library/quality` are not yet `storage_zone`-aware; Inbox has no
+  inline metadata editor yet (routes to existing specialist pages
+  instead); batch analysis reuses the existing global missing-BPM/key
+  queue rather than one scoped to just the current batch.
+
 - 2026-08-08: Cycle 11 (Multi-Provider Identification & Enrichment) of
   the crateIQ Managed Library & Batch Preparation Program, on
   `feat/crateiq-managed-library` (base Cycle 10, this file's previous

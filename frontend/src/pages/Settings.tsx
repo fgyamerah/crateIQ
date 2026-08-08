@@ -39,6 +39,8 @@ import type {
   WorkflowCapability,
 } from '../types/settings'
 import type { MikCoverageResult, MikImportResult } from '../types/analysis'
+import { fetchWorkspaceStatus } from '../api/workspace'
+import type { WorkspaceStatus } from '../api/workspace'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import KpiCard from '../components/ui/KpiCard'
@@ -125,6 +127,7 @@ export default function Settings() {
   const [mikPreview, setMikPreview] = useState<MikCoverageResult | null>(null)
   const [mikImport, setMikImport] = useState<MikImportResult | null>(null)
   const [mikBusy, setMikBusy] = useState(false)
+  const [workspace, setWorkspace] = useState<WorkspaceStatus | null>(null)
 
   const applySettings = (next: SettingsResponse) => {
     setSettings(next)
@@ -136,14 +139,16 @@ export default function Settings() {
     setLoading(true)
     setError(null)
     try {
-      const [nextSettings, nextRuntime, nextMikCoverage] = await Promise.all([
+      const [nextSettings, nextRuntime, nextMikCoverage, nextWorkspace] = await Promise.all([
         fetchSettings(),
         fetchSettingsRuntime(),
         fetchMikCoverage().catch(() => null),
+        fetchWorkspaceStatus().catch(() => null),
       ])
       applySettings(nextSettings)
       setRuntime(nextRuntime)
       setMikCoverage(nextMikCoverage)
+      setWorkspace(nextWorkspace)
     } catch (err) {
       setError(errorMessage(err, 'Could not load local settings.'))
     } finally {
@@ -346,6 +351,7 @@ export default function Settings() {
         <>
           <nav className="settings-tabs" aria-label="Settings sections">
             <a href="#library-paths">Library &amp; Paths</a>
+            {workspace && <a href="#workspace">Workspace</a>}
             <a href="#analysis-tools">Analysis &amp; Tools</a>
             <a href="#metadata-sources">Metadata Sources</a>
             <a href="#safety-behavior">Safety &amp; Behavior</a>
@@ -392,6 +398,30 @@ export default function Settings() {
               <p className="muted settings-note">The pending root is stored in this repository’s ignored local runtime config. No music files, tags, BPM, key, cue points, MIK values, or DJ application databases are changed.</p>
             </div>
           </section>
+
+          {workspace && (
+            <section className="section" id="workspace">
+              <div className="card settings-card">
+                <div className="card-title-row">
+                  <div><h2 className="card-title"><HardDrive size={16} /> Workspace</h2><p className="muted">Managed root, Inbox, Library, and Quarantine zones for the active library root.</p></div>
+                  <Badge tone={workspace.state === 'managed_workspace' ? 'succeeded' : workspace.state === 'legacy_direct_library' ? 'pending' : 'info'}>
+                    {workspace.state.replace(/_/g, ' ')}
+                  </Badge>
+                </div>
+                {workspace.state === 'managed_workspace' ? (
+                  <dl className="def-list settings-def-list">
+                    <dt>Managed root</dt><dd><code>{workspace.library_root}</code></dd>
+                    <dt>Inbox path</dt><dd><code>{workspace.inbox_path}</code></dd>
+                    <dt>Library path</dt><dd><code>{workspace.library_path}</code></dd>
+                    <dt>Quarantine path</dt><dd><code>{workspace.quarantine_path}</code></dd>
+                  </dl>
+                ) : (
+                  <StatusStrip tone="info">{workspace.message}</StatusStrip>
+                )}
+                <p className="muted settings-note">Imported files are copied into Inbox. Originals remain untouched. Configure this from the <Link to="/inbox">Inbox</Link> page.</p>
+              </div>
+            </section>
+          )}
 
           <section className="section settings-anchor-section" id="library-setup-import">
             <div className="card settings-card settings-import-wizard">

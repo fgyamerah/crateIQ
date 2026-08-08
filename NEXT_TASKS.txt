@@ -39,6 +39,33 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 12 -- Product Navigation + Final End-to-End Workflow (2026-08-08)
+    Final cycle of the Managed Library & Batch Preparation Program.
+    Sidebar reorganized into LIBRARY (Inbox, Library, Needs Review) / DJ
+    (Crates, Set Builder, Publish) / TOOLS (Jobs, Maintenance) / SYSTEM
+    (Settings) -- one unified "Needs Review" badge replaces four
+    scattered ones. New Maintenance.tsx hub (route /maintenance) links
+    to Quality/Duplicates/Reconciliation/Folders/Audit without rewriting
+    any of them. /library-prep now redirects to /inbox (materially
+    superseded, avoiding a duplicate competing workflow); the old page
+    stays in source, unrouted, matching existing Dashboard/Collection/
+    Tracks precedent. Settings gained a Workspace card (managed root/
+    Inbox/Library/Quarantine paths) reusing the existing Cycle 9 status
+    endpoint -- zero new backend code. Impeccable's own review caught and
+    fixed a real issue in this cycle's first Maintenance.tsx draft:
+    a redundant duplicate-link tabs row misusing ARIA role="tab" on
+    plain navigation links. Re-ran the full real journey (import ->
+    Process All -> promote -> Library -> visible to Crates' track
+    picker) end to end through the new navigation to confirm zero
+    regression from the reorg. 1590 backend tests pass (unchanged --
+    no backend logic touched this cycle); frontend typecheck/build pass.
+    Final safety audit passed in full (88 sanctioned files unchanged,
+    no-beet-CLI-invocation guard, credentials still gitignored, no
+    secret-shaped strings in the diff). README.md gained a "Managed
+    Library workflow" section and corrected feature-status rows. See
+    CHANGELOG.txt, PROJECT_CONTEXT.md, and the session's final report
+    for complete detail. On feat/crateiq-managed-library; not merged
+    to main.
 [x] (P0) Managed Library Cycle 11 -- Multi-Provider Identification & Enrichment (2026-08-08)
     Real adapters for AcoustID, Discogs, Beatport, Spotify, Deezer,
     Last.fm, and YouTube (new backend/app/services/providers/ package),

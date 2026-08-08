@@ -3,36 +3,20 @@ import { NavLink } from 'react-router-dom'
 import {
   Library,
   AlertTriangle,
-  Sparkles,
-  ClipboardList,
-  FolderTree,
-  Database,
-  Eraser,
-  BarChart3,
-  Wrench,
-  Activity,
   ListChecks,
   ListMusic,
   Music,
-  Download,
-  HardDrive,
   Rocket,
   ChevronLeft,
   ChevronRight,
   Disc3,
   Heart,
   Settings,
-  CopyCheck,
-  AudioLines,
-  FolderInput,
-  ShieldAlert,
+  Wrench,
   Inbox as InboxIcon,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
-import { fetchReviewSummary } from '../api/insights'
-import { fetchTrackIssues } from '../api/tracks'
-import { fetchMetadataRepairSummary } from '../api/metadataRepair'
-import { fetchBpmSummary } from '../api/analysis'
+import { fetchNeedsReview } from '../api/needsReview'
 import { fetchLibraryQuality } from '../api/libraryQuality'
 
 interface NavItem {
@@ -50,56 +34,47 @@ interface NavSection {
 
 /** Sidebar nav badge counts — each sourced from an existing read-only endpoint. */
 interface NavBadges {
-  issues:     number | null
-  enrichment: number | null
-  repair:     number | null
-  bpm:        number | null
+  needsReview: number | null
 }
 
-const EMPTY_BADGES: NavBadges = { issues: null, enrichment: null, repair: null, bpm: null }
+const EMPTY_BADGES: NavBadges = { needsReview: null }
 
+/**
+ * Task-oriented top-level navigation. Every other specialist workflow
+ * (Beets Review, Enrichment Review, Metadata Repair/Sanitation, Genre
+ * Taxonomy, BPM Review, Quality Review, Apply to Files, Smart Crates,
+ * Export, SSD Sync, Music Review) is still fully mounted and reachable --
+ * via Needs Review's deep links, Maintenance's tabs, or direct URL -- it
+ * is deliberately not repeated here as a permanent sidebar destination.
+ */
 const NAV: NavSection[] = [
   {
-    title: 'Browse',
+    title: 'Library',
     items: [
-      { to: '/',             label: 'Library',          Icon: Library,       end: true },
       { to: '/inbox',        label: 'Inbox',            Icon: InboxIcon },
-      { to: '/needs-review', label: 'Needs Review',     Icon: AlertTriangle },
-      { to: '/library-prep', label: 'Library Prep',     Icon: FolderInput },
-      { to: '/quality',      label: 'Quality',          Icon: BarChart3 },
-      { to: '/quality-review', label: 'Quality Review', Icon: AudioLines },
-      { to: '/issues',       label: 'Issues',           Icon: AlertTriangle, badgeKey: 'issues' },
-      { to: '/enrichment',   label: 'Enrichment Queue', Icon: Sparkles,      badgeKey: 'enrichment' },
-      { to: '/beets-review', label: 'Beets Review',      Icon: Sparkles },
-      { to: '/enrichment-review', label: 'Enrichment Review', Icon: Sparkles },
-      { to: '/metadata-repair', label: 'Metadata Repair', Icon: Wrench,      badgeKey: 'repair' },
-      { to: '/metadata-sanitation', label: 'Metadata Sanitation', Icon: Eraser },
-      { to: '/genres', label: 'Genre Taxonomy', Icon: ListChecks },
-      { to: '/music-review', label: 'Music Review', Icon: AudioLines },
-      { to: '/bpm-review',   label: 'BPM Review',       Icon: Activity,      badgeKey: 'bpm' },
-      { to: '/audit',        label: 'Audit',            Icon: ClipboardList },
-      { to: '/folders',      label: 'Folders',          Icon: FolderTree },
+      { to: '/',             label: 'Library',          Icon: Library,       end: true },
+      { to: '/needs-review', label: 'Needs Review',     Icon: AlertTriangle, badgeKey: 'needsReview' },
     ],
   },
   {
-    title: 'Operations',
+    title: 'DJ',
     items: [
-      { to: '/jobs',        label: 'Jobs',        Icon: ListChecks },
-      { to: '/apply-to-files', label: 'Apply to Files', Icon: ShieldAlert },
-      { to: '/duplicates',  label: 'Duplicates',  Icon: CopyCheck },
-      { to: '/crates',      label: 'Manual Crates', Icon: ListMusic },
-      { to: '/smart-crates', label: 'Smart Crates', Icon: Sparkles },
+      { to: '/crates',      label: 'Crates',      Icon: ListMusic },
       { to: '/set-builder', label: 'Set Builder', Icon: Music },
       { to: '/publish',     label: 'Publish',     Icon: Rocket },
-      { to: '/exports',     label: 'Export',      Icon: Download },
-      { to: '/sync',        label: 'SSD Sync',    Icon: HardDrive },
-      { to: '/settings',    label: 'Settings',    Icon: Settings },
     ],
   },
   {
-    title: 'Reconciliation',
+    title: 'Tools',
     items: [
-      { to: '/reconciliation', label: 'Library Reconciliation', Icon: Database },
+      { to: '/jobs',        label: 'Jobs',        Icon: ListChecks },
+      { to: '/maintenance', label: 'Maintenance', Icon: Wrench },
+    ],
+  },
+  {
+    title: 'System',
+    items: [
+      { to: '/settings',    label: 'Settings',    Icon: Settings },
     ],
   },
 ]
@@ -150,21 +125,13 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
 
   useEffect(() => {
     let cancelled = false
-    Promise.allSettled([
-      fetchTrackIssues(),
-      fetchReviewSummary(),
-      fetchMetadataRepairSummary(),
-      fetchBpmSummary(),
-    ]).then(([issuesRes, enrichRes, repairRes, bpmRes]) => {
-      if (cancelled) return
-      const issues = issuesRes.status === 'fulfilled'
-        ? Object.values(issuesRes.value).reduce((sum, n) => sum + (n || 0), 0)
-        : null
-      const enrichment = enrichRes.status === 'fulfilled' ? enrichRes.value.pending_count : null
-      const repair = repairRes.status === 'fulfilled' ? repairRes.value.pending_count : null
-      const bpm = bpmRes.status === 'fulfilled' ? (bpmRes.value.by_status?.pending ?? null) : null
-      setBadges({ issues, enrichment, repair, bpm })
-    })
+    fetchNeedsReview('ALL')
+      .then((result) => {
+        if (!cancelled) setBadges({ needsReview: result.counts.ALL ?? null })
+      })
+      .catch(() => {
+        if (!cancelled) setBadges(EMPTY_BADGES)
+      })
     return () => { cancelled = true }
   }, [])
 
@@ -202,7 +169,7 @@ export default function Sidebar({ collapsed, onToggle }: Props) {
                       <Icon size={15} className="sidebar-icon" strokeWidth={1.75} />
                       {!collapsed && <span className="sidebar-link-label">{label}</span>}
                       {!collapsed && count != null && count > 0 && (
-                        <span className={`sidebar-badge${badgeKey === 'issues' ? ' sidebar-badge--warn' : ''}`}>
+                        <span className={`sidebar-badge${badgeKey === 'needsReview' ? ' sidebar-badge--warn' : ''}`}>
                           {count > 99 ? '99+' : count}
                         </span>
                       )}

@@ -73,19 +73,10 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
-        "route": "/library-prep",
-        "purpose": "Unified import → clean → enrich → apply → analyze → ready workflow",
-        "access": "read-only status; scan/import actions deferred",
-        "endpoints": [
-            ("/api/settings", "dict", ("library", "tools", "safety", "preferences", "capabilities")),
-            ("/api/library/overview", "dict",
-             ("total_tracks", "parse_confidence_breakdown", "genre_top_counts")),
-            ("/api/metadata-sanitation/summary", "dict",
-             ("queue_total", "pending_count", "approved_count")),
-            ("/api/metadata-repair/summary", "dict",
-             ("queue_total", "pending_count", "approved_count")),
-            ("/api/library/readiness", "dict", ("total_tracks", "ready", "blockers", "warnings")),
-        ],
+        "route": "/maintenance",
+        "purpose": "Cycle 12 maintenance hub: links to Quality, Duplicates, Reconciliation, Folders, Audit",
+        "access": "static navigation only; makes no API calls of its own",
+        "endpoints": [],
     },
     {
         "route": "/apply-to-files",

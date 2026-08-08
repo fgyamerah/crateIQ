@@ -8413,6 +8413,11 @@ tr.row--selected td {
 .settings-anchor-section { scroll-margin-top: 18px; }
 .settings-kpis { display: grid; gap: 12px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .settings-card { background: linear-gradient(145deg, rgba(22,27,39,.98), rgba(14,18,27,.98)); border-radius: 14px; display: grid; gap: 14px; padding: 18px; }
+.maintenance-grid { display: grid; gap: 14px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.maintenance-card { color: inherit; text-decoration: none; transition: border-color .12s ease, background .12s ease; }
+.maintenance-card:hover { border-color: rgba(20,184,166,.5); }
+@media (max-width: 900px) { .maintenance-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+@media (max-width: 600px) { .maintenance-grid { grid-template-columns: 1fr; } }
 .settings-card .card-title { margin-bottom: 4px; }
 .settings-card .card-title svg { color: var(--brand-cyan); }
 .settings-card .card-title-row { align-items: flex-start; gap: 16px; }

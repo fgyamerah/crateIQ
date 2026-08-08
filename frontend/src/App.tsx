@@ -5,9 +5,9 @@ import Crates from './pages/Crates'
 import Duplicates from './pages/Duplicates'
 import SmartCrates from './pages/SmartCrates'
 import LibraryView from './components/library/LibraryView'
-import LibraryPrep from './pages/LibraryPrep'
 import Inbox from './pages/Inbox'
 import NeedsReview from './pages/NeedsReview'
+import Maintenance from './pages/Maintenance'
 import ApplyToFiles from './pages/ApplyToFiles'
 import ErrorBoundary from './components/ErrorBoundary'
 import BpmReview from './pages/BpmReview'
@@ -47,7 +47,7 @@ export default function App() {
           <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
           <Route path="inbox" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
           <Route path="needs-review" element={<ErrorBoundary><NeedsReview /></ErrorBoundary>} />
-          <Route path="library-prep" element={<ErrorBoundary><LibraryPrep /></ErrorBoundary>} />
+          <Route path="maintenance" element={<ErrorBoundary><Maintenance /></ErrorBoundary>} />
           <Route path="apply-to-files" element={<ErrorBoundary><ApplyToFiles /></ErrorBoundary>} />
           <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
           <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
@@ -79,6 +79,8 @@ export default function App() {
           <Route path="tracks" element={<Navigate to="/" replace />} />
           <Route path="export" element={<Navigate to="/exports" replace />} />
           <Route path="ssd-sync" element={<Navigate to="/sync" replace />} />
+          {/* Library Prep's workflow is absorbed by Inbox (Cycle 12) -- deep links redirect rather than duplicating a competing main workflow. */}
+          <Route path="library-prep" element={<Navigate to="/inbox" replace />} />
           <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
         </Routes>

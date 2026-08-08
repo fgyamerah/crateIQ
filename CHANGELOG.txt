@@ -2,6 +2,91 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Cycle 12: product navigation + final end-to-end workflow
+
+- What changed: replaces the flat Browse/Operations/Reconciliation sidebar
+  with the task-oriented shape the whole Managed Library program was built
+  toward: LIBRARY (Inbox, Library, Needs Review) / DJ (Crates, Set Builder,
+  Publish) / TOOLS (Jobs, Maintenance) / SYSTEM (Settings). No specialist
+  functionality was removed -- every route from Cycles 1-11 is still
+  mounted and reachable, just no longer competing for a permanent sidebar
+  slot.
+- Sidebar (frontend/src/components/Sidebar.tsx): rebuilt around the 4
+  sections above. The old scattered badge counts (issues/enrichment/
+  repair/bpm, each from a different endpoint) are replaced by one
+  "Needs Review" badge sourced from the Cycle 10 unified aggregator
+  (GET /api/needs-review), matching the product's own consolidation intent
+  -- one exception count, not four overlapping ones.
+- New frontend/src/pages/Maintenance.tsx (route /maintenance): a hub
+  linking to Quality, Duplicates, Reconciliation, Folders, and Audit --
+  each still its own real, unchanged, previously-existing page. Reuses
+  existing systems rather than rewriting them, per the explicit "reuse,
+  do not rewrite navigation" instruction: Quality/Duplicates/Reconciliation
+  are standalone pages, and Folders/Audit are two of CrateMind.tsx's
+  route-driven sections (CrateMind picks its active section from
+  window.location.pathname, so embedding it inline would have required
+  either faking a pathname or a deeper rework -- out of scope for a nav
+  consolidation cycle). First draft had a redundant top "tabs" row
+  duplicating the same 5 links as actual tabs.
+  It also misused ARIA role="tab"/aria-selected on plain navigation
+  links -- those roles imply in-page panel switching, which never
+  happens here. Caught in this cycle's own Impeccable review pass and
+  removed before shipping; the page is now one honest set of link-cards.
+- Route consolidation (frontend/src/App.tsx): /library-prep now redirects
+  to /inbox rather than staying independently mounted -- Inbox (Cycles
+  9-10: Process All, Clean/Enrich Selected, promotion) materially
+  supersedes Library Prep's older step wizard, and the product's own rule
+  is "do not leave duplicate competing main workflows." LibraryPrep.tsx
+  itself is left in source, unrouted -- same precedent already established
+  for the legacy Dashboard/Collection/Tracks pages, not a new pattern.
+  New /maintenance route added, plus the existing /needs-review (Cycle 10)
+  route contract entry.
+- Settings (frontend/src/pages/Settings.tsx) gained a Workspace card
+  (new #workspace section, plus a quick-jump tab) showing the managed
+  root, Inbox path, Library path, and Quarantine path via the existing
+  Cycle 9 GET /api/workspace/status endpoint -- zero new backend code.
+  Falls back to the existing state message for a not-yet-configured or
+  legacy_direct_library root rather than showing broken/empty fields.
+- Impeccable pass (final, focused on the 3 new/changed surfaces above --
+  Inbox and Needs Review already received their own passes in Cycles 9
+  and 10): found and fixed the Maintenance ARIA/duplication issue above.
+- Live end-to-end re-verification against a fresh disposable workspace
+  (never the sanctioned library): confirmed the reorganized sidebar
+  renders the exact target grouping, confirmed /library-prep redirects
+  to /inbox, confirmed the Settings Workspace card shows real managed-root
+  paths, and re-ran the full real journey end to end through the new
+  navigation to prove the reorg introduced no regression -- import (real
+  ffmpeg-generated MP3, byte-identical original preserved throughout) ->
+  Process All -> Move Ready to Library -> confirmed the file landed at
+  Library/House/Final Artist/Final Artist - Final Track.mp3 -> confirmed
+  GET /api/tracks (the same query Crates.tsx's track picker uses) returns
+  the promoted track with storage_zone=LIBRARY, proving crates can build
+  from promoted Library tracks.
+- Final safety audit run and passed: compileall, full pytest (1590),
+  frontend typecheck/build, `pipeline.py validate-docs --strict`,
+  `git diff --check`, the 88 sanctioned audio files confirmed byte-count-
+  unchanged, the no-beet-CLI-invocation static guard test, confirmation
+  that .run/local/metadata_sources.json (all provider credentials) stays
+  gitignored, and a diff-wide grep for hardcoded-secret-shaped strings
+  found none. LedgerIQ and opsIQ were not touched this session.
+- Documentation: added a "Managed Library workflow" section to README.md
+  explaining the Managed Root/Inbox/Library/Quarantine layout, the
+  copy-never-move import contract, Process All, Needs Review, explicit
+  promotion, and provider configuration; corrected the now-stale
+  "Metadata Sources ... do not yet perform lookup" feature-status row
+  (true before Cycle 11, false after) and added rows for the managed
+  workspace and multi-provider consensus engine.
+- Files affected: frontend/src/components/Sidebar.tsx,
+  frontend/src/pages/Maintenance.tsx (new), frontend/src/App.tsx,
+  frontend/src/pages/Settings.tsx, frontend/src/index.css,
+  tests/test_supported_route_contracts.py, README.md, NEXT_TASKS.txt,
+  PROJECT_CONTEXT.md, CHANGELOG.txt.
+- Migration notes: none. No backend logic changed in this cycle --
+  purely frontend navigation/IA plus one new read-reuse in Settings.
+  This is the final cycle of the Managed Library & Batch Preparation
+  Program; see the session's final report for the complete acceptance
+  summary, per-provider status, and remaining follow-up work.
+
 [2026-08-08] — Cycle 11: multi-provider identification & enrichment
 
 - What changed: adds real adapters for 7 metadata providers (AcoustID,

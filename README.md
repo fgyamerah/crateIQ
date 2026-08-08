@@ -43,10 +43,53 @@ file-writing workflow.
 - **No cloud account is required.** crateIQ is intended for trusted local use;
   it currently has no authentication for remote or multi-user deployment.
 
+## Managed Library workflow
+
+crateIQ can manage a music workspace with three physically separated zones
+under one **Managed Root** folder you choose (Settings → Workspace):
+
+```
+<Managed Root>/
+  Inbox/        tracks being prepared, not yet finished
+  Library/      promoted, finished music -- Genre/Artist/Artist - Title.ext
+  Quarantine/   reserved; never an automatic destination
+```
+
+- **Import copies, never moves.** Selecting external files or folders in
+  **Inbox** copies them into `Inbox/`; your original source files are never
+  modified, renamed, or deleted.
+- **Inbox** is the preparation workspace: import, run **Process All**
+  (deterministic cleanup, bounded high-confidence metadata identification,
+  verified tag write-back to the Inbox copy only, and BPM/key analysis, all
+  behind one explicit confirmation), or use Clean/Enrich Selected on a
+  chosen subset.
+- **Needs Review** aggregates open exceptions -- missing metadata, identity/
+  enrichment uncertainty, genre, analysis, and quality findings -- from
+  crateIQ's existing review queues into one place, with links to resolve
+  each on its specialist page.
+- **Move Ready to Library** is an explicit, separate action. A track is only
+  promotable once artist, title, and genre are present and its metadata
+  write has been verified; missing BPM, key, or waveform are warnings, not
+  blockers. Promoted files move into `Library/<Genre>/<Artist>/<Artist> -
+  <Title>.<ext>` and no longer appear in Inbox.
+- **An existing library you already point crateIQ at directly** (files
+  scanned in place, no `Inbox`/`Library`/`Quarantine` folders) is never
+  silently restructured into this layout -- configuring a managed workspace
+  requires a new, dedicated root.
+- **Metadata provider configuration** lives in Settings → Metadata Sources.
+  AcoustID, Discogs, Beatport, Spotify, Deezer, Last.fm, and YouTube each
+  show a truthful status (Ready / Needs Setup / Unavailable) based on real
+  credential/API checks -- crateIQ never claims a provider is connected
+  without a successful request. See that page for each provider's current
+  setup requirements and limitations (several require your own free
+  developer account; Beatport requires partner approval with no public
+  self-service signup).
+
 ## Feature status
 
 | Feature | Status | Notes |
 | --- | --- | --- |
+| Managed workspace (Inbox/Library/Quarantine) | Implemented | Copy-based import, Process All batch preparation, unified Needs Review, explicit Move Ready to Library promotion. Additive to the existing direct-library model; an existing library is never auto-restructured. |
 | Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
 | Manual Crates | Implemented | Create, edit, reorder, and save local DJ working lists. |
 | Smart Crates | Implemented | Deterministic suggestions from existing local metadata; save as Manual Crates. |
@@ -58,7 +101,8 @@ file-writing workflow.
 | BPM analysis with `aubio` | Implemented safe runner | Preview and confirmation required; only missing BPM is eligible. |
 | Key/Camelot with `keyfinder-cli` | Implemented safe runner | Preview and confirmation required; only missing key/Camelot is eligible. |
 | Beets enrichment | Selected-field DB-only review | Local missing-field candidates; explicit saved/confirmed artist/title/genre apply, no `beet` invocation or tag/file writes. |
-| Metadata Sources | Settings foundation | Local tags, MIK, Beets, and future APIs are modeled; external APIs are disabled by default and do not yet perform lookup. |
+| Metadata Sources | Implemented | Local tags, MIK, Beets, MusicBrainz, plus real adapters for AcoustID, Discogs, Beatport, Spotify, Deezer, Last.fm, and YouTube against their official APIs. Each reports a truthful Ready/Needs Setup/Unavailable status; external providers are disabled by default and require your own credentials except Deezer (no credentials needed for search). |
+| Multi-provider consensus | Implemented | Explainable field-by-field HIGH/MEDIUM/LOW/CONFLICT evidence aggregation with staged provider routing and genre-authority weighting; reachable via a preview endpoint. Not yet wired into automatic batch write-back (see NEXT_TASKS.txt). |
 | Multi-source enrichment review | Implemented foundation | Compares conservative local suggestions and source status; selected empty local-index fields only. No provider API calls. |
 | Genre Taxonomy | Implemented foundation | Review-first Ghana/Africa and DJ-friendly genre normalization in the local index; raw values stay preserved. |
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
