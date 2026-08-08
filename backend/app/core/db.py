@@ -273,6 +273,46 @@ CREATE INDEX IF NOT EXISTS idx_tag_write_operations_created
     ON tag_write_operations(created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_tag_write_operations_status
     ON tag_write_operations(status);
+
+-- Persisted history for batch Inbox preparation ("Process All" and
+-- Clean/Enrich/Analyze Selected, Cycle 10). Mirrors the analysis_operations
+-- / tag_write_operations lifecycle contract: a row is created only for an
+-- explicitly confirmed run that is genuinely about to begin work; read-only
+-- preflight previews are never persisted. 'running' rows left behind by a
+-- killed backend are closed out at startup, same as every other operation
+-- table here -- a restart never silently resumes batch processing. Stage
+-- counts are truthful subsets of track_count, never a fabricated percent.
+CREATE TABLE IF NOT EXISTS preparation_operations (
+    id                 TEXT    PRIMARY KEY,
+    operation_type     TEXT    NOT NULL DEFAULT 'process_all'
+                                CHECK (operation_type IN (
+                                    'process_all', 'clean_selected',
+                                    'enrich_selected'
+                                )),
+    status             TEXT    NOT NULL DEFAULT 'running'
+                                CHECK (status IN (
+                                    'running', 'completed', 'failed', 'cancelled'
+                                )),
+    track_count        INTEGER NOT NULL DEFAULT 0,
+    cleaned_count      INTEGER NOT NULL DEFAULT 0,
+    enriched_count     INTEGER NOT NULL DEFAULT 0,
+    written_count      INTEGER NOT NULL DEFAULT 0,
+    needs_review_count INTEGER NOT NULL DEFAULT 0,
+    ready_count        INTEGER NOT NULL DEFAULT 0,
+    failed_count       INTEGER NOT NULL DEFAULT 0,
+    cancel_requested   INTEGER NOT NULL DEFAULT 0
+                                CHECK (cancel_requested IN (0, 1)),
+    warnings_json      TEXT,
+    error_reason       TEXT,
+    created_at         TEXT    NOT NULL,
+    started_at         TEXT,
+    finished_at        TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_preparation_operations_created
+    ON preparation_operations(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_preparation_operations_status
+    ON preparation_operations(status);
 """
 
 

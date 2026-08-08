@@ -1,15 +1,25 @@
-import { useCallback, useEffect, useState } from 'react'
-import { FolderInput, Inbox as InboxIcon, RefreshCw, ShieldCheck, Upload } from 'lucide-react'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { Link } from 'react-router-dom'
+import { FolderInput, Inbox as InboxIcon, Loader2, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
   applyPromotion,
+  cancelPrepareOperation,
+  cleanSelected,
   configureWorkspace,
+  enrichSelected,
   fetchInboxTracks,
+  fetchPreparePreview,
+  fetchPrepareOperation,
   fetchWorkspaceStatus,
   importToInbox,
   previewPromotion,
+  startProcessAll,
 } from '../api/workspace'
-import type { InboxTrackPage, PromotionPreview, WorkspaceImportResult, WorkspaceStatus } from '../api/workspace'
+import type {
+  InboxTrackPage, PreparationOperation, PreparePreflight,
+  PromotionPreview, WorkspaceImportResult, WorkspaceStatus,
+} from '../api/workspace'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import KpiCard from '../components/ui/KpiCard'
@@ -20,10 +30,13 @@ function messageFor(error: unknown, fallback: string) {
   return error instanceof ApiError ? error.displayMessage : fallback
 }
 
+const POLL_INTERVAL_MS = 1500
+
 export default function Inbox() {
   const [status, setStatus] = useState<WorkspaceStatus | null>(null)
   const [tracks, setTracks] = useState<InboxTrackPage | null>(null)
   const [preview, setPreview] = useState<PromotionPreview | null>(null)
+  const [preflight, setPreflight] = useState<PreparePreflight | null>(null)
   const [loading, setLoading] = useState(true)
   const [configuring, setConfiguring] = useState(false)
   const [importing, setImporting] = useState(false)
@@ -31,7 +44,12 @@ export default function Inbox() {
   const [importPaths, setImportPaths] = useState('')
   const [importResult, setImportResult] = useState<WorkspaceImportResult | null>(null)
   const [confirmingPromotion, setConfirmingPromotion] = useState(false)
+  const [confirmingProcessAll, setConfirmingProcessAll] = useState(false)
+  const [operation, setOperation] = useState<PreparationOperation | null>(null)
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [batchBusy, setBatchBusy] = useState<'clean' | 'enrich' | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const load = useCallback(async () => {
     setLoading(true)
@@ -40,15 +58,18 @@ export default function Inbox() {
       const nextStatus = await fetchWorkspaceStatus()
       setStatus(nextStatus)
       if (nextStatus.state === 'managed_workspace') {
-        const [nextTracks, nextPreview] = await Promise.all([
+        const [nextTracks, nextPreview, nextPreflight] = await Promise.all([
           fetchInboxTracks({ limit: 200 }),
           previewPromotion(),
+          fetchPreparePreview(),
         ])
         setTracks(nextTracks)
         setPreview(nextPreview)
+        setPreflight(nextPreflight)
       } else {
         setTracks(null)
         setPreview(null)
+        setPreflight(null)
       }
     } catch (err) {
       setError(messageFor(err, 'Could not load the managed workspace.'))
@@ -58,6 +79,24 @@ export default function Inbox() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+  useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current) }, [])
+
+  const pollOperation = useCallback((operationId: string) => {
+    const tick = async () => {
+      try {
+        const next = await fetchPrepareOperation(operationId)
+        setOperation(next)
+        if (next.status === 'running') {
+          pollRef.current = setTimeout(tick, POLL_INTERVAL_MS)
+        } else {
+          await load()
+        }
+      } catch (err) {
+        setError(messageFor(err, 'Lost track of the Process All operation.'))
+      }
+    }
+    void tick()
+  }, [load])
 
   const doConfigure = async () => {
     setConfiguring(true)
@@ -107,9 +146,67 @@ export default function Inbox() {
     }
   }
 
+  const doProcessAll = async () => {
+    setError(null)
+    try {
+      const { operation_id } = await startProcessAll()
+      setConfirmingProcessAll(false)
+      pollOperation(operation_id)
+    } catch (err) {
+      setError(messageFor(err, 'Process All failed to start.'))
+    }
+  }
+
+  const doCancelProcessAll = async () => {
+    if (!operation) return
+    try {
+      await cancelPrepareOperation(operation.id)
+    } catch (err) {
+      setError(messageFor(err, 'Could not request cancellation.'))
+    }
+  }
+
+  const toggleSelected = (trackId: number) => {
+    setSelected((current) => {
+      const next = new Set(current)
+      if (next.has(trackId)) next.delete(trackId)
+      else next.add(trackId)
+      return next
+    })
+  }
+
+  const doCleanSelected = async () => {
+    if (!selected.size) return
+    setBatchBusy('clean')
+    setError(null)
+    try {
+      await cleanSelected(Array.from(selected))
+      await load()
+    } catch (err) {
+      setError(messageFor(err, 'Clean Selected failed.'))
+    } finally {
+      setBatchBusy(null)
+    }
+  }
+
+  const doEnrichSelected = async () => {
+    if (!selected.size) return
+    setBatchBusy('enrich')
+    setError(null)
+    try {
+      await enrichSelected(Array.from(selected))
+      await load()
+    } catch (err) {
+      setError(messageFor(err, 'Enrich Selected failed.'))
+    } finally {
+      setBatchBusy(null)
+    }
+  }
+
   const readinessByTrackId = new Map((preview?.items ?? []).map((item) => [item.track_id, item]))
   const readyCount = preview?.ready_count ?? 0
   const blockedCount = preview?.blocked_count ?? 0
+  const isProcessing = operation?.status === 'running'
 
   return (
     <main className="page inbox-page">
@@ -150,11 +247,60 @@ export default function Inbox() {
             Imports are copied into {status?.inbox_path}. Originals are never modified.
           </StatusStrip>
 
-          <section className="beets-review-kpis" aria-label="Inbox summary">
-            <KpiCard tone="cyan" label="Inbox tracks" value={tracks?.total ?? 0} sub="Copied, not yet promoted" />
+          <section className="beets-review-kpis" aria-label="Inbox pipeline summary">
+            <KpiCard tone="cyan" label="Imported" value={tracks?.total ?? 0} sub="Copied, not yet promoted" />
+            <KpiCard tone="violet" label="Cleaned" value={operation?.cleaned_count ?? 0} sub="Last Process All run" />
+            <KpiCard tone="violet" label="Enriched" value={operation?.enriched_count ?? 0} sub="Last Process All run" />
             <KpiCard tone="emerald" label="Ready" value={readyCount} sub="Artist, title, genre, verified" />
             <KpiCard tone="coral" label="Needs work" value={blockedCount} sub="Missing required fields" />
           </section>
+
+          <div className="card settings-card">
+            <h2 className="card-title"><Wand2 size={16} /> Process All</h2>
+            {preflight && (
+              <p className="muted">
+                {preflight.inbox_total} tracks in Inbox — {preflight.already_ready} already ready,{' '}
+                {preflight.need_cleaning} need cleaning, {preflight.need_enrichment} need identification,{' '}
+                {preflight.likely_review} likely need manual review. Enrichment lookups are bounded to{' '}
+                {preflight.enrichment_lookup_bound} tracks per run.
+              </p>
+            )}
+            <div className="settings-actions">
+              <button
+                className="btn btn--primary"
+                disabled={isProcessing || !tracks?.total}
+                onClick={() => setConfirmingProcessAll(true)}
+              >
+                {isProcessing ? <Loader2 size={14} className="spin" /> : <Sparkles size={14} />}
+                {isProcessing ? 'Processing…' : 'Process All'}
+              </button>
+              {isProcessing && (
+                <button className="btn btn--ghost btn--sm" onClick={() => void doCancelProcessAll()}>
+                  Cancel
+                </button>
+              )}
+            </div>
+            {confirmingProcessAll && !isProcessing && (
+              <StatusStrip
+                tone="warn"
+                actions={
+                  <>
+                    <button className="btn btn--primary btn--sm" onClick={() => void doProcessAll()}>Confirm & process</button>
+                    <button className="btn btn--ghost btn--sm" onClick={() => setConfirmingProcessAll(false)}>Cancel</button>
+                  </>
+                }
+              >
+                {preflight?.message}
+              </StatusStrip>
+            )}
+            {operation && (
+              <p className="muted">
+                Last run ({operation.status}): {operation.cleaned_count} cleaned, {operation.enriched_count} enriched,{' '}
+                {operation.written_count} written, {operation.ready_count} ready, {operation.needs_review_count} need review.
+                {operation.warnings.length > 0 && ` ${operation.warnings.length} warning(s).`}
+              </p>
+            )}
+          </div>
 
           <div className="card settings-card">
             <h2 className="card-title"><Upload size={16} /> Import music</h2>
@@ -187,39 +333,69 @@ export default function Inbox() {
           {!tracks?.items.length ? (
             <EmptyState icon={<InboxIcon size={22} />} title="Inbox is empty" message="Import music to begin preparing it for the Library." />
           ) : (
-            <div className="card settings-card table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Track</th><th>Artist</th><th>Title</th><th>Genre</th><th>BPM</th><th>Key</th><th>Readiness</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {tracks.items.map((track) => {
-                    const readiness = readinessByTrackId.get(track.id)
-                    return (
-                      <tr key={track.id}>
-                        <td>{track.filename}</td>
-                        <td>{track.artist || '—'}</td>
-                        <td>{track.title || '—'}</td>
-                        <td>{track.genre || '—'}</td>
-                        <td>{track.bpm ?? '—'}</td>
-                        <td>{track.key_camelot || track.key_musical || '—'}</td>
-                        <td>
-                          {readiness?.ready ? (
-                            <Badge tone="succeeded">Ready</Badge>
-                          ) : (
-                            <span title={readiness?.blockers.join(' ')}>
-                              <Badge tone="pending">{readiness?.blockers[0] || 'Needs review'}</Badge>
-                            </span>
+            <>
+              <div className="settings-actions">
+                <button className="btn btn--ghost btn--sm" disabled={!selected.size || batchBusy !== null} onClick={() => void doCleanSelected()}>
+                  {batchBusy === 'clean' ? 'Cleaning…' : `Clean Selected (${selected.size})`}
+                </button>
+                <button className="btn btn--ghost btn--sm" disabled={!selected.size || batchBusy !== null} onClick={() => void doEnrichSelected()}>
+                  {batchBusy === 'enrich' ? 'Enriching…' : `Enrich Selected (${selected.size})`}
+                </button>
+                <Link className="btn btn--ghost btn--sm" to="/needs-review">Open Needs Review</Link>
+              </div>
+              <div className="card settings-card table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>
+                        <input
+                          type="checkbox"
+                          checked={selected.size > 0 && selected.size === tracks.items.length}
+                          ref={(el) => { if (el) el.indeterminate = selected.size > 0 && selected.size < tracks.items.length }}
+                          onChange={() => setSelected(
+                            selected.size === tracks.items.length ? new Set() : new Set(tracks.items.map((t) => t.id)),
                           )}
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+                          aria-label="Select all Inbox tracks"
+                        />
+                      </th>
+                      <th>Track</th><th>Artist</th><th>Title</th><th>Genre</th><th>BPM</th><th>Key</th><th>Readiness</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tracks.items.map((track) => {
+                      const readiness = readinessByTrackId.get(track.id)
+                      return (
+                        <tr key={track.id}>
+                          <td>
+                            <input
+                              type="checkbox"
+                              checked={selected.has(track.id)}
+                              onChange={() => toggleSelected(track.id)}
+                              aria-label={`Select ${track.filename}`}
+                            />
+                          </td>
+                          <td>{track.filename}</td>
+                          <td>{track.artist || '—'}</td>
+                          <td>{track.title || '—'}</td>
+                          <td>{track.genre || '—'}</td>
+                          <td>{track.bpm ?? '—'}</td>
+                          <td>{track.key_camelot || track.key_musical || '—'}</td>
+                          <td>
+                            {readiness?.ready ? (
+                              <Badge tone="succeeded">Ready</Badge>
+                            ) : (
+                              <span title={readiness?.blockers.join(' ')}>
+                                <Badge tone="pending">{readiness?.blockers[0] || 'Needs review'}</Badge>
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </>
           )}
 
           <div className="settings-actions">

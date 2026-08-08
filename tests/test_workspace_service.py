@@ -348,3 +348,40 @@ def test_promote_unicode_artist_preserved(tmp_path, monkeypatch):
     assert result["promoted_count"] == 1
     expected = root / "Library" / "Deep House" / "Béatrice" / "Béatrice - Déjà Vu.mp3"
     assert expected.is_file()
+
+
+# ---------------------------------------------------------------------------
+# Regression: fail closed on an uninitialized root, never crash
+# ---------------------------------------------------------------------------
+
+def test_promotion_preview_fails_closed_on_uninitialized_root(tmp_path):
+    root = tmp_path / "not-initialized"
+    root.mkdir()
+    with pytest.raises(ValueError, match="initialize the managed workspace"):
+        svc.promotion_preview(root)
+
+
+def test_promotion_preview_fails_closed_on_missing_root(tmp_path):
+    root = tmp_path / "does-not-exist-at-all"
+    with pytest.raises(ValueError, match="initialize the managed workspace"):
+        svc.promotion_preview(root)
+
+
+def test_promote_tracks_fails_closed_on_uninitialized_root(tmp_path):
+    root = tmp_path / "not-initialized"
+    root.mkdir()
+    with pytest.raises(ValueError, match="initialize the managed workspace"):
+        svc.promote_tracks(root, [1], confirm=True)
+
+
+def test_promotion_preview_empty_track_ids_means_none_not_all(tmp_path, monkeypatch):
+    root = tmp_path / "managed"
+    svc.configure_workspace(root)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    _seed_inbox_track(root)
+
+    preview = svc.promotion_preview(root, [])
+    assert preview["track_count"] == 0, "an explicit empty list must preview nothing, not silently fall back to all tracks"
+
+    preview_all = svc.promotion_preview(root, None)
+    assert preview_all["track_count"] == 1

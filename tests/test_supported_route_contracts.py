@@ -56,11 +56,20 @@ ROUTE_CONTRACTS: list[dict] = [
     },
     {
         "route": "/inbox",
-        "purpose": "Managed workspace preparation dashboard: import, readiness, promotion",
-        "access": "read-only status/listing/preview; import and promotion actions deferred",
+        "purpose": "Managed workspace preparation dashboard: import, batch prepare, readiness, promotion",
+        "access": "read-only status/listing/preview; import, Process All, and promotion actions deferred",
         "endpoints": [
             ("/api/workspace/status", "dict", ("state", "library_root", "message")),
             ("/api/workspace/inbox/tracks", "dict", ("items", "limit", "offset", "total")),
+            ("/api/workspace/prepare/preview", "dict", ("inbox_total", "need_cleaning", "need_enrichment")),
+        ],
+    },
+    {
+        "route": "/needs-review",
+        "purpose": "Unified read-only aggregation across metadata/identity/genre/analysis/quality review queues",
+        "access": "read-only",
+        "endpoints": [
+            ("/api/needs-review", "dict", ("items", "counts", "message")),
         ],
     },
     {
@@ -302,6 +311,10 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
     "/inbox": [
         "/api/workspace/configure (POST)", "/api/workspace/import (POST, copies files)",
         "/api/workspace/promotion/preview (POST)", "/api/workspace/promotion/apply (POST, moves files)",
+        "/api/workspace/prepare/start (POST, dispatches an async batch operation)",
+        "/api/workspace/prepare/clean (POST, writes to the local index)",
+        "/api/workspace/prepare/enrich (POST, network calls + writes to the local index)",
+        "/api/workspace/prepare/operations/{id}/cancel (POST)",
     ],
     "/smart-crates": ["/api/smart-crates/preview (POST)", "/api/smart-crates/save (POST)"],
     "/crates": [

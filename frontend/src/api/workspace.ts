@@ -88,3 +88,63 @@ export function previewPromotion(trackIds?: number[]): Promise<PromotionPreview>
 export function applyPromotion(trackIds: number[]): Promise<PromotionApplyResult> {
   return apiFetch.post<PromotionApplyResult>('/workspace/promotion/apply', { track_ids: trackIds, confirm: true })
 }
+
+// ---------------------------------------------------------------------------
+// Batch preparation (Cycle 10)
+// ---------------------------------------------------------------------------
+
+export interface PreparePreflight {
+  library_root: string
+  inbox_total: number
+  already_ready: number
+  need_cleaning: number
+  need_enrichment: number
+  need_analysis: number
+  likely_review: number
+  unsupported_write_format: number
+  enrichment_lookup_bound: number
+  message: string
+}
+
+export interface PreparationOperation {
+  id: string
+  operation_type: 'process_all' | 'clean_selected' | 'enrich_selected'
+  status: 'running' | 'completed' | 'failed' | 'cancelled'
+  track_count: number
+  cleaned_count: number
+  enriched_count: number
+  written_count: number
+  needs_review_count: number
+  ready_count: number
+  failed_count: number
+  cancel_requested: boolean
+  warnings: string[]
+  error_reason: string | null
+  created_at: string
+  started_at: string | null
+  finished_at: string | null
+}
+
+export function fetchPreparePreview(): Promise<PreparePreflight> {
+  return apiFetch.get<PreparePreflight>('/workspace/prepare/preview')
+}
+
+export function startProcessAll(): Promise<{ operation_id: string; track_count: number }> {
+  return apiFetch.post('/workspace/prepare/start', { confirm: true })
+}
+
+export function cleanSelected(trackIds: number[]): Promise<{ cleaned_count: number }> {
+  return apiFetch.post('/workspace/prepare/clean', { track_ids: trackIds })
+}
+
+export function enrichSelected(trackIds: number[]): Promise<{ enriched_count: number; considered: number; warnings: string[] }> {
+  return apiFetch.post('/workspace/prepare/enrich', { track_ids: trackIds })
+}
+
+export function fetchPrepareOperation(operationId: string): Promise<PreparationOperation> {
+  return apiFetch.get<PreparationOperation>(`/workspace/prepare/operations/${operationId}`)
+}
+
+export function cancelPrepareOperation(operationId: string): Promise<PreparationOperation> {
+  return apiFetch.post<PreparationOperation>(`/workspace/prepare/operations/${operationId}/cancel`, {})
+}

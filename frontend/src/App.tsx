@@ -7,6 +7,7 @@ import SmartCrates from './pages/SmartCrates'
 import LibraryView from './components/library/LibraryView'
 import LibraryPrep from './pages/LibraryPrep'
 import Inbox from './pages/Inbox'
+import NeedsReview from './pages/NeedsReview'
 import ApplyToFiles from './pages/ApplyToFiles'
 import ErrorBoundary from './components/ErrorBoundary'
 import BpmReview from './pages/BpmReview'
@@ -45,6 +46,7 @@ export default function App() {
           <Route element={<Layout />}>
           <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
           <Route path="inbox" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+          <Route path="needs-review" element={<ErrorBoundary><NeedsReview /></ErrorBoundary>} />
           <Route path="library-prep" element={<ErrorBoundary><LibraryPrep /></ErrorBoundary>} />
           <Route path="apply-to-files" element={<ErrorBoundary><ApplyToFiles /></ErrorBoundary>} />
           <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />

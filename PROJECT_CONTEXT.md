@@ -6,6 +6,152 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 10 (Batch Preparation & Unified Review) of the
+  crateIQ Managed Library & Batch Preparation Program, on
+  `feat/crateiq-managed-library` (base Cycle 9, this file's previous
+  entry), no merge to main. Makes processing hundreds of Inbox tracks
+  practical: "Process All" is one explicitly confirmed, cancellable,
+  restart-safe background operation, and a new unified Needs Review
+  page aggregates open exceptions across five categories into one
+  read-only view.
+  New `preparation_operations` table (`backend/app/core/db.py`) and
+  `backend/app/services/preparation_operations_service.py` mirror
+  `analysis_operations_service`'s exact lifecycle contract byte-for-byte
+  (start/update_progress/finish/request_cancel/
+  recover_interrupted_operations, wired into `main.py`'s startup
+  recovery same as every other operation table) -- truthful subset
+  counts only, never a fabricated percent.
+  `backend/app/services/preparation_service.py` is a thin orchestrator,
+  not a new engine: clean reuses `modules.sanitizer.sanitize_metadata()`
+  (pure, deterministic -- safe to auto-apply by construction); identify/
+  enrich reuses `enrichment_review_service.online_lookup()` (Cycle 6's
+  real Beets + MusicBrainz calls) bounded to 25 lookups/run, with a
+  HIGH-confidence auto-apply rule requiring either independent
+  Beets/MusicBrainz agreement on the same normalized artist+title or
+  either source's own 'high' tier -- anything less stays exactly as-is
+  and surfaces as a pending item in `enrichment_review_service`'s
+  existing decision queue (which `online_lookup` itself already
+  populates, so no new persistence was needed); write reuses
+  `tag_write_service.build_plan()`/`apply_plan()` exactly as Cycle 7/9
+  do, chunked to its existing 50-track cap; analyze reuses
+  `analysis_jobs_service.run()` bounded and best-effort. Process All
+  runs as a real background `asyncio.create_task()` (the same
+  fire-and-forget pattern `rsync_runner`/`toolkit_runner` already use
+  for subprocess jobs, applied here to in-process batch work instead of
+  inventing a scheduler) so a separate cancel request can genuinely
+  interrupt it between tracks; the route returns an operation id
+  immediately. A known, disclosed scoping caveat: the analyze stage
+  reuses the existing *global* missing-BPM/key queue (same as the Jobs
+  page), not one scoped to only the current run's track_ids -- CrateIQ
+  has no per-track-id-scoped analysis contract yet.
+  New `backend/app/services/needs_review_service.py` /
+  `GET /api/needs-review` / `frontend/src/pages/NeedsReview.tsx` at
+  `/needs-review`: read-only aggregation across
+  `metadata_repair_queue_service` (METADATA/GENRE/ANALYSIS --
+  missing artist/title/genre, suspicious filenames, duplicate-looking
+  title/artist, unknown BPM/key), `enrichment_review_service`'s pending
+  decision queue (IDENTITY_ENRICHMENT), and `quality_review_service`'s
+  unresolved findings (QUALITY) -- zero new review/decision state, per
+  the explicit "do not duplicate all review implementations"
+  requirement. Each item carries track_id/category/severity/
+  reason_code/summary/current+recommended value/confidence/provenance/
+  a deep-link action to the owning specialist page. A cross-category
+  bulk "Accept N high-confidence recommendations" action was
+  deliberately deferred (see `NEXT_TASKS.txt`) rather than shipped
+  half-safe under time pressure -- resolution currently routes through
+  each item's specialist page.
+  **Two real bugs found and fixed during this cycle, both while wiring
+  genuinely new code paths rather than pre-existing ones that happened
+  to go unexercised until now:**
+  1. `workspace_service.promotion_preview()`/`promote_tracks()`
+     (Cycle 9) called `sqlite3.connect()` directly against
+     `processed.db` with no existence check -- against an uninitialized
+     root this either crashed with an unhandled
+     `sqlite3.OperationalError` or silently auto-created an empty,
+     schema-less DB file (sqlite3's own connect() behavior). Fixed with
+     a shared `_require_initialized_db()` helper (fails closed with a
+     clear `ValueError`, mirroring `tag_write_service`'s existing
+     `_db_path()` precedent); `preparation_service.preflight_preview()`
+     additionally degrades to a genuine 200-with-zero-counts response
+     rather than propagating, since it is a GET in the smoke-tested
+     read-only surface (`"A fresh root without processed.db must
+     degrade safely, not crash"`). Also fixed in the same pass:
+     `promotion_preview(root, track_ids=[])` was silently treated
+     identically to `track_ids=None` (Python's `if track_ids:`
+     truthiness swallowed the empty-list case), previewing *all* Inbox
+     tracks instead of none -- now `[]` and `None` are handled
+     explicitly and mean what they say. Six new regression tests lock
+     all three fixes in, not just the one the broad contract test
+     happened to already catch.
+  2. This cycle's own first draft of `needs_review_service` called
+     `metadata_repair_queue_service.refresh()` (a real write --
+     creates/repopulates CrateIQ's own `repair_queue` bookkeeping
+     table) directly from the `GET /api/needs-review` path, to keep the
+     aggregator always current. That broke
+     `test_smoke_surface_is_read_only_and_spawns_no_subprocess`'s
+     existing guarantee that the whole smoke-tested GET surface never
+     mutates `processed.db` -- caught immediately by the full test gate,
+     not by manual inspection. Root-caused via a targeted instrumented
+     reproduction that called every smoke endpoint one at a time and
+     diffed DB bytes after each. Fixed by reverting Needs Review to
+     pure read (`metadata_repair_queue_service.get()`, whatever was
+     last computed) and instead calling `refresh()` from inside
+     `run_process_all()`, which is already an explicitly confirmed,
+     write-permitted operation -- so Needs Review still ends up current
+     after a real batch run, without any GET ever writing. Locked in
+     with a dedicated before/after DB-bytes regression test in addition
+     to the pre-existing broad contract test.
+  Inbox (`frontend/src/pages/Inbox.tsx`) gained: a pipeline-stage KPI
+  row (Imported/Cleaned/Enriched from the latest persisted Process All
+  operation, Ready/Needs work from live readiness), a Process All card
+  with preflight counts and a two-step confirm using the exact
+  authorization language from the product spec ("does not authorize...
+  promotion to final Library"), live progress polling with a Cancel
+  control while an operation runs, and Clean Selected/Enrich Selected
+  batch actions over per-track selection checkboxes. Impeccable review
+  (`polish` playbook) on Inbox + the new Needs Review page found and
+  fixed: a batch-selection table with no way to select all (added a
+  header select-all checkbox with indeterminate state), and Needs
+  Review's category tabs initially using the wrong existing tab
+  component (`.settings-tabs`, styled for anchor in-page-jump links)
+  instead of the correct one (`.reconciliation-tabs`, the actual
+  button-based tab-switcher pattern Reconciliation.tsx already
+  establishes) -- switched to the correct component rather than
+  patching the wrong one.
+  Frontend zone-default audit, extending Cycle 9's `GET /api/tracks`
+  `zone=library` default change to its other callers for the first
+  time: `ApplyToFiles.tsx` and `CrateMind.tsx` (Issues/Audit/
+  Enrichment/Folders) now explicitly request `zone=all`, since
+  write-back verification and issue triage must still reach Inbox
+  tracks -- exactly where they matter most before promotion.
+  `Crates.tsx` was deliberately left on the new `zone=library` default,
+  matching the product decision that crates are built from promoted
+  Library tracks only.
+  1530 backend tests pass (30 new: `tests/test_preparation_service.py`,
+  `tests/test_workspace_prepare_routes.py`, 6 new regression tests in
+  `tests/test_workspace_service.py`); frontend typecheck/build pass;
+  `git diff --check` clean.
+  **Live end-to-end verification**, against disposable fixtures only,
+  using real `ffmpeg`-generated silent MP3s (not fake byte content)
+  specifically so `mutagen`'s full audio-format parsing genuinely
+  exercises `tag_write_service`'s real code path rather than short-
+  circuiting on an unparseable file: imported a junk-token-filename
+  track (`"... [djcity.com]"`) and a filename with no parseable
+  artist/title separator through the real running UI, ran Process All
+  through its real two-step confirmation, watched it live-clean the
+  junk token from the title, enrich the missing-artist track via a
+  real Beets distance-scored lookup and a real MusicBrainz search
+  (confirmed via the operation's persisted counts and the Needs Review
+  page showing the *other*, non-applied source's lower-confidence
+  candidate still pending), and verified the write-back landed in the
+  actual Inbox copy's ID3 tags via direct `mutagen` re-read on disk --
+  while both external originals stayed SHA-256 byte-identical
+  throughout. Confirmed genre remained correctly required and blocking
+  promotion (Process All never invents a genre value), and confirmed
+  Needs Review's category tab counts and deep links worked correctly
+  against real aggregated data (8 items across IDENTITY_ENRICHMENT/
+  GENRE/ANALYSIS after the run).
+
 - 2026-08-08: Cycle 9 (Managed Music Workspace) of the crateIQ Managed
   Library & Batch Preparation Program, on `feat/crateiq-managed-library`
   (base `feat/crateiq-core-usability` at `78e0dfe`), no merge to main.

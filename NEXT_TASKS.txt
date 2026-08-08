@@ -39,6 +39,46 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 10 -- Batch Preparation & Unified Review (2026-08-08)
+    Process All: one explicitly confirmed, cancellable, restart-safe
+    background operation (new preparation_operations table/service,
+    mirrors analysis_operations_service exactly) chaining deterministic
+    clean (modules.sanitizer reuse) -> bounded HIGH-confidence enrichment
+    (enrichment_review_service.online_lookup reuse, Beets+MB agreement
+    rule) -> verified write-back (tag_write_service reuse) -> best-effort
+    BPM/key analysis (analysis_jobs_service reuse, global-queue scoping
+    caveat disclosed in CHANGELOG.txt). New unified Needs Review
+    (/needs-review): read-only aggregation across metadata_repair_queue_
+    service, enrichment_review_service, and quality_review_service --
+    zero new review/decision state. Found and fixed two real latent
+    bugs while building this: (1) Cycle 9's promotion_preview/
+    promote_tracks crashed or silently created a broken empty DB against
+    an uninitialized root, now fails closed; (2) Needs Review's first
+    draft wrote to the DB from a GET, breaking the app's read-only smoke
+    contract -- moved that refresh into Process All instead. Also fixed
+    empty-list vs None ambiguity in promotion_preview's track_ids param.
+    Inbox gained pipeline-stage KPIs, Process All preflight/confirm/
+    progress/cancel, per-track selection with a header select-all
+    (added during Impeccable review), and Clean/Enrich Selected. Frontend
+    zone=library-default audit extended to ApplyToFiles.tsx/CrateMind.tsx
+    (need zone=all) vs Crates.tsx (correctly stays zone=library). 1530
+    backend tests pass (+30 new); frontend typecheck/build pass. Live
+    end-to-end verified with real ffmpeg-generated MP3 fixtures: junk-
+    token cleanup, real Beets/MusicBrainz enrichment, verified ID3 tag
+    write-back, genre still correctly blocking, Needs Review correctly
+    surfacing remaining exceptions with working deep links -- see
+    CHANGELOG.txt and PROJECT_CONTEXT.md Latest Milestone for full
+    detail. On feat/crateiq-managed-library; not merged to main.
+[ ] (P2) Needs Review has no cross-category bulk "Accept N high-
+    confidence recommendations" action yet -- deliberately deferred
+    rather than shipped half-safe under time pressure. Resolution
+    currently routes through each item's existing specialist page
+    (Enrichment Review, Genre Taxonomy, BPM Review, Metadata Repair).
+[ ] (P2) Batch analysis (Process All's ANALYZE stage, and any future
+    "Analyze Selected") reuses analysis_jobs_service's existing *global*
+    missing-BPM/key queue -- it is not scoped to only the current batch's
+    track_ids, since no per-track-id-scoped analysis contract exists yet.
+    Disclosed, not hidden; revisit if this causes confusion in practice.
 [x] (P0) Managed Library Cycle 9 -- Managed Music Workspace (2026-08-08)
     New Inbox/Library/Quarantine managed workspace, additive to the
     existing legacy direct-library model (never auto-restructured).

@@ -33,6 +33,7 @@ from .api.routes import library as library_router
 from .api.routes import metadata_repair as metadata_repair_router
 from .api.routes import metadata_repair_queue as metadata_repair_queue_router
 from .api.routes import metadata_sanitation as metadata_sanitation_router
+from .api.routes import needs_review as needs_review_router
 from .api.routes import playlists as playlists_router
 from .api.routes import publish as publish_router
 from .api.routes import quality_review as quality_review_router
@@ -52,6 +53,7 @@ from .core.db import init_db
 from .core.library_root import selected_library_root
 from .services import analysis_operations_service, publish_operations_service, read_only as read_only_service
 from .services import library_setup_service
+from .services import preparation_operations_service
 from .services import tag_write_service
 from .services import waveform_cache_service, waveform_job_service, waveform_operations_service
 from .services.waveform_readiness_service import (
@@ -148,6 +150,17 @@ async def lifespan(app: FastAPI):
         tag_write_service.recover_interrupted_operations()
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("tag write-back operation recovery skipped")
+
+    # Close out any batch Inbox preparation ("Process All") operation left
+    # 'running' by a previous process. Same reasoning as every other
+    # operation table above: a restart must never silently resume batch
+    # cleanup/enrichment/write-back, and cleaned/written progress already
+    # committed to the DB/files stays -- only the operation's own status row
+    # is closed out.
+    try:
+        preparation_operations_service.recover_interrupted_operations()
+    except Exception:  # pragma: no cover - recovery must never block startup
+        log.exception("preparation operation recovery skipped")
 
     # Lightweight cache reconciliation: sweep abandoned temp files and repair
     # tracks claiming a `ready` artifact whose file is gone. This touches only
@@ -269,3 +282,4 @@ app.include_router(sync_router.router,       prefix=API_PREFIX)
 app.include_router(publish_router.router,    prefix=API_PREFIX)
 app.include_router(tag_write_router.router,  prefix=API_PREFIX)
 app.include_router(workspace_router.router,  prefix=API_PREFIX)
+app.include_router(needs_review_router.router, prefix=API_PREFIX)

@@ -64,6 +64,7 @@ const NAV: NavSection[] = [
     items: [
       { to: '/',             label: 'Library',          Icon: Library,       end: true },
       { to: '/inbox',        label: 'Inbox',            Icon: InboxIcon },
+      { to: '/needs-review', label: 'Needs Review',     Icon: AlertTriangle },
       { to: '/library-prep', label: 'Library Prep',     Icon: FolderInput },
       { to: '/quality',      label: 'Quality',          Icon: BarChart3 },
       { to: '/quality-review', label: 'Quality Review', Icon: AudioLines },

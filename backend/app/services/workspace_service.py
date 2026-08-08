@@ -86,6 +86,19 @@ def _zone_dir(root: Path, zone: str) -> Path:
     return assert_path_under_root(root / zone, root)
 
 
+def _require_initialized_db(root: Path) -> Path:
+    """
+    Resolve the processed.db path, failing closed with a clear ValueError
+    rather than letting sqlite3.connect() silently create an empty DB file
+    (or crash with an unhandled OperationalError on "no such table") when a
+    root has no local index yet.
+    """
+    db_path = assert_path_under_root(root / "logs" / "processed.db", root)
+    if not db_path.is_file():
+        raise ValueError("Configure and initialize the managed workspace before previewing promotion.")
+    return db_path
+
+
 def _has_audio_directly_present(root: Path) -> bool:
     """Non-recursive legacy-library signal: audio files sitting directly under root."""
     try:
@@ -472,16 +485,19 @@ def _promotion_readiness(row: sqlite3.Row, root: Path) -> dict[str, Any]:
 
 
 def promotion_preview(root: Path, track_ids: list[int] | None = None) -> dict[str, Any]:
+    db_path = _require_initialized_db(root)
     library_setup_service.ensure_storage_zone_column(root)
-    db_path = assert_path_under_root(root / "logs" / "processed.db", root)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
-        if track_ids:
-            placeholders = ",".join("?" * len(track_ids))
-            rows = conn.execute(
-                f"SELECT * FROM tracks WHERE storage_zone = 'INBOX' AND id IN ({placeholders})",
-                track_ids,
-            ).fetchall()
+        if track_ids is not None:
+            if not track_ids:
+                rows = []
+            else:
+                placeholders = ",".join("?" * len(track_ids))
+                rows = conn.execute(
+                    f"SELECT * FROM tracks WHERE storage_zone = 'INBOX' AND id IN ({placeholders})",
+                    track_ids,
+                ).fetchall()
         else:
             rows = conn.execute("SELECT * FROM tracks WHERE storage_zone = 'INBOX'").fetchall()
 
@@ -502,8 +518,8 @@ def promote_tracks(root: Path, track_ids: list[int], *, confirm: bool) -> dict[s
     if not track_ids:
         raise ValueError("Select at least one track to promote.")
 
+    db_path = _require_initialized_db(root)
     library_setup_service.ensure_storage_zone_column(root)
-    db_path = assert_path_under_root(root / "logs" / "processed.db", root)
     results: list[dict[str, Any]] = []
     promoted = failed = 0
 

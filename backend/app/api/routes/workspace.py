@@ -7,6 +7,15 @@ Managed music workspace API (Cycle 9).
   GET  /api/workspace/inbox/tracks         — list Inbox-zone tracks
   GET  /api/workspace/promotion/preview    — read-only promotion readiness for Inbox tracks
   POST /api/workspace/promotion/apply      — explicit "Move Ready to Library"
+
+Batch preparation (Cycle 10):
+  GET  /api/workspace/prepare/preview          — read-only Process All preflight
+  POST /api/workspace/prepare/start            — explicit, confirmed Process All (async, cancellable)
+  POST /api/workspace/prepare/clean            — Clean Selected (synchronous, deterministic)
+  POST /api/workspace/prepare/enrich           — Enrich Selected (synchronous, bounded network)
+  GET  /api/workspace/prepare/operations/{id}  — poll an operation's progress/result
+  GET  /api/workspace/prepare/operations       — recent operation history
+  POST /api/workspace/prepare/operations/{id}/cancel — request cancellation
 """
 from __future__ import annotations
 
@@ -17,7 +26,12 @@ from pydantic import BaseModel, Field
 
 from ...core.library_root import selected_library_root
 from ...schemas.track import TrackSummary
-from ...services import track_service, workspace_service
+from ...services import (
+    preparation_operations_service,
+    preparation_service,
+    track_service,
+    workspace_service,
+)
 
 router = APIRouter(tags=["workspace"])
 
@@ -51,6 +65,14 @@ class PromotionPreviewRequest(BaseModel):
 class PromotionApplyRequest(BaseModel):
     track_ids: List[int] = Field(min_length=1, max_length=200)
     confirm: bool = False
+
+
+class ProcessAllRequest(BaseModel):
+    confirm: bool = False
+
+
+class TrackIdsRequest(BaseModel):
+    track_ids: List[int] = Field(min_length=1, max_length=200)
 
 
 def _root():
@@ -115,3 +137,63 @@ async def apply_promotion(body: PromotionApplyRequest):
         return workspace_service.promote_tracks(_root(), body.track_ids, confirm=True)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Batch preparation (Cycle 10)
+# ---------------------------------------------------------------------------
+
+@router.get("/workspace/prepare/preview")
+async def preview_prepare():
+    """Read-only Process All preflight. Never starts processing."""
+    try:
+        return preparation_service.preflight_preview(_root())
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/prepare/start")
+async def start_prepare(body: ProcessAllRequest):
+    if not body.confirm:
+        raise HTTPException(status_code=422, detail="Process All requires confirm=true after reviewing the preflight preview.")
+    try:
+        return preparation_service.start_process_all(_root(), confirm=True)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/prepare/clean")
+async def clean_selected(body: TrackIdsRequest):
+    try:
+        return preparation_service.clean_tracks(_root(), body.track_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/prepare/enrich")
+async def enrich_selected(body: TrackIdsRequest):
+    try:
+        return preparation_service.enrich_tracks(_root(), body.track_ids)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/workspace/prepare/operations")
+async def list_prepare_operations(limit: int = Query(default=20, ge=1, le=100)):
+    return preparation_operations_service.list_recent(limit)
+
+
+@router.get("/workspace/prepare/operations/{operation_id}")
+async def get_prepare_operation(operation_id: str):
+    operation = preparation_operations_service.get_operation(operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Operation not found.")
+    return operation
+
+
+@router.post("/workspace/prepare/operations/{operation_id}/cancel")
+async def cancel_prepare_operation(operation_id: str):
+    operation = preparation_operations_service.request_cancel(operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Operation not found.")
+    return operation
