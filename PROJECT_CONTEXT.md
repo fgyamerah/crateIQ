@@ -6,6 +6,75 @@
 
 ## Latest Milestone
 
+- 2026-08-08: Cycle 13 (Provider Consensus Wired into Process All), a
+  tightly scoped final integration cycle on `feat/crateiq-managed-library`
+  (base Cycle 12, this file's previous entry), no merge to main. Closes
+  the one deliberate gap Cycle 11 left open: Process All's enrich stage
+  used Cycle 10's simpler Beets+MusicBrainz-only agreement rule for actual
+  writes even though the fuller field-level consensus engine already
+  existed. No new providers, no navigation change, no managed-storage
+  architecture change -- purely wiring.
+
+  **`preparation_service.enrich_tracks()`** now calls
+  `provider_routing_service.gather_evidence()` +
+  `consensus_service.build_track_consensus()` per eligible Inbox track
+  instead of the old two-source rule. A field only auto-applies when its
+  own verdict is HIGH -- a HIGH track identity never implies every field
+  is HIGH, so a confident artist/title match with disagreeing Beatport/
+  Discogs genre evidence auto-applies identity but leaves genre for Needs
+  Review, per consensus_service's existing (unmodified) contract.
+
+  **Junk/invalid replacement, not blanket overwrite protection weakened:**
+  existing non-empty metadata is still never silently overwritten. The one
+  approved exception -- current value already junk/placeholder (reused via
+  `export_validation.UNKNOWN_ARTISTS`/`is_junk_genre`, made module-public
+  rather than reimplemented) *and* the replacement is HIGH -- clears the
+  junk value first as an explicit step, so `enrichment_review_service.
+  apply_selected()`'s existing never-overwrite guard sees an empty field
+  and allows an ordinary fill. `apply_selected()` itself was not touched;
+  every other caller's overwrite protection is unchanged.
+
+  **Provenance without a second review queue:** new
+  `enrichment_review_service.queue_consensus_suggestions()` appends into
+  the exact same `enrichment_review_snapshots.items_json` blob
+  `online_lookup()`/`refresh_preview()` already write to -- auto-applied
+  fields land as `source_id="consensus_apply"` (decision already
+  `"applied"`); MEDIUM/LOW/CONFLICT and HIGH-blocked-by-valid-data verdicts
+  land as `source_id="consensus_review"` (decision stays `"pending"`, full
+  field-level evidence attached), so `needs_review_service`'s existing
+  pending-item aggregation and the Enrichment Review page surface them
+  unchanged.
+
+  **Tests:** 14 new focused tests in `tests/test_process_all_consensus.py`
+  (mocked provider responses, no network/quota use) covering routing
+  usage, provider skip/missing-credential safety, HIGH/MEDIUM/LOW/CONFLICT
+  behavior, the genre-conflict-despite-HIGH-identity case, the junk-value
+  exception, provenance survival, one-track-failure isolation, Inbox-only
+  scope, external-source integrity, and repeat-run idempotency. 1604
+  backend tests pass total (+14, zero regressions); frontend unchanged
+  (no frontend files touched).
+
+  **Live-verified** through the actual running Inbox/Needs Review/
+  Enrichment Review UI against a disposable managed workspace and a
+  disposable external source (separate ports, never the real dev
+  environment): Process All and Enrich Selected both made real Deezer
+  requests (credential-free, "ready") and real Beets/MusicBrainz lookups;
+  Discogs/Beatport/Spotify/Last.fm/YouTube were correctly skipped every
+  time (no saved credentials here), with zero crashes or warnings across
+  four separate live tracks. All four real tracks -- including "Daft Punk
+  - One More Time" and "Queen - Bohemian Rhapsody" -- landed on CONFLICT
+  rather than a clean HIGH: real catalogs are noisy enough (live/alt
+  versions, tribute recordings, same-titled unrelated songs, Deezer
+  returning up to 5 candidates per query) that independent provider top
+  picks kept disagreeing on exact title text. Every one correctly stayed
+  unapplied and surfaced in Needs Review with full per-field evidence,
+  confirmed in the UI itself. The HIGH-auto-apply path (empty-field fill,
+  junk-value replacement, genre-conflict-despite-HIGH-identity) is proven
+  deterministically by the mocked test suite instead, since forcing an
+  exact confidence tier from live non-deterministic provider catalogs
+  isn't reliable -- disclosed rather than glossed over. See CHANGELOG.txt
+  for the full live-testing narrative.
+
 - 2026-08-08: Cycle 12 (Product Navigation + Final End-to-End Workflow),
   the final cycle of the crateIQ Managed Library & Batch Preparation
   Program, on `feat/crateiq-managed-library` (base Cycle 11, this file's

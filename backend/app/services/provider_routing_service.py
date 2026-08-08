@@ -112,6 +112,11 @@ def gather_evidence(
 _ALL_SOURCE_IDS = ("acoustid", "discogs", "beatport", "spotify", "deezer", "lastfm", "youtube")
 
 
+def all_provider_credentials() -> dict[str, dict[str, str]]:
+    """Saved credentials for every routable provider, keyed by source id (missing = not configured)."""
+    return {source_id: settings_service.get_metadata_source_credentials(source_id) for source_id in _ALL_SOURCE_IDS}
+
+
 def preview_consensus(root: Path, track_id: int) -> dict[str, Any]:
     """
     Read-only: gathers evidence from every currently-configured provider
@@ -129,10 +134,7 @@ def preview_consensus(root: Path, track_id: int) -> dict[str, Any]:
         if row is None:
             raise ValueError(f"Track {track_id} was not found in the local index.")
 
-        credentials_by_source = {
-            source_id: settings_service.get_metadata_source_credentials(source_id)
-            for source_id in _ALL_SOURCE_IDS
-        }
+        credentials_by_source = all_provider_credentials()
         inbox_path = Path(row["filepath"])
         evidence = gather_evidence(
             track_id, artist=row["artist"], title=row["title"],

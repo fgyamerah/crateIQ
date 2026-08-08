@@ -37,7 +37,7 @@ log = logging.getLogger(__name__)
 # Constants (mirrors modules/rekordbox_export.py and modules/playlists.py)
 # ---------------------------------------------------------------------------
 
-_UNKNOWN_ARTISTS: frozenset = frozenset({
+UNKNOWN_ARTISTS: frozenset = frozenset({
     "", "unknown", "unknown artist", "va", "various artists",
     "various", "n/a", "none", "-", "--",
 })
@@ -73,7 +73,7 @@ def _is_junk_placeholder(fp: str) -> bool:
     return bool(_RE_JUNK_PLACEHOLDER.match(name))
 
 
-def _is_junk_genre(name: str) -> bool:
+def is_junk_genre(name: str) -> bool:
     if not name:
         return True
     v = name.strip()
@@ -151,17 +151,17 @@ def _validate_row(row) -> List[str]:
     genre  = (row["genre"] or "").strip()
 
     # Attempt filename fallback for missing artist/title (no I/O)
-    if not artist or artist.lower() in _UNKNOWN_ARTISTS or not title:
+    if not artist or artist.lower() in UNKNOWN_ARTISTS or not title:
         fb_artist, fb_title = _parse_filename_meta(fp)
         if not title and fb_title:
             title = fb_title
-        if (not artist or artist.lower() in _UNKNOWN_ARTISTS) and fb_artist:
+        if (not artist or artist.lower() in UNKNOWN_ARTISTS) and fb_artist:
             artist = fb_artist
 
     raw: List[str] = []
 
     # Artist
-    if not artist or artist.lower() in _UNKNOWN_ARTISTS:
+    if not artist or artist.lower() in UNKNOWN_ARTISTS:
         raw.append(f"missing/unknown artist: '{artist}' (filename fallback failed)")
 
     # Title
@@ -190,7 +190,7 @@ def _validate_row(row) -> List[str]:
     # Genre
     if not genre:
         raw.append("missing genre tag")
-    elif _is_junk_genre(genre):
+    elif is_junk_genre(genre):
         raw.append(f"junk genre: '{genre}'")
 
     if not raw:

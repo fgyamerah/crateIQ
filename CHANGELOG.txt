@@ -2,6 +2,86 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-08] — Cycle 13: provider consensus wired into Process All
+
+- What changed: closes the Cycle 11 follow-up. Process All's enrich stage
+  (backend/app/services/preparation_service.py enrich_tracks()) now calls
+  provider_routing_service.gather_evidence() + consensus_service.
+  build_track_consensus() instead of Cycle 10's Beets+MusicBrainz-only
+  agreement rule. HIGH field verdicts auto-apply; MEDIUM/LOW/CONFLICT never
+  do. No new provider adapters, no navigation change, no change to the
+  managed-storage architecture -- purely wiring the already-built Cycle 11
+  engine into the already-built Cycle 10 batch workflow, as scoped.
+- Field-level, not track-level: a HIGH track identity never forces every
+  field to HIGH -- genre in particular keeps its own authority-weighted
+  verdict from consensus_service, so a HIGH artist/title match with
+  disagreeing Beatport/Discogs genre evidence auto-applies identity but
+  leaves genre for Needs Review, exactly per the field-level contract.
+- Approved junk/invalid replacement rule: existing non-empty metadata is
+  still never silently overwritten. The one exception -- current value
+  already junk/placeholder (export_validation.UNKNOWN_ARTISTS /
+  is_junk_genre, made module-public and reused rather than reimplemented)
+  AND the replacement field is HIGH -- clears the junk value first (an
+  explicit, logged step) so the existing apply_selected() non-overwrite
+  guard sees an empty field and allows an ordinary fill. apply_selected()
+  itself was not weakened; every other caller keeps its original
+  never-overwrite behavior unchanged.
+- Provenance without new schema or a second review queue: added
+  enrichment_review_service.queue_consensus_suggestions(), a small public
+  wrapper around the same enrichment_review_snapshots.items_json blob
+  online_lookup()/refresh_preview() already write to. Auto-applied fields
+  are recorded as source_id="consensus_apply" (decision already "applied");
+  MEDIUM/LOW/CONFLICT verdicts and HIGH verdicts blocked by an existing
+  valid value are recorded as source_id="consensus_review" (decision stays
+  "pending", full field-level evidence attached) so needs_review_service's
+  existing pending-item aggregation and the Enrichment Review page surface
+  them unchanged -- no new review/decision table.
+- 14 new focused tests (tests/test_process_all_consensus.py, mocked
+  provider responses, zero network/quota use) proving: Process All routes
+  through provider_routing_service rather than the old rule; only
+  configured/available providers run and missing credentials skip cleanly;
+  HIGH auto-applies; MEDIUM/LOW/CONFLICT never do; a HIGH identity with
+  conflicting genre authorities does not auto-apply genre; existing valid
+  metadata is never replaced without the junk-value exception; provenance
+  survives into the review/applied items; one track's provider failure
+  never crashes the batch; Library-zone tracks and external original
+  sources are never touched; repeated runs are idempotent (no re-query
+  once a track is fully enriched). 1604 backend tests pass total (was
+  1590 -- +14 new, zero regressions); frontend typecheck/build pass
+  unchanged (no frontend files touched this cycle).
+- Live-verified against a disposable external source + disposable managed
+  workspace (separate ports, never the developer's real dev servers/
+  library) through the actual running Inbox UI: Process All and Enrich
+  Selected both real-network-called Deezer (credential-free, "ready") and
+  Beets/MusicBrainz normally; Discogs/Beatport/Spotify/Last.fm/YouTube
+  were correctly skipped every time (no saved credentials in this
+  environment) with zero crashes or warnings. Four different real tracks
+  (including "Daft Punk - One More Time", "Queen - Bohemian Rhapsody", and
+  a deliberately low-ambiguity title) all landed on CONFLICT rather than a
+  clean HIGH: real catalogs are noisy enough (live/alt versions, tribute
+  recordings, same-titled unrelated songs, Deezer returning up to 5
+  candidates per query) that Beets and MusicBrainz's independent top picks,
+  or Deezer's own candidate set, kept disagreeing on the exact title
+  string. Every one of those correctly stayed unapplied and surfaced in
+  Needs Review (both the /needs-review list and the Enrichment Review
+  detail view) with full per-field evidence -- confirmed via the UI, not
+  just the API. The exact HIGH-auto-apply code path (empty-field fill,
+  junk-value replacement, and the genre-conflict-despite-HIGH-identity
+  case) is proven deterministically by the mocked test suite instead,
+  since forcing a specific confidence tier from live, non-deterministic
+  provider catalogs isn't reliable -- disclosed here rather than glossed
+  over. No writes occurred in the live session (enriched_count stayed 0
+  throughout), so Cycle 7's write-plan/backup/verify path was not
+  additionally exercised beyond what Cycle 10/11 already covered live.
+- Files touched (4 modified + 1 new test file; 88-sanctioned-file audit
+  and repo-wide git diff otherwise clean): preparation_service.py,
+  provider_routing_service.py (new all_provider_credentials() helper, DRY
+  with preview_consensus's existing identical inline dict-build),
+  enrichment_review_service.py (new queue_consensus_suggestions()),
+  export_validation.py (UNKNOWN_ARTISTS/is_junk_genre made module-public,
+  no behavior change, only internal call sites in that file updated).
+  On feat/crateiq-managed-library; not merged to main.
+
 [2026-08-08] — Cycle 12: product navigation + final end-to-end workflow
 
 - What changed: replaces the flat Browse/Operations/Reconciliation sidebar

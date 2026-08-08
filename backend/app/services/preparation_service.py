@@ -1,36 +1,53 @@
 """
-Batch Inbox preparation engine (Cycle 10).
+Batch Inbox preparation engine (Cycle 10, provider consensus wired in Cycle 12).
 
 "Process All" and "Clean/Enrich Selected" are thin orchestrators over
 already-existing, already-safety-reviewed engines -- this module never
-re-implements cleanup, enrichment matching, tag writing, or analysis:
+re-implements provider adapters, consensus scoring, tag writing, or analysis:
 
   - deterministic cleanup   -> modules.sanitizer.sanitize_metadata()
-  - identification/enrichment -> enrichment_review_service.online_lookup()
-    (Beets distance-scored + raw MusicBrainz search, exactly Cycle 6's
-    single-track flow, just looped with a bound)
+  - identification/enrichment -> provider_routing_service.gather_evidence()
+    (Cycle 11 staged provider routing: Beets+MusicBrainz first, then
+    AcoustID/Discogs/Beatport/Spotify/Deezer/Last.fm/YouTube only where
+    configured and available) reduced to a verdict per field by
+    consensus_service.build_track_consensus()
   - metadata write-back     -> tag_write_service.build_plan()/apply_plan()
   - BPM/key analysis        -> analysis_jobs_service.run()
 
 HIGH-confidence auto-apply rule (product decision): a cleanup change is
 always deterministic-safe by construction (sanitize_metadata only ever
 strips known junk tokens/formatting, never invents new values). An
-enrichment candidate is HIGH-confidence only when Beets and MusicBrainz
-independently agree on the same normalized artist+title, or either source
-alone reports its own 'high' confidence tier. Anything else -- disagreement,
-a single low/medium-confidence source, or no candidate at all -- is left
-exactly as-is; the existing enrichment_review_service decision queue
-(populated by online_lookup itself) is where it surfaces for manual review,
-and unified Needs Review (needs_review_service) reads that same queue.
+enrichment field is HIGH-confidence only per consensus_service's own
+field-level verdict -- a HIGH track identity never implies every field is
+HIGH, and Genre in particular is resolved through the existing genre
+taxonomy/authority rules, never a blanket copy of identity confidence.
+A HIGH field only auto-applies if the current value is empty, or -- the one
+approved exception -- already identified as junk/placeholder by
+export_validation's existing rules, in which case the junk value is cleared
+first so the write is additive, never a silent overwrite of a value someone
+could have deliberately set. Anything else -- MEDIUM/LOW/CONFLICT, or a HIGH
+field blocked by an existing non-empty non-junk value -- is left exactly as
+-is and queued (with full provider evidence) into the exact same
+enrichment_review_service decision queue online_lookup() already populates,
+so unified Needs Review (needs_review_service) surfaces it unchanged.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import uuid
 from pathlib import Path
 from typing import Any
 
-from . import enrichment_review_service, preparation_operations_service, tag_write_service, workspace_service
+from . import (
+    consensus_service,
+    enrichment_review_service,
+    export_validation,
+    preparation_operations_service,
+    provider_routing_service,
+    tag_write_service,
+    workspace_service,
+)
 from ..core.library_root import assert_path_under_root
 
 log = logging.getLogger(__name__)
@@ -38,6 +55,7 @@ log = logging.getLogger(__name__)
 _MAX_ENRICH_LOOKUPS_PER_RUN = 25
 _WRITE_CHUNK_SIZE = 50
 _SANITIZE_FIELDS = ("artist", "title", "album", "genre")
+_CONSENSUS_FIELDS = ("artist", "title", "genre")
 
 
 def _sqlite_connect(root: Path):
@@ -155,65 +173,127 @@ def clean_tracks(root: Path, track_ids: list[int]) -> dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
-# Enrich stage -- bounded network lookups, reuses enrichment_review_service
+# Enrich stage -- Cycle 11 provider routing + field-level consensus,
+# bounded network lookups, reuses enrichment_review_service for decision
+# bookkeeping and tag_write_service (via write_tracks) for the actual write.
 # ---------------------------------------------------------------------------
 
-def _normalize(value: str | None) -> str:
-    return (value or "").strip().casefold()
+def _is_junk_value(field: str, value: str | None) -> bool:
+    """Empty, or matches export_validation's existing approved junk/placeholder rules."""
+    v = (value or "").strip()
+    if not v:
+        return True
+    if field == "genre":
+        return export_validation.is_junk_genre(v)
+    return v.lower() in export_validation.UNKNOWN_ARTISTS
+
+
+def _needs_consensus_enrichment(row: Any) -> bool:
+    return any(_is_junk_value(field, row[field]) for field in _CONSENSUS_FIELDS)
 
 
 def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_LOOKUPS_PER_RUN) -> dict[str, Any]:
     with _sqlite_connect(root) as conn:
         placeholders = ",".join("?" * len(track_ids)) if track_ids else ""
         rows = conn.execute(
-            f"SELECT id, artist, title FROM tracks WHERE storage_zone = 'INBOX' AND id IN ({placeholders})",
-            track_ids,
+            f"SELECT id, artist, title, genre, filename, filepath FROM tracks "
+            f"WHERE storage_zone = 'INBOX' AND id IN ({placeholders})", track_ids,
         ).fetchall() if track_ids else []
 
-    eligible = [row["id"] for row in rows if not (row["artist"] or "").strip() or not (row["title"] or "").strip()]
-    eligible = eligible[:limit]
+    eligible = [row for row in rows if _needs_consensus_enrichment(row)][:limit]
 
-    enriched = 0
+    enriched = review_added = 0
     to_apply: list[dict[str, Any]] = []
     warnings: list[str] = []
+    credentials_by_source = provider_routing_service.all_provider_credentials()
 
-    for track_id in eligible:
+    for row in eligible:
+        track_id = row["id"]
         try:
-            beets_review = enrichment_review_service.online_lookup(track_id, "beets")
-            mb_review = enrichment_review_service.online_lookup(track_id, "musicbrainz")
-        except Exception as exc:  # noqa: BLE001 - one track's provider failure must not abort the batch
-            warnings.append(f"track {track_id}: online lookup failed ({exc}).")
+            inbox_path = Path(row["filepath"])
+            evidence = provider_routing_service.gather_evidence(
+                track_id, artist=row["artist"], title=row["title"],
+                inbox_copy_path=inbox_path if inbox_path.is_file() else None,
+                credentials_by_source=credentials_by_source,
+            )
+            with _sqlite_connect(root) as conn:
+                consensus = consensus_service.build_track_consensus(track_id, evidence, conn=conn)
+        except Exception as exc:  # noqa: BLE001 - one track's provider/consensus failure must not abort the batch
+            warnings.append(f"track {track_id}: provider consensus failed ({exc}).")
             continue
 
-        beets_item = next((i for i in beets_review["items"] if i["track_id"] == track_id and i["source_id"] == "beets"), None)
-        mb_item = next((i for i in mb_review["items"] if i["track_id"] == track_id and i["source_id"] == "musicbrainz"), None)
+        apply_fields: dict[str, str] = {}
+        junk_fields: list[str] = []
+        review_fields: dict[str, Any] = {}
 
-        candidate = None
-        if beets_item and mb_item:
-            agree = (
-                _normalize(beets_item["suggested_fields"].get("artist")) == _normalize(mb_item["suggested_fields"].get("artist"))
-                and _normalize(beets_item["suggested_fields"].get("title")) == _normalize(mb_item["suggested_fields"].get("title"))
-                and beets_item["suggested_fields"].get("artist")
-            )
-            if agree:
-                candidate = beets_item
-        if candidate is None and beets_item and beets_item.get("confidence") == "high":
-            candidate = beets_item
-        if candidate is None and mb_item and mb_item.get("confidence") == "high":
-            candidate = mb_item
-
-        if candidate is None:
-            continue  # left pending in the review queue for manual review
+        for field_name in _CONSENSUS_FIELDS:
+            fc = consensus.fields.get(field_name)
+            if fc is None or fc.reason_code == "no_evidence":
+                continue  # nothing was found for this field at all -- not worth surfacing
+            current_value = (row[field_name] or "").strip()
+            if fc.confidence == "HIGH" and fc.value:
+                if not current_value:
+                    apply_fields[field_name] = fc.value
+                elif _is_junk_value(field_name, current_value):
+                    apply_fields[field_name] = fc.value
+                    junk_fields.append(field_name)
+                else:
+                    review_fields[field_name] = fc  # valid existing data is never auto-replaced
+            else:
+                review_fields[field_name] = fc  # MEDIUM / LOW / CONFLICT (value may be None)
 
         try:
-            enrichment_review_service.update_suggestion(
-                track_id, candidate["suggestion_id"], "applied",
-                "Auto-approved: Process All (HIGH-confidence provider agreement).",
-                candidate["suggested_fields"],
-            )
-            to_apply.append({"track_id": track_id, "suggestion_id": candidate["suggestion_id"], "fields": candidate["suggested_fields"]})
-        except (ValueError, LookupError) as exc:
-            warnings.append(f"track {track_id}: could not save enrichment decision ({exc}).")
+            relative_path = str(assert_path_under_root(row["filepath"], root).relative_to(root))
+        except (ValueError, TypeError):
+            relative_path = None
+        current_fields = {f: (row[f] or None) for f in _CONSENSUS_FIELDS}
+
+        if apply_fields:
+            if junk_fields:
+                # The one approved exception to "never overwrite existing
+                # metadata": the current value is already junk/placeholder.
+                # Clear it first so the decision-queue write below is an
+                # ordinary fill of an empty field, never a silent overwrite.
+                with _sqlite_connect(root) as clear_conn:
+                    clear_conn.execute(
+                        f"UPDATE tracks SET {', '.join(f'{f} = NULL' for f in junk_fields)} WHERE id = ?",
+                        (track_id,),
+                    )
+                    clear_conn.commit()
+                for f in junk_fields:
+                    current_fields[f] = None
+
+            suggestion_id = f"sug-{uuid.uuid4().hex[:12]}"
+            reason = "Auto-approved: Process All (Cycle 11 provider consensus, HIGH field confidence"
+            reason += f", junk value cleared for {', '.join(junk_fields)}" if junk_fields else ""
+            reason += ")."
+            enrichment_review_service.queue_consensus_suggestions([{
+                "suggestion_id": suggestion_id, "track_id": track_id, "source_id": "consensus_apply",
+                "confidence": "high", "reason": reason,
+                "filename": row["filename"], "relative_path": relative_path,
+                "current_fields": current_fields, "suggested_fields": apply_fields,
+                "allowed_fields": list(apply_fields),
+                "evidence": {f: consensus.fields[f].evidence for f in apply_fields},
+            }])
+            try:
+                enrichment_review_service.update_suggestion(track_id, suggestion_id, "applied", reason, apply_fields)
+                to_apply.append({"track_id": track_id, "suggestion_id": suggestion_id, "fields": apply_fields})
+            except (ValueError, LookupError) as exc:
+                warnings.append(f"track {track_id}: could not save consensus decision ({exc}).")
+
+        if review_fields:
+            worst = "low" if any(fc.confidence in ("LOW", "CONFLICT") for fc in review_fields.values()) else "medium"
+            summary = "; ".join(f"{f}: {fc.reason_code} ({fc.confidence})" for f, fc in review_fields.items())
+            enrichment_review_service.queue_consensus_suggestions([{
+                "suggestion_id": f"sug-{uuid.uuid4().hex[:12]}", "track_id": track_id, "source_id": "consensus_review",
+                "confidence": worst, "reason": f"Provider consensus needs review: {summary}.",
+                "filename": row["filename"], "relative_path": relative_path,
+                "current_fields": current_fields,
+                "suggested_fields": {f: fc.value for f, fc in review_fields.items() if fc.value},
+                "allowed_fields": [f for f, fc in review_fields.items() if fc.value],
+                "evidence": {f: fc.evidence for f, fc in review_fields.items()},
+            }])
+            review_added += 1
 
     if to_apply:
         try:
@@ -223,7 +303,7 @@ def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_
         except ValueError as exc:
             warnings.append(str(exc))
 
-    return {"enriched_count": enriched, "considered": len(eligible), "warnings": warnings}
+    return {"enriched_count": enriched, "considered": len(eligible), "review_added": review_added, "warnings": warnings}
 
 
 # ---------------------------------------------------------------------------

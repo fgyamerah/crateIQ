@@ -39,6 +39,31 @@ P3 = low
 ----------------------------------------------------------------------
 CURRENT FOCUS
 
+[x] (P0) Managed Library Cycle 13 -- Provider Consensus Wired into Process All (2026-08-08)
+    Closes the P1 follow-up below. preparation_service.enrich_tracks() now
+    calls provider_routing_service.gather_evidence() + consensus_service.
+    build_track_consensus() instead of Cycle 10's Beets+MB-only rule; HIGH
+    field verdicts auto-apply, MEDIUM/LOW/CONFLICT never do, a HIGH track
+    identity never forces genre to HIGH, and existing valid metadata is
+    never silently replaced (only the approved junk/placeholder exception,
+    via export_validation's now-public UNKNOWN_ARTISTS/is_junk_genre).
+    Provenance flows through a new small enrichment_review_service.
+    queue_consensus_suggestions() into the *same* snapshot/decision queue
+    online_lookup() already populates -- no new review table. 14 new
+    mocked-provider tests (tests/test_process_all_consensus.py); 1604
+    backend tests pass (+14, zero regressions); frontend unchanged.
+    Live-verified through the actual running Inbox/Needs Review/
+    Enrichment Review UI against a disposable workspace + disposable
+    external source: real Deezer + Beets/MusicBrainz calls, credential-
+    requiring providers (Discogs/Beatport/Spotify/Last.fm/YouTube) skipped
+    cleanly every time. Four real live tracks all landed on CONFLICT (real
+    catalogs are noisy -- alt versions, tribute recordings, same-titled
+    unrelated songs); each correctly stayed unapplied and surfaced in
+    Needs Review with full evidence. The HIGH-auto-apply path itself is
+    proven deterministically by the mocked test suite rather than forced
+    from non-deterministic live data -- see CHANGELOG.txt for full detail,
+    including exactly which real tracks were tried. On
+    feat/crateiq-managed-library; not merged to main.
 [x] (P0) Managed Library Cycle 12 -- Product Navigation + Final End-to-End Workflow (2026-08-08)
     Final cycle of the Managed Library & Batch Preparation Program.
     Sidebar reorganized into LIBRARY (Inbox, Library, Needs Review) / DJ
@@ -93,18 +118,8 @@ CURRENT FOCUS
     consensus-preview-endpoint read-only framing bug found and fixed
     mid-cycle by a dedicated regression test. On
     feat/crateiq-managed-library; not merged to main.
-[ ] (P1) Wire the Cycle 11 consensus engine's multi-provider results into
-    Process All's automatic write-back path. Currently
-    preparation_service.enrich_tracks() still uses Cycle 10's simpler
-    Beets+MB-only agreement rule for actual writes; the fuller consensus
-    engine is built, tested, and reachable via the new POST
-    /api/workspace/enrichment/consensus/{track_id} preview endpoint, but
-    not yet wired into what Process All auto-applies. Deferred
-    deliberately (see CHANGELOG.txt) because it requires extending
-    enrichment_review_service's snapshot/decision model to accept
-    externally-sourced (non-Beets/MB) candidates safely -- a deeper
-    change to an existing, well-tested write path that deserves focused
-    review of its own, not a hasty change under this cycle's time budget.
+[x] (P1) Wire the Cycle 11 consensus engine's multi-provider results into
+    Process All's automatic write-back path -- done in Cycle 13 above.
 [ ] (P3) If/when real credentials for Discogs/Spotify/Last.fm/YouTube/
     AcoustID/Beatport become available, re-run this cycle's live
     verification for each (see Settings -> Metadata Sources -> Test) to

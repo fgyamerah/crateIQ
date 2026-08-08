@@ -166,6 +166,33 @@ def _get_or_create_snapshot(conn: sqlite3.Connection) -> sqlite3.Row:
         ).fetchone()
 
 
+def queue_consensus_suggestions(entries: list[dict[str, Any]]) -> None:
+    """
+    Append pending review items from Process All's provider-consensus stage
+    (Cycle 11) into the same snapshot/decision queue online_lookup() and
+    refresh_preview() already populate -- this is not a second review store.
+
+    Each entry is a full item dict (suggestion_id, track_id, source_id,
+    confidence, reason, filename, relative_path, current_fields,
+    suggested_fields, allowed_fields, evidence). Items are inserted with no
+    decision row, so _response() reports them 'pending' and every existing
+    consumer (Enrichment Review, needs_review_service) picks them up
+    unchanged. Never applies anything -- that still requires the existing
+    explicit update_suggestion()/apply_selected() confirm flow.
+    """
+    if not entries:
+        return
+    with sqlite3.connect(_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure(conn)
+        snapshot = _get_or_create_snapshot(conn)
+        items = json.loads(snapshot['items_json'])
+        stale_keys = {(entry['track_id'], entry['source_id']) for entry in entries}
+        items = [item for item in items if (item['track_id'], item['source_id']) not in stale_keys]
+        items.extend(entries)
+        conn.execute('UPDATE enrichment_review_snapshots SET items_json = ? WHERE id = ?', (json.dumps(items), snapshot['id']))
+
+
 def online_lookup(track_id: int, source: str) -> dict[str, Any]:
     """
     Explicit, single-track, bounded online lookup against Beets' real
