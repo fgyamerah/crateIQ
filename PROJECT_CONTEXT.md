@@ -115,9 +115,21 @@ Service map (`backend/app/services/`), current primary surfaces:
 * `tag_write_service` — plan/backup/write/re-read/verify controlled tag
   writes, with restore on failure
 * `analysis_jobs_service`, `waveform_*` services — BPM/key analysis and
-  waveform generation/cache/lifecycle. BPM analysis tries direct aubio
-  decode first; on failure or an unusable result it falls back to an
-  FFmpeg decode into a secure temporary WAV outside the managed workspace
+  waveform generation/cache/lifecycle. BPM/key candidate selection and the
+  `run()`/`preview()` entry points accept an optional `track_ids` scope:
+  omitted (`None`) preserves the existing global missing-value queue
+  unchanged; an explicit list -- including an empty one -- restricts
+  candidate selection to exactly those track IDs and can only narrow, never
+  widen, the candidate universe (nonexistent/ineligible IDs are simply
+  absent from the result, never substituted with an unrelated global
+  candidate). Scoped runs report `eligible_total`/`considered`/
+  `remaining_missing_*` truthfully within the requested scope and persist
+  analysis-operation history with `mode='apply_scoped'` (vs. `'apply'` for
+  global runs). `preparation_service`'s Process All ANALYZE stage passes its
+  own captured Inbox `track_ids` into both bpm_analysis and key_analysis, so
+  it can never analyze a track outside its own batch. BPM analysis tries
+  direct aubio decode first; on failure or an unusable result it falls back
+  to an FFmpeg decode into a secure temporary WAV outside the managed workspace
   (never rewriting the source), retries aubio against that WAV, and
   records distinct provenance (`aubio` vs `aubio_ffmpeg_decode`) plus a
   non-blocking recovery warning on success. Persisted analysis operations

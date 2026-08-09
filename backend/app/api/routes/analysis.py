@@ -95,12 +95,30 @@ async def cancel_analysis_operation(operation_id: str) -> AnalysisOperation:
 
 
 @router.get("/analysis/jobs/{job_type}/preview", response_model=AnalysisJobPreview)
-async def preview_analysis_job(job_type: str) -> AnalysisJobPreview:
-    """Preview safe candidates; duplicate/quality previews use constrained read-only CLI JSON."""
+async def preview_analysis_job(
+    job_type: str,
+    track_ids: Optional[List[int]] = Query(
+        default=None,
+        description=(
+            "Optional track-id scope (repeat the param, e.g. ?track_ids=1&track_ids=2). "
+            "Omitted means the existing global candidate queue, unchanged. An explicit "
+            "empty scope is not expressible via repeated query params and is not needed "
+            "here -- use the POST run endpoint's request body for that case."
+        ),
+    ),
+) -> AnalysisJobPreview:
+    """Preview safe candidates; duplicate/quality previews use constrained read-only CLI JSON.
+
+    For bpm_analysis/key_analysis, an optional track_ids scope restricts the
+    previewed candidate set to exactly those tracks -- the same selection
+    logic POST .../run uses, so preview and run agree before limit/tool
+    outcomes diverge.
+    """
     try:
-        return AnalysisJobPreview(**analysis_jobs_service.preview(job_type))
+        return AnalysisJobPreview(**analysis_jobs_service.preview(job_type, track_ids=track_ids))
     except ValueError as exc:
-        raise HTTPException(status_code=404, detail=str(exc))
+        status_code = 404 if "Unknown" in str(exc) else 422
+        raise HTTPException(status_code=status_code, detail=str(exc))
 
 
 @router.post("/analysis/jobs/{job_type}/run", response_model=BpmAnalysisRunResult | KeyAnalysisRunResult)
@@ -110,10 +128,16 @@ async def run_analysis_job(job_type: str, body: BpmAnalysisRunRequest | KeyAnaly
     Dispatched to a thread pool (not awaited inline) so a blocking BPM/key
     run cannot stall the event loop -- this is what lets a concurrent GET on
     /history/{id} or a POST .../cancel actually be serviced while a run is
-    still in progress.
+    still in progress. An optional track_ids scope (None = existing global
+    candidate queue; [] = explicitly nothing; a list = exactly those tracks)
+    is passed straight through to analysis_jobs_service.run -- it can only
+    narrow the candidate universe, never widen it.
     """
     try:
-        result = await run_in_threadpool(analysis_jobs_service.run, job_type, confirm=body.confirm, limit=body.limit)
+        result = await run_in_threadpool(
+            analysis_jobs_service.run, job_type,
+            confirm=body.confirm, limit=body.limit, track_ids=body.track_ids,
+        )
         return BpmAnalysisRunResult(**result) if job_type == "bpm_analysis" else KeyAnalysisRunResult(**result)
     except ValueError as exc:
         status_code = 404 if "Unknown" in str(exc) else 422

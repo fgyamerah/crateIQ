@@ -14,6 +14,7 @@ from pathlib import Path
 
 import pytest
 
+from backend.app.core import db as backend_db
 from backend.app.services import (
     needs_review_service,
     preparation_operations_service,
@@ -155,6 +156,55 @@ async def test_run_process_all_respects_cancellation(managed_root):
 
     saved = preparation_operations_service.get_operation(operation["id"])
     assert saved["status"] == "cancelled"
+
+
+@async_test
+async def test_run_process_all_analysis_stage_is_scoped_to_its_own_batch(managed_root, monkeypatch, tmp_path):
+    """Cycle: Process All's ANALYZE stage must never reach outside its captured
+    Inbox batch -- an unrelated indexed track missing BPM/key must not be
+    touched, even though it would be globally eligible."""
+    from backend.app.services import analysis_jobs_service
+
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "isolated_jobs.db")
+    backend_db.init_db()
+
+    batch_id_10 = _seed_inbox_track(managed_root, artist="Artist Ten", title="Ten", filename="ten.mp3")
+    batch_id_11 = _seed_inbox_track(managed_root, artist="Artist Eleven", title="Eleven", filename="eleven.mp3")
+    outside_file = managed_root / "Inbox" / "ninetynine.mp3"
+    _write(outside_file)
+    with sqlite3.connect(managed_root / "logs" / "processed.db") as conn:
+        conn.execute(
+            """INSERT INTO tracks (filepath, filename, artist, title, genre, status,
+                                    processed_at, pipeline_ver, storage_zone)
+               VALUES (?, 'ninetynine.mp3', 'Artist NN', 'NN', 'House', 'pending',
+                       '2026-01-01T00:00:00Z', 'test', 'INBOX')""",
+            (str(outside_file),),
+        )
+        outside_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: "/fake/keyfinder")
+
+    def fake_run(command, **kwargs):
+        from types import SimpleNamespace
+        if command[0] == "/fake/aubio":
+            return SimpleNamespace(returncode=0, stdout="120.0 bpm\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="8A\n", stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_run)
+
+    batch = [batch_id_10, batch_id_11]
+    operation = preparation_operations_service.start_operation("process_all", track_count=len(batch))
+    await preparation_service.run_process_all(operation["id"], managed_root, batch)
+
+    saved = preparation_operations_service.get_operation(operation["id"])
+    assert saved["status"] == "completed"
+
+    with sqlite3.connect(managed_root / "logs" / "processed.db") as conn:
+        rows = dict(conn.execute("SELECT id, bpm FROM tracks WHERE id IN (?, ?, ?)", (*batch, outside_id)).fetchall())
+    assert rows[batch_id_10] == 120.0
+    assert rows[batch_id_11] == 120.0
+    assert rows[outside_id] is None, "an untouched track outside the Process All batch must never be analyzed"
 
 
 # ---------------------------------------------------------------------------

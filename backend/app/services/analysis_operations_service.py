@@ -64,9 +64,14 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 
 
 def start_operation(
-    job_type: str, *, scope_limit: int, eligible_total: int, considered: int
+    job_type: str, *, scope_limit: int, eligible_total: int, considered: int, mode: str = "apply",
 ) -> dict[str, Any]:
-    """Create a 'running' operation row for a confirmed run that is about to begin work."""
+    """Create a 'running' operation row for a confirmed run that is about to begin work.
+
+    `mode` distinguishes an unscoped global run ('apply') from one restricted
+    to a caller-supplied track_ids scope ('apply_scoped') -- purely
+    descriptive history, no schema/behavior change.
+    """
     operation_id = uuid.uuid4().hex
     now = _now()
     with get_conn() as conn:
@@ -74,8 +79,8 @@ def start_operation(
             """INSERT INTO analysis_operations
                (id, job_type, mode, status, scope_limit, eligible_total, considered,
                 created_at, started_at)
-               VALUES (?, ?, 'apply', 'running', ?, ?, ?, ?, ?)""",
-            (operation_id, job_type, scope_limit, eligible_total, considered, now, now),
+               VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)""",
+            (operation_id, job_type, mode, scope_limit, eligible_total, considered, now, now),
         )
     return {"id": operation_id}
 

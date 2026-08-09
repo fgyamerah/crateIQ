@@ -2615,6 +2615,158 @@ def test_key_runner_is_confirmed_and_preserves_existing_keys(client, monkeypatch
     assert missing.status_code == 409 and "keyfinder-cli is not available" in missing.json()["detail"]
 
 
+# ---------------------------------------------------------------------------
+# Scoped track-id analysis contract (POST run + GET preview)
+# ---------------------------------------------------------------------------
+
+def _insert_missing_bpm_key_track(db_path: Path, root: Path, filename: str) -> int:
+    path = root / "library" / "misc" / filename
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(b"not-real-audio")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, status, processed_at, pipeline_ver) "
+            "VALUES (?, ?, 'Extra', 'Extra', 'House', 'ok', '2026-05-05T14:00:00Z', '1.4.0')",
+            (str(path), filename),
+        )
+        return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+
+def test_scoped_bpm_run_via_api_passes_exact_track_id_scope(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    epsilon_id = _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+    zeta_id = _insert_missing_bpm_key_track(db_path, root, "zeta.mp3")
+    with sqlite3.connect(db_path) as conn:
+        delta_id = conn.execute("SELECT id FROM tracks WHERE filename = 'delta.mp3'").fetchone()[0]
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="120.0 bpm\n", stderr=""),
+    )
+
+    response = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run",
+        json={"confirm": True, "limit": 10, "track_ids": [epsilon_id]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["updated"] == 1
+    assert [item["track_id"] for item in body["results"]] == [epsilon_id]
+
+    with sqlite3.connect(db_path) as conn:
+        rows = dict(conn.execute(
+            "SELECT id, bpm FROM tracks WHERE id IN (?, ?, ?)", (epsilon_id, zeta_id, delta_id)
+        ).fetchall())
+    assert rows[epsilon_id] == 120.0
+    assert rows[zeta_id] is None
+    assert rows[delta_id] is None  # globally eligible, outside scope -- never touched
+
+
+def test_scoped_key_run_via_api_passes_exact_track_id_scope(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    epsilon_id = _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: "/fake/keyfinder-cli")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="Am\n", stderr=""),
+    )
+
+    response = test_client.post(
+        "/api/analysis/jobs/key_analysis/run",
+        json={"confirm": True, "limit": 10, "track_ids": [epsilon_id]},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["updated"] == 1
+    assert [item["track_id"] for item in body["results"]] == [epsilon_id]
+
+    with sqlite3.connect(db_path) as conn:
+        delta = conn.execute("SELECT key_musical FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    assert delta == (None,)  # globally eligible, outside scope -- never touched
+
+
+def test_scoped_bpm_run_via_api_with_empty_track_ids_processes_nothing(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("aubio must not run for an explicit empty scope")),
+    )
+
+    response = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run",
+        json={"confirm": True, "limit": 10, "track_ids": []},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert (body["analyzed"], body["updated"]) == (0, 0)
+    assert body["remaining_missing_bpm"] == 0  # scoped remaining, not the global count
+
+    with sqlite3.connect(db_path) as conn:
+        delta = conn.execute("SELECT bpm FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    assert delta == (None,)  # globally eligible track was never touched
+
+
+def test_bpm_run_via_api_rejects_invalid_track_ids(client):
+    test_client, _root = client
+    assert test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "track_ids": [0]},
+    ).status_code == 422
+    assert test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "track_ids": [-1]},
+    ).status_code == 422
+    assert test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "track_ids": ["not-an-id"]},
+    ).status_code == 422
+    assert test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run",
+        json={"confirm": True, "track_ids": list(range(1, 2502))},
+    ).status_code == 422
+
+
+def test_bpm_run_via_api_without_track_ids_field_still_works(client, monkeypatch):
+    """Existing clients sending {"confirm": true, "limit": N} with no track_ids key must keep working."""
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    delta_path = root / "library" / "misc" / "delta.mp3"
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    delta_path.write_bytes(b"not-real-audio")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="120.0 bpm\n", stderr=""),
+    )
+
+    response = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 10})
+    assert response.status_code == 200
+    assert response.json()["updated"] == 1
+    with sqlite3.connect(db_path) as conn:
+        delta = conn.execute("SELECT bpm FROM tracks WHERE filename = 'delta.mp3'").fetchone()
+    assert delta == (120.0,)
+
+
+def test_scoped_bpm_preview_via_api_returns_only_requested_track_ids(client):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    epsilon_id = _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+
+    scoped = test_client.get("/api/analysis/jobs/bpm_analysis/preview", params={"track_ids": [epsilon_id]})
+    assert scoped.status_code == 200
+    body = scoped.json()
+    assert body["candidate_count"] == 1
+    assert [item["track_id"] for item in body["samples"]] == [epsilon_id]
+
+    unscoped = test_client.get("/api/analysis/jobs/bpm_analysis/preview")
+    assert unscoped.status_code == 200
+    assert unscoped.json()["candidate_count"] == 2  # delta (fixture) + epsilon -- global preview unchanged
+
+
 def test_keyfinder_parser_accepts_known_keys_and_rejects_unknown_values():
     assert analysis_jobs_service._parse_keyfinder_output("Am\n") == ("Am", "8A")
     assert analysis_jobs_service._parse_keyfinder_output("Detected key: 9B\n") == ("G major", "9B")

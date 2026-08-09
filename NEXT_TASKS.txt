@@ -29,12 +29,15 @@ P1 / HIGH
 [ ] Retry suppression for BPM tracks proven genuinely undecodable (both
     direct aubio and the FFmpeg fallback fail). The current BPM candidate
     query (`WHERE bpm IS NULL`) intentionally still retries these every run
-    -- full retryability was kept on purpose because there is no per-track-
-    scoped analysis contract or reset UI yet (see the existing "Batch
-    analysis ... reuses the *global* missing-BPM/key queue" P2 item below).
+    -- full retryability was kept on purpose because there was no per-track-
+    scoped analysis contract or reset UI yet. The prerequisite has now
+    landed: analysis_jobs_service.run()/preview() accept an optional
+    track_ids scope (see CHANGELOG), so a future retry/reset workflow can
+    target an exact track without touching the global missing-BPM queue.
     Adding a durable per-track suppression column without a way to reset it
-    after a user replaces/fixes a file would be a fragile hidden state.
-    Revisit once a per-track-scoped analysis contract exists.
+    after a user replaces/fixes a file would still be fragile hidden state
+    -- design and test the reset path explicitly as its own task; do not
+    implement suppression state without one.
 
 [ ] Design and test a reconciliation APPLY workflow (backups, per-action
     confirmation, restore path). Cycle 4 shipped DETECT/PROPOSE/REVIEW/
@@ -110,11 +113,6 @@ P2 / MEDIUM
     shipped half-safe. Resolution currently routes through each item's
     specialist page (Enrichment Review, Genre Taxonomy, BPM Review,
     Metadata Repair).
-
-[ ] Batch analysis (Process All's ANALYZE stage, and any future "Analyze
-    Selected") reuses analysis_jobs_service's existing *global*
-    missing-BPM/key queue -- not scoped to only the current batch's
-    track_ids, since no per-track-id-scoped analysis contract exists yet.
 
 [ ] Library overview/quality KPI cards (/api/library/overview,
     /api/library/quality) are not yet storage_zone-aware -- they still

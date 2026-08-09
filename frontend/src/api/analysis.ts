@@ -60,5 +60,7 @@ export const previewAnalysisJob = (jobType: AnalysisJobType) => apiFetch.get<Ana
 export const fetchAnalysisJobHistory = () => apiFetch.get<AnalysisJobHistory>('/analysis/jobs/history')
 export const fetchAnalysisOperation = (operationId: string) => apiFetch.get<AnalysisOperation>(`/analysis/jobs/history/${operationId}`)
 export const cancelAnalysisOperation = (operationId: string) => apiFetch.post<AnalysisOperation>(`/analysis/jobs/history/${operationId}/cancel`, {})
-export const runBpmAnalysis = (limit: number) => apiFetch.post<BpmAnalysisRunResult>('/analysis/jobs/bpm_analysis/run', { confirm: true, limit })
-export const runKeyAnalysis = (limit: number) => apiFetch.post<KeyAnalysisRunResult>('/analysis/jobs/key_analysis/run', { confirm: true, limit })
+export const runBpmAnalysis = (limit: number, trackIds?: number[]) =>
+  apiFetch.post<BpmAnalysisRunResult>('/analysis/jobs/bpm_analysis/run', { confirm: true, limit, track_ids: trackIds })
+export const runKeyAnalysis = (limit: number, trackIds?: number[]) =>
+  apiFetch.post<KeyAnalysisRunResult>('/analysis/jobs/key_analysis/run', { confirm: true, limit, track_ids: trackIds })

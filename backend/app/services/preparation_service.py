@@ -390,9 +390,12 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
         await asyncio.sleep(0)
 
         try:
+            # Scoped to this Process All batch's exact track_ids -- BPM/key
+            # analysis must never reach into the global missing-value queue
+            # and touch a track outside this run.
             from . import analysis_jobs_service
-            analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25)
-            analysis_jobs_service.run("key_analysis", confirm=True, limit=25)
+            analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25, track_ids=track_ids)
+            analysis_jobs_service.run("key_analysis", confirm=True, limit=25, track_ids=track_ids)
         except Exception as exc:  # noqa: BLE001 - analysis is best-effort within Process All
             warnings.append(f"Analysis step skipped: {exc}")
 

@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PositiveInt
 
 
 AnalysisJobType = Literal[
@@ -143,6 +143,12 @@ class AnalysisJobHistoryResponse(BaseModel):
 class BpmAnalysisRunRequest(BaseModel):
     confirm: bool = False
     limit: int = Field(default=10, ge=1, le=50)
+    # None (the default/omitted) means the existing global missing-value
+    # candidate queue, unchanged. An explicit list -- including an empty one
+    # -- restricts candidate selection to exactly those track IDs; see
+    # analysis_jobs_service._normalize_track_ids for the full contract
+    # (positive integers, deduplicated, max 2000 entries).
+    track_ids: Optional[list[PositiveInt]] = Field(default=None, max_length=2000)
 
 
 class BpmAnalysisRunResult(BaseModel):

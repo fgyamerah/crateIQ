@@ -283,15 +283,71 @@ def _ensure_key_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE tracks ADD COLUMN {name} {definition}")
 
 
-def _bpm_candidates(conn: sqlite3.Connection, root: Path, limit: int | None = None) -> list[sqlite3.Row]:
+# A caller-supplied track scope is bounded to keep requests deterministic and
+# the underlying queries safe -- 2000 mirrors workspace_service's own
+# _MAX_IMPORT_FILES ceiling, so a single Process All Inbox batch (which can
+# never exceed one import operation's worth of tracks) is never rejected.
+_MAX_SCOPED_TRACK_IDS = 2000
+# Chunk size for `id IN (...)` queries, comfortably under SQLite's default
+# bound-variable limit (999) even on older builds.
+_SQLITE_ID_CHUNK_SIZE = 500
+
+
+def _normalize_track_ids(track_ids: list[int] | None) -> list[int] | None:
+    """Validate and de-duplicate an optional track-id analysis scope.
+
+    ``None`` means "no scope" -- callers must preserve existing global
+    candidate-queue behavior. An explicit list -- including an empty one --
+    means "exactly this scope"; an empty scope must never be treated as
+    "no scope was given" and must never widen into the global queue.
+    """
+    if track_ids is None:
+        return None
+    if len(track_ids) > _MAX_SCOPED_TRACK_IDS:
+        raise ValueError(f"track_ids scope cannot exceed {_MAX_SCOPED_TRACK_IDS} entries.")
+    normalized: list[int] = []
+    seen: set[int] = set()
+    for value in track_ids:
+        if not isinstance(value, int) or isinstance(value, bool) or value <= 0:
+            raise ValueError("track_ids must be positive integers.")
+        if value not in seen:
+            seen.add(value)
+            normalized.append(value)
+    return normalized
+
+
+def _scoped_rows(conn: sqlite3.Connection, base_sql: str, track_ids: list[int], limit: int | None) -> list[sqlite3.Row]:
+    """Run `base_sql` restricted to `track_ids`, chunked to stay under SQLite's parameter limit.
+
+    Results are merged and sorted by id before `limit` is applied so ordering
+    and limit semantics are identical to an unscoped query, regardless of how
+    many chunks the scope was split across.
+    """
+    if not track_ids:
+        return []
+    rows: list[sqlite3.Row] = []
+    for start in range(0, len(track_ids), _SQLITE_ID_CHUNK_SIZE):
+        chunk = track_ids[start:start + _SQLITE_ID_CHUNK_SIZE]
+        placeholders = ",".join("?" * len(chunk))
+        rows.extend(conn.execute(f"{base_sql} AND id IN ({placeholders})", chunk).fetchall())
+    rows.sort(key=lambda row: row["id"])
+    return rows[:limit] if limit is not None else rows
+
+
+def _bpm_candidates(
+    conn: sqlite3.Connection, root: Path, limit: int | None = None, track_ids: list[int] | None = None,
+) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
-    sql = """
+    _ensure_bpm_columns(conn)
+    base_sql = """
         SELECT id, filepath, filename, artist, title, genre, bpm, key_musical, key_camelot,
                bpm_source, bpm_trusted
         FROM tracks
         WHERE bpm IS NULL
-        ORDER BY id
     """
+    if track_ids is not None:
+        return _scoped_rows(conn, base_sql, track_ids, limit)
+    sql = base_sql + " ORDER BY id"
     params: list[int] = []
     if limit is not None:
         sql += " LIMIT ?"
@@ -299,15 +355,20 @@ def _bpm_candidates(conn: sqlite3.Connection, root: Path, limit: int | None = No
     return conn.execute(sql, params).fetchall()
 
 
-def _key_candidates(conn: sqlite3.Connection, limit: int | None = None) -> list[sqlite3.Row]:
+def _key_candidates(
+    conn: sqlite3.Connection, limit: int | None = None, track_ids: list[int] | None = None,
+) -> list[sqlite3.Row]:
     conn.row_factory = sqlite3.Row
-    sql = """
+    _ensure_key_columns(conn)
+    base_sql = """
         SELECT id, filepath, filename, artist, title, genre, bpm, key_musical, key_camelot,
                key_source, key_trusted
         FROM tracks
         WHERE key_musical IS NULL AND key_camelot IS NULL
-        ORDER BY id
     """
+    if track_ids is not None:
+        return _scoped_rows(conn, base_sql, track_ids, limit)
+    sql = base_sql + " ORDER BY id"
     params: list[int] = []
     if limit is not None:
         sql += " LIMIT ?"
@@ -731,11 +792,30 @@ def _preview_audio_quality(job: dict[str, Any], rows: list[dict[str, Any]]) -> d
     }
 
 
-def preview(job_type: str) -> dict[str, Any]:
+def _scoped_preview_rows(job_type: str, scope: list[int]) -> list[dict[str, Any]]:
+    """Return bpm/key candidate rows restricted to `scope`, sharing the exact
+    same SQL selection `_run_bpm_analysis`/`_run_key_analysis` will use, so a
+    scoped preview's candidate set matches the scoped run's universe."""
+    if not scope:
+        return []
+    root = selected_library_root()
+    db_path = assert_path_under_root(library_db_path(root), root)
+    if not db_path.is_file():
+        return []
+    with sqlite3.connect(db_path) as conn:
+        if job_type == "bpm_analysis":
+            candidate_rows = _bpm_candidates(conn, root, None, scope)
+        else:
+            candidate_rows = _key_candidates(conn, None, scope)
+        return [dict(row) for row in candidate_rows]
+
+
+def preview(job_type: str, track_ids: list[int] | None = None) -> dict[str, Any]:
     definitions, rows = _definitions()
     job = next((item for item in definitions if item["type"] == job_type), None)
     if job is None:
         raise ValueError("Unknown analysis job type.")
+    scope = _normalize_track_ids(track_ids) if job_type in ("bpm_analysis", "key_analysis") else None
 
     if job_type == "mixed_in_key_coverage":
         result = mik_metadata_service.preview()
@@ -761,9 +841,15 @@ def preview(job_type: str) -> dict[str, Any]:
         return _preview_audio_quality(job, rows)
 
     if job_type == "bpm_analysis":
-        candidates = [row for row in rows if row.get("bpm") is None]
+        candidates = (
+            [row for row in rows if row.get("bpm") is None] if scope is None
+            else _scoped_preview_rows(job_type, scope)
+        )
     elif job_type == "key_analysis":
-        candidates = [row for row in rows if not (row.get("key_camelot") or row.get("key_musical"))]
+        candidates = (
+            [row for row in rows if not (row.get("key_camelot") or row.get("key_musical"))] if scope is None
+            else _scoped_preview_rows(job_type, scope)
+        )
     elif job_type == "beets_enrichment":
         candidates = beets_enrichment_candidates()
     else:
@@ -787,7 +873,7 @@ def preview(job_type: str) -> dict[str, Any]:
     }
 
 
-def run(job_type: str, *, confirm: bool = False, limit: int = 10) -> dict[str, Any]:
+def run(job_type: str, *, confirm: bool = False, limit: int = 10, track_ids: list[int] | None = None) -> dict[str, Any]:
     if job_type not in _JOB_TYPES:
         raise ValueError("Unknown analysis job type.")
     if job_type == "mixed_in_key_coverage":
@@ -795,11 +881,11 @@ def run(job_type: str, *, confirm: bool = False, limit: int = 10) -> dict[str, A
     if job_type == "bpm_analysis":
         if not confirm:
             raise ValueError("BPM analysis requires confirm=true after previewing candidates.")
-        return _run_bpm_analysis(limit)
+        return _run_bpm_analysis(limit, track_ids)
     if job_type == "key_analysis":
         if not confirm:
             raise ValueError("Key/Camelot analysis requires confirm=true after previewing candidates.")
-        return _run_key_analysis(limit)
+        return _run_key_analysis(limit, track_ids)
     if job_type == "duplicate_detection":
         raise RuntimeError("Duplicate detection is preview-only. Resolution actions are not implemented; no files, tags, or database decisions were changed.")
     if job_type == "audio_quality_probe":
@@ -895,7 +981,7 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
         ), False
 
 
-def _run_bpm_analysis(limit: int) -> dict[str, Any]:
+def _run_bpm_analysis(limit: int, track_ids: list[int] | None = None) -> dict[str, Any]:
     binary = _resolve_aubio_binary()
     if not binary:
         raise RuntimeError("aubio is not available. Configure AUBIO_BIN or install aubio before running BPM analysis.")
@@ -903,6 +989,7 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
     db_path = assert_path_under_root(library_db_path(root), root)
     if not db_path.is_file():
         raise ValueError("Configured library is not initialized.")
+    scope = _normalize_track_ids(track_ids)
 
     analyzed = updated = skipped = failed = recovered = 0
     warnings: list[str] = []
@@ -913,11 +1000,17 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
     try:
         with sqlite3.connect(db_path) as conn:
             _ensure_bpm_columns(conn)
-            eligible_total = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
-            candidates = _bpm_candidates(conn, root, limit)
+            if scope is None:
+                eligible_total = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+            else:
+                # Scoped eligible_total/remaining describe only the requested
+                # scope -- never the global missing-BPM queue -- so a 3-track
+                # scoped run never misleadingly reports unrelated library counts.
+                eligible_total = len(_bpm_candidates(conn, root, None, scope))
+            candidates = _bpm_candidates(conn, root, limit, scope)
             operation_id = analysis_operations_service.start_operation(
                 "bpm_analysis", scope_limit=limit, eligible_total=eligible_total,
-                considered=len(candidates),
+                considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
             )["id"]
             for row in candidates:
                 if analysis_operations_service.is_cancel_requested(operation_id):
@@ -1028,7 +1121,10 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                 result = _as_candidate(dict(row))
                 result["bpm"] = bpm
                 results.append(result)
-            remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+            if scope is None:
+                remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+            else:
+                remaining = len(_bpm_candidates(conn, root, None, scope))
     except Exception as exc:
         if operation_id:
             analysis_operations_service.finish_operation(
@@ -1056,7 +1152,7 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
     }
 
 
-def _run_key_analysis(limit: int) -> dict[str, Any]:
+def _run_key_analysis(limit: int, track_ids: list[int] | None = None) -> dict[str, Any]:
     binary = _resolve_keyfinder_binary()
     if not binary:
         raise RuntimeError("keyfinder-cli is not available. Configure KEYFINDER_BIN or install keyfinder-cli before running key analysis.")
@@ -1064,6 +1160,7 @@ def _run_key_analysis(limit: int) -> dict[str, Any]:
     db_path = assert_path_under_root(library_db_path(root), root)
     if not db_path.is_file():
         raise ValueError("Configured library is not initialized.")
+    scope = _normalize_track_ids(track_ids)
     analyzed = updated = skipped = failed = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
@@ -1073,13 +1170,16 @@ def _run_key_analysis(limit: int) -> dict[str, Any]:
     try:
         with sqlite3.connect(db_path) as conn:
             _ensure_key_columns(conn)
-            eligible_total = conn.execute(
-                "SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL"
-            ).fetchone()[0]
-            candidates = _key_candidates(conn, limit)
+            if scope is None:
+                eligible_total = conn.execute(
+                    "SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL"
+                ).fetchone()[0]
+            else:
+                eligible_total = len(_key_candidates(conn, None, scope))
+            candidates = _key_candidates(conn, limit, scope)
             operation_id = analysis_operations_service.start_operation(
                 "key_analysis", scope_limit=limit, eligible_total=eligible_total,
-                considered=len(candidates),
+                considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
             )["id"]
             for row in candidates:
                 if analysis_operations_service.is_cancel_requested(operation_id):
@@ -1113,7 +1213,10 @@ def _run_key_analysis(limit: int) -> dict[str, Any]:
                     skipped += 1; continue
                 updated += 1
                 result = _as_candidate(dict(row)); result["key_musical"] = musical; result["key_camelot"] = camelot; results.append(result)
-            remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL").fetchone()[0]
+            if scope is None:
+                remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE key_musical IS NULL AND key_camelot IS NULL").fetchone()[0]
+            else:
+                remaining = len(_key_candidates(conn, None, scope))
     except Exception as exc:
         if operation_id:
             analysis_operations_service.finish_operation(

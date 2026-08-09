@@ -2,6 +2,60 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Add optional track-id-scoped BPM/key analysis contract
+
+- What changed: analysis_jobs_service's BPM/key candidate selection and
+  run/preview functions now accept an optional `track_ids` scope.
+  `_bpm_candidates()`/`_key_candidates()` gained a `track_ids: list[int] |
+  None = None` parameter (queried in safe chunks of 500 IDs to stay under
+  SQLite's parameter limit, then merged and sorted by id so ordering/limit
+  semantics match the unscoped path exactly); `_run_bpm_analysis()`,
+  `_run_key_analysis()`, `run()`, and `preview()` thread the same scope
+  through. Semantics: `track_ids=None` is the existing global missing-value
+  queue, byte-for-byte unchanged; an explicit list -- including an empty one
+  -- restricts candidate selection to exactly those track IDs and can only
+  narrow, never widen, the candidate universe (nonexistent/ineligible IDs in
+  the list are simply absent from the result, never substituted with an
+  unrelated global candidate). A new `_normalize_track_ids()` validates
+  positive integers, de-duplicates, and bounds the scope to 2000 entries
+  (matching workspace_service's own `_MAX_IMPORT_FILES` ceiling, so a normal
+  Process All Inbox batch is never rejected). Scoped runs report
+  `eligible_total`/`considered`/`remaining_missing_*` truthfully within the
+  requested scope rather than the global count, and persist
+  analysis_operations history with `mode='apply_scoped'` (vs. `'apply'` for
+  global runs) via a new optional `mode` parameter on
+  analysis_operations_service.start_operation(). preparation_service's
+  Process All ANALYZE stage now passes its own captured Inbox `track_ids`
+  into both bpm_analysis and key_analysis, so it can never analyze a
+  missing-BPM/key track outside its own batch. API: POST
+  /api/analysis/jobs/{job_type}/run's BpmAnalysisRunRequest (and the
+  inherited KeyAnalysisRunRequest) gained an optional `track_ids:
+  list[PositiveInt] | None` field (existing `{"confirm": true, "limit": N}`
+  requests are unaffected); GET /api/analysis/jobs/{job_type}/preview gained
+  an optional repeated `track_ids` query parameter, sharing the exact same
+  candidate-selection code as the scoped run so a scoped preview's candidate
+  set matches what a scoped run would process. The legacy
+  POST /api/analysis/reanalyze / pipeline.py analyze-missing path is
+  untouched -- this is scoped to the current app-owned analysis_jobs_service
+  system only. Frontend: api/analysis.ts's runBpmAnalysis()/runKeyAnalysis()
+  gained an optional `trackIds?: number[]` argument; no UI wiring yet.
+- Why it changed: prerequisite for a future BPM retry-suppression/reset
+  workflow (still open, see NEXT_TASKS.txt), which needs to target an exact
+  track without ever touching the global missing-BPM queue. Also closes a
+  real bug: Process All's ANALYZE stage previously called
+  analysis_jobs_service.run() with no track scope at all, so it could -- and
+  would -- analyze unrelated tracks outside the batch it was processing.
+- Files affected: backend/app/services/analysis_jobs_service.py,
+  backend/app/services/analysis_operations_service.py,
+  backend/app/services/preparation_service.py,
+  backend/app/schemas/analysis_jobs.py,
+  backend/app/api/routes/analysis.py, frontend/src/api/analysis.ts,
+  tests/test_scoped_analysis.py (new), tests/test_preparation_service.py,
+  tests/test_backend_api.py, NEXT_TASKS.txt, PROJECT_CONTEXT.md.
+- Migration notes: none. Additive-only API/service contract; no schema
+  change beyond the existing `analysis_operations.mode` TEXT column (already
+  present, unconstrained) now also receiving the value `'apply_scoped'`.
+
 [2026-08-09] — Fix bpm quality finding evidence and JSON safety
 
 - What changed: two correctness fixes to the durable BPM Audio Quality
