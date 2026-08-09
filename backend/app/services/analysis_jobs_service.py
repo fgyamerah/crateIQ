@@ -6,6 +6,7 @@ which advanced workflows are ready to configure versus implemented.
 """
 from __future__ import annotations
 
+import logging
 import os
 import json
 import re
@@ -13,6 +14,7 @@ import shutil
 import sqlite3
 import statistics
 import subprocess
+import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -21,6 +23,8 @@ from modules.analyzer import CAMELOT_MAP, CAMELOT_TO_MUSICAL, _RE_CAMELOT
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 from . import analysis_operations_service, mik_metadata_service, settings_service
+
+log = logging.getLogger(__name__)
 
 _JOB_TYPES = (
     "mixed_in_key_coverage",
@@ -35,6 +39,8 @@ _SAFETY = ["missing_data_only", "no_tag_writes", "preserve_trusted_values"]
 _BPM_MIN = 40.0
 _BPM_MAX = 250.0
 _BPM_TIMEOUT_SECONDS = 20
+_FFMPEG_DECODE_TIMEOUT_SECONDS = 60
+_DIAGNOSTIC_MAX_LEN = 500
 _BPM_MIGRATION_COLUMNS = {
     "bpm_source": "TEXT",
     "bpm_trusted": "INTEGER NOT NULL DEFAULT 0",
@@ -102,6 +108,16 @@ def _resolve_rmlint_binary() -> str | None:
     return resolved if resolved and os.access(resolved, os.X_OK) else None
 
 
+def _resolve_ffmpeg_binary() -> str | None:
+    """Resolve only ffmpeg, used solely as a BPM-analysis decode fallback."""
+    override = os.environ.get("FFMPEG_BIN", "").strip()
+    if override:
+        resolved = shutil.which(override)
+        return resolved if resolved and os.access(resolved, os.X_OK) else None
+    resolved = shutil.which("ffmpeg")
+    return resolved if resolved and os.access(resolved, os.X_OK) else None
+
+
 def _resolve_ffprobe_binary() -> str | None:
     """Resolve only ffprobe for the bounded, read-only quality preview."""
     override = os.environ.get("FFPROBE_BIN", "").strip()
@@ -145,6 +161,21 @@ def _parse_aubio_bpm(output: str) -> float | None:
         return None
     value = float(statistics.median(values))
     return round(value, 2) if _BPM_MIN <= value <= _BPM_MAX else None
+
+
+def _sanitize_diagnostic(text: str) -> str:
+    """Condense tool stderr for internal logs only -- never returned via the API.
+
+    Collapses consecutive duplicate lines (aubio/ffmpeg often repeat the same
+    decode warning per frame) and caps total length so a pathological file
+    cannot flood the log.
+    """
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    deduped: list[str] = []
+    for line in lines:
+        if not deduped or deduped[-1] != line:
+            deduped.append(line)
+    return " | ".join(deduped)[:_DIAGNOSTIC_MAX_LEN]
 
 
 def _optional_float(value: Any) -> float | None:
@@ -729,6 +760,90 @@ def run(job_type: str, *, confirm: bool = False, limit: int = 10) -> dict[str, A
     raise RuntimeError("This analysis runner is not implemented yet. Preview candidates and configure the required tool; no job was started.")
 
 
+def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str) -> tuple[float | None, str]:
+    """Recover a BPM from malformed-but-decodable audio via an FFmpeg decode.
+
+    Direct aubio decoding already failed for `source_path` when this is
+    called. Decodes to a secure temporary WAV outside the managed workspace
+    (never derived from the source's own directory), retries aubio against
+    that WAV, and guarantees the temporary file/directory is removed via the
+    context manager regardless of outcome. The source file itself is never
+    opened for writing.
+
+    Returns (bpm, message): bpm is None on any failure; message is always a
+    concise, user-facing sentence -- never raw stderr or a stack trace.
+    """
+    ffmpeg_binary = _resolve_ffmpeg_binary()
+    if not ffmpeg_binary:
+        return None, (
+            f"{filename}: direct aubio decode failed and FFmpeg is not available "
+            "for recovery. BPM was not changed."
+        )
+
+    with tempfile.TemporaryDirectory(prefix="crateiq-bpm-") as tmp_dir:
+        wav_path = Path(tmp_dir) / "audio.wav"
+        try:
+            ffmpeg_completed = subprocess.run(
+                [
+                    ffmpeg_binary, "-y", "-v", "warning", "-i", str(source_path),
+                    "-vn", "-ac", "2", "-ar", "44100", str(wav_path),
+                ],
+                capture_output=True, text=True, timeout=_FFMPEG_DECODE_TIMEOUT_SECONDS, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            log.warning("ffmpeg BPM-recovery decode timed out for %s", filename)
+            return None, (
+                f"{filename}: direct aubio decode failed and FFmpeg timed out while "
+                "attempting recovery. BPM was not changed."
+            )
+        except OSError:
+            log.warning("ffmpeg BPM-recovery decode could not start for %s", filename)
+            return None, (
+                f"{filename}: direct aubio decode failed and FFmpeg could not start "
+                "for recovery. BPM was not changed."
+            )
+
+        if ffmpeg_completed.stderr:
+            log.info(
+                "ffmpeg BPM-recovery diagnostics for %s: %s",
+                filename, _sanitize_diagnostic(ffmpeg_completed.stderr),
+            )
+
+        if ffmpeg_completed.returncode != 0 or not wav_path.is_file() or wav_path.stat().st_size == 0:
+            return None, (
+                f"{filename}: direct aubio decode failed and FFmpeg could not recover "
+                "a decodable audio stream. BPM was not changed."
+            )
+
+        try:
+            fallback_completed = subprocess.run(
+                [aubio_binary, "tempo", str(wav_path)],
+                capture_output=True, text=True, timeout=_BPM_TIMEOUT_SECONDS, check=False,
+            )
+        except subprocess.TimeoutExpired:
+            return None, (
+                f"{filename}: FFmpeg recovered malformed audio, but aubio timed out "
+                "analyzing it. BPM was not changed."
+            )
+        except OSError:
+            return None, (
+                f"{filename}: FFmpeg recovered malformed audio, but aubio could not "
+                "start to analyze it. BPM was not changed."
+            )
+
+        bpm = _parse_aubio_bpm(fallback_completed.stdout)
+        if fallback_completed.returncode != 0 or bpm is None:
+            return None, (
+                f"{filename}: FFmpeg recovered malformed audio, but aubio could not "
+                "determine a usable BPM. BPM was not changed."
+            )
+
+        return bpm, (
+            f"{filename}: direct aubio decode failed; FFmpeg recovered enough audio "
+            f"and BPM was measured at {bpm:.2f}. Original file was not modified."
+        )
+
+
 def _run_bpm_analysis(limit: int) -> dict[str, Any]:
     binary = _resolve_aubio_binary()
     if not binary:
@@ -738,7 +853,7 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
     if not db_path.is_file():
         raise ValueError("Configured library is not initialized.")
 
-    analyzed = updated = skipped = failed = 0
+    analyzed = updated = skipped = failed = recovered = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
     operation_id: str | None = None
@@ -758,7 +873,8 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                     cancelled = True
                     break
                 analysis_operations_service.update_progress(
-                    operation_id, processed=analyzed, succeeded=updated, skipped=skipped, failed=failed,
+                    operation_id, processed=analyzed, succeeded=updated, skipped=skipped,
+                    failed=failed, recovered=recovered,
                 )
                 try:
                     path = assert_path_under_root(row["filepath"], root)
@@ -770,39 +886,52 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                     skipped += 1
                     warnings.append(f"Skipped {row['filename']}: file is missing or unreadable.")
                     continue
+
+                # "Analyzed" counts tracks attempted, not subprocess invocations --
+                # a fallback-recovered track still ran up to three tool calls
+                # (direct aubio, ffmpeg decode, fallback aubio) but is one attempt.
+                analyzed += 1
                 try:
                     completed = subprocess.run(
                         [binary, "tempo", str(path)], capture_output=True, text=True,
                         timeout=_BPM_TIMEOUT_SECONDS, check=False,
                     )
+                    direct_bpm = _parse_aubio_bpm(completed.stdout) if completed.returncode == 0 else None
+                    direct_ok = completed.returncode == 0 and direct_bpm is not None
                 except subprocess.TimeoutExpired:
-                    failed += 1
-                    warnings.append(f"aubio timed out for {row['filename']}.")
-                    continue
+                    direct_ok = False
                 except OSError:
-                    failed += 1
-                    warnings.append(f"aubio could not read {row['filename']}.")
-                    continue
-                analyzed += 1
-                bpm = _parse_aubio_bpm(completed.stdout)
-                if completed.returncode != 0 or bpm is None:
-                    failed += 1
-                    warnings.append(f"aubio returned no usable BPM for {row['filename']}.")
-                    continue
+                    direct_ok = False
+
+                if direct_ok:
+                    bpm = direct_bpm
+                    bpm_source = "aubio"
+                    fallback_warning = None
+                else:
+                    bpm, fallback_warning = _attempt_ffmpeg_fallback(binary, path, row["filename"])
+                    if bpm is None:
+                        failed += 1
+                        warnings.append(fallback_warning)
+                        continue
+                    bpm_source = "aubio_ffmpeg_decode"
+
                 # The WHERE condition makes the write race-safe and reinforces the
                 # missing-data-only rule if another explicit workflow wrote first.
                 changed = conn.execute(
                     """
                     UPDATE tracks
-                    SET bpm = ?, bpm_source = 'aubio', bpm_trusted = 0, bpm_analyzed_at = ?
+                    SET bpm = ?, bpm_source = ?, bpm_trusted = 0, bpm_analyzed_at = ?
                     WHERE id = ? AND bpm IS NULL
                     """,
-                    (bpm, datetime.now(timezone.utc).isoformat(), row["id"]),
+                    (bpm, bpm_source, datetime.now(timezone.utc).isoformat(), row["id"]),
                 ).rowcount
                 if not changed:
                     skipped += 1
                     continue
                 updated += 1
+                if bpm_source == "aubio_ffmpeg_decode":
+                    recovered += 1
+                    warnings.append(fallback_warning)
                 result = _as_candidate(dict(row))
                 result["bpm"] = bpm
                 results.append(result)
@@ -812,7 +941,7 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
             analysis_operations_service.finish_operation(
                 operation_id, status="failed", processed=analyzed, succeeded=updated,
                 skipped=skipped, failed=failed, remaining_missing=None, warnings=warnings,
-                error_reason=str(exc),
+                error_reason=str(exc), recovered=recovered,
             )
         raise
     if operation_id:
@@ -820,13 +949,17 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
             operation_id, status="cancelled" if cancelled else "completed",
             processed=analyzed, succeeded=updated, skipped=skipped, failed=failed,
             remaining_missing=remaining, warnings=warnings,
-            error_reason="user_cancelled" if cancelled else None,
+            error_reason="user_cancelled" if cancelled else None, recovered=recovered,
         )
     return {
         "job_type": "bpm_analysis", "analyzed": analyzed, "updated": updated,
-        "skipped": skipped, "failed": failed, "remaining_missing_bpm": remaining,
+        "skipped": skipped, "failed": failed, "recovered": recovered,
+        "remaining_missing_bpm": remaining,
         "warnings": warnings, "results": results, "operation_id": operation_id,
         "cancelled": cancelled,
+        "outcome": analysis_operations_service.derive_outcome(
+            "cancelled" if cancelled else "completed", failed, recovered,
+        ),
     }
 
 

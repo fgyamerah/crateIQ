@@ -34,7 +34,7 @@ def test_schema_creation_is_idempotent_and_additive(jobs_db):
         columns = {row[1] for row in conn.execute("PRAGMA table_info(analysis_operations)")}
     assert {
         "id", "job_type", "mode", "status", "scope_limit", "eligible_total",
-        "considered", "processed", "succeeded", "skipped", "failed",
+        "considered", "processed", "succeeded", "skipped", "failed", "recovered",
         "remaining_missing", "cancel_requested", "error_reason",
         "warnings_json", "created_at", "started_at", "finished_at",
     }.issubset(columns)
@@ -56,6 +56,37 @@ def test_schema_migration_is_safe_on_an_existing_older_jobs_db(tmp_path, monkeyp
         tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type='table'")}
     assert "analysis_operations" in tables
     assert "jobs" in tables  # the pre-existing table was left alone
+
+
+def test_recovered_column_migrates_onto_a_pre_bpm_fallback_analysis_operations_table(tmp_path, monkeypatch):
+    """init_db() must add `recovered` to an analysis_operations table that predates it."""
+    path = tmp_path / "pre-fallback" / "jobs.db"
+    path.parent.mkdir(parents=True)
+    with sqlite3.connect(path) as conn:
+        conn.execute(
+            """CREATE TABLE analysis_operations (
+                id TEXT PRIMARY KEY, job_type TEXT NOT NULL, mode TEXT NOT NULL DEFAULT 'apply',
+                status TEXT NOT NULL DEFAULT 'running', scope_limit INTEGER NOT NULL,
+                eligible_total INTEGER NOT NULL DEFAULT 0, considered INTEGER NOT NULL DEFAULT 0,
+                processed INTEGER NOT NULL DEFAULT 0, succeeded INTEGER NOT NULL DEFAULT 0,
+                skipped INTEGER NOT NULL DEFAULT 0, failed INTEGER NOT NULL DEFAULT 0,
+                remaining_missing INTEGER, cancel_requested INTEGER NOT NULL DEFAULT 0,
+                error_reason TEXT, warnings_json TEXT, created_at TEXT NOT NULL,
+                started_at TEXT, finished_at TEXT
+            )"""
+        )
+        conn.execute(
+            "INSERT INTO analysis_operations (id, job_type, scope_limit, created_at) "
+            "VALUES ('pre-existing', 'bpm_analysis', 5, '2026-01-01T00:00:00Z')"
+        )
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", path)
+    backend_db.init_db()
+    with sqlite3.connect(path) as conn:
+        conn.row_factory = sqlite3.Row
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(analysis_operations)")}
+        row = conn.execute("SELECT recovered FROM analysis_operations WHERE id = 'pre-existing'").fetchone()
+    assert "recovered" in columns
+    assert row["recovered"] == 0  # truthful default: the fallback did not exist when this row was created
 
 
 def test_start_update_finish_completed_lifecycle(jobs_db):

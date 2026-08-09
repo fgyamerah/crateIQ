@@ -101,7 +101,16 @@ Service map (`backend/app/services/`), current primary surfaces:
 * `tag_write_service` — plan/backup/write/re-read/verify controlled tag
   writes, with restore on failure
 * `analysis_jobs_service`, `waveform_*` services — BPM/key analysis and
-  waveform generation/cache/lifecycle
+  waveform generation/cache/lifecycle. BPM analysis tries direct aubio
+  decode first; on failure or an unusable result it falls back to an
+  FFmpeg decode into a secure temporary WAV outside the managed workspace
+  (never rewriting the source), retries aubio against that WAV, and
+  records distinct provenance (`aubio` vs `aubio_ffmpeg_decode`) plus a
+  non-blocking recovery warning on success. Persisted analysis operations
+  expose a derived `outcome` (`complete` / `completed_with_warnings` /
+  `completed_with_errors` / `cancelled` / `failed`) alongside `status`, so
+  a run with unrecovered track failures cannot render as a plain
+  "Complete".
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
 * `sync_destination_service` — Publish/SSD Sync source and destination

@@ -95,6 +95,16 @@ class AnalysisJobPreview(BaseModel):
 
 AnalysisOperationStatus = Literal["running", "completed", "failed", "cancelled"]
 
+# A derived, presentation-safe outcome computed from status + track-level
+# counts (see analysis_operations_service.derive_outcome). `status` alone
+# cannot distinguish a clean completion from one where every track failed,
+# or one where tracks only succeeded via the FFmpeg BPM-recovery fallback --
+# this is additive so existing `status` consumers are unaffected.
+AnalysisOperationOutcome = Literal[
+    "running", "complete", "completed_with_warnings", "completed_with_errors",
+    "cancelled", "failed",
+]
+
 
 class AnalysisOperation(BaseModel):
     """A persisted, app-owned record of one explicit, confirmed analysis run.
@@ -107,6 +117,7 @@ class AnalysisOperation(BaseModel):
     job_type: Literal["bpm_analysis", "key_analysis"]
     mode: str
     status: AnalysisOperationStatus
+    outcome: AnalysisOperationOutcome
     scope_limit: int
     eligible_total: int
     considered: int
@@ -114,6 +125,7 @@ class AnalysisOperation(BaseModel):
     succeeded: int
     skipped: int
     failed: int
+    recovered: int = 0
     remaining_missing: Optional[int] = None
     cancel_requested: bool
     error_reason: Optional[str] = None
@@ -139,11 +151,13 @@ class BpmAnalysisRunResult(BaseModel):
     updated: int
     skipped: int
     failed: int
+    recovered: int = 0
     remaining_missing_bpm: int
     warnings: list[str] = Field(default_factory=list)
     results: list[AnalysisJobCandidate] = Field(default_factory=list)
     operation_id: Optional[str] = None
     cancelled: bool = False
+    outcome: AnalysisOperationOutcome = "complete"
 
 
 class KeyAnalysisRunRequest(BpmAnalysisRunRequest):

@@ -2,6 +2,53 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Harden BPM analysis for malformed-but-decodable audio
+
+- What changed: direct aubio decode remains the first BPM analysis path.
+  When it fails or produces no usable BPM (non-zero exit, timeout, or no
+  valid tempo), BPM analysis now falls back to decoding the managed source
+  with FFmpeg into a secure `tempfile.TemporaryDirectory(prefix="crateiq-
+  bpm-")` WAV outside the managed workspace, then retries aubio against
+  that WAV. The temp directory is always removed via its context manager.
+  A recovered BPM is written with distinct provenance (`bpm_source =
+  "aubio_ffmpeg_decode"` vs `"aubio"`) and counted as succeeded with a
+  non-blocking recovery warning, not as failed. A track that fails both
+  direct aubio and the FFmpeg fallback is recorded as a track-level
+  failure with a concise, classified message (no raw stderr or stack
+  traces reach the API; condensed tool diagnostics are logged internally
+  only). The persisted analysis_operations table gained a `recovered`
+  counter and every operation now exposes a derived, truthful `outcome`
+  (`complete` / `completed_with_warnings` / `completed_with_errors` /
+  `cancelled` / `failed`) alongside the existing `status`, so a run where
+  every track failed can no longer render as a plain green "Complete".
+  The BPM analysis history/detail UI and the immediate run-result banner
+  now render that outcome and a "recovered via FFmpeg" count.
+- Why it changed: some real managed MP3s decode fine end-to-end via
+  FFmpeg but fail direct aubio decoding with malformed-frame errors (e.g.
+  "Header missing" / "AUBIO ERROR: source_avcodec: error when sending
+  packet"), permanently blocking their BPM without this recovery path.
+  Verified against a real managed track's malformed MP3 (via a disposable
+  copy, never the original): direct aubio failed with the exact reported
+  error, the FFmpeg fallback recovered BPM 125.27, and the original
+  file's SHA-256 was unchanged before and after.
+- Files affected: backend/app/core/db.py (added `analysis_operations.
+  recovered` column + migration); backend/app/services/
+  analysis_operations_service.py (recovered counter, derive_outcome);
+  backend/app/services/analysis_jobs_service.py (FFmpeg resolution,
+  _attempt_ffmpeg_fallback, restructured _run_bpm_analysis loop);
+  backend/app/schemas/analysis_jobs.py (outcome/recovered fields);
+  frontend/src/types/analysis.ts; frontend/src/components/analysis/
+  AnalysisOperationsHistory.tsx; frontend/src/components/analysis/
+  AnalysisJobsCatalog.tsx; tests/test_bpm_ffmpeg_fallback.py (new);
+  tests/test_analysis_operations.py; NEXT_TASKS.txt.
+- Migration notes: `analysis_operations.recovered` defaults to 0 on
+  existing rows (truthful -- the fallback did not exist when they were
+  created). No existing BPM/key data is touched; Mixed In Key and any
+  other already-set BPM remains untouched and unre-analyzed. FFmpeg
+  remains optional -- if unavailable, the fallback fails truthfully and
+  BPM analysis otherwise still works exactly as before for direct-aubio
+  successes.
+
 [2026-08-09] — Remove orphaned frontend pages
 
 - What changed: deleted four orphaned React page source files

@@ -30,6 +30,26 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def derive_outcome(status: str, failed: int, recovered: int = 0) -> str:
+    """Compute a truthful, user-facing outcome from the raw status/counts.
+
+    A separate derived field -- rather than widening the persisted `status`
+    CHECK constraint -- so existing rows and existing `status` consumers
+    (polling, cancel-eligibility) are unaffected. `status='completed'` alone
+    cannot tell a clean run apart from one where every track failed; this
+    folds in track-level counts so the UI is never a misleading green
+    "Complete" over unrecovered failures.
+    """
+    if status in ("cancelled", "failed", "running"):
+        return status
+    # status == "completed"
+    if failed > 0:
+        return "completed_with_errors"
+    if recovered > 0:
+        return "completed_with_warnings"
+    return "complete"
+
+
 def _row_to_dict(row: Any) -> dict[str, Any]:
     data = dict(row)
     warnings_json = data.pop("warnings_json", None)
@@ -38,6 +58,8 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
     except (TypeError, ValueError):
         data["warnings"] = []
     data["cancel_requested"] = bool(data.get("cancel_requested"))
+    data["recovered"] = data.get("recovered") or 0
+    data["outcome"] = derive_outcome(data["status"], data["failed"], data["recovered"])
     return data
 
 
@@ -59,7 +81,8 @@ def start_operation(
 
 
 def update_progress(
-    operation_id: str, *, processed: int, succeeded: int, skipped: int, failed: int
+    operation_id: str, *, processed: int, succeeded: int, skipped: int, failed: int,
+    recovered: int = 0,
 ) -> None:
     """Persist truthful incremental counts so a concurrent read reflects real progress.
 
@@ -69,9 +92,9 @@ def update_progress(
     with get_conn() as conn:
         conn.execute(
             """UPDATE analysis_operations
-               SET processed = ?, succeeded = ?, skipped = ?, failed = ?
+               SET processed = ?, succeeded = ?, skipped = ?, failed = ?, recovered = ?
                WHERE id = ? AND status = 'running'""",
-            (processed, succeeded, skipped, failed, operation_id),
+            (processed, succeeded, skipped, failed, recovered, operation_id),
         )
 
 
@@ -86,6 +109,7 @@ def finish_operation(
     remaining_missing: Optional[int],
     warnings: list[str],
     error_reason: Optional[str] = None,
+    recovered: int = 0,
 ) -> None:
     if status not in _TERMINAL_STATUSES:
         raise ValueError(f"finish_operation requires a terminal status, got {status!r}")
@@ -95,10 +119,11 @@ def finish_operation(
         conn.execute(
             """UPDATE analysis_operations
                SET status = ?, processed = ?, succeeded = ?, skipped = ?, failed = ?,
-                   remaining_missing = ?, warnings_json = ?, error_reason = ?, finished_at = ?
+                   recovered = ?, remaining_missing = ?, warnings_json = ?,
+                   error_reason = ?, finished_at = ?
                WHERE id = ?""",
             (
-                status, processed, succeeded, skipped, failed,
+                status, processed, succeeded, skipped, failed, recovered,
                 remaining_missing, payload, reason, _now(), operation_id,
             ),
         )

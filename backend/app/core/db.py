@@ -145,6 +145,7 @@ CREATE TABLE IF NOT EXISTS analysis_operations (
     succeeded         INTEGER NOT NULL DEFAULT 0,
     skipped           INTEGER NOT NULL DEFAULT 0,
     failed            INTEGER NOT NULL DEFAULT 0,
+    recovered         INTEGER NOT NULL DEFAULT 0,
     remaining_missing INTEGER,
     cancel_requested  INTEGER NOT NULL DEFAULT 0
                                CHECK (cancel_requested IN (0, 1)),
@@ -397,5 +398,10 @@ def init_db() -> None:
         # underlying rsync job. Rows created by Stage 2 (export-only) predate
         # this column.
         _add_column_safe(conn, "publish_operations", "job_id", "TEXT")
+
+        # BPM malformed-audio hardening: counts tracks whose BPM was only
+        # recoverable via the FFmpeg decode fallback. Rows created before this
+        # change default to 0, which is truthful (fallback did not exist yet).
+        _add_column_safe(conn, "analysis_operations", "recovered", "INTEGER NOT NULL DEFAULT 0")
 
     log.info("Backend operational DB ready")

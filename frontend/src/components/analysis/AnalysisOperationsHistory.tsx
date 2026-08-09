@@ -2,32 +2,33 @@ import { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, XCircle, Loader2 } from 'lucide-react'
 import { ApiError } from '../../api/client'
 import { cancelAnalysisOperation, fetchAnalysisJobHistory, fetchAnalysisOperation } from '../../api/analysis'
-import type { AnalysisOperation, AnalysisOperationStatus } from '../../types/analysis'
+import type { AnalysisOperation, AnalysisOperationOutcome } from '../../types/analysis'
 import Badge, { type BadgeTone } from '../ui/Badge'
 import EmptyState from '../ui/EmptyState'
 import StatusStrip from '../ui/StatusStrip'
 
-const STATUS_TONE: Record<AnalysisOperationStatus, BadgeTone> = {
-  running: 'running',
-  completed: 'succeeded',
-  failed: 'failed',
-  cancelled: 'cancelled',
-}
-
-const STATUS_LABEL: Record<AnalysisOperationStatus, string> = {
-  running: 'Running',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-}
-
 /** The job finishing without crashing is a different fact from every track
- * inside it succeeding -- a plain green "Completed" on a run where nothing
- * actually succeeded would visually collapse a degraded result into
- * something that looks fine. Distinguish it without changing the label. */
-function statusTone(operation: AnalysisOperation): BadgeTone {
-  if (operation.status === 'completed' && operation.failed > 0) return 'pending'
-  return STATUS_TONE[operation.status]
+ * inside it succeeding -- a plain green "Complete" on a run where nothing
+ * actually succeeded, or where every success only came via the FFmpeg
+ * recovery fallback, would visually collapse a degraded or warning-worthy
+ * result into something that looks fine. `outcome` is the backend's derived,
+ * truthful presentation state; `status` alone is not enough to render. */
+export const OUTCOME_TONE: Record<AnalysisOperationOutcome, BadgeTone> = {
+  running: 'running',
+  complete: 'succeeded',
+  completed_with_warnings: 'pending',
+  completed_with_errors: 'failed',
+  cancelled: 'cancelled',
+  failed: 'failed',
+}
+
+export const OUTCOME_LABEL: Record<AnalysisOperationOutcome, string> = {
+  running: 'Running',
+  complete: 'Complete',
+  completed_with_warnings: 'Completed with warnings',
+  completed_with_errors: 'Completed with errors',
+  cancelled: 'Cancelled',
+  failed: 'Failed',
 }
 
 const JOB_TYPE_LABEL: Record<string, string> = {
@@ -97,7 +98,7 @@ function OperationDetail({
     <>
       <div className="analysis-history-detail-head">
         <h3>{jobTypeLabel(operation.job_type)}</h3>
-        <Badge tone={statusTone(operation)}>{STATUS_LABEL[operation.status]}</Badge>
+        <Badge tone={OUTCOME_TONE[operation.outcome]}>{OUTCOME_LABEL[operation.outcome]}</Badge>
       </div>
       {showBar && (
         <div className="job-progress">
@@ -120,6 +121,9 @@ function OperationDetail({
         <dt>Succeeded</dt><dd>{operation.succeeded}</dd>
         <dt>Skipped</dt><dd>{operation.skipped}</dd>
         <dt>Failed</dt><dd>{operation.failed}</dd>
+        {operation.job_type === 'bpm_analysis' && (
+          <><dt>Recovered via FFmpeg</dt><dd>{operation.recovered}</dd></>
+        )}
         <dt>Remaining missing</dt><dd>{operation.remaining_missing ?? '—'}</dd>
       </dl>
       {reason && <StatusStrip tone={operation.status === 'cancelled' ? 'warn' : 'danger'}>{reason}</StatusStrip>}
@@ -252,9 +256,12 @@ export default function AnalysisOperationsHistory({ refreshSignal }: Props) {
                     }}
                   >
                     <td>{jobTypeLabel(operation.job_type)}</td>
-                    <td><Badge tone={statusTone(operation)}>{STATUS_LABEL[operation.status]}</Badge></td>
+                    <td><Badge tone={OUTCOME_TONE[operation.outcome]}>{OUTCOME_LABEL[operation.outcome]}</Badge></td>
                     <td className="muted">{operation.considered} of {operation.eligible_total}</td>
-                    <td className="muted">{operation.succeeded} ok · {operation.skipped} skip · {operation.failed} fail</td>
+                    <td className="muted">
+                      {operation.succeeded} ok · {operation.skipped} skip · {operation.failed} fail
+                      {operation.recovered > 0 ? ` · ${operation.recovered} recovered` : ''}
+                    </td>
                     <td className="muted nowrap td-timestamp">{formatDateTime(operation.started_at)}</td>
                     <td className="muted td-duration">{formatDuration(operation.started_at, operation.finished_at)}</td>
                   </tr>

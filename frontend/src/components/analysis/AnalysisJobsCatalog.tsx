@@ -4,7 +4,7 @@ import { CheckCircle2, Eye, RefreshCw, ShieldCheck, SlidersHorizontal, Wrench } 
 import { ApiError } from '../../api/client'
 import { fetchAnalysisJobs, previewAnalysisJob, runBpmAnalysis, runKeyAnalysis } from '../../api/analysis'
 import type { AnalysisJobDefinition, AnalysisJobPreview, AnalysisJobStatus, AnalysisJobType, BpmAnalysisRunResult, KeyAnalysisRunResult } from '../../types/analysis'
-import AnalysisOperationsHistory from './AnalysisOperationsHistory'
+import AnalysisOperationsHistory, { OUTCOME_LABEL, OUTCOME_TONE } from './AnalysisOperationsHistory'
 import Badge from '../ui/Badge'
 import EmptyState from '../ui/EmptyState'
 import KpiCard from '../ui/KpiCard'
@@ -213,7 +213,7 @@ export default function AnalysisJobsCatalog() {
           <button className="btn btn--primary btn--sm" disabled={!keyConfirmed || keyRunning} onClick={() => void runKey()}>{keyRunning ? 'Analyzing key…' : `Run keyfinder for up to ${bpmLimit}`}</button>
         </div>}
       </section>}
-      {bpmResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">BPM analysis result</h2><p className="muted">Aubio wrote only eligible BPM values to CrateIQ’s local index.</p></div><Badge tone="succeeded">Complete</Badge></div><div className="settings-import-summary"><span><strong>{bpmResult.analyzed}</strong> analyzed</span><span><strong>{bpmResult.updated}</strong> updated</span><span><strong>{bpmResult.skipped}</strong> skipped</span><span><strong>{bpmResult.failed}</strong> failed</span><span><strong>{bpmResult.remaining_missing_bpm}</strong> remaining</span></div>{bpmResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
+      {bpmResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">BPM analysis result</h2><p className="muted">Aubio wrote only eligible BPM values to CrateIQ’s local index.</p></div><Badge tone={OUTCOME_TONE[bpmResult.outcome]}>{OUTCOME_LABEL[bpmResult.outcome]}</Badge></div><div className="settings-import-summary"><span><strong>{bpmResult.analyzed}</strong> analyzed</span><span><strong>{bpmResult.updated}</strong> updated</span><span><strong>{bpmResult.skipped}</strong> skipped</span><span><strong>{bpmResult.failed}</strong> failed</span>{bpmResult.recovered > 0 && <span><strong>{bpmResult.recovered}</strong> recovered via FFmpeg</span>}<span><strong>{bpmResult.remaining_missing_bpm}</strong> remaining</span></div>{bpmResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
       {keyResult && <section className="analysis-job-preview" aria-live="polite"><div className="settings-import-result-head"><div><h2 className="card-title">Key/Camelot analysis result</h2><p className="muted">Keyfinder wrote only eligible keys to CrateIQ’s local index.</p></div><Badge tone="succeeded">Complete</Badge></div><div className="settings-import-summary"><span><strong>{keyResult.analyzed}</strong> analyzed</span><span><strong>{keyResult.updated}</strong> updated</span><span><strong>{keyResult.skipped}</strong> skipped</span><span><strong>{keyResult.failed}</strong> failed</span><span><strong>{keyResult.remaining_missing_key}</strong> remaining</span></div>{keyResult.warnings.map((warning) => <StatusStrip key={warning} tone="warn">{warning}</StatusStrip>)}</section>}
       <AnalysisOperationsHistory refreshSignal={historyRefreshSignal} />
     </>

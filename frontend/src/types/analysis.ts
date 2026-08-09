@@ -176,6 +176,14 @@ export interface AnalysisJobPreview {
 
 export type AnalysisOperationStatus = 'running' | 'completed' | 'failed' | 'cancelled'
 
+/** Derived, presentation-safe outcome (status + track-level counts folded
+ * in) -- see backend analysis_operations_service.derive_outcome. Use this
+ * for user-facing labels; `status` alone cannot tell a clean completion
+ * apart from one where every track failed or only recovered via fallback. */
+export type AnalysisOperationOutcome =
+  | 'running' | 'complete' | 'completed_with_warnings' | 'completed_with_errors'
+  | 'cancelled' | 'failed'
+
 /** A persisted, app-owned record of one explicit, confirmed analysis run.
  * Candidate previews are never persisted -- only a confirmed run that began
  * work creates one of these. Lives in the backend's own jobs.db. */
@@ -184,6 +192,7 @@ export interface AnalysisOperation {
   job_type: 'bpm_analysis' | 'key_analysis'
   mode: string
   status: AnalysisOperationStatus
+  outcome: AnalysisOperationOutcome
   scope_limit: number
   eligible_total: number
   considered: number
@@ -191,6 +200,7 @@ export interface AnalysisOperation {
   succeeded: number
   skipped: number
   failed: number
+  recovered: number
   remaining_missing: number | null
   cancel_requested: boolean
   error_reason: string | null
@@ -211,11 +221,13 @@ export interface BpmAnalysisRunResult {
   updated: number
   skipped: number
   failed: number
+  recovered: number
   remaining_missing_bpm: number
   warnings: string[]
   results: AnalysisJobCandidate[]
   operation_id: string | null
   cancelled: boolean
+  outcome: AnalysisOperationOutcome
 }
 
 export interface KeyAnalysisRunResult {

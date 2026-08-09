@@ -26,28 +26,27 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Harden BPM analysis for malformed-but-decodable audio. Direct aubio
-    decode fails on some MP3s with malformed frames (e.g. "Header missing" /
-    "AUBIO ERROR: source_avcodec: error when sending packet") that FFmpeg
-    can decode with only recoverable warnings. Required behavior: try aubio
-    directly first; on failure or unusable output, fall back to an FFmpeg
-    decode to a secure temporary WAV outside the managed music workspace,
-    run aubio on that WAV, and remove the temporary artifact in a
-    finally/guaranteed-cleanup path. Never rewrite, repair, transcode over,
-    or replace the managed source audio; external originals remain
-    untouched; preserve source hash integrity. Record distinct provenance
-    (e.g. "aubio" vs "aubio_ffmpeg_decode"). Expose meaningful decode/tool
-    errors instead of only "aubio returned no usable BPM". Distinguish
-    recoverable malformed-frame warnings from final BPM-analysis failures,
-    and record a non-blocking Audio Quality / Needs Review finding when
-    malformed frames are detected but FFmpeg successfully recovers the
-    audio. Avoid endlessly retrying tracks proven genuinely undecodable.
-    Improve operation outcome semantics: COMPLETE / COMPLETED WITH WARNINGS
-    / COMPLETED WITH ERRORS / CANCELLED / FAILED. Add focused tests for:
-    direct aubio success, FFmpeg fallback success, FFmpeg fallback failure,
-    secure temp cleanup, original-file hash unchanged, BPM provenance,
-    recovered-warning recording, final failure recording, operation status
-    semantics, and frontend rendering.
+[ ] Durable Audio Quality finding for FFmpeg-recovered malformed BPM audio.
+    The BPM FFmpeg-decode fallback (see CHANGELOG) records the recovered
+    warning in the analysis operation's history/warnings, which is visible
+    in BPM analysis history today. quality_review_service's snapshot model
+    fully replaces its items_json from a fresh ffprobe scan on every
+    refresh_preview() call, so it cannot durably host a BPM-sourced,
+    per-event finding without a redesign of that snapshot/replace contract.
+    Design a durable, non-blocking "recoverable_audio_decode_warning" (or
+    architecture-consistent equivalent) finding once that redesign is
+    scoped, so it surfaces through Needs Review / Audio Quality directly
+    rather than only through BPM analysis history.
+
+[ ] Retry suppression for BPM tracks proven genuinely undecodable (both
+    direct aubio and the FFmpeg fallback fail). The current BPM candidate
+    query (`WHERE bpm IS NULL`) intentionally still retries these every run
+    -- full retryability was kept on purpose because there is no per-track-
+    scoped analysis contract or reset UI yet (see the existing "Batch
+    analysis ... reuses the *global* missing-BPM/key queue" P2 item below).
+    Adding a durable per-track suppression column without a way to reset it
+    after a user replaces/fixes a file would be a fragile hidden state.
+    Revisit once a per-track-scoped analysis contract exists.
 
 [ ] Design and test a reconciliation APPLY workflow (backups, per-action
     confirmation, restore path). Cycle 4 shipped DETECT/PROPOSE/REVIEW/
