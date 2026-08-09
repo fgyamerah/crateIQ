@@ -7,7 +7,8 @@ Files are never overwritten — each request produces a unique timestamped file.
 File format:
     YYYYMMDD_HHMMSS__prompt_log.txt
 
-Used by utils/llm_client.py so all LLM calls are logged automatically.
+Used by pipeline.py's LLM-backed commands (e.g. ai-normalize, artist
+intelligence, metadata-enrich-online) so relevant calls are logged.
 """
 from __future__ import annotations
 

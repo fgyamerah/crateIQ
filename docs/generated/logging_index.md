@@ -151,9 +151,6 @@
 - Line 26: `log = logging.getLogger(__name__)`
 - Line 29: `# Junk-label detection — loaded from config/junk_patterns.json`
 
-## `intelligence/label/cli.py`
-- Line 40: `export_json(records, args.out_dir / "labels.json")`
-
 ## `intelligence/label/reports.py`
 - Line 6: `label_clean_report.json    — full per-track details`
 - Line 8: `label_clean_review.json    — only unresolved / low-confidence cases`
@@ -366,10 +363,6 @@
 - Line 165: `"Log file",`
 - Line 166: `"Summary file",`
 - Line 167: `"JSONL file",`
-
-## `utils/llm_client.py`
-- Line 2: `utils/llm_client.py — Shared Claude API wrapper with automatic prompt logging.`
-- Line 5: `request is automatically logged by utils.prompt_logger.`
 
 ## `utils/prompt_logger.py`
 - Line 2: `utils/prompt_logger.py — Timestamped prompt/response logger for LLM requests.`

@@ -828,10 +828,6 @@
 - Line 406: `# Second pass: apply canonical names from alias registry`
 - Line 428: `log.warning("mutagen returned None for %s — skipping write", path)`
 
-## `intelligence/label/cli.py`
-- Line 21: `s.add_argument("--skip-enrich", action="store_true")`
-- Line 36: `skip_enrich=args.skip_enrich,`
-
 ## `intelligence/label/filename_parser.py`
 - Line 5: `plus a confidence score and the pattern name that matched.`
 - Line 8: `- returns None if no pattern fires with reasonable confidence`

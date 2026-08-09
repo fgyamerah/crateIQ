@@ -515,11 +515,6 @@
 - `_result`
 - `_reject_junk`
 
-## `intelligence/label/cli.py`
-### Functions
-- `build_parser`
-- `main`
-
 ## `intelligence/label/enrich_from_library.py`
 ### Functions
 - `enrich_store_from_tracks`
@@ -557,19 +552,6 @@
 - `canonical_for`
 - `alias_count`
 - `all_normalized_keys`
-
-## `intelligence/label/providers/beatport.py`
-### Classes
-- `BeatportCleanProvider`
-### Functions
-- `match`
-
-## `intelligence/label/providers/discogs.py`
-### Classes
-- `DiscogsProvider`
-### Functions
-- `__init__`
-- `match`
 
 ## `intelligence/label/reports.py`
 ### Functions
@@ -1951,10 +1933,6 @@
 - `grep_safety_logic`
 - `create_summary`
 - `main`
-
-## `utils/llm_client.py`
-### Functions
-- `call`
 
 ## `utils/prompt_logger.py`
 ### Classes

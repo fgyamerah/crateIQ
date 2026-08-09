@@ -29,10 +29,6 @@ beautifulsoup4>=4.12.3
 # Or globally: activate-global-python-argcomplete
 argcomplete>=3.1.0
 
-# ── LLM / Claude API ─────────────────────────────────────────────────────────
-# Required for LLM features (genre inference, metadata assist via Claude).
-# utils/llm_client.py wraps all API calls and logs prompts to ./last-prompts/
-anthropic>=0.25.0
 
 # ── Metadata enrichment ───────────────────────────────────────────────────────
 # Real Beets distance-scored matching + MusicBrainz search, used only via

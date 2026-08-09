@@ -346,7 +346,9 @@ P3 / LOW
 
 [ ] LLM metadata assist integration via the Claude API for genre
     inference/metadata disambiguation (cloud fallback when Ollama is
-    unavailable), wired through utils/llm_client.py.
+    unavailable). The prior utils/llm_client.py wrapper was removed in
+    Phase 6 as dead code (zero callers); this would need a fresh
+    implementation, not a revival of the old wrapper.
 
 [ ] audit-quality: quality-tier playlists (LOW.m3u8 / MEDIUM.m3u8 /
     HIGH.m3u8 / LOSSLESS.m3u8 under M3U_DIR/Quality/).

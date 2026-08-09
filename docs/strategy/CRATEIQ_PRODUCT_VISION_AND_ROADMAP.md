@@ -810,8 +810,9 @@ result, safety levels) govern all new work.
   explanations (rephrasing engine reason codes); "explain this proposal"
   in review center; enrichment residue triage; batch/cost governor; opt-in
   prompt logging with retention policy.
-- **Files/modules**: `ai/`, `utils/llm_client.py`, `utils/prompt_logger.py`,
-  review-center and set-builder UI touches.
+- **Files/modules**: `ai/`, `utils/prompt_logger.py`, review-center and
+  set-builder UI touches. A new Claude API wrapper would need to be built —
+  the prior `utils/llm_client.py` was removed in Phase 6 as dead code.
 - **Risks**: boundary erosion (section 13 table becomes enforced policy:
   AI outputs are always proposals with capped confidence); privacy (opt-in
   logging shipped in the same phase, not after).

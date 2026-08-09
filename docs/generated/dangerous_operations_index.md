@@ -1606,10 +1606,6 @@
 - Line 291: `write("safety_logic_index.md", "\n".join(lines) + "\n")`
 - Line 312: `write("STATIC_ANALYSIS_SUMMARY.md", "\n".join(lines) + "\n")`
 
-## `utils/llm_client.py`
-- Line 22: `from utils.prompt_logger import save as _log`
-- Line 48: `Automatically saves a log file via utils.prompt_logger for every call,`
-
 ## `utils/prompt_logger.py`
 - Line 4: `Every call to save() writes a new file to ./last-prompts/ at the project root.`
 - Line 34: `def save(`
