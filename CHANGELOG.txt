@@ -2,6 +2,26 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Remove orphaned frontend pages
+
+- What changed: deleted four orphaned React page source files
+  (LibraryPrep.tsx, Dashboard.tsx, Collection.tsx, Tracks.tsx) after
+  reconfirming zero live imports, route registrations, lazy/dynamic
+  loaders, navigation links, or test dependencies referenced them. Their
+  former URLs (/library-prep, /dashboard, /collection, /tracks) already
+  redirect to current equivalents in frontend/src/App.tsx and are
+  unchanged by this cleanup.
+- Why it changed: the Legacy Architecture Cleanup Audit identified these
+  as dead source kept alive only by their compatibility redirects, which
+  themselves route to current pages (Inbox, Library) rather than to the
+  deleted components.
+- Files affected: frontend/src/pages/LibraryPrep.tsx,
+  frontend/src/pages/Dashboard.tsx, frontend/src/pages/Collection.tsx,
+  frontend/src/pages/Tracks.tsx (all removed); NEXT_TASKS.txt (added P1
+  BPM malformed-audio hardening follow-up).
+- Migration notes: none. No route, redirect, navigation, or backend
+  behavior changed.
+
 [2026-08-09] — Retire dangerous legacy runtime tooling
 
 - What changed: archived eight pre-managed-workspace "DJ Toolkit" runtime

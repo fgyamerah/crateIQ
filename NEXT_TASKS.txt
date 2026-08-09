@@ -26,6 +26,29 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
+[ ] Harden BPM analysis for malformed-but-decodable audio. Direct aubio
+    decode fails on some MP3s with malformed frames (e.g. "Header missing" /
+    "AUBIO ERROR: source_avcodec: error when sending packet") that FFmpeg
+    can decode with only recoverable warnings. Required behavior: try aubio
+    directly first; on failure or unusable output, fall back to an FFmpeg
+    decode to a secure temporary WAV outside the managed music workspace,
+    run aubio on that WAV, and remove the temporary artifact in a
+    finally/guaranteed-cleanup path. Never rewrite, repair, transcode over,
+    or replace the managed source audio; external originals remain
+    untouched; preserve source hash integrity. Record distinct provenance
+    (e.g. "aubio" vs "aubio_ffmpeg_decode"). Expose meaningful decode/tool
+    errors instead of only "aubio returned no usable BPM". Distinguish
+    recoverable malformed-frame warnings from final BPM-analysis failures,
+    and record a non-blocking Audio Quality / Needs Review finding when
+    malformed frames are detected but FFmpeg successfully recovers the
+    audio. Avoid endlessly retrying tracks proven genuinely undecodable.
+    Improve operation outcome semantics: COMPLETE / COMPLETED WITH WARNINGS
+    / COMPLETED WITH ERRORS / CANCELLED / FAILED. Add focused tests for:
+    direct aubio success, FFmpeg fallback success, FFmpeg fallback failure,
+    secure temp cleanup, original-file hash unchanged, BPM provenance,
+    recovered-warning recording, final failure recording, operation status
+    semantics, and frontend rendering.
+
 [ ] Design and test a reconciliation APPLY workflow (backups, per-action
     confirmation, restore path). Cycle 4 shipped DETECT/PROPOSE/REVIEW/
     VALIDATE only; no apply/execute endpoint exists anywhere yet
