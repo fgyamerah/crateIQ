@@ -1,9 +1,10 @@
 """Safe, read-only orphan / stale-path / quarantine findings.
 
-Reuses the existing ``pipeline.py`` path-audit engine (``_path_audit_report``)
-for detection; this module only reshapes that report into a bounded,
-relative-path-only finding contract and adds a read-only quarantine listing.
-It performs no filesystem mutation, DB write, move, rename, or delete.
+Reuses the neutral path-audit engine (``utils.path_reconciliation.
+path_audit_report``) for detection; this module only reshapes that report
+into a bounded, relative-path-only finding contract and adds a read-only
+quarantine listing. It performs no filesystem mutation, DB write, move,
+rename, or delete.
 """
 from __future__ import annotations
 
@@ -11,7 +12,7 @@ import hashlib
 from pathlib import Path
 from typing import Any
 
-import pipeline
+from utils import path_reconciliation
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 
@@ -121,7 +122,7 @@ def get_findings() -> dict[str, Any]:
     if not db_path.is_file():
         return _empty_response("Initialize the local library index before requesting reconciliation findings.")
 
-    report = pipeline._path_audit_report(root, db_path, include_orphan_candidates=False)
+    report = path_reconciliation.path_audit_report(root, db_path, include_orphan_candidates=False)
     warnings: list[str] = []
     if report.get("db_error"):
         warnings.append(str(report["db_error"]))

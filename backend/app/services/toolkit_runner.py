@@ -29,7 +29,8 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, FrozenSet, List
 
-from ..core.config import JOBS_LOG_DIR, MUSIC_ROOT, PIPELINE_PY, PYTHON_BIN, TOOLKIT_ROOT
+from ..core.config import JOBS_LOG_DIR, PIPELINE_PY, PYTHON_BIN, TOOLKIT_ROOT
+from ..core.library_root import selected_library_root
 from . import process_registry
 
 log = logging.getLogger(__name__)
@@ -83,10 +84,10 @@ _ALLOWED_BOOL_FLAGS: FrozenSet[str] = frozenset(
 )
 
 def _is_safe_input_path(v: str) -> bool:
-    """Accept only absolute paths that resolve inside MUSIC_ROOT."""
+    """Accept only absolute paths that resolve inside the active library root."""
     try:
         p = Path(v).resolve()
-        root = MUSIC_ROOT  # already resolved at import time
+        root = selected_library_root()
         return p == root or root in p.parents
     except Exception:
         return False

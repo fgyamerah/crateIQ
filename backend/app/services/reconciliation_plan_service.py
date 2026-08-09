@@ -1,12 +1,13 @@
 """Plan-first library reconciliation: propose, persist, and validate — never apply.
 
-Reuses the existing pipeline.py path-audit/path-reconcile planner and the
-existing plan-artifact location/format so ``validate-plan`` (already wired)
-can read a plan this module proposes without any format change. This module
-adds no apply/execute capability; it only proposes a plan (writing the same
-JSON artifact the CLI already writes) and strengthens plan validation with
-cross-action checks (target collisions, ambiguous candidates) that the
-per-action CLI validator does not perform.
+Reuses the neutral path-audit/path-reconcile planner in
+``utils/path_reconciliation.py`` (also used by the legacy ``pipeline.py``
+CLI) and the existing plan-artifact location/format so ``validate-plan``
+(already wired) can read a plan this module proposes without any format
+change. This module adds no apply/execute capability; it only proposes a
+plan (writing the same JSON artifact the CLI already writes) and strengthens
+plan validation with cross-action checks (target collisions, ambiguous
+candidates) that the per-action validator does not perform.
 """
 from __future__ import annotations
 
@@ -15,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-import pipeline
+from utils import path_reconciliation
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 
@@ -57,8 +58,8 @@ def propose_plan() -> dict[str, Any]:
     if not db_path.is_file():
         raise ValueError("Configured library is not initialized.")
 
-    audit = pipeline._path_audit_report(root, db_path, include_orphan_candidates=True)
-    plan = pipeline._path_reconcile_plan(root, audit)
+    audit = path_reconciliation.path_audit_report(root, db_path, include_orphan_candidates=True)
+    plan = path_reconciliation.path_reconcile_plan(root, audit)
 
     log_dir = root / "logs" / "path_reconcile"
     log_dir.mkdir(parents=True, exist_ok=True)

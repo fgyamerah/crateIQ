@@ -173,9 +173,6 @@ def test_target_root_fails_closed_when_no_root_is_configured(tmp_path, monkeypat
     monkeypatch.delenv("CRATEIQ_LIBRARY_ROOT", raising=False)
     monkeypatch.delenv("CRATEMINDAI_LIBRARY_ROOT", raising=False)
     monkeypatch.setattr(
-        "backend.app.core.library_root._load_toolkit_music_root", lambda: None
-    )
-    monkeypatch.setattr(
         "backend.app.services.settings_service._pending_library_root",
         lambda: tmp_path / "some-pending-library",
     )

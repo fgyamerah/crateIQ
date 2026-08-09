@@ -78,6 +78,21 @@ P1 / HIGH
 P2 / MEDIUM
 ----------------------------------------------------------------------
 
+[ ] Two narrow backend reads of the legacy root config.py remain after the
+    Phase 5 pipeline/config dependency-isolation cycle, both left
+    intentionally unchanged because no current explicit runtime source
+    exists to replace them with: (1) health.py's _toolkit_version() reads
+    config.PIPELINE_VERSION for GET /api/version -- low risk, a version
+    string with no path-resolution behavior; (2) export_validation.py's
+    _output_paths() reads config.REKORDBOX_M3U_EXPORT_DIR /
+    REKORDBOX_XML_EXPORT_DIR / LOGS_DIR (falling back to hardcoded
+    /mnt/music_ssd/KKDJ paths) to display informational output-path context
+    in POST /api/exports/validate's response, consumed by Export.tsx.
+    Revisit only if/when Publish/SSD Sync-style explicit destination
+    configuration is extended to cover Rekordbox M3U/XML export too;
+    otherwise this is legacy-config-backed display context, not a
+    dependency actually gating current backend behavior.
+
 [ ] No frontend automated test framework exists in this repo (no
     vitest/jest, no `test` npm script). Recent feature cycles relied on
     typecheck + build + manual/live verification instead, per this

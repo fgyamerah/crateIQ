@@ -121,7 +121,10 @@ Service map (`backend/app/services/`), current primary surfaces:
   -> Publish / SSD Sync) with no default; execution is blocked until it is
   configured and validated safe.
 * reconciliation services — duplicate/orphan/quarantine detection, plan
-  propose/validate (apply remains unimplemented — see Known Issues)
+  propose/validate (apply remains unimplemented — see Known Issues). The
+  detection/planning engine lives in the neutral `utils/path_reconciliation.py`
+  module (no FastAPI import, no `pipeline.py` import); these services no
+  longer import private `pipeline.py` helpers.
 * `pipeline.py` compatibility — see Legacy Compatibility below
 
 Route groups: `/api/workspace*`, `/api/tracks*`, `/api/library*`,
@@ -216,9 +219,14 @@ Warnings only (do not block promotion):
 
 * `pipeline.py` predates the FastAPI/React managed-workspace application.
   It is not the primary product architecture but remains partly
-  load-bearing for maintenance and reconciliation compatibility (e.g.
-  `db-prune-stale`, some reporting flows). `modules/`, `ai/`,
-  `intelligence/`, `utils/`, `config.py`, `db.py` still back it.
+  load-bearing as a maintenance CLI (e.g. `db-prune-stale`,
+  `rekordbox-export`, `set-builder`, and other `toolkit_runner`-allowlisted
+  subcommands — see `docs/architecture/TOOLKIT_COMMAND_CLASSIFICATION.md`).
+  `modules/`, `ai/`, `intelligence/`, `config.py`, `db.py` still back it.
+  `utils/` additionally hosts `path_reconciliation.py`, the neutral
+  path-audit/path-reconcile engine shared by `pipeline.py`'s CLI wrappers
+  and the current backend reconciliation route/services — the current
+  reconciliation path does not import private `pipeline.py` helpers.
 * "Legacy Direct Library" mode remains supported under Settings ->
   Advanced, behind a collapsed disclosure, secondary to the managed
   workspace.

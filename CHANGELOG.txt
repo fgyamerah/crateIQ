@@ -2,6 +2,76 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Isolate legacy pipeline.py/config.py dependencies from the backend
+
+- What changed: extracted the path-audit/path-reconcile detection and
+  planning engine (`_path_audit_report`, `_path_reconcile_plan`,
+  `_path_reconcile_validate_plan`, `_path_reconcile_latest_plan_path`, and
+  their private helper family) out of `pipeline.py` into a new neutral
+  module, `utils/path_reconciliation.py`. The module has no FastAPI import,
+  no pipeline.py import, and no import-time side effects (verified by a
+  subprocess-based regression test). `pipeline.py` now keeps thin
+  compatibility wrappers under the original private names (so every other
+  CLI subcommand and the `_build_tracks_*`/CSV-writer helpers that still
+  reference them by name are unaffected) that inject `config.py`'s
+  `AUDIO_EXTENSIONS`/`MAINTENANCE_SKIP_DIRS` so `config_local.py` overrides
+  keep working for the CLI. `backend/app/api/routes/reconciliation.py`,
+  `reconciliation_plan_service.py`, and `reconciliation_findings_service.py`
+  now import `utils.path_reconciliation` directly instead of `import
+  pipeline` — the current reconciliation path no longer imports any private
+  helper from the legacy CLI module. A behavior-equivalence check (pipeline.py
+  wrapper output vs. direct neutral-module output, timestamps excluded)
+  passed before this was wired into the backend.
+- Also: removed the two backend-side implicit root-config.py fallbacks that
+  could silently resolve to `/music` (the legacy default) when no explicit
+  library root was configured: `backend/app/core/library_root.py`'s
+  `selected_library_root()` no longer falls back to importlib-loading
+  `config.py`'s `MUSIC_ROOT` when neither `CRATEIQ_LIBRARY_ROOT` nor
+  `CRATEMINDAI_LIBRARY_ROOT` is set (it now raises `RuntimeError` instead,
+  matching the existing fail-closed contract); `backend/app/core/config.py`
+  dropped its unused `PIPELINE_DB_PATH`/`_resolve_pipeline_db()` (dead code
+  — nothing imported it, `pipeline_db.py` already resolves the DB path via
+  `library_root.library_db_path()`) and its `MUSIC_ROOT`/`_resolve_music_root()`
+  (whose only caller, `toolkit_runner._is_safe_input_path`, now calls
+  `library_root.selected_library_root()` at request time instead of reading
+  a root frozen at import time with a `/music` fallback).
+- Also: `pipeline.py validate-docs --strict` no longer needs
+  `DJ_MUSIC_ROOT`/`CRATEIQ_LIBRARY_ROOT` set. Its only music-root coupling
+  was an incidental `_setup_logging()` call that unconditionally created
+  `config.LOGS_DIR` (under `MUSIC_ROOT`, defaulting to `/music`) even though
+  `run_validate_docs` never logs anything (it only uses `print()`); that
+  call was removed from this one command.
+- Also: the bare `python3 pipeline.py` (no subcommand) automatic workflow
+  now prints a one-line legacy-compatibility notice to stderr before
+  running; behavior, exit code, and stdout are unchanged.
+- Why it changed: Phase 5 of the legacy architecture cleanup (see
+  `AGENTS.md` Section 4.4) — reduce current FastAPI backend coupling to the
+  large legacy `pipeline.py`/`config.py` architecture without breaking
+  legitimate CLI maintenance functionality or Legacy Direct Library
+  compatibility. `pipeline.py`, `config.py`, and `db.py` are all still
+  present and still load-bearing for legacy CLI maintenance; none were
+  deleted, moved, or had their public CLI behavior changed.
+- Files affected: new `utils/path_reconciliation.py`; `pipeline.py`;
+  `backend/app/api/routes/reconciliation.py`;
+  `backend/app/services/reconciliation_plan_service.py`;
+  `backend/app/services/reconciliation_findings_service.py`;
+  `backend/app/core/library_root.py`; `backend/app/core/config.py`;
+  `backend/app/services/toolkit_runner.py`;
+  `tests/test_path_reconciliation_module.py` (new);
+  `tests/test_validate_docs.py` (new); `tests/test_library_root_config.py`;
+  `tests/test_library_setup_service.py`; `tests/test_path_audit.py` (two
+  re-exported helper names it calls directly);
+  `docs/architecture/TOOLKIT_COMMAND_CLASSIFICATION.md` (new).
+- Migration notes: none. No allowlisted `toolkit_runner` command was
+  removed (all 19 remain; see the new classification doc for the audit).
+  Two narrow, justified `config.py` reads remain in the backend and were
+  left unchanged: `health.py`'s `_toolkit_version()` (reads
+  `config.PIPELINE_VERSION`, a version string with no path-resolution risk)
+  and `export_validation.py`'s `_output_paths()` (displays legacy
+  Rekordbox M3U/XML export directories; no current explicit runtime source
+  exists to replace it with, so it is documented rather than changed — see
+  `NEXT_TASKS.txt`).
+
 [2026-08-09] — Harden BPM analysis for malformed-but-decodable audio
 
 - What changed: direct aubio decode remains the first BPM analysis path.

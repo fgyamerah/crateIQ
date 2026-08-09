@@ -227,9 +227,17 @@ Frontend expectations:
 
 `pipeline.py` predates the FastAPI/React managed-workspace application. It is
 **not** the primary product architecture, but it remains partly load-bearing
-for maintenance and reconciliation compatibility (e.g. `db-prune-stale`,
-some reconciliation and reporting flows). Treat it as legacy/maintenance
-tooling, not as the current entry point.
+as a maintenance CLI (e.g. `db-prune-stale`, `rekordbox-export`,
+`set-builder`, and 16 other `toolkit_runner`-allowlisted subcommands — see
+`docs/architecture/TOOLKIT_COMMAND_CLASSIFICATION.md`). Treat it as
+legacy/maintenance tooling, not as the current entry point.
+
+The path-audit/path-reconcile detection and planning engine that the
+reconciliation route/services need is **not** private to `pipeline.py`: it
+lives in the neutral `utils/path_reconciliation.py` module (no FastAPI
+import, no import-time side effects), which both the current backend and
+`pipeline.py`'s CLI compatibility wrappers call. The current reconciliation
+path does not import private `pipeline.py` helpers.
 
 Do not make broad pipeline architecture changes unless the user explicitly asks.
 
@@ -723,6 +731,12 @@ Current architecture-level gaps supported by current docs/source:
 2. The legacy `pipeline.py` / `config.py` architecture remains partially
    load-bearing and coexists with the current FastAPI/React application,
    which is a source of confusion for anyone reading old code first.
+   Current-backend coupling to it was narrowed in the Phase 5 dependency
+   isolation cycle (shared path-audit/path-reconcile logic now lives in
+   neutral `utils/path_reconciliation.py`; the two backend-side implicit
+   `config.py` `MUSIC_ROOT` fallbacks that could silently resolve to
+   `/music` were removed), but `pipeline.py`/`config.py`/`db.py` remain in
+   place and still back a real maintenance CLI surface — see Section 4.4.
 3. Some legacy scripts under `scripts/` are still present and potentially
    dangerous; they have not yet been cleaned up.
 4. "Legacy Direct Library" remains as a compatibility mode alongside the

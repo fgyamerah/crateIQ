@@ -25,7 +25,7 @@ from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
 from ...services import read_only as read_only_service
 from ...services import reconciliation_findings_service
 from ...services import reconciliation_plan_service
-import pipeline
+from utils import path_reconciliation
 
 router = APIRouter(tags=["reconciliation"])
 
@@ -61,7 +61,7 @@ async def validate_reconciliation_plan(
         plan_path = Path(body.plan_path).expanduser().resolve()
     else:
         root = read_only_service.get_library_root()
-        plan_path = pipeline._path_reconcile_latest_plan_path(root)
+        plan_path = path_reconciliation.path_reconcile_latest_plan_path(root)
         if plan_path is None:
             raise HTTPException(status_code=404, detail="no reconciliation plan json found")
 
@@ -69,7 +69,7 @@ async def validate_reconciliation_plan(
         raise HTTPException(status_code=404, detail=f"plan json not found: {plan_path}")
 
     try:
-        result = pipeline._path_reconcile_validate_plan(plan_path)
+        result = path_reconciliation.path_reconcile_validate_plan(plan_path)
         result = reconciliation_plan_service.augment_with_cross_action_checks(result)
     except Exception as exc:
         raise HTTPException(status_code=422, detail=str(exc))

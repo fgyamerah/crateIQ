@@ -4,7 +4,6 @@ Backend configuration.
 All paths are resolved at import time so they are absolute and stable
 regardless of the working directory from which the server is started.
 """
-import importlib.util
 import shutil
 import sys
 from pathlib import Path
@@ -33,50 +32,6 @@ JOBS_LOG_DIR     = BACKEND_DATA_DIR / "logs"
 # blocks the whole repo tree, this directory included, from ever being
 # selected as a library root) and never itself scanned/imported as music.
 TAG_WRITE_BACKUP_DIR = BACKEND_DATA_DIR / "tag_write_backups"
-
-# ---------------------------------------------------------------------------
-# Pipeline DB — read from toolkit config.py at import time.
-# The pipeline writes to processed.db; the backend only ever reads it.
-# ---------------------------------------------------------------------------
-
-def _resolve_pipeline_db() -> Path:
-    """Load DB_PATH from the toolkit's config.py without importing pipeline.py."""
-    fallback = TOOLKIT_ROOT / "logs" / "processed.db"
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "_tk_config_for_db", str(TOOLKIT_ROOT / "config.py")
-        )
-        if spec is None or spec.loader is None:
-            return fallback
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
-        db_path = getattr(mod, "DB_PATH", None)
-        return Path(db_path) if db_path else fallback
-    except Exception:
-        return fallback
-
-
-PIPELINE_DB_PATH: Path = _resolve_pipeline_db()
-
-
-def _resolve_music_root() -> Path:
-    """Read MUSIC_ROOT from the toolkit's config.py and return its resolved canonical path."""
-    fallback = Path("/music").resolve()
-    try:
-        spec = importlib.util.spec_from_file_location(
-            "_tk_config_for_music_root", str(TOOLKIT_ROOT / "config.py")
-        )
-        if spec is None or spec.loader is None:
-            return fallback
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)  # type: ignore[union-attr]
-        val = getattr(mod, "MUSIC_ROOT", None)
-        return Path(val).resolve() if val else fallback
-    except Exception:
-        return fallback
-
-
-MUSIC_ROOT: Path = _resolve_music_root()
 
 # ---------------------------------------------------------------------------
 # Runtime
