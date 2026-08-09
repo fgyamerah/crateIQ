@@ -2,6 +2,43 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Fix bpm quality finding evidence and JSON safety
+
+- What changed: two correctness fixes to the durable BPM Audio Quality
+  findings shipped earlier the same day. (1)
+  analysis_jobs_service._classify_direct_aubio_failure() previously treated
+  any non-zero direct-aubio exit code as "decode_error" -- a non-zero exit
+  alone is not proof the audio is malformed (aubio can fail non-zero for
+  many unrelated reasons). It now requires an explicit, small, conservative
+  set of known decoder/media-error stderr signals (e.g. "Header missing",
+  "Invalid data found when processing input", "source_avcodec", "error
+  when sending packet") to classify as "decode_error"; an unevidenced
+  non-zero exit is now the neutral "process_error" and never creates a
+  durable "malformed audio" finding, even if the FFmpeg fallback also
+  fails. (2) quality_findings_service.record_finding() previously bounded
+  details_json via `json.dumps(details)[:_DETAILS_MAX_LEN]`, slicing the
+  already-serialized JSON string -- for a long diagnostic this could cut
+  the document mid-string/mid-object and persist invalid JSON. Diagnostic
+  string values are now bounded before serialization
+  (`_bound_details()`), so `json.dumps()`'s output is always valid JSON
+  regardless of input size.
+- Why it changed: a code-review pass caught that the original evidence
+  classifier was too broad (a false-positive risk: a fallback-recovered
+  track with a merely-unusual aubio failure reason would have been
+  durably and permanently labelled "malformed audio frames were
+  detected") and that the details_json bounding approach could corrupt
+  stored JSON for a sufficiently long diagnostic.
+- Files affected: backend/app/services/analysis_jobs_service.py,
+  backend/app/services/quality_findings_service.py,
+  tests/test_bpm_ffmpeg_fallback.py,
+  tests/test_quality_review_durable_findings.py, NEXT_TASKS.txt,
+  PROJECT_CONTEXT.md.
+- Migration notes: none. No schema change; existing
+  quality_review_findings rows are unaffected (any already-persisted
+  finding used the previous, over-broad classifier, but no invalid JSON
+  had actually been observed in practice since typical diagnostics stayed
+  well under the truncation boundary).
+
 [2026-08-09] — Durable Audio Quality findings for BPM decode recovery/failure
 
 - What changed: quality_review_service's ffprobe snapshot model replaces

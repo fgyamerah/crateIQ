@@ -198,7 +198,12 @@ def test_ffmpeg_decode_failure_records_track_failure_and_no_bpm_write(bpm_env, m
 
     def fake_run(command, **kwargs):
         if command[0] == "/fake/aubio":
-            return SimpleNamespace(returncode=1, stdout="", stderr="decode error\n")
+            # Real-style decoder evidence -- required for a durable
+            # audio_decode_failed finding, not just a non-zero exit.
+            return SimpleNamespace(
+                returncode=1, stdout="",
+                stderr="[mp3float] Header missing\nAUBIO ERROR: source_avcodec: error when sending packet\n",
+            )
         if command[0] == "/fake/ffmpeg":
             return SimpleNamespace(returncode=1, stdout="", stderr="Invalid data found when processing input\n")
         raise AssertionError(f"unexpected command {command}")
@@ -213,8 +218,9 @@ def test_ffmpeg_decode_failure_records_track_failure_and_no_bpm_write(bpm_env, m
     assert _bpm_row(bpm_env.db_path, "undecodable.mp3") == (None, None)
     assert _sha256(source) == before_hash
 
-    # Both stages genuinely failed to decode -- a durable, high-severity
-    # finding is recorded even though no BPM was ever written.
+    # Both stages genuinely failed to decode, with real decoder evidence from
+    # direct aubio -- a durable, high-severity finding is recorded even
+    # though no BPM was ever written.
     findings = _durable_findings(bpm_env.db_path)
     assert len(findings) == 1
     track_id, reason_code, source_tag, severity, occurrence_count, decision = findings[0]
@@ -222,6 +228,40 @@ def test_ffmpeg_decode_failure_records_track_failure_and_no_bpm_write(bpm_env, m
     assert source_tag == "bpm_analysis"
     assert severity == "error"
     assert decision == "unresolved"
+
+
+def test_generic_nonzero_exit_with_ffmpeg_decode_failure_creates_no_durable_finding(bpm_env, monkeypatch):
+    """A non-zero aubio exit alone is NOT proof of malformed audio.
+
+    Even when FFmpeg also genuinely fails to produce a decodable stream, a
+    generic/unrecognized aubio stderr (no explicit decoder-error signal)
+    must not be escalated into a durable "malformed audio" finding -- that
+    would be a false positive falsely labelling healthy-but-mysteriously-
+    failing audio as corrupt.
+    """
+    source = bpm_env.track_dir / "generic-failure.mp3"
+    source.write_bytes(b"generic-failure-disposable-fixture-bytes")
+    before_hash = _sha256(source)
+    _insert_track(bpm_env.db_path, source, "generic-failure.mp3")
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_ffmpeg_binary", lambda: "/fake/ffmpeg")
+
+    def fake_run(command, **kwargs):
+        if command[0] == "/fake/aubio":
+            return SimpleNamespace(returncode=1, stdout="", stderr="unexpected internal error\n")
+        if command[0] == "/fake/ffmpeg":
+            return SimpleNamespace(returncode=1, stdout="", stderr="Invalid data found when processing input\n")
+        raise AssertionError(f"unexpected command {command}")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_run)
+
+    result = analysis_jobs_service._run_bpm_analysis(10)
+
+    assert (result["analyzed"], result["updated"], result["failed"], result["recovered"]) == (1, 0, 1, 0)
+    assert _bpm_row(bpm_env.db_path, "generic-failure.mp3") == (None, None)
+    assert _sha256(source) == before_hash
+    assert _durable_findings(bpm_env.db_path) == []
 
 
 def test_repeated_decode_failure_upserts_single_durable_finding(bpm_env, monkeypatch):
@@ -238,7 +278,10 @@ def test_repeated_decode_failure_upserts_single_durable_finding(bpm_env, monkeyp
 
     def fake_run(command, **kwargs):
         if command[0] == "/fake/aubio":
-            return SimpleNamespace(returncode=1, stdout="", stderr="decode error\n")
+            return SimpleNamespace(
+                returncode=1, stdout="",
+                stderr="[mp3float] Header missing\nAUBIO ERROR: source_avcodec: error when sending packet\n",
+            )
         if command[0] == "/fake/ffmpeg":
             return SimpleNamespace(returncode=1, stdout="", stderr="Invalid data found when processing input\n")
         raise AssertionError(f"unexpected command {command}")
@@ -370,7 +413,10 @@ def test_ffmpeg_timeout_records_final_failure_with_no_partial_write(bpm_env, mon
 
     def fake_run(command, **kwargs):
         if command[0] == "/fake/aubio":
-            return SimpleNamespace(returncode=1, stdout="", stderr="decode error\n")
+            return SimpleNamespace(
+                returncode=1, stdout="",
+                stderr="[mp3float] Header missing\nAUBIO ERROR: source_avcodec: error when sending packet\n",
+            )
         raise subprocess.TimeoutExpired(cmd=command, timeout=60)
 
     monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_run)
@@ -381,8 +427,9 @@ def test_ffmpeg_timeout_records_final_failure_with_no_partial_write(bpm_env, mon
     assert _bpm_row(bpm_env.db_path, "ffmpeg-timeout.mp3") == (None, None)
     # FFmpeg never actually ran to completion -- it timed out, which is a
     # transient tool problem, not proof recovery was impossible. No durable
-    # audio_decode_failed finding, even though direct aubio showed decode
-    # evidence.
+    # audio_decode_failed finding, even though direct aubio showed real
+    # decode evidence -- both stages must genuinely fail to decode, not just
+    # one of them plus an unrelated tool timeout.
     assert _durable_findings(bpm_env.db_path) == []
 
 
@@ -628,6 +675,57 @@ def test_sanitize_diagnostic_dedupes_and_caps_length():
     assert condensed.count("Header missing") == 1
     assert "Invalid data found when processing input" in condensed
     assert len(condensed) <= analysis_jobs_service._DIAGNOSTIC_MAX_LEN
+
+
+# ---------------------------------------------------------------------------
+# Direct-aubio failure classification: a non-zero exit alone is NOT decode
+# evidence. Only an explicit, known decoder/media-error signal in stderr
+# earns "decode_error"; every other non-zero exit is a neutral "process_error"
+# that never becomes a durable "malformed audio" finding.
+# ---------------------------------------------------------------------------
+
+def test_classify_zero_exit_no_bpm_is_no_tempo():
+    assert analysis_jobs_service._classify_direct_aubio_failure(0, "") == "no_tempo"
+
+
+def test_classify_timeout_is_tool_error():
+    assert analysis_jobs_service._classify_direct_aubio_failure(None, "", timed_out=True) == "tool_error"
+
+
+def test_classify_os_error_is_tool_error():
+    assert analysis_jobs_service._classify_direct_aubio_failure(None, "", os_error=True) == "tool_error"
+
+
+def test_classify_nonzero_generic_stderr_is_process_error_not_decode_error():
+    assert analysis_jobs_service._classify_direct_aubio_failure(1, "unexpected internal error\n") == "process_error"
+
+
+def test_classify_nonzero_empty_stderr_is_process_error():
+    assert analysis_jobs_service._classify_direct_aubio_failure(1, "") == "process_error"
+
+
+def test_classify_nonzero_real_style_decoder_evidence_is_decode_error():
+    stderr = "[mp3float] Header missing\nAUBIO ERROR: source_avcodec: error when sending packet\n"
+    assert analysis_jobs_service._classify_direct_aubio_failure(1, stderr) == "decode_error"
+
+
+@pytest.mark.parametrize(
+    "stderr",
+    [
+        "Header missing\n",
+        "Invalid data found when processing input\n",
+        "AUBIO ERROR: source_avcodec: could not open codec\n",
+        "error when sending packet to decoder\n",
+        "HEADER MISSING (uppercase)\n",
+    ],
+)
+def test_has_decode_evidence_matches_known_signals(stderr):
+    assert analysis_jobs_service._has_decode_evidence(stderr) is True
+
+
+@pytest.mark.parametrize("stderr", ["", "decode error\n", "unexpected internal error\n", "segmentation fault\n"])
+def test_has_decode_evidence_rejects_generic_text(stderr):
+    assert analysis_jobs_service._has_decode_evidence(stderr) is False
 
 
 @pytest.mark.parametrize(

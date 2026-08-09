@@ -84,6 +84,22 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
     )
 
 
+def _bound_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
+    """Bound string values before serialization -- never slice serialized JSON.
+
+    Slicing an already-serialized JSON string (`json.dumps(details)[:n]`) can
+    cut it mid-string or mid-object and store invalid JSON. Bounding each
+    string value first guarantees `json.dumps()`'s output is always valid
+    JSON, whatever the input size.
+    """
+    if not details:
+        return None
+    return {
+        key: (value[:_DETAILS_MAX_LEN] if isinstance(value, str) else value)
+        for key, value in details.items()
+    }
+
+
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     try:
         details = json.loads(row["details_json"]) if row["details_json"] else None
@@ -124,7 +140,8 @@ def record_finding(
         raise ValueError(f"Unknown durable quality reason_code: {reason_code!r}")
     if severity not in _SEVERITIES:
         raise ValueError(f"Unknown durable quality severity: {severity!r}")
-    details_json = json.dumps(details)[:_DETAILS_MAX_LEN] if details else None
+    bounded_details = _bound_details(details)
+    details_json = json.dumps(bounded_details) if bounded_details else None
     now = _now()
     with _connection(conn) as active:
         _ensure_tables(active)
@@ -194,7 +211,7 @@ def record_audio_decode_warning(
         "Malformed audio frames were detected. FFmpeg recovered enough audio for "
         f"BPM analysis (measured at {bpm:.2f}). The original file was not modified."
     )
-    details = {"diagnostic": diagnostic[:_DETAILS_MAX_LEN]} if diagnostic else None
+    details = {"diagnostic": diagnostic} if diagnostic else None
     return record_finding(
         track_id, "recoverable_audio_decode_warning", "bpm_analysis", "warning", message,
         blocking=False, details=details, conn=conn,
@@ -206,7 +223,7 @@ def record_audio_decode_failure(
 ) -> dict[str, Any]:
     """direct aubio and FFmpeg both failed to decode the audio; BPM was not changed."""
     message = "Audio could not be decoded reliably by aubio or FFmpeg. BPM was not changed."
-    details = {"diagnostic": diagnostic[:_DETAILS_MAX_LEN]} if diagnostic else None
+    details = {"diagnostic": diagnostic} if diagnostic else None
     return record_finding(
         track_id, "audio_decode_failed", "bpm_analysis", "error", message,
         blocking=False, details=details, conn=conn,

@@ -178,21 +178,51 @@ def _sanitize_diagnostic(text: str) -> str:
     return " | ".join(deduped)[:_DIAGNOSTIC_MAX_LEN]
 
 
-def _classify_direct_aubio_failure(returncode: int | None, *, timed_out: bool = False, os_error: bool = False) -> str:
+_DECODE_EVIDENCE_PATTERNS = (
+    "header missing",
+    "invalid data found when processing input",
+    "source_avcodec",
+    "error when sending packet",
+)
+
+
+def _has_decode_evidence(text: str) -> bool:
+    """Small, explicit, literal decoder/media-error signal matcher.
+
+    Intentionally conservative and non-fuzzy: a non-zero aubio exit code
+    alone is NOT proof the audio is malformed -- aubio can exit non-zero for
+    many reasons unrelated to decoding. A durable "malformed audio" finding
+    requires one of these known decoder-diagnostic phrases (drawn from the
+    real reproduced failure this feature exists for), not just a non-zero
+    return code. False negatives are preferable to falsely labelling healthy
+    audio as corrupt.
+    """
+    if not text:
+        return False
+    lowered = text.casefold()
+    return any(pattern in lowered for pattern in _DECODE_EVIDENCE_PATTERNS)
+
+
+def _classify_direct_aubio_failure(
+    returncode: int | None, stderr: str = "", *, timed_out: bool = False, os_error: bool = False,
+) -> str:
     """Classify why direct aubio decoding failed, for durable-finding evidence only.
 
     This never changes BPM outcome/fallback behavior -- it only distinguishes,
     for the purposes of an optional durable Quality finding, a genuine decode
-    error (non-zero exit: aubio's process rejected the input) from a benign
-    "ran fine, found no tempo" result (exit 0, no BPM) and from a transient
-    tool problem (timeout / process could not start), which is never treated
-    as evidence the audio itself is defective.
+    error (non-zero exit PLUS an explicit decoder/media-error signal in
+    stderr) from a benign "ran fine, found no tempo" result (exit 0, no BPM),
+    an unevidenced non-zero exit ("process_error" -- aubio failed for some
+    other reason; the fallback may still run and succeed, but this alone is
+    not evidence of malformed audio), and a transient tool problem (timeout /
+    process could not start), none of which are treated as evidence the
+    audio itself is defective.
     """
     if timed_out or os_error:
         return "tool_error"
     if returncode == 0:
         return "no_tempo"
-    return "decode_error"
+    return "decode_error" if _has_decode_evidence(stderr) else "process_error"
 
 
 def _optional_float(value: Any) -> float | None:
@@ -922,7 +952,7 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                     direct_bpm = _parse_aubio_bpm(completed.stdout) if completed.returncode == 0 else None
                     direct_ok = completed.returncode == 0 and direct_bpm is not None
                     if not direct_ok:
-                        direct_classification = _classify_direct_aubio_failure(completed.returncode)
+                        direct_classification = _classify_direct_aubio_failure(completed.returncode, completed.stderr)
                         if completed.stderr:
                             direct_diagnostic = _sanitize_diagnostic(completed.stderr)
                 except subprocess.TimeoutExpired:

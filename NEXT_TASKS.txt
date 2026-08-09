@@ -26,18 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[x] Durable Audio Quality finding for FFmpeg-recovered malformed BPM audio.
-    Done 2026-08-09: quality_findings_service.py owns a durable
-    quality_review_findings table (upsert on track_id/reason_code/source)
-    that quality_review_service merges into get_review()/refresh_preview()/
-    update_decision() alongside its ffprobe snapshot, so the finding
-    survives every ffprobe refresh. analysis_jobs_service records
-    "recoverable_audio_decode_warning" (non-blocking) only when direct
-    aubio showed real decode-error evidence and FFmpeg recovery succeeded,
-    and "audio_decode_failed" (high-severity) only when both direct aubio
-    and FFmpeg genuinely failed to decode. Surfaces through Needs Review's
-    existing QUALITY aggregation. See CHANGELOG 2026-08-09.
-
 [ ] Retry suppression for BPM tracks proven genuinely undecodable (both
     direct aubio and the FFmpeg fallback fail). The current BPM candidate
     query (`WHERE bpm IS NULL`) intentionally still retries these every run

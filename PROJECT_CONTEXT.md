@@ -124,15 +124,19 @@ Service map (`backend/app/services/`), current primary surfaces:
   expose a derived `outcome` (`complete` / `completed_with_warnings` /
   `completed_with_errors` / `cancelled` / `failed`) alongside `status`, so
   a run with unrecovered track failures cannot render as a plain
-  "Complete". Direct-aubio failure is structurally classified (exit code +
-  exception type only, never stderr text matching) as `decode_error` /
-  `no_tempo` / `tool_error`; a durable, non-blocking
-  `recoverable_audio_decode_warning` Quality finding is recorded only when
-  direct aubio showed `decode_error` evidence and FFmpeg recovery
-  succeeded, and a durable, high-severity `audio_decode_failed` finding
-  only when both direct aubio and FFmpeg genuinely failed to decode (never
-  for a missing tool, a timeout, a cancellation, or a benign "no tempo
-  found").
+  "Complete". Direct-aubio failure is classified as `no_tempo` (exit 0, no
+  BPM) / `tool_error` (timeout or process could not start) / `decode_error`
+  (non-zero exit PLUS an explicit, small, conservative set of known
+  decoder/media-error stderr signals, e.g. "Header missing" or
+  "source_avcodec") / `process_error` (non-zero exit with no such evidence
+  -- a non-zero aubio exit alone is never treated as proof the audio is
+  malformed). A durable, non-blocking `recoverable_audio_decode_warning`
+  Quality finding is recorded only when direct aubio showed `decode_error`
+  evidence and FFmpeg recovery succeeded, and a durable, high-severity
+  `audio_decode_failed` finding only when both direct aubio showed
+  `decode_error` evidence and FFmpeg genuinely failed to decode (never for
+  a missing tool, a timeout, a cancellation, or an unevidenced
+  `process_error`/benign "no tempo found").
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
 * `sync_destination_service` — Publish/SSD Sync source and destination

@@ -13,6 +13,7 @@ no real audio tooling or production library data is touched.
 """
 from __future__ import annotations
 
+import json
 import sqlite3
 from pathlib import Path
 
@@ -71,6 +72,51 @@ def test_record_recovery_finding_is_unresolved_and_non_blocking(library):
     assert finding["blocking"] is False
     assert finding["decision"] == "unresolved"
     assert finding["occurrence_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# A2. details_json must always be valid JSON, never truncated mid-document
+# ---------------------------------------------------------------------------
+
+def _raw_details_json(db_path: Path, track_id: int, reason_code: str) -> str | None:
+    with sqlite3.connect(db_path) as conn:
+        row = conn.execute(
+            "SELECT details_json FROM quality_review_findings WHERE track_id = ? AND reason_code = ?",
+            (track_id, reason_code),
+        ).fetchone()
+        return row[0] if row else None
+
+
+def test_long_diagnostic_produces_valid_bounded_json(library):
+    _root, db_path = library
+    track_id = _track_id(db_path)
+    # Deliberately longer than any reasonable per-field cap -- a naive
+    # json.dumps(...)[:n] slice on a payload this size would very likely
+    # land mid-string and produce invalid JSON.
+    long_diagnostic = "Header missing " * 200
+
+    finding = quality_findings_service.record_audio_decode_warning(track_id, 125.27, long_diagnostic)
+
+    raw = _raw_details_json(db_path, track_id, "recoverable_audio_decode_warning")
+    assert raw is not None
+    parsed = json.loads(raw)  # must not raise -- proves details_json is valid JSON
+    assert isinstance(parsed["diagnostic"], str)
+    assert len(parsed["diagnostic"]) < len(long_diagnostic)
+    assert finding["details"] is not None
+    assert finding["details"]["diagnostic"] == parsed["diagnostic"]
+
+
+def test_diagnostic_with_special_characters_round_trips_as_valid_json(library):
+    _root, db_path = library
+    track_id = _track_id(db_path)
+    tricky = 'quote:" backslash:\\ newline:\nend'
+
+    quality_findings_service.record_audio_decode_failure(track_id, tricky)
+
+    raw = _raw_details_json(db_path, track_id, "audio_decode_failed")
+    assert raw is not None
+    parsed = json.loads(raw)  # must not raise
+    assert parsed["diagnostic"].startswith('quote:" backslash:\\ newline:')
 
 
 # ---------------------------------------------------------------------------
