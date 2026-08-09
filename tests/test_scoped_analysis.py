@@ -118,6 +118,21 @@ def test_normalize_track_ids_rejects_oversized_scope():
         analysis_jobs_service._normalize_track_ids(list(range(1, analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 2)))
 
 
+def test_normalize_track_ids_with_max_track_ids_none_accepts_oversized_scope():
+    """Trusted internal callers (Process All) opt out of the external-API
+    bound by passing max_track_ids=None -- validation (positive ints,
+    dedup) still applies."""
+    oversized = list(range(1, analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 502)) + [3, 3]
+    normalized = analysis_jobs_service._normalize_track_ids(oversized, max_track_ids=None)
+    assert len(normalized) == analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 501  # deduplicated
+    assert normalized[:5] == [1, 2, 3, 4, 5]
+
+    with pytest.raises(ValueError):
+        analysis_jobs_service._normalize_track_ids([0], max_track_ids=None)
+    with pytest.raises(ValueError):
+        analysis_jobs_service._normalize_track_ids([-1], max_track_ids=None)
+
+
 # ---------------------------------------------------------------------------
 # A. Global BPM backward compatibility
 # ---------------------------------------------------------------------------
@@ -297,6 +312,92 @@ def test_scoped_bpm_run_limit_never_reaches_outside_scope(scoped_env, monkeypatc
     assert bpm_by_id[outside_id] is None  # never touched despite having the lowest id
     assert bpm_by_id[scope_a] == 120.0  # deterministic id-ordering within scope
     assert bpm_by_id[scope_b] is None
+
+
+# ---------------------------------------------------------------------------
+# Internal (trusted) scopes larger than the external API's 2000-entry bound
+# -- the prerequisite for a Process All batch spanning multiple imports.
+# ---------------------------------------------------------------------------
+
+def _seed_lightweight_missing_bpm_tracks(db_path: Path, count: int) -> None:
+    """Bulk-insert placeholder tracks with no real audio files -- candidate
+    selection is pure SQL and never touches the filesystem, so this is a
+    cheap way to exceed _MAX_SCOPED_TRACK_IDS without writing real files."""
+    with sqlite3.connect(db_path) as conn:
+        conn.executemany(
+            "INSERT INTO tracks (filepath, filename, artist, title, genre, bpm) "
+            "VALUES (?, ?, 'Artist', 'Title', 'House', NULL)",
+            [(f"/fake/track_{i}.mp3", f"track_{i}.mp3") for i in range(count)],
+        )
+
+
+def test_bpm_candidates_chunks_a_scope_larger_than_2000_and_applies_limit_inside_it(scoped_env):
+    lightweight_count = analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 500
+    _seed_lightweight_missing_bpm_tracks(scoped_env.db_path, lightweight_count)
+    outside_id = _insert_track(scoped_env.db_path, scoped_env.track_dir / "outside.mp3", "outside.mp3")
+
+    scope = list(range(1, lightweight_count + 1))
+    assert len(scope) > analysis_jobs_service._MAX_SCOPED_TRACK_IDS
+    assert len(scope) > analysis_jobs_service._SQLITE_ID_CHUNK_SIZE * 4  # forces multiple chunks
+
+    with sqlite3.connect(scoped_env.db_path) as conn:
+        candidates = analysis_jobs_service._bpm_candidates(conn, scoped_env.root, limit=25, track_ids=scope)
+
+    assert [row["id"] for row in candidates] == list(range(1, 26))  # limit applied inside the full scope
+    assert outside_id not in [row["id"] for row in candidates]  # never widened outside the requested scope
+
+
+def test_run_bpm_analysis_default_still_rejects_scope_larger_than_2000(scoped_env):
+    """The external-API-facing bound is unchanged by default -- only a
+    caller that explicitly opts out with max_track_ids=None may exceed it."""
+    oversized = list(range(1, analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 2))
+    with pytest.raises(ValueError, match="cannot exceed"):
+        analysis_jobs_service._run_bpm_analysis(25, oversized)
+
+
+def test_run_bpm_analysis_accepts_scope_larger_than_2000_when_unbounded(scoped_env, monkeypatch):
+    """A trusted internal caller (Process All) must never be rejected merely
+    for a scope larger than the external API's bound -- SQL chunking has no
+    dependency on that number."""
+    lightweight_count = analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 500
+    _seed_lightweight_missing_bpm_tracks(scoped_env.db_path, lightweight_count)
+    outside_id = _insert_track(scoped_env.db_path, scoped_env.track_dir / "outside.mp3", "outside.mp3")
+    scope = list(range(1, lightweight_count + 1))
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("placeholder paths are outside root; aubio must never run")),
+    )
+
+    result = analysis_jobs_service._run_bpm_analysis(25, scope, max_track_ids=None)
+
+    assert result["skipped"] == 25  # every selected candidate's placeholder path is outside the library root
+    assert result["failed"] == 0
+    operation = analysis_jobs_service.operation_detail(result["operation_id"])
+    assert operation["mode"] == "apply_scoped"
+    assert operation["eligible_total"] == lightweight_count
+    assert operation["considered"] == 25  # limit applied inside the full >2000 scope
+    assert _bpm_by_id(scoped_env.db_path)[outside_id] is None  # untouched, never substituted in
+
+
+def test_run_dispatch_accepts_scope_larger_than_2000_when_unbounded(scoped_env, monkeypatch):
+    """Proves the public run() entry point -- what preparation_service
+    actually calls -- threads max_track_ids through to the BPM/key runners."""
+    lightweight_count = analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 10
+    _seed_lightweight_missing_bpm_tracks(scoped_env.db_path, lightweight_count)
+    scope = list(range(1, lightweight_count + 1))
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("placeholder paths are outside root; aubio must never run")),
+    )
+
+    result = analysis_jobs_service.run(
+        "bpm_analysis", confirm=True, limit=25, track_ids=scope, max_track_ids=None,
+    )
+
+    assert result["skipped"] == 25
 
 
 # ---------------------------------------------------------------------------

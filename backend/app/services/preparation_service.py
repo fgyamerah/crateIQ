@@ -392,10 +392,13 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
         try:
             # Scoped to this Process All batch's exact track_ids -- BPM/key
             # analysis must never reach into the global missing-value queue
-            # and touch a track outside this run.
+            # and touch a track outside this run. max_track_ids=None: this is
+            # a trusted internal caller passing its own captured Inbox batch,
+            # which can legitimately exceed the external API's per-request
+            # track_ids bound once tracks accumulate across multiple imports.
             from . import analysis_jobs_service
-            analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25, track_ids=track_ids)
-            analysis_jobs_service.run("key_analysis", confirm=True, limit=25, track_ids=track_ids)
+            analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
+            analysis_jobs_service.run("key_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
         except Exception as exc:  # noqa: BLE001 - analysis is best-effort within Process All
             warnings.append(f"Analysis step skipped: {exc}")
 

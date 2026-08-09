@@ -43,6 +43,7 @@ from ...schemas.analysis_jobs import (
     AnalysisJobHistoryResponse,
     AnalysisJobListResponse,
     AnalysisJobPreview,
+    AnalysisJobPreviewRequest,
 )
 from ...schemas.mik_metadata import MikCoverageResponse, MikImportResponse
 from ...services import (
@@ -116,6 +117,28 @@ async def preview_analysis_job(
     """
     try:
         return AnalysisJobPreview(**analysis_jobs_service.preview(job_type, track_ids=track_ids))
+    except ValueError as exc:
+        status_code = 404 if "Unknown" in str(exc) else 422
+        raise HTTPException(status_code=status_code, detail=str(exc))
+
+
+@router.post("/analysis/jobs/{job_type}/preview", response_model=AnalysisJobPreview)
+async def preview_analysis_job_scoped(
+    job_type: str, body: AnalysisJobPreviewRequest = AnalysisJobPreviewRequest(),
+) -> AnalysisJobPreview:
+    """Body-based scoped preview -- the preferred contract for a substantial
+    selected-track scope, where the GET endpoint above's repeated query
+    params would produce an unreasonably long URL.
+
+    Calls the exact same analysis_jobs_service.preview() candidate-selection
+    logic as the GET endpoint (and as POST .../run), so a scoped preview's
+    candidate set always matches what a scoped run would process. track_ids
+    semantics are identical to BpmAnalysisRunRequest: omitted = existing
+    global candidate queue; [] = explicitly nothing; a list = exactly those
+    tracks, never widened.
+    """
+    try:
+        return AnalysisJobPreview(**analysis_jobs_service.preview(job_type, track_ids=body.track_ids))
     except ValueError as exc:
         status_code = 404 if "Unknown" in str(exc) else 422
         raise HTTPException(status_code=status_code, detail=str(exc))

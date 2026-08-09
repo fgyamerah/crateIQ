@@ -78,6 +78,21 @@ class AnalysisJobListResponse(BaseModel):
     jobs: list[AnalysisJobDefinition]
 
 
+class AnalysisJobPreviewRequest(BaseModel):
+    """Body-based scoped preview request.
+
+    The existing GET .../preview endpoint takes track_ids as repeated query
+    parameters, which is fine for small/global previews but produces an
+    unreasonably long URL for a substantial selected-track scope. This model
+    gives a future "Analyze Selected" preview a reliable body-based contract
+    matching BpmAnalysisRunRequest's scope semantics: omitted -- the default
+    -- means the existing global candidate queue, unchanged; an explicit list
+    -- including an empty one -- restricts the preview to exactly those
+    track IDs and never widens into the global queue.
+    """
+    track_ids: Optional[list[PositiveInt]] = Field(default=None, max_length=2000)
+
+
 class AnalysisJobPreview(BaseModel):
     job: AnalysisJobDefinition
     total_tracks: int

@@ -2,6 +2,51 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Harden scoped analysis limits
+
+- What changed: two correctness fixes to the scoped BPM/key analysis
+  contract shipped earlier the same day. (1) `_normalize_track_ids()` gained
+  a `max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS` keyword, threaded
+  through `preview()`, `run()`, `_run_bpm_analysis()`, and
+  `_run_key_analysis()`. The 2000-entry bound was previously a hardcoded
+  service-layer ceiling applied to every caller, including Process All's own
+  internal `analysis_jobs_service.run()` call -- but an Inbox can
+  legitimately accumulate more than 2000 tracks across multiple import
+  operations (workspace_service's `_MAX_IMPORT_FILES` only bounds a single
+  import, not the Inbox total), so a large-but-legitimate Process All batch
+  could be rejected outright. `preparation_service.run_process_all()` now
+  passes `max_track_ids=None` for its own captured batch (a trusted internal
+  caller); the external-facing default of 2000 is unchanged for every other
+  caller. SQL chunking (`_SQLITE_ID_CHUNK_SIZE = 500`) already had no
+  dependency on the 2000 figure, so no chunking change was needed -- an
+  arbitrarily large internal scope is still executed safely. (2) Added a
+  body-based scoped preview: `POST /api/analysis/jobs/{job_type}/preview`
+  (new `AnalysisJobPreviewRequest` schema, `track_ids: list[PositiveInt] |
+  None`, same 2000-entry `max_length` as the run request) alongside the
+  existing `GET .../preview` (repeated query params, unchanged, still
+  suitable for global or small explicit scopes). Both call the identical
+  `analysis_jobs_service.preview()` candidate-selection code as `POST
+  .../run`, so a scoped preview never disagrees with what a scoped run would
+  process; POST is the correct transport for a scope large enough that a GET
+  query string would become unwieldy.
+- Why it changed: the original 2000-entry bound's justification ("matches
+  workspace_service's own _MAX_IMPORT_FILES ceiling, so a normal Process All
+  Inbox batch is never rejected") was incorrect -- an Inbox is not bounded to
+  one import's worth of tracks, so the service-layer cap could silently
+  break Process All for a library that had imported in multiple batches.
+  Also, repeated GET query params do not scale as the primary transport for
+  a future "Analyze Selected" workflow selecting a large number of tracks.
+- Files affected: backend/app/services/analysis_jobs_service.py,
+  backend/app/services/preparation_service.py,
+  backend/app/schemas/analysis_jobs.py,
+  backend/app/api/routes/analysis.py, tests/test_scoped_analysis.py,
+  tests/test_preparation_service.py, tests/test_backend_api.py,
+  CHANGELOG.txt, PROJECT_CONTEXT.md.
+- Migration notes: none. Additive-only (`max_track_ids` keyword defaults to
+  the previous universal bound; the new POST preview endpoint shares a path
+  with the existing GET, distinguished only by HTTP method). No schema
+  change. BPM retry-suppression/reset remains unimplemented and open.
+
 [2026-08-09] — Add optional track-id-scoped BPM/key analysis contract
 
 - What changed: analysis_jobs_service's BPM/key candidate selection and
@@ -17,9 +62,10 @@ CRATEIQ — CHANGELOG
   narrow, never widen, the candidate universe (nonexistent/ineligible IDs in
   the list are simply absent from the result, never substituted with an
   unrelated global candidate). A new `_normalize_track_ids()` validates
-  positive integers, de-duplicates, and bounds the scope to 2000 entries
-  (matching workspace_service's own `_MAX_IMPORT_FILES` ceiling, so a normal
-  Process All Inbox batch is never rejected). Scoped runs report
+  positive integers, de-duplicates, and bounds the scope to 2000 entries.
+  [Corrected 2026-08-09, same day: this 2000-entry bound is an external-API
+  boundary, not a safe ceiling for every Process All batch -- see the
+  "harden scoped analysis limits" entry above.] Scoped runs report
   `eligible_total`/`considered`/`remaining_missing_*` truthfully within the
   requested scope rather than the global count, and persist
   analysis_operations history with `mode='apply_scoped'` (vs. `'apply'` for

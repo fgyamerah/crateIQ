@@ -2767,6 +2767,110 @@ def test_scoped_bpm_preview_via_api_returns_only_requested_track_ids(client):
     assert unscoped.json()["candidate_count"] == 2  # delta (fixture) + epsilon -- global preview unchanged
 
 
+def test_bpm_run_via_api_rejects_more_than_2000_track_ids_while_internal_service_accepts_it(client, monkeypatch):
+    """The external POST run API keeps its 2000-entry bound; a trusted
+    internal service call with the same oversized scope (what Process All
+    does with max_track_ids=None) must not be rejected."""
+    from backend.app.services import analysis_jobs_service as svc
+
+    test_client, root = client
+    oversized_external = list(range(1, 2002))
+    response = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run",
+        json={"confirm": True, "track_ids": oversized_external},
+    )
+    assert response.status_code == 422
+
+    delta_path = root / "library" / "misc" / "delta.mp3"
+    delta_path.parent.mkdir(parents=True, exist_ok=True)
+    delta_path.write_bytes(b"not-real-audio")
+    monkeypatch.setattr(svc, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        svc.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="120.0 bpm\n", stderr=""),
+    )
+
+    # Same 2001-entry scope (id 4 == delta.mp3, the fixture's one missing-BPM
+    # track, falls within it), called directly against the trusted internal
+    # service contract with max_track_ids=None -- must not be rejected for size.
+    result = svc._run_bpm_analysis(10, oversized_external, max_track_ids=None)
+    assert result["updated"] == 1
+
+
+def test_scoped_bpm_preview_via_api_post_body_accepts_track_ids(client):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    epsilon_id = _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+
+    scoped = test_client.post("/api/analysis/jobs/bpm_analysis/preview", json={"track_ids": [epsilon_id]})
+    assert scoped.status_code == 200
+    body = scoped.json()
+    assert body["candidate_count"] == 1
+    assert [item["track_id"] for item in body["samples"]] == [epsilon_id]
+
+
+def test_scoped_bpm_preview_via_api_post_body_with_empty_track_ids_returns_zero_candidates(client):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+
+    scoped = test_client.post("/api/analysis/jobs/bpm_analysis/preview", json={"track_ids": []})
+    assert scoped.status_code == 200
+    body = scoped.json()
+    assert body["candidate_count"] == 0
+    assert body["samples"] == []
+
+
+def test_scoped_bpm_preview_via_api_post_body_omitted_matches_existing_get_global_preview(client):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+
+    post_unscoped = test_client.post("/api/analysis/jobs/bpm_analysis/preview", json={})
+    get_unscoped = test_client.get("/api/analysis/jobs/bpm_analysis/preview")
+    assert post_unscoped.status_code == 200 and get_unscoped.status_code == 200
+    assert post_unscoped.json()["candidate_count"] == get_unscoped.json()["candidate_count"] == 2
+
+
+def test_scoped_bpm_preview_via_api_post_body_rejects_more_than_2000_track_ids(client):
+    test_client, _root = client
+    response = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/preview",
+        json={"track_ids": list(range(1, 2002))},
+    )
+    assert response.status_code == 422
+
+
+def test_scoped_bpm_post_preview_and_post_run_agree_on_the_same_candidate_universe(client, monkeypatch):
+    """POST preview and POST run must select the identical scoped candidate
+    set -- both call analysis_jobs_service.preview()/run(), which share the
+    same _bpm_candidates() selection logic."""
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    epsilon_id = _insert_missing_bpm_key_track(db_path, root, "epsilon.mp3")
+    zeta_id = _insert_missing_bpm_key_track(db_path, root, "zeta.mp3")
+
+    preview = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/preview", json={"track_ids": [epsilon_id, zeta_id]},
+    )
+    assert preview.status_code == 200
+    previewed_ids = sorted(item["track_id"] for item in preview.json()["samples"])
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="120.0 bpm\n", stderr=""),
+    )
+    run_response = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run",
+        json={"confirm": True, "limit": 10, "track_ids": [epsilon_id, zeta_id]},
+    )
+    assert run_response.status_code == 200
+    run_ids = sorted(item["track_id"] for item in run_response.json()["results"])
+
+    assert previewed_ids == run_ids == sorted([epsilon_id, zeta_id])
+
+
 def test_keyfinder_parser_accepts_known_keys_and_rejects_unknown_values():
     assert analysis_jobs_service._parse_keyfinder_output("Am\n") == ("Am", "8A")
     assert analysis_jobs_service._parse_keyfinder_output("Detected key: 9B\n") == ("G major", "9B")

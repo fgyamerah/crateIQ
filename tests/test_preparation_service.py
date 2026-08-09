@@ -207,6 +207,66 @@ async def test_run_process_all_analysis_stage_is_scoped_to_its_own_batch(managed
     assert rows[outside_id] is None, "an untouched track outside the Process All batch must never be analyzed"
 
 
+@async_test
+async def test_run_process_all_analysis_stage_accepts_a_batch_larger_than_2000(managed_root, monkeypatch, tmp_path):
+    """An Inbox can legitimately accumulate more than 2000 tracks across
+    multiple imports (workspace_service's _MAX_IMPORT_FILES only bounds a
+    single import operation). Process All's ANALYZE stage must not be
+    silently skipped merely because its captured batch exceeds the external
+    API's 2000-entry track_ids bound -- it is a trusted internal caller and
+    must pass max_track_ids=None. Earlier stages are stubbed out (irrelevant
+    to this regression) and no real audio files are created."""
+    from backend.app.services import analysis_jobs_service
+
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "isolated_jobs.db")
+    backend_db.init_db()
+
+    lightweight_count = analysis_jobs_service._MAX_SCOPED_TRACK_IDS + 100
+    with sqlite3.connect(managed_root / "logs" / "processed.db") as conn:
+        conn.executemany(
+            """INSERT INTO tracks (filepath, filename, artist, title, genre, status,
+                                    processed_at, pipeline_ver, storage_zone)
+               VALUES (?, ?, 'Artist', 'Title', 'House', 'pending',
+                       '2026-01-01T00:00:00Z', 'test', 'INBOX')""",
+            [(f"/fake/inbox_{i}.mp3", f"inbox_{i}.mp3") for i in range(lightweight_count)],
+        )
+        batch = [row[0] for row in conn.execute("SELECT id FROM tracks ORDER BY id")]
+    assert len(batch) > analysis_jobs_service._MAX_SCOPED_TRACK_IDS
+
+    # This regression targets only the ANALYZE stage's scope validation --
+    # stub the unrelated clean/enrich/write stages and the promotion-preview
+    # tail so the test stays fast and focused.
+    monkeypatch.setattr(preparation_service, "clean_tracks", lambda root, ids: {"cleaned_count": 0})
+    monkeypatch.setattr(preparation_service, "enrich_tracks", lambda root, ids: {"enriched_count": 0, "warnings": []})
+    monkeypatch.setattr(preparation_service, "write_tracks", lambda ids: {"written_count": 0, "failed_count": 0, "warnings": []})
+    monkeypatch.setattr(
+        preparation_service.workspace_service, "promotion_preview",
+        lambda root, ids: {"ready_count": 0, "blocked_count": 0},
+    )
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: "/fake/keyfinder")
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("placeholder paths are outside root; no tool should ever run")),
+    )
+
+    operation = preparation_operations_service.start_operation("process_all", track_count=len(batch))
+    await preparation_service.run_process_all(operation["id"], managed_root, batch)
+
+    saved = preparation_operations_service.get_operation(operation["id"])
+    assert saved["status"] == "completed"
+    assert not any("cannot exceed" in w for w in saved["warnings"]), "the analysis stage must not be rejected for scope size"
+    assert not any("Analysis step skipped" in w for w in saved["warnings"])
+
+    from backend.app.services import analysis_operations_service
+    records = analysis_operations_service.list_recent(limit=2)
+    assert len(records) == 2  # bpm_analysis + key_analysis both ran
+    for record in records:
+        assert record["mode"] == "apply_scoped"
+        assert record["eligible_total"] == lightweight_count
+        assert record["considered"] == 25  # the existing Process All analysis cap, applied inside the full scope
+
+
 # ---------------------------------------------------------------------------
 # preparation_operations_service lifecycle
 # ---------------------------------------------------------------------------

@@ -127,7 +127,23 @@ Service map (`backend/app/services/`), current primary surfaces:
   analysis-operation history with `mode='apply_scoped'` (vs. `'apply'` for
   global runs). `preparation_service`'s Process All ANALYZE stage passes its
   own captured Inbox `track_ids` into both bpm_analysis and key_analysis, so
-  it can never analyze a track outside its own batch. BPM analysis tries
+  it can never analyze a track outside its own batch. An external,
+  user-supplied `track_ids` scope (HTTP request bodies/query params) is
+  bounded to 2000 entries (`_normalize_track_ids()`'s `max_track_ids`
+  default) -- this is an API-boundary limit, not a SQL constraint; SQL
+  safety comes from chunked `id IN (...)` queries (500 IDs/chunk) that have
+  no dependency on that number. A trusted internal caller -- only Process
+  All today -- passes `max_track_ids=None` to opt out, since an Inbox can
+  legitimately accumulate more tracks than any single import operation
+  (`workspace_service._MAX_IMPORT_FILES`) once multiple imports land. Both
+  `GET` and `POST /api/analysis/jobs/{job_type}/preview` exist: `GET` takes
+  repeated `track_ids` query params (fine for a global or small explicit
+  preview); `POST` takes a typed `AnalysisJobPreviewRequest` body and is the
+  preferred contract once a scope is large enough that a query string would
+  be unwieldy (e.g. a future "Analyze Selected" workflow). Both call the
+  identical `analysis_jobs_service.preview()` candidate-selection code as
+  `POST .../run`, so preview and run never disagree on the candidate
+  universe. BPM analysis tries
   direct aubio decode first; on failure or an unusable result it falls back
   to an FFmpeg decode into a secure temporary WAV outside the managed workspace
   (never rewriting the source), retries aubio against that WAV, and

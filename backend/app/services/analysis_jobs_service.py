@@ -283,28 +283,42 @@ def _ensure_key_columns(conn: sqlite3.Connection) -> None:
             conn.execute(f"ALTER TABLE tracks ADD COLUMN {name} {definition}")
 
 
-# A caller-supplied track scope is bounded to keep requests deterministic and
-# the underlying queries safe -- 2000 mirrors workspace_service's own
-# _MAX_IMPORT_FILES ceiling, so a single Process All Inbox batch (which can
-# never exceed one import operation's worth of tracks) is never rejected.
+# External, user-supplied track scopes (the HTTP run/preview request bodies)
+# are bounded so a request stays deterministic and reasonably sized -- this
+# is an API-boundary limit, not a SQL constraint (SQL safety comes from
+# chunking below, which has no fixed ceiling). Trusted internal callers --
+# Process All's captured Inbox batch, which can legitimately exceed any
+# single import operation's size once tracks accumulate across multiple
+# imports -- pass max_track_ids=None to opt out of this bound; the resulting
+# scope is still validated (positive integers, deduplicated) and still
+# executed via the same chunked, SQL-parameter-safe queries.
 _MAX_SCOPED_TRACK_IDS = 2000
 # Chunk size for `id IN (...)` queries, comfortably under SQLite's default
-# bound-variable limit (999) even on older builds.
+# bound-variable limit (999) even on older builds. This has no dependency on
+# _MAX_SCOPED_TRACK_IDS -- an arbitrarily large scope is still executed
+# safely in chunks of this size.
 _SQLITE_ID_CHUNK_SIZE = 500
 
 
-def _normalize_track_ids(track_ids: list[int] | None) -> list[int] | None:
+def _normalize_track_ids(
+    track_ids: list[int] | None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+) -> list[int] | None:
     """Validate and de-duplicate an optional track-id analysis scope.
 
     ``None`` means "no scope" -- callers must preserve existing global
     candidate-queue behavior. An explicit list -- including an empty one --
     means "exactly this scope"; an empty scope must never be treated as
     "no scope was given" and must never widen into the global queue.
+
+    `max_track_ids` bounds external, user-supplied scopes (API request
+    bodies/query params) -- pass `None` only for trusted internal callers
+    (e.g. Process All's own captured batch) that must never be rejected
+    merely for being larger than one HTTP request should reasonably carry.
     """
     if track_ids is None:
         return None
-    if len(track_ids) > _MAX_SCOPED_TRACK_IDS:
-        raise ValueError(f"track_ids scope cannot exceed {_MAX_SCOPED_TRACK_IDS} entries.")
+    if max_track_ids is not None and len(track_ids) > max_track_ids:
+        raise ValueError(f"track_ids scope cannot exceed {max_track_ids} entries.")
     normalized: list[int] = []
     seen: set[int] = set()
     for value in track_ids:
@@ -810,12 +824,17 @@ def _scoped_preview_rows(job_type: str, scope: list[int]) -> list[dict[str, Any]
         return [dict(row) for row in candidate_rows]
 
 
-def preview(job_type: str, track_ids: list[int] | None = None) -> dict[str, Any]:
+def preview(
+    job_type: str, track_ids: list[int] | None = None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+) -> dict[str, Any]:
     definitions, rows = _definitions()
     job = next((item for item in definitions if item["type"] == job_type), None)
     if job is None:
         raise ValueError("Unknown analysis job type.")
-    scope = _normalize_track_ids(track_ids) if job_type in ("bpm_analysis", "key_analysis") else None
+    scope = (
+        _normalize_track_ids(track_ids, max_track_ids=max_track_ids)
+        if job_type in ("bpm_analysis", "key_analysis") else None
+    )
 
     if job_type == "mixed_in_key_coverage":
         result = mik_metadata_service.preview()
@@ -873,7 +892,18 @@ def preview(job_type: str, track_ids: list[int] | None = None) -> dict[str, Any]
     }
 
 
-def run(job_type: str, *, confirm: bool = False, limit: int = 10, track_ids: list[int] | None = None) -> dict[str, Any]:
+def run(
+    job_type: str, *, confirm: bool = False, limit: int = 10, track_ids: list[int] | None = None,
+    max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+) -> dict[str, Any]:
+    """`max_track_ids` bounds an external, user-supplied `track_ids` scope.
+
+    Trusted internal callers (Process All) pass `max_track_ids=None` for
+    their own captured batch, which can legitimately exceed any single HTTP
+    request's reasonable size once Inbox tracks accumulate across multiple
+    imports -- the request/API boundary is still bounded via
+    schemas.analysis_jobs.BpmAnalysisRunRequest.track_ids's own max_length.
+    """
     if job_type not in _JOB_TYPES:
         raise ValueError("Unknown analysis job type.")
     if job_type == "mixed_in_key_coverage":
@@ -881,11 +911,11 @@ def run(job_type: str, *, confirm: bool = False, limit: int = 10, track_ids: lis
     if job_type == "bpm_analysis":
         if not confirm:
             raise ValueError("BPM analysis requires confirm=true after previewing candidates.")
-        return _run_bpm_analysis(limit, track_ids)
+        return _run_bpm_analysis(limit, track_ids, max_track_ids=max_track_ids)
     if job_type == "key_analysis":
         if not confirm:
             raise ValueError("Key/Camelot analysis requires confirm=true after previewing candidates.")
-        return _run_key_analysis(limit, track_ids)
+        return _run_key_analysis(limit, track_ids, max_track_ids=max_track_ids)
     if job_type == "duplicate_detection":
         raise RuntimeError("Duplicate detection is preview-only. Resolution actions are not implemented; no files, tags, or database decisions were changed.")
     if job_type == "audio_quality_probe":
@@ -981,7 +1011,9 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
         ), False
 
 
-def _run_bpm_analysis(limit: int, track_ids: list[int] | None = None) -> dict[str, Any]:
+def _run_bpm_analysis(
+    limit: int, track_ids: list[int] | None = None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+) -> dict[str, Any]:
     binary = _resolve_aubio_binary()
     if not binary:
         raise RuntimeError("aubio is not available. Configure AUBIO_BIN or install aubio before running BPM analysis.")
@@ -989,7 +1021,7 @@ def _run_bpm_analysis(limit: int, track_ids: list[int] | None = None) -> dict[st
     db_path = assert_path_under_root(library_db_path(root), root)
     if not db_path.is_file():
         raise ValueError("Configured library is not initialized.")
-    scope = _normalize_track_ids(track_ids)
+    scope = _normalize_track_ids(track_ids, max_track_ids=max_track_ids)
 
     analyzed = updated = skipped = failed = recovered = 0
     warnings: list[str] = []
@@ -1152,7 +1184,9 @@ def _run_bpm_analysis(limit: int, track_ids: list[int] | None = None) -> dict[st
     }
 
 
-def _run_key_analysis(limit: int, track_ids: list[int] | None = None) -> dict[str, Any]:
+def _run_key_analysis(
+    limit: int, track_ids: list[int] | None = None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+) -> dict[str, Any]:
     binary = _resolve_keyfinder_binary()
     if not binary:
         raise RuntimeError("keyfinder-cli is not available. Configure KEYFINDER_BIN or install keyfinder-cli before running key analysis.")
@@ -1160,7 +1194,7 @@ def _run_key_analysis(limit: int, track_ids: list[int] | None = None) -> dict[st
     db_path = assert_path_under_root(library_db_path(root), root)
     if not db_path.is_file():
         raise ValueError("Configured library is not initialized.")
-    scope = _normalize_track_ids(track_ids)
+    scope = _normalize_track_ids(track_ids, max_track_ids=max_track_ids)
     analyzed = updated = skipped = failed = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
