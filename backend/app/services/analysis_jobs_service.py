@@ -22,7 +22,7 @@ from typing import Any
 from modules.analyzer import CAMELOT_MAP, CAMELOT_TO_MUSICAL, _RE_CAMELOT
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
-from . import analysis_operations_service, mik_metadata_service, settings_service
+from . import analysis_operations_service, mik_metadata_service, quality_findings_service, settings_service
 
 log = logging.getLogger(__name__)
 
@@ -176,6 +176,23 @@ def _sanitize_diagnostic(text: str) -> str:
         if not deduped or deduped[-1] != line:
             deduped.append(line)
     return " | ".join(deduped)[:_DIAGNOSTIC_MAX_LEN]
+
+
+def _classify_direct_aubio_failure(returncode: int | None, *, timed_out: bool = False, os_error: bool = False) -> str:
+    """Classify why direct aubio decoding failed, for durable-finding evidence only.
+
+    This never changes BPM outcome/fallback behavior -- it only distinguishes,
+    for the purposes of an optional durable Quality finding, a genuine decode
+    error (non-zero exit: aubio's process rejected the input) from a benign
+    "ran fine, found no tempo" result (exit 0, no BPM) and from a transient
+    tool problem (timeout / process could not start), which is never treated
+    as evidence the audio itself is defective.
+    """
+    if timed_out or os_error:
+        return "tool_error"
+    if returncode == 0:
+        return "no_tempo"
+    return "decode_error"
 
 
 def _optional_float(value: Any) -> float | None:
@@ -760,7 +777,7 @@ def run(job_type: str, *, confirm: bool = False, limit: int = 10) -> dict[str, A
     raise RuntimeError("This analysis runner is not implemented yet. Preview candidates and configure the required tool; no job was started.")
 
 
-def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str) -> tuple[float | None, str]:
+def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str) -> tuple[float | None, str, bool]:
     """Recover a BPM from malformed-but-decodable audio via an FFmpeg decode.
 
     Direct aubio decoding already failed for `source_path` when this is
@@ -770,15 +787,19 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
     context manager regardless of outcome. The source file itself is never
     opened for writing.
 
-    Returns (bpm, message): bpm is None on any failure; message is always a
-    concise, user-facing sentence -- never raw stderr or a stack trace.
+    Returns (bpm, message, ffmpeg_decode_failed): bpm is None on any failure;
+    message is always a concise, user-facing sentence -- never raw stderr or
+    a stack trace. ffmpeg_decode_failed is True only when FFmpeg itself could
+    not produce a decodable audio stream (a genuine decode failure, distinct
+    from FFmpeg being unavailable, timing out, or the fallback aubio call
+    having its own tool/tempo problem against an otherwise-valid WAV).
     """
     ffmpeg_binary = _resolve_ffmpeg_binary()
     if not ffmpeg_binary:
         return None, (
             f"{filename}: direct aubio decode failed and FFmpeg is not available "
             "for recovery. BPM was not changed."
-        )
+        ), False
 
     with tempfile.TemporaryDirectory(prefix="crateiq-bpm-") as tmp_dir:
         wav_path = Path(tmp_dir) / "audio.wav"
@@ -795,13 +816,13 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
             return None, (
                 f"{filename}: direct aubio decode failed and FFmpeg timed out while "
                 "attempting recovery. BPM was not changed."
-            )
+            ), False
         except OSError:
             log.warning("ffmpeg BPM-recovery decode could not start for %s", filename)
             return None, (
                 f"{filename}: direct aubio decode failed and FFmpeg could not start "
                 "for recovery. BPM was not changed."
-            )
+            ), False
 
         if ffmpeg_completed.stderr:
             log.info(
@@ -813,7 +834,7 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
             return None, (
                 f"{filename}: direct aubio decode failed and FFmpeg could not recover "
                 "a decodable audio stream. BPM was not changed."
-            )
+            ), True
 
         try:
             fallback_completed = subprocess.run(
@@ -824,24 +845,24 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
             return None, (
                 f"{filename}: FFmpeg recovered malformed audio, but aubio timed out "
                 "analyzing it. BPM was not changed."
-            )
+            ), False
         except OSError:
             return None, (
                 f"{filename}: FFmpeg recovered malformed audio, but aubio could not "
                 "start to analyze it. BPM was not changed."
-            )
+            ), False
 
         bpm = _parse_aubio_bpm(fallback_completed.stdout)
         if fallback_completed.returncode != 0 or bpm is None:
             return None, (
                 f"{filename}: FFmpeg recovered malformed audio, but aubio could not "
                 "determine a usable BPM. BPM was not changed."
-            )
+            ), False
 
         return bpm, (
             f"{filename}: direct aubio decode failed; FFmpeg recovered enough audio "
             f"and BPM was measured at {bpm:.2f}. Original file was not modified."
-        )
+        ), False
 
 
 def _run_bpm_analysis(limit: int) -> dict[str, Any]:
@@ -891,6 +912,8 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                 # a fallback-recovered track still ran up to three tool calls
                 # (direct aubio, ffmpeg decode, fallback aubio) but is one attempt.
                 analyzed += 1
+                direct_classification = "tool_error"
+                direct_diagnostic = ""
                 try:
                     completed = subprocess.run(
                         [binary, "tempo", str(path)], capture_output=True, text=True,
@@ -898,20 +921,43 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                     )
                     direct_bpm = _parse_aubio_bpm(completed.stdout) if completed.returncode == 0 else None
                     direct_ok = completed.returncode == 0 and direct_bpm is not None
+                    if not direct_ok:
+                        direct_classification = _classify_direct_aubio_failure(completed.returncode)
+                        if completed.stderr:
+                            direct_diagnostic = _sanitize_diagnostic(completed.stderr)
                 except subprocess.TimeoutExpired:
                     direct_ok = False
+                    direct_classification = _classify_direct_aubio_failure(None, timed_out=True)
                 except OSError:
                     direct_ok = False
+                    direct_classification = _classify_direct_aubio_failure(None, os_error=True)
 
                 if direct_ok:
                     bpm = direct_bpm
                     bpm_source = "aubio"
                     fallback_warning = None
                 else:
-                    bpm, fallback_warning = _attempt_ffmpeg_fallback(binary, path, row["filename"])
+                    bpm, fallback_warning, ffmpeg_decode_failed = _attempt_ffmpeg_fallback(binary, path, row["filename"])
                     if bpm is None:
                         failed += 1
                         warnings.append(fallback_warning)
+                        # Both stages evidenced an actual decode failure (not merely a
+                        # missing tool, a timeout, or a "ran fine, no tempo" result) --
+                        # durable, non-corrupting: BPM stays NULL either way.
+                        if direct_classification == "decode_error" and ffmpeg_decode_failed:
+                            try:
+                                quality_findings_service.record_audio_decode_failure(
+                                    row["id"], direct_diagnostic, conn=conn,
+                                )
+                            except Exception:
+                                log.warning(
+                                    "Failed to persist durable audio_decode_failed finding for track %s",
+                                    row["id"], exc_info=True,
+                                )
+                                warnings.append(
+                                    f"{row['filename']}: audio decode failure was not saved to Quality "
+                                    "Review (local index write failed)."
+                                )
                         continue
                     bpm_source = "aubio_ffmpeg_decode"
 
@@ -932,6 +978,23 @@ def _run_bpm_analysis(limit: int) -> dict[str, Any]:
                 if bpm_source == "aubio_ffmpeg_decode":
                     recovered += 1
                     warnings.append(fallback_warning)
+                    # Only record a durable "malformed audio" warning when direct aubio
+                    # showed real decode-error evidence -- not for every fallback
+                    # success (e.g. a benign "no tempo found" or transient tool retry).
+                    if direct_classification == "decode_error":
+                        try:
+                            quality_findings_service.record_audio_decode_warning(
+                                row["id"], bpm, direct_diagnostic, conn=conn,
+                            )
+                        except Exception:
+                            log.warning(
+                                "Failed to persist durable recoverable_audio_decode_warning finding for track %s",
+                                row["id"], exc_info=True,
+                            )
+                            warnings.append(
+                                f"{row['filename']}: recovered-audio quality warning was not saved to "
+                                "Quality Review (local index write failed)."
+                            )
                 result = _as_candidate(dict(row))
                 result["bpm"] = bpm
                 results.append(result)

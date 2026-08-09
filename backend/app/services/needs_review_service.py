@@ -111,6 +111,26 @@ def _quality_items() -> list[dict[str, Any]]:
     for entry in review.get("items", []):
         if entry.get("decision") not in ("unresolved", None):
             continue
+        durable_reason_code = entry.get("reason_code")
+        if durable_reason_code:
+            # A durable finding (e.g. BPM-analysis decode evidence) already
+            # carries its own reason_code/severity/message -- reuse them
+            # instead of re-deriving from ffprobe-only flags below.
+            severity = "HIGH" if entry.get("severity") == "error" else "MEDIUM"
+            items.append({
+                "track_id": entry.get("track_id"),
+                "category": "QUALITY",
+                "severity": severity,
+                "reason_code": durable_reason_code,
+                "summary": entry.get("message") or durable_reason_code.replace("_", " ").capitalize(),
+                "current_value": None,
+                "recommended_value": None,
+                "confidence": None,
+                "provenance": f"quality_review_service ({entry.get('source') or 'durable'})",
+                "actions": [{"label": "Open Quality Review", "route": "/quality-review"}],
+                "filename": entry.get("filename"),
+            })
+            continue
         flags = entry.get("flags") or []
         severity = "HIGH" if any(f in ("unreadable", "unsupported_format") for f in flags) else "MEDIUM"
         items.append({

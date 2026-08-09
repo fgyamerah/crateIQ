@@ -96,6 +96,20 @@ Service map (`backend/app/services/`), current primary surfaces:
   write-back), background operation tracking
 * `needs_review_service` — read-only aggregation across enrichment,
   metadata-repair, and quality review queues
+* `quality_review_service` — safe ffprobe preview persisted as replaceable
+  snapshots (`quality_review_snapshots`/`quality_review_decisions`), merged
+  with durable, per-event findings from `quality_findings_service` (e.g. a
+  BPM-analysis decode finding) so both survive a `refresh_preview()`
+  snapshot replace in one unified `get_review()` response. Items carry a
+  stable `finding_key` (`ffprobe:<track_id>` or `durable:<finding_id>`) so
+  a track with more than one open finding can have each decision
+  (`reviewed`/`ignore`/`review_later`/`unresolved`) addressed
+  unambiguously; `update_decision()` accepts an optional `finding_key` and
+  stays backward compatible with track_id-only requests.
+  `quality_findings_service` owns the durable `quality_review_findings`
+  table (upsert on `track_id`/`reason_code`/`source`, no duplicate rows on
+  repeat events) and has no import on `quality_review_service` or
+  `analysis_jobs_service`, so both of those import it without a cycle.
 * `provider_routing_service` / `consensus_service` — evidence gathering and
   field-level HIGH/MEDIUM/LOW/CONFLICT consensus
 * `tag_write_service` — plan/backup/write/re-read/verify controlled tag
@@ -110,7 +124,15 @@ Service map (`backend/app/services/`), current primary surfaces:
   expose a derived `outcome` (`complete` / `completed_with_warnings` /
   `completed_with_errors` / `cancelled` / `failed`) alongside `status`, so
   a run with unrecovered track failures cannot render as a plain
-  "Complete".
+  "Complete". Direct-aubio failure is structurally classified (exit code +
+  exception type only, never stderr text matching) as `decode_error` /
+  `no_tempo` / `tool_error`; a durable, non-blocking
+  `recoverable_audio_decode_warning` Quality finding is recorded only when
+  direct aubio showed `decode_error` evidence and FFmpeg recovery
+  succeeded, and a durable, high-severity `audio_decode_failed` finding
+  only when both direct aubio and FFmpeg genuinely failed to decode (never
+  for a missing tool, a timeout, a cancellation, or a benign "no tempo
+  found").
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
 * `sync_destination_service` — Publish/SSD Sync source and destination
@@ -200,6 +222,11 @@ Warnings only (do not block promotion):
 * BPM
 * Key
 * Waveform
+
+Quality Review (ffprobe snapshot findings and durable findings alike,
+including `recoverable_audio_decode_warning` and `audio_decode_failed`) is
+not currently consulted by promotion readiness at all -- it is purely
+informational, matching its pre-existing status.
 
 ## Data Stores
 

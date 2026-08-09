@@ -28,7 +28,7 @@ async def update_quality_review_decision(
     track_id: int = Path(ge=1),
 ) -> QualityReviewResponse:
     try:
-        return QualityReviewResponse(**quality_review_service.update_decision(track_id, body.decision, body.note))
+        return QualityReviewResponse(**quality_review_service.update_decision(track_id, body.decision, body.note, body.finding_key))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
     except ValueError as exc:

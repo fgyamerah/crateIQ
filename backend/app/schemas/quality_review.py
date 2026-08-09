@@ -1,7 +1,7 @@
 """Safe, database-only audio-quality review response shapes."""
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -14,9 +14,11 @@ QualityIssueFlag = Literal[
 QualityReviewStatus = Literal[
     "probe_ok", "unreadable", "missing_bitrate", "unsupported_format", "probe_warning",
 ]
+QualityFindingSeverity = Literal["warning", "error"]
 
 
 class QualityReviewItem(BaseModel):
+    finding_key: str | None = None
     track_id: int
     filename: str
     title: str | None = None
@@ -29,8 +31,18 @@ class QualityReviewItem(BaseModel):
     sample_rate_hz: int | None = None
     channels: int | None = None
     file_size_bytes: int | None = None
-    status: QualityReviewStatus
+    status: QualityReviewStatus | None = None
     flags: list[QualityIssueFlag] = Field(default_factory=list)
+    # Durable (non-ffprobe) finding fields -- None/False for ffprobe-snapshot items.
+    reason_code: str | None = None
+    source: str | None = None
+    severity: QualityFindingSeverity | None = None
+    blocking: bool = False
+    message: str | None = None
+    details: dict[str, Any] | None = None
+    first_seen_at: str | None = None
+    last_seen_at: str | None = None
+    occurrence_count: int | None = None
     decision: QualityReviewDecision = "unresolved"
     note: str = ""
     reviewed_at: str | None = None
@@ -59,3 +71,4 @@ class QualityReviewResponse(BaseModel):
 class QualityReviewDecisionUpdate(BaseModel):
     decision: QualityReviewDecision
     note: str = Field(default="", max_length=1000)
+    finding_key: str | None = Field(default=None, max_length=64)

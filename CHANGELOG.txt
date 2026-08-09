@@ -2,6 +2,58 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Durable Audio Quality findings for BPM decode recovery/failure
+
+- What changed: quality_review_service's ffprobe snapshot model replaces
+  its items_json on every refresh_preview() call, so it could not durably
+  host a per-event finding from BPM analysis without losing it on the
+  next refresh. Added a neutral, durable finding store
+  (backend/app/services/quality_findings_service.py, new
+  quality_review_findings table, upsert keyed on
+  (track_id, reason_code, source)) that quality_review_service now merges
+  into get_review()/refresh_preview()/update_decision() alongside its
+  existing ffprobe snapshot findings, and that survives every ffprobe
+  refresh. analysis_jobs_service's BPM fallback now structurally
+  classifies why direct aubio failed (decode_error / no_tempo /
+  tool_error, from exit code + exception type only -- no stderr pattern
+  matching) and records a durable, non-blocking
+  "recoverable_audio_decode_warning" only when direct aubio showed real
+  decode-error evidence AND FFmpeg recovery succeeded, or a durable,
+  high-severity "audio_decode_failed" only when both direct aubio and
+  FFmpeg genuinely failed to decode. A benign "no tempo found", a missing
+  tool, a timeout, or a cancellation never creates a durable finding.
+  Quality Review items now carry a stable finding_key
+  ("ffprobe:<track_id>" or "durable:<finding_id>") so a track with more
+  than one open finding (e.g. an ffprobe low_bitrate flag plus a durable
+  BPM finding) can have each decision addressed unambiguously; the PATCH
+  decision endpoint accepts an optional finding_key and remains backward
+  compatible with track_id-only requests. needs_review_service's existing
+  QUALITY aggregation (no second aggregator) now reuses a durable
+  finding's own reason_code/severity/message when present. Readiness/
+  promotion is intentionally unchanged -- quality_review_service is not
+  currently part of promotion blocking, so this does not add one.
+- Why it changed: completes the durable-integration half of the BPM
+  FFmpeg-decode-recovery hardening cycle (the fallback/provenance/
+  operation-warning half already shipped) so a recovered malformed-audio
+  track or a genuinely undecodable track leaves a persistent, reviewable
+  Quality/Needs Review record instead of only a transient BPM-operation
+  warning.
+- Files affected: backend/app/services/quality_findings_service.py (new),
+  backend/app/services/quality_review_service.py,
+  backend/app/services/analysis_jobs_service.py,
+  backend/app/services/needs_review_service.py,
+  backend/app/schemas/quality_review.py,
+  backend/app/api/routes/quality_review.py,
+  frontend/src/types/qualityReview.ts, frontend/src/api/qualityReview.ts,
+  frontend/src/pages/QualityReview.tsx, frontend/src/index.css,
+  tests/test_quality_review_durable_findings.py (new),
+  tests/test_bpm_ffmpeg_fallback.py, NEXT_TASKS.txt, PROJECT_CONTEXT.md.
+- Migration notes: additive only (CREATE TABLE IF NOT EXISTS
+  quality_review_findings); existing quality_review_snapshots/
+  quality_review_decisions rows and the ffprobe-only decision workflow
+  are untouched. The separate retry-suppression/reset task for tracks
+  proven genuinely undecodable remains open and out of scope here.
+
 [2026-08-09] — Phase 7: Legacy Direct Library deprecation boundary
 
 - What changed: established an explicit, documented boundary between the
