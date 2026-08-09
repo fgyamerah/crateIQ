@@ -229,7 +229,11 @@ Warnings only (do not block promotion):
   reconciliation path does not import private `pipeline.py` helpers.
 * "Legacy Direct Library" mode remains supported under Settings ->
   Advanced, behind a collapsed disclosure, secondary to the managed
-  workspace.
+  workspace. See
+  `docs/architecture/LEGACY_DIRECT_LIBRARY_BOUNDARY.md` (Phase 7) for the
+  explicit boundary between it and the current workspace-selected model:
+  every surviving legacy entry point, why each remains, and what a future
+  removal phase would require.
 * Do not make broad `pipeline.py`/`config.py` architecture changes unless
   explicitly asked.
 

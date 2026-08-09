@@ -1,7 +1,7 @@
 """
 Library tree + stats routes.
 
-GET /api/library/tree                                    — directory tree under MUSIC_ROOT
+GET /api/library/tree                                    — directory tree under the selected library root
 GET /api/library/stats                                   — global + folder-scoped track counts
 GET /api/library/runs                                    — list recent pipeline run summaries
 GET /api/library/runs/{command}/{prefix}/summary         — full run summary JSON
@@ -32,8 +32,10 @@ from modules import metadata_repair, metadata_sanitation
 
 router = APIRouter(tags=["library"])
 
-# Directories under MUSIC_ROOT that contain no audio files and should not
-# appear as job targets.  Keep this list small and explicit.
+# Directories under the current, workspace-selected library root (see
+# core.library_root.selected_library_root — not the legacy pipeline.py
+# config.MUSIC_ROOT) that contain no audio files and should not appear as
+# job targets. Keep this list small and explicit.
 _SKIP_ROOT_NAMES: frozenset = frozenset({
     "logs",
     "data",
@@ -81,7 +83,8 @@ def _build_node(directory: Path, current_depth: int, max_depth: int) -> LibraryN
 
 def _build_tree(max_depth: int) -> LibraryNode:
     """
-    Build the library tree rooted at MUSIC_ROOT.
+    Build the library tree rooted at the selected library root (current
+    workspace model — see core.library_root.selected_library_root).
 
     Top-level non-audio directories are excluded.  All other directories,
     including library sub-categories and inbox sub-categories, are included.

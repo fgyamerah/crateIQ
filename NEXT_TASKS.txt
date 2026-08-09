@@ -93,6 +93,18 @@ P2 / MEDIUM
     otherwise this is legacy-config-backed display context, not a
     dependency actually gating current backend behavior.
 
+[ ] Legacy Direct Library removal preconditions (Phase 7 deprecation
+    boundary, see docs/architecture/LEGACY_DIRECT_LIBRARY_BOUNDARY.md): a
+    future removal phase needs (1) current FastAPI-backend equivalents for
+    all 19 toolkit_runner-allowlisted commands and 7 CLI-only maintenance
+    subcommands, or an explicit decision to drop them; (2) confirmation
+    zero real installs still use the Settings -> Advanced "Legacy Direct
+    Library" setup wizard, or a migration path off it; (3) a dependency
+    audit of pipeline.py/config.py/db.py and the modules/ai/intelligence
+    trees still backing them; (4) proof the DJ_MUSIC_ROOT env bridge in
+    scripts/crateiq-local-services.sh is unused before deleting it. No
+    removal date is set.
+
 [ ] No frontend automated test framework exists in this repo (no
     vitest/jest, no `test` npm script). Recent feature cycles relied on
     typecheck + build + manual/live verification instead, per this

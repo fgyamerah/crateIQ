@@ -139,41 +139,6 @@ _crateiq_check_start_requirements() {
     fi
 }
 
-_crateiq_start() {
-    _crateiq_check_start_requirements || return 1
-    mkdir -p "$CRATEIQ_RUN_DIR"
-
-    (
-        cd "$CRATEIQ_ROOT" || exit 1
-        nohup .venv/bin/python -m uvicorn backend.app.main:app \
-            --host "$CRATEIQ_BIND" \
-            --port "$CRATEIQ_BACKEND_PORT" \
-            --reload --app-dir . \
-            > "$CRATEIQ_BACKEND_LOG" 2>&1 &
-        echo $! > "$CRATEIQ_BACKEND_PID_FILE"
-    )
-
-    (
-        cd "$CRATEIQ_ROOT/frontend" || exit 1
-        nohup env CRATEIQ_API_PROXY_TARGET="$CRATEIQ_BACKEND_URL" \
-            npm run dev -- \
-            --host "$CRATEIQ_BIND" \
-            --port "$CRATEIQ_FRONTEND_PORT" \
-            --strictPort \
-            > "$CRATEIQ_FRONTEND_LOG" 2>&1 &
-        echo $! > "$CRATEIQ_FRONTEND_PID_FILE"
-    )
-
-    sleep 2
-    echo "CrateIQ started."
-    echo "  Frontend:  $CRATEIQ_FRONTEND_URL"
-    echo "  Backend:   $CRATEIQ_BACKEND_URL"
-    echo "  Health:    $CRATEIQ_HEALTH_URL"
-    echo "  Readiness: $CRATEIQ_READINESS_URL"
-    echo "  Logs:      $CRATEIQ_BACKEND_LOG"
-    echo "             $CRATEIQ_FRONTEND_LOG"
-}
-
 _crateiq_stop_service() {
     local label="$1" pid_file="$2" port="$3" verify_fn="$4"
     local pid stopped=0 attempt

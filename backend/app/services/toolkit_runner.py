@@ -127,6 +127,19 @@ def build_command(command: str, args: List[str]) -> List[str]:
     Raises ValueError if command or any argument fails validation.
     Never raises for expected input — callers can surface the message
     directly in a 422 response.
+
+    LEGACY DIRECT LIBRARY: none of the allowlisted commands built here are
+    passed an explicit --root. The pipeline.py subprocess resolves its own
+    root from config.MUSIC_ROOT (env DJ_MUSIC_ROOT), inherited from this
+    backend process's environment (asyncio.create_subprocess_exec with no
+    `env=` override). scripts/crateiq-local-services.sh always sets
+    DJ_MUSIC_ROOT equal to CRATEIQ_LIBRARY_ROOT before starting the backend,
+    so legacy jobs launched this way stay pointed at the same selected
+    library as selected_library_root() — see config.py's MUSIC_ROOT comment
+    for the full picture. This is the current, intentional boundary; do not
+    "fix" it by adding a --root flag here without preserving that env
+    contract, and do not assume an unrelated caller of build_command() gets
+    the same guarantee if it launches the backend without that script.
     """
     if command not in ALLOWED_COMMANDS:
         raise ValueError(

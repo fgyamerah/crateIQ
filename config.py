@@ -7,6 +7,19 @@ from pathlib import Path
 
 # ---------------------------------------------------------------------------
 # Root paths
+#
+# LEGACY DIRECT LIBRARY: this is pipeline.py's own root, independent of the
+# current backend's workspace-selected library (backend/app/core/library_root
+# .selected_library_root, which reads CRATEIQ_LIBRARY_ROOT and fails closed
+# with no /music default). When the FastAPI backend launches a pipeline.py
+# subcommand as a job subprocess (services/toolkit_runner.py), it does not
+# pass --root; the subprocess instead inherits DJ_MUSIC_ROOT from the
+# process environment. scripts/crateiq-local-services.sh is the one place
+# that sets DJ_MUSIC_ROOT, always mirroring CRATEIQ_LIBRARY_ROOT, so
+# backend-launched legacy jobs stay pointed at the selected library rather
+# than silently defaulting to /music. Direct CLI invocations of pipeline.py
+# outside that launch script still default to /music here if DJ_MUSIC_ROOT
+# is unset — that is intentional legacy CLI behavior, not a bug.
 # ---------------------------------------------------------------------------
 MUSIC_ROOT   = Path(os.environ.get("DJ_MUSIC_ROOT", "/music"))
 

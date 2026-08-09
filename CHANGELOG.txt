@@ -2,6 +2,38 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Phase 7: Legacy Direct Library deprecation boundary
+
+- What changed: established an explicit, documented boundary between the
+  current workspace-selected library model
+  (backend/app/core/library_root.selected_library_root) and every
+  surviving "Legacy Direct Library" entry point. Removed one dead,
+  unbridged backend-start code path (_crateiq_start in
+  scripts/crateiq-local-services.sh, zero callers) that -- if ever wired
+  up -- would have silently fallen back to pipeline.py's own /music
+  default instead of the selected library. Documented the DJ_MUSIC_ROOT
+  env bridge (scripts/crateiq-local-services.sh exports
+  DJ_MUSIC_ROOT=$CRATEIQ_LIBRARY_ROOT so backend-launched legacy
+  pipeline.py subprocess jobs stay pointed at the selected library) in
+  config.py and toolkit_runner.py comments. Corrected stale "MUSIC_ROOT"
+  wording in backend/app/api/routes/library.py comments/docstrings that
+  actually referred to selected_library_root(). Added
+  tests/test_legacy_direct_library_boundary.py (4 tests) proving the
+  boundary in code. No runtime behavior changed for either the current
+  workspace model or Legacy Direct Library.
+- Why it changed: Phase 7 of the workspace-onboarding effort -- make
+  Legacy Direct Library use explicitly identifiable as legacy so new code
+  cannot accidentally depend on it, without removing any still-required
+  compatibility.
+- Files affected: scripts/crateiq-local-services.sh, config.py,
+  backend/app/services/toolkit_runner.py,
+  backend/app/api/routes/library.py, PROJECT_CONTEXT.md,
+  docs/architecture/LEGACY_DIRECT_LIBRARY_BOUNDARY.md (new),
+  tests/test_legacy_direct_library_boundary.py (new).
+- Migration notes: none. Legacy Direct Library (Settings -> Advanced) and
+  all pipeline.py/toolkit_runner-allowlisted maintenance commands remain
+  fully functional.
+
 [2026-08-09] — Isolate legacy pipeline.py/config.py dependencies from the backend
 
 - What changed: extracted the path-audit/path-reconcile detection and
