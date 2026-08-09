@@ -61,29 +61,68 @@ def test_current_backend_never_imports_legacy_pipeline_modules():
     )
 
 
-# Any /music literal is either the intentional legacy default in config.py
-# (documented, not imported by current backend — see above) or one of the
-# two backend-side display/query-matching helpers that translate between the
-# canonical selected root and paths the pipeline DB may have historically
-# stored using the /music symlink. Any new occurrence must be justified and
-# added here explicitly, not silently introduced as a new default root.
+# Any /music-rooted literal is either the intentional legacy default in
+# config.py (documented, not imported by current backend — see above) or one
+# of the justified current-backend occurrences below: two display/query-
+# matching helpers that translate between the canonical selected root and
+# paths the pipeline DB may have historically stored using the /music
+# symlink, plus one informational-display fallback (never used for root
+# selection or filesystem access — see
+# docs/architecture/LEGACY_DIRECT_LIBRARY_BOUNDARY.md). Any new occurrence
+# must be justified and added here explicitly, not silently introduced as a
+# new default root.
 _JUSTIFIED_MUSIC_LITERAL_FILES = {
     "backend/app/api/routes/library.py",
     "backend/app/services/track_service.py",
+    "backend/app/services/export_validation.py",
 }
+
+
+def _is_music_root_literal(value: str) -> bool:
+    """True for the exact legacy /music symlink literal or any /music/... path literal."""
+    return value == "/music" or value.startswith("/music/")
+
+
+def _music_root_literals(path: Path) -> list[str]:
+    """AST-based scan for /music-rooted string literals actually used as source
+    literals (assignments, calls, defaults, etc.) — not comments/prose, and not
+    docstring text that merely mentions "/music/..." in passing (those never
+    match _is_music_root_literal because they don't start at the string's
+    first character)."""
+    try:
+        tree = ast.parse(path.read_text(encoding="utf-8"), filename=str(path))
+    except (SyntaxError, UnicodeDecodeError):
+        return []
+    literals: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            if _is_music_root_literal(node.value):
+                literals.append(node.value)
+    return literals
+
+
+def test_music_literal_matcher_detects_prefixed_paths():
+    """Proves the AST matcher's blind spot is fixed: it must catch not just the
+    exact "/music" literal but also /music/-prefixed literals such as the
+    export_validation.py "/music/logs" fallback, while leaving unrelated
+    paths alone."""
+    assert _is_music_root_literal("/music")
+    assert _is_music_root_literal("/music/logs")
+    assert _is_music_root_literal("/music/logs/rekordbox_export/invalid_tracks.txt")
+    assert not _is_music_root_literal("/musichall")
+    assert not _is_music_root_literal("/mnt/music_ssd/KKDJ")
 
 
 def test_no_unexplained_music_literal_in_current_backend():
     findings: list[str] = []
     for path in _iter_backend_files():
         rel = str(path.relative_to(REPO_ROOT))
-        if '"/music"' not in path.read_text(encoding="utf-8"):
-            continue
-        if rel not in _JUSTIFIED_MUSIC_LITERAL_FILES:
+        if _music_root_literals(path) and rel not in _JUSTIFIED_MUSIC_LITERAL_FILES:
             findings.append(rel)
     assert not findings, (
-        "unexplained \"/music\" literal found in current backend code "
-        "(only justified as a display/query-matching helper in "
+        "unexplained /music-rooted string literal found in current backend "
+        "code (only justified as a display/query-matching helper or "
+        "informational-display fallback in "
         f"{sorted(_JUSTIFIED_MUSIC_LITERAL_FILES)}): {findings}"
     )
 

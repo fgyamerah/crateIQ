@@ -64,7 +64,8 @@ workspace selection.
 | `scripts/crateiq-local-services.sh` (`_crateiq_start_profile`) | L1 — required bridge | The only supported way to start the real backend; it exports `DJ_MUSIC_ROOT="$CRATEIQ_LIBRARY_ROOT"` alongside `CRATEIQ_LIBRARY_ROOT` so legacy subprocess jobs stay pointed at the selected library instead of `pipeline.py`'s own `/music` default. | An unbridged duplicate start path (`_crateiq_start`, zero callers) was removed in Phase 7 — see "Boundary implemented" below. |
 | `library_setup_service._target_root(library_root: str | None)` and its callers (`initialize_library`, `scan_preview`, `import_previewed_library`) | L1 — intentional explicit-path compatibility | Backs the frontend's "Legacy Direct Library" setup wizard (Settings → Advanced), which scans/indexes an existing music folder in place rather than the managed Inbox → Library workflow. Omitting the argument always means "use the canonical selected root for this process" (see the function's own docstring) — it is never an implicit fallback. | Already tested (`tests/test_library_setup_service.py::test_omitted_root_never_uses_pending_root_over_selected_root`, `::test_target_root_fails_closed_when_no_root_is_configured`). No change needed. |
 | `POST /settings/library/initialize`, `POST /library/scan-preview`, `POST /library/import` (`backend/app/api/routes/settings.py`) | L1 — intentional explicit-path compatibility | Typed pass-through of the above; `LibrarySetupRequest.library_root` is `Optional[str]`. The current frontend (`frontend/src/api/settings.ts`) never actually sends `library_root` — it always relies on the ambient selected root — so this parameter today only matters for direct API/test/future-CLI callers. | Documented here; not renamed (would be an unrequested API-contract change). |
-| `_filepath_prefixes()` (`backend/app/api/routes/library.py`) / `_path_prefix_clauses()` (`backend/app/services/track_service.py`) | L3 — display/query-matching support, not root selection | Pure SQL `LIKE` prefix-matching helpers: the pipeline DB may contain historical rows stored under the `/music` symlink instead of the canonical resolved path. Both call `selected_library_root()` for the canonical form and only add `/music` as an *alternate string to match against*, never as a path to read/write/select. | Comment updated; `test_no_unexplained_music_literal_in_current_backend` locks these as the only two justified `"/music"` literals in `backend/app/`. |
+| `_filepath_prefixes()` (`backend/app/api/routes/library.py`) / `_path_prefix_clauses()` (`backend/app/services/track_service.py`) | L3 — display/query-matching support, not root selection | Pure SQL `LIKE` prefix-matching helpers: the pipeline DB may contain historical rows stored under the `/music` symlink instead of the canonical resolved path. Both call `selected_library_root()` for the canonical form and only add `/music` as an *alternate string to match against*, never as a path to read/write/select. | Comment updated; `test_no_unexplained_music_literal_in_current_backend` locks these as justified `"/music"` query/display-matching literals in `backend/app/`. |
+| `_output_paths()` (`backend/app/services/export_validation.py`) | L3 — informational-display fallback, not root selection | Returns the export response's `output_paths` context dict (`m3u`/`xml`/`log` — see `ExportPreviewResponse.output_paths` in `backend/app/schemas/export.py`) for UI display only. The `"log"` fallback value (`"/music/logs" + "/rekordbox_export/invalid_tracks.txt"`, or the hard-coded `"/music/logs/rekordbox_export/invalid_tracks.txt"` if `config.py` can't be loaded) is used only when `LOGS_DIR` isn't defined in the legacy `config.py`; it is never read from, written to, or used to select a root. | Retained as-is (smallest, safest fix — changing it would only be cosmetic). Added to `_JUSTIFIED_MUSIC_LITERAL_FILES` alongside the two helpers above; `test_no_unexplained_music_literal_in_current_backend` now uses an AST-based `/music` **and** `/music/`-prefixed literal scan (previously matched only the exact `"/music"` string and missed this literal). |
 | `pipeline.py`'s own `MUSIC_ROOT`/`DJ_MUSIC_ROOT` default (`config.py`) | L2 — required legacy CLI default | Direct CLI invocations of `pipeline.py` outside the launch script (e.g. a maintainer running a subcommand by hand) still need *some* default; `/music` is the historical convention. | Comment added explaining the default is legacy-CLI-only and is bridged away for backend-launched jobs. Not changed — changing it would alter documented legacy CLI behavior. |
 
 **Not legacy / not in scope:** `CRATEMINDAI_LIBRARY_ROOT` is a deprecated
@@ -96,16 +97,31 @@ listed here only for completeness.
    (module docstring, a skip-dir comment, and `_build_tree`'s docstring all
    said "MUSIC_ROOT" while the code actually calls
    `selected_library_root()`) — comment-only, no behavior change.
-4. **Added four architectural regression tests**
+4. **Added architectural regression tests**
    (`tests/test_legacy_direct_library_boundary.py`) that prove the boundary
    in code:
    - current backend never imports `pipeline`/`config`/`db` (AST-based);
-   - no unexplained `"/music"` literal exists in `backend/app/` outside the
-     two justified display/query-matching helpers;
+   - no unexplained `/music`-rooted string literal (exact `"/music"` or any
+     `"/music/..."`-prefixed literal, via AST) exists in `backend/app/`
+     outside the justified query/display-matching helpers and the
+     informational-display fallback in `export_validation.py`;
    - the launch script's one real backend-start command bridges
      `DJ_MUSIC_ROOT` to `CRATEIQ_LIBRARY_ROOT`;
    - `toolkit_runner` never grows a `--root` flag without that bridge being
      revisited.
+
+   A later post-audit sweep found the literal guard's original substring
+   check (`'"/music"' in file text`) matched only the exact `"/music"`
+   string and missed `/music/`-prefixed literals such as
+   `export_validation.py`'s `"/music/logs"` display fallback. The guard now
+   parses each file's AST and flags any string constant equal to `/music`
+   or starting with `/music/`, so the check follows real source literals
+   rather than a fixed-string grep. The invariant this whole boundary
+   protects is unchanged and remains true after that fix: current Managed
+   Workspace root selection never silently falls back to `/music` — every
+   surviving `/music`-rooted literal in `backend/app/` is either a
+   query/display prefix-matching helper or a purely informational display
+   fallback, never a root used for filesystem reads/writes/selection.
 
 No other production code changed. Legacy Direct Library's actual runtime
 behavior (CLI defaults, the Settings → Advanced setup wizard, allowlisted
