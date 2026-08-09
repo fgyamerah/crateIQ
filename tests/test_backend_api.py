@@ -15,7 +15,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, analysis_operations_service, mik_metadata_service, musicbrainz_client, publish_readiness_service, publish_sync_service, rsync_runner, settings_service, sync_destination_service
+from backend.app.services import analysis_jobs_service, analysis_operations_service, bpm_retry_policy_service, mik_metadata_service, musicbrainz_client, publish_readiness_service, publish_sync_service, rsync_runner, settings_service, sync_destination_service
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -2662,6 +2662,132 @@ def test_scoped_bpm_run_via_api_passes_exact_track_id_scope(client, monkeypatch)
     assert rows[epsilon_id] == 120.0
     assert rows[zeta_id] is None
     assert rows[delta_id] is None  # globally eligible, outside scope -- never touched
+
+
+_DECODE_STDERR = "[mp3float] Header missing\nAUBIO ERROR: source_avcodec: error when sending packet\n"
+
+
+def _pause_track_via_api(test_client, root, db_path, monkeypatch, filename: str) -> int:
+    track_id = _insert_missing_bpm_key_track(db_path, root, filename)
+    path = root / "library" / "misc" / filename
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_ffmpeg_binary", lambda: "/fake/ffmpeg")
+
+    def fake_run(command, **kwargs):
+        if command[0] == "/fake/aubio":
+            return SimpleNamespace(returncode=1, stdout="", stderr=_DECODE_STDERR)
+        return SimpleNamespace(returncode=1, stdout="", stderr="Invalid data found when processing input\n")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_run)
+    response = test_client.post(
+        "/api/analysis/jobs/bpm_analysis/run",
+        json={"confirm": True, "limit": 10, "track_ids": [track_id]},
+    )
+    assert response.status_code == 200
+    assert response.json()["failed"] == 1
+    assert bpm_retry_policy_service.is_paused(track_id) is True
+    return track_id
+
+
+def test_retry_bpm_track_endpoint_requires_confirm(client):
+    test_client, root = client
+    response = test_client.post("/api/analysis/jobs/bpm_analysis/tracks/1/retry", json={"confirm": False})
+    assert response.status_code == 422
+
+
+def test_retry_bpm_track_endpoint_rejects_non_positive_id(client):
+    test_client, root = client
+    response = test_client.post("/api/analysis/jobs/bpm_analysis/tracks/0/retry", json={"confirm": True})
+    assert response.status_code == 422
+
+
+def test_retry_bpm_track_endpoint_clears_pause_on_success(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    track_id = _pause_track_via_api(test_client, root, db_path, monkeypatch, "paused-via-api.mp3")
+
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="132.0 bpm\n", stderr=""),
+    )
+    response = test_client.post(
+        f"/api/analysis/jobs/bpm_analysis/tracks/{track_id}/retry", json={"confirm": True},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["updated"] == 1
+    assert body["suppressed_count"] == 0
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT bpm FROM tracks WHERE id = ?", (track_id,)).fetchone() == (132.0,)
+    assert bpm_retry_policy_service.is_paused(track_id) is False
+
+
+def test_retry_bpm_track_endpoint_never_touches_lower_id_global_candidate(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    lower_id = _insert_missing_bpm_key_track(db_path, root, "aaa-lower.mp3")
+    paused_id = _pause_track_via_api(test_client, root, db_path, monkeypatch, "zzz-paused.mp3")
+    assert lower_id < paused_id
+
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="99.0 bpm\n", stderr=""),
+    )
+    response = test_client.post(
+        f"/api/analysis/jobs/bpm_analysis/tracks/{paused_id}/retry", json={"confirm": True},
+    )
+    assert response.status_code == 200
+    with sqlite3.connect(db_path) as conn:
+        rows = dict(conn.execute("SELECT id, bpm FROM tracks WHERE id IN (?, ?)", (lower_id, paused_id)).fetchall())
+    assert rows[paused_id] == 99.0
+    assert rows[lower_id] is None
+
+
+def test_resume_bpm_retries_endpoint_clears_only_policy(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    track_id = _pause_track_via_api(test_client, root, db_path, monkeypatch, "resume-via-api.mp3")
+
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: (_ for _ in ()).throw(AssertionError("resume must never invoke any analysis tool")),
+    )
+    response = test_client.post(f"/api/analysis/jobs/bpm_analysis/tracks/{track_id}/resume")
+    assert response.status_code == 200
+    assert response.json() == {"track_id": track_id, "resumed": True, "was_paused": True}
+    assert bpm_retry_policy_service.is_paused(track_id) is False
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT bpm FROM tracks WHERE id = ?", (track_id,)).fetchone() == (None,)
+
+
+def test_resume_bpm_retries_endpoint_rejects_non_positive_id(client):
+    test_client, root = client
+    response = test_client.post("/api/analysis/jobs/bpm_analysis/tracks/0/resume")
+    assert response.status_code == 422
+
+
+def test_paused_track_excluded_from_run_and_preview_via_api(client, monkeypatch):
+    test_client, root = client
+    db_path = root / "logs" / "processed.db"
+    other_id = _insert_missing_bpm_key_track(db_path, root, "other-via-api.mp3")
+    paused_id = _pause_track_via_api(test_client, root, db_path, monkeypatch, "excluded-via-api.mp3")
+
+    preview = test_client.get("/api/analysis/jobs/bpm_analysis/preview")
+    assert preview.status_code == 200
+    assert preview.json()["suppressed_count"] >= 1
+    assert all(sample["track_id"] != paused_id for sample in preview.json()["samples"])
+
+    monkeypatch.setattr(
+        analysis_jobs_service.subprocess, "run",
+        lambda *a, **k: SimpleNamespace(returncode=0, stdout="140.0 bpm\n", stderr=""),
+    )
+    response = test_client.post("/api/analysis/jobs/bpm_analysis/run", json={"confirm": True, "limit": 10})
+    assert response.status_code == 200
+    assert response.json()["suppressed_count"] >= 1
+    with sqlite3.connect(db_path) as conn:
+        rows = dict(conn.execute("SELECT id, bpm FROM tracks WHERE id IN (?, ?)", (other_id, paused_id)).fetchall())
+    assert rows[other_id] == 140.0
+    assert rows[paused_id] is None
 
 
 def test_scoped_key_run_via_api_passes_exact_track_id_scope(client, monkeypatch):

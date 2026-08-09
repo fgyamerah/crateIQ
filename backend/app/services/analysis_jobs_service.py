@@ -22,7 +22,13 @@ from typing import Any
 from modules.analyzer import CAMELOT_MAP, CAMELOT_TO_MUSICAL, _RE_CAMELOT
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
-from . import analysis_operations_service, mik_metadata_service, quality_findings_service, settings_service
+from . import (
+    analysis_operations_service,
+    bpm_retry_policy_service,
+    mik_metadata_service,
+    quality_findings_service,
+    settings_service,
+)
 
 log = logging.getLogger(__name__)
 
@@ -350,7 +356,15 @@ def _scoped_rows(conn: sqlite3.Connection, base_sql: str, track_ids: list[int], 
 
 def _bpm_candidates(
     conn: sqlite3.Connection, root: Path, limit: int | None = None, track_ids: list[int] | None = None,
+    *, bypass_pause_track_id: int | None = None,
 ) -> list[sqlite3.Row]:
+    """Missing-BPM candidates, with tracks under an active retry pause excluded.
+
+    `bypass_pause_track_id` lets exactly one track ignore its own pause --
+    the narrow "Retry BPM now" contract (see `retry_track`). It never widens
+    the query beyond `track_ids`; it only stops that one id from being
+    filtered out by the pause exclusion below.
+    """
     conn.row_factory = sqlite3.Row
     _ensure_bpm_columns(conn)
     base_sql = """
@@ -359,14 +373,43 @@ def _bpm_candidates(
         FROM tracks
         WHERE bpm IS NULL
     """
+    paused_ids = bpm_retry_policy_service.paused_track_ids(conn=conn)
+    if bypass_pause_track_id is not None:
+        paused_ids = paused_ids - {bypass_pause_track_id}
+
     if track_ids is not None:
-        return _scoped_rows(conn, base_sql, track_ids, limit)
-    sql = base_sql + " ORDER BY id"
+        rows = _scoped_rows(conn, base_sql, track_ids, None)
+        if paused_ids:
+            rows = [row for row in rows if row["id"] not in paused_ids]
+        return rows[:limit] if limit is not None else rows
+
+    sql = base_sql
     params: list[int] = []
+    if paused_ids:
+        ordered_paused = list(paused_ids)
+        for start in range(0, len(ordered_paused), _SQLITE_ID_CHUNK_SIZE):
+            chunk = ordered_paused[start:start + _SQLITE_ID_CHUNK_SIZE]
+            placeholders = ",".join("?" * len(chunk))
+            sql += f" AND id NOT IN ({placeholders})"
+            params.extend(chunk)
+    sql += " ORDER BY id"
     if limit is not None:
         sql += " LIMIT ?"
         params.append(limit)
     return conn.execute(sql, params).fetchall()
+
+
+def _raw_missing_bpm_count(conn: sqlite3.Connection, track_ids: list[int] | None) -> int:
+    """Total in-scope missing-BPM tracks, ignoring any retry pause.
+
+    Used only to derive `suppressed_count`/`remaining_missing_bpm` -- values
+    that must describe true missing-BPM state regardless of pause, not the
+    pause-filtered candidate set `_bpm_candidates` executes against.
+    """
+    conn.row_factory = sqlite3.Row
+    if track_ids is None:
+        return conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
+    return len(_scoped_rows(conn, "SELECT id FROM tracks WHERE bpm IS NULL", track_ids, None))
 
 
 def _key_candidates(
@@ -807,9 +850,9 @@ def _preview_audio_quality(job: dict[str, Any], rows: list[dict[str, Any]]) -> d
 
 
 def _scoped_preview_rows(job_type: str, scope: list[int]) -> list[dict[str, Any]]:
-    """Return bpm/key candidate rows restricted to `scope`, sharing the exact
-    same SQL selection `_run_bpm_analysis`/`_run_key_analysis` will use, so a
-    scoped preview's candidate set matches the scoped run's universe."""
+    """Return key candidate rows restricted to `scope`, sharing the exact
+    same SQL selection `_run_key_analysis` will use, so a scoped preview's
+    candidate set matches the scoped run's universe."""
     if not scope:
         return []
     root = selected_library_root()
@@ -817,11 +860,28 @@ def _scoped_preview_rows(job_type: str, scope: list[int]) -> list[dict[str, Any]
     if not db_path.is_file():
         return []
     with sqlite3.connect(db_path) as conn:
-        if job_type == "bpm_analysis":
-            candidate_rows = _bpm_candidates(conn, root, None, scope)
-        else:
-            candidate_rows = _key_candidates(conn, None, scope)
+        candidate_rows = _key_candidates(conn, None, scope)
         return [dict(row) for row in candidate_rows]
+
+
+def _bpm_preview_summary(scope: list[int] | None) -> tuple[list[dict[str, Any]], int]:
+    """Return (pause-filtered bpm candidate rows, suppressed_count) for `scope`.
+
+    Shares `_bpm_candidates`'s exact selection with `_run_bpm_analysis`, so a
+    preview's candidate set (and its suppressed_count) always matches what a
+    run over the same scope would actually process -- for both the global
+    queue (`scope is None`) and an explicit track_ids scope.
+    """
+    root = selected_library_root()
+    db_path = assert_path_under_root(library_db_path(root), root)
+    if not db_path.is_file():
+        return [], 0
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        eligible = _bpm_candidates(conn, root, None, scope)
+        total_missing = _raw_missing_bpm_count(conn, scope)
+        suppressed = max(total_missing - len(eligible), 0)
+        return [dict(row) for row in eligible], suppressed
 
 
 def preview(
@@ -859,11 +919,9 @@ def preview(
     if job_type == "audio_quality_probe":
         return _preview_audio_quality(job, rows)
 
+    suppressed_count = 0
     if job_type == "bpm_analysis":
-        candidates = (
-            [row for row in rows if row.get("bpm") is None] if scope is None
-            else _scoped_preview_rows(job_type, scope)
-        )
+        candidates, suppressed_count = _bpm_preview_summary(scope)
     elif job_type == "key_analysis":
         candidates = (
             [row for row in rows if not (row.get("key_camelot") or row.get("key_musical"))] if scope is None
@@ -878,6 +936,11 @@ def preview(
         warnings.append(f"Required tool unavailable: {', '.join(job['required_tools'])}.")
     if job_type == "bpm_analysis" and job["runner_implemented"]:
         warnings.append("Preview is read-only. An explicit confirmed run invokes aubio only and writes BPM/provenance to CrateIQ's local index.")
+        if suppressed_count:
+            warnings.append(
+                f"{suppressed_count} missing-BPM track(s) are excluded from this preview: automatic retries "
+                "are paused after a proven decode failure. Open Audio Quality Review to retry or resume."
+            )
     elif job_type == "key_analysis" and job["runner_implemented"]:
         warnings.append("Preview is read-only. An explicit confirmed run invokes keyfinder-cli only and writes key/Camelot provenance to CrateIQ's local index.")
     elif job_type == "beets_enrichment":
@@ -889,6 +952,7 @@ def preview(
         "samples": [_as_candidate(row) for row in candidates[:_SAMPLE_LIMIT]],
         "warnings": warnings, "expected_write_behavior": job["write_behavior"],
         "runner_implemented": job["runner_implemented"],
+        "suppressed_count": suppressed_count,
     }
 
 
@@ -921,6 +985,40 @@ def run(
     if job_type == "audio_quality_probe":
         raise RuntimeError("Audio quality probing is preview-only. No files, tags, or database records were changed.")
     raise RuntimeError("This analysis runner is not implemented yet. Preview candidates and configure the required tool; no job was started.")
+
+
+def retry_track(track_id: int) -> dict[str, Any]:
+    """Explicit one-track BPM retry -- "Retry BPM now" for a paused track.
+
+    Exact `track_ids=[track_id]`, limit 1: never widens scope, never touches
+    any other track (paused or not). Bypasses only this exact track's own
+    retry pause -- a global/None scope can never bypass a pause (there is no
+    code path here that could reach one). Reuses the same blocking
+    `_run_bpm_analysis` the normal confirmed run uses, so the missing-BPM-
+    only write guard, MIK/trust rules, and durable-finding lifecycle are
+    identical -- only the candidate-selection pause exclusion differs.
+    """
+    if not isinstance(track_id, int) or isinstance(track_id, bool) or track_id <= 0:
+        raise ValueError("track_id must be a positive integer.")
+    return _run_bpm_analysis(1, [track_id], max_track_ids=1, bypass_pause_track_id=track_id)
+
+
+def resume_retry(track_id: int) -> dict[str, Any]:
+    """Clear only a track's automatic-retry pause -- "Resume automatic retries".
+
+    Runs no analysis, writes no BPM, changes no audio/tags, and never
+    touches the Quality Review decision/note or the durable finding itself.
+    Idempotent: resuming an already-unpaused track is a safe no-op.
+    """
+    if not isinstance(track_id, int) or isinstance(track_id, bool) or track_id <= 0:
+        raise ValueError("track_id must be a positive integer.")
+    root = selected_library_root()
+    db_path = assert_path_under_root(library_db_path(root), root)
+    if not db_path.is_file():
+        raise ValueError("Configured library is not initialized.")
+    with sqlite3.connect(db_path) as conn:
+        was_paused = bpm_retry_policy_service.resume(track_id, conn=conn)
+    return {"track_id": track_id, "resumed": True, "was_paused": was_paused}
 
 
 def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str) -> tuple[float | None, str, bool]:
@@ -1013,7 +1111,12 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
 
 def _run_bpm_analysis(
     limit: int, track_ids: list[int] | None = None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+    bypass_pause_track_id: int | None = None,
 ) -> dict[str, Any]:
+    """`bypass_pause_track_id` is set only by `retry_track`'s narrow exact-track
+    contract -- it lets exactly that one track's own retry pause be ignored
+    for this run. It never widens `track_ids`; every other paused track
+    (in-scope or not) remains excluded exactly as normal."""
     binary = _resolve_aubio_binary()
     if not binary:
         raise RuntimeError("aubio is not available. Configure AUBIO_BIN or install aubio before running BPM analysis.")
@@ -1024,6 +1127,7 @@ def _run_bpm_analysis(
     scope = _normalize_track_ids(track_ids, max_track_ids=max_track_ids)
 
     analyzed = updated = skipped = failed = recovered = 0
+    suppressed_count = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
     operation_id: str | None = None
@@ -1031,19 +1135,24 @@ def _run_bpm_analysis(
     remaining: int | None = None
     try:
         with sqlite3.connect(db_path) as conn:
+            conn.row_factory = sqlite3.Row
             _ensure_bpm_columns(conn)
-            if scope is None:
-                eligible_total = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
-            else:
-                # Scoped eligible_total/remaining describe only the requested
-                # scope -- never the global missing-BPM queue -- so a 3-track
-                # scoped run never misleadingly reports unrelated library counts.
-                eligible_total = len(_bpm_candidates(conn, root, None, scope))
-            candidates = _bpm_candidates(conn, root, limit, scope)
+            # Scoped eligible_total/remaining describe only the requested
+            # scope -- never the global missing-BPM queue -- so a 3-track
+            # scoped run never misleadingly reports unrelated library counts.
+            eligible_total = len(_bpm_candidates(conn, root, None, scope, bypass_pause_track_id=bypass_pause_track_id))
+            total_missing = _raw_missing_bpm_count(conn, scope)
+            suppressed_count = max(total_missing - eligible_total, 0)
+            candidates = _bpm_candidates(conn, root, limit, scope, bypass_pause_track_id=bypass_pause_track_id)
             operation_id = analysis_operations_service.start_operation(
                 "bpm_analysis", scope_limit=limit, eligible_total=eligible_total,
                 considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
             )["id"]
+            if suppressed_count:
+                warnings.append(
+                    f"{suppressed_count} missing-BPM track(s) skipped: automatic retries are paused after a "
+                    "proven decode failure. Open Audio Quality Review to retry or resume."
+                )
             for row in candidates:
                 if analysis_operations_service.is_cancel_requested(operation_id):
                     cancelled = True
@@ -1100,10 +1209,12 @@ def _run_bpm_analysis(
                         # missing tool, a timeout, or a "ran fine, no tempo" result) --
                         # durable, non-corrupting: BPM stays NULL either way.
                         if direct_classification == "decode_error" and ffmpeg_decode_failed:
+                            finding_saved = False
                             try:
                                 quality_findings_service.record_audio_decode_failure(
                                     row["id"], direct_diagnostic, conn=conn,
                                 )
+                                finding_saved = True
                             except Exception:
                                 log.warning(
                                     "Failed to persist durable audio_decode_failed finding for track %s",
@@ -1113,6 +1224,18 @@ def _run_bpm_analysis(
                                     f"{row['filename']}: audio decode failure was not saved to Quality "
                                     "Review (local index write failed)."
                                 )
+                            # Only pause once the visible finding is actually saved --
+                            # a hidden pause with no visible durable finding is unsafe;
+                            # a visible failure with no pause is the safer fallback if
+                            # the two writes cannot both be kept consistent.
+                            if finding_saved:
+                                try:
+                                    bpm_retry_policy_service.pause(row["id"], conn=conn)
+                                except Exception:
+                                    log.warning(
+                                        "Failed to persist BPM retry pause for track %s",
+                                        row["id"], exc_info=True,
+                                    )
                         continue
                     bpm_source = "aubio_ffmpeg_decode"
 
@@ -1150,13 +1273,37 @@ def _run_bpm_analysis(
                                 f"{row['filename']}: recovered-audio quality warning was not saved to "
                                 "Quality Review (local index write failed)."
                             )
+                # Any successful BPM write clears a stale pause/finding for this
+                # track, if one exists. Both calls are idempotent no-ops when
+                # there is nothing to clear -- guarded by a read-only check
+                # first so a plain successful run on a track that was never
+                # paused/flagged never creates the pause/finding tables in
+                # processed.db. Covers both the narrow retry_track bypass (a
+                # still-paused track succeeding) and a normal run picking up
+                # a track after an explicit Resume already cleared its pause
+                # (no pause left to clear, but a stale finding may still need
+                # resolving). History is retained, never deleted.
+                try:
+                    if bpm_retry_policy_service.is_paused(row["id"], conn=conn):
+                        bpm_retry_policy_service.resume(row["id"], conn=conn)
+                except Exception:
+                    log.warning(
+                        "Failed to clear BPM retry pause for track %s after a successful analysis",
+                        row["id"], exc_info=True,
+                    )
+                try:
+                    quality_findings_service.resolve_finding(
+                        row["id"], "audio_decode_failed", "bpm_analysis", conn=conn,
+                    )
+                except Exception:
+                    log.warning(
+                        "Failed to resolve audio_decode_failed finding for track %s after a successful analysis",
+                        row["id"], exc_info=True,
+                    )
                 result = _as_candidate(dict(row))
                 result["bpm"] = bpm
                 results.append(result)
-            if scope is None:
-                remaining = conn.execute("SELECT COUNT(*) FROM tracks WHERE bpm IS NULL").fetchone()[0]
-            else:
-                remaining = len(_bpm_candidates(conn, root, None, scope))
+            remaining = _raw_missing_bpm_count(conn, scope)
     except Exception as exc:
         if operation_id:
             analysis_operations_service.finish_operation(
@@ -1175,6 +1322,7 @@ def _run_bpm_analysis(
     return {
         "job_type": "bpm_analysis", "analyzed": analyzed, "updated": updated,
         "skipped": skipped, "failed": failed, "recovered": recovered,
+        "suppressed_count": suppressed_count,
         "remaining_missing_bpm": remaining,
         "warnings": warnings, "results": results, "operation_id": operation_id,
         "cancelled": cancelled,

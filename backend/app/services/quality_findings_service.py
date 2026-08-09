@@ -78,10 +78,23 @@ def _ensure_tables(conn: sqlite3.Connection) -> None:
             decision TEXT NOT NULL DEFAULT 'unresolved' CHECK (decision IN ('reviewed', 'ignore', 'review_later', 'unresolved')),
             note TEXT NOT NULL DEFAULT '',
             decision_updated_at TEXT,
+            resolved_at TEXT,
             UNIQUE (track_id, reason_code, source)
         )
         """
     )
+    _ensure_resolved_at_column(conn)
+
+
+def _ensure_resolved_at_column(conn: sqlite3.Connection) -> None:
+    """Additive migration for indexes created before resolved_at existed.
+
+    Assumes the table already exists; callers that must not create the table
+    on a read path check for its existence first.
+    """
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(quality_review_findings)")}
+    if "resolved_at" not in columns:
+        conn.execute("ALTER TABLE quality_review_findings ADD COLUMN resolved_at TEXT")
 
 
 def _bound_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
@@ -98,6 +111,17 @@ def _bound_details(details: dict[str, Any] | None) -> dict[str, Any] | None:
         key: (value[:_DETAILS_MAX_LEN] if isinstance(value, str) else value)
         for key, value in details.items()
     }
+
+
+def _resolved_at(row: sqlite3.Row) -> str | None:
+    """Read `resolved_at`, tolerating a pre-migration table missing the column.
+
+    `_ensure_tables()` only runs on write paths, so a read against a
+    `quality_review_findings` table created before `resolved_at` existed must
+    not raise `IndexError` (sqlite3.Row's KeyError-equivalent for an absent
+    column) -- table absence and column absence both mean "not resolved yet."
+    """
+    return row["resolved_at"] if "resolved_at" in row.keys() else None
 
 
 def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
@@ -121,6 +145,7 @@ def _row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
         "decision": row["decision"],
         "note": row["note"],
         "reviewed_at": row["decision_updated_at"],
+        "resolved_at": _resolved_at(row),
     }
 
 
@@ -133,8 +158,12 @@ def record_finding(
 
     A repeated (track_id, reason_code, source) event updates `last_seen_at`
     and increments `occurrence_count` rather than inserting a duplicate
-    user-visible row. An existing review `decision` is never reset by this
-    call -- only the initial insert defaults to `unresolved`.
+    user-visible row. An existing review `decision`/`note` is never reset by
+    this call -- only the initial insert defaults to `unresolved`. A prior
+    `resolved_at` is always cleared: recording a finding means it was just
+    observed again, so a previously-resolved row (e.g. a genuine BPM decode
+    failure recurring after a successful retry) is reactivated on the same
+    row rather than creating a duplicate.
     """
     if reason_code not in _REASON_CODES:
         raise ValueError(f"Unknown durable quality reason_code: {reason_code!r}")
@@ -149,15 +178,16 @@ def record_finding(
             """
             INSERT INTO quality_review_findings
                 (track_id, reason_code, source, severity, blocking, message, details_json,
-                 first_seen_at, last_seen_at, occurrence_count, decision, note, decision_updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'unresolved', '', NULL)
+                 first_seen_at, last_seen_at, occurrence_count, decision, note, decision_updated_at, resolved_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 1, 'unresolved', '', NULL, NULL)
             ON CONFLICT(track_id, reason_code, source) DO UPDATE SET
                 severity = excluded.severity,
                 blocking = excluded.blocking,
                 message = excluded.message,
                 details_json = excluded.details_json,
                 last_seen_at = excluded.last_seen_at,
-                occurrence_count = occurrence_count + 1
+                occurrence_count = occurrence_count + 1,
+                resolved_at = NULL
             """,
             (track_id, reason_code, source, severity, int(blocking), message, details_json, now, now),
         )
@@ -200,6 +230,44 @@ def update_decision(
             (decision, note.strip(), _now(), finding_id),
         )
         row = active.execute("SELECT * FROM quality_review_findings WHERE id = ?", (finding_id,)).fetchone()
+        return _row_to_dict(row)
+
+
+def resolve_finding(
+    track_id: int, reason_code: str, source: str, *, conn: sqlite3.Connection | None = None,
+) -> dict[str, Any] | None:
+    """Mark an active finding resolved, without deleting its history.
+
+    Idempotent: resolving an already-resolved or nonexistent finding is a
+    safe no-op (returns the current row, or None if it does not exist).
+    `decision`/`note`/`occurrence_count` are left untouched -- only
+    `resolved_at` changes. A later `record_finding` call for the same
+    (track_id, reason_code, source) reactivates this same row rather than
+    creating a duplicate.
+
+    Never creates the table: like `list_findings`, table absence means "no
+    findings recorded yet," so a successful analysis run on a track that
+    never had a finding must not add schema to processed.db.
+    """
+    if reason_code not in _REASON_CODES:
+        raise ValueError(f"Unknown durable quality reason_code: {reason_code!r}")
+    with _connection(conn) as active:
+        tables = {row[0] for row in active.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+        if "quality_review_findings" not in tables:
+            return None
+        row = active.execute(
+            "SELECT * FROM quality_review_findings WHERE track_id = ? AND reason_code = ? AND source = ?",
+            (track_id, reason_code, source),
+        ).fetchone()
+        if row is None:
+            return None
+        if _resolved_at(row) is None:
+            _ensure_resolved_at_column(active)
+            active.execute(
+                "UPDATE quality_review_findings SET resolved_at = ? WHERE id = ?",
+                (_now(), row["id"]),
+            )
+            row = active.execute("SELECT * FROM quality_review_findings WHERE id = ?", (row["id"],)).fetchone()
         return _row_to_dict(row)
 
 

@@ -23,7 +23,7 @@ from __future__ import annotations
 import logging
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Path, Query
 from fastapi.concurrency import run_in_threadpool
 
 from ...schemas.bpm_analysis import (
@@ -38,6 +38,8 @@ from ...schemas.analysis_jobs import (
     AnalysisOperation,
     BpmAnalysisRunRequest,
     BpmAnalysisRunResult,
+    BpmRetryResumeResult,
+    BpmRetryTrackRequest,
     KeyAnalysisRunRequest,
     KeyAnalysisRunResult,
     AnalysisJobHistoryResponse,
@@ -167,6 +169,42 @@ async def run_analysis_job(job_type: str, body: BpmAnalysisRunRequest | KeyAnaly
         raise HTTPException(status_code=status_code, detail=str(exc))
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/analysis/jobs/bpm_analysis/tracks/{track_id}/retry", response_model=BpmAnalysisRunResult)
+async def retry_bpm_track(
+    track_id: int = Path(ge=1), body: BpmRetryTrackRequest = BpmRetryTrackRequest(),
+) -> BpmAnalysisRunResult:
+    """Explicit exact-track "Retry BPM now" for a track paused by a proven
+    two-stage decode failure.
+
+    Uses exact `track_ids=[track_id]`, limit 1; bypasses only this track's
+    own retry pause. Never overwrites an existing BPM. Dispatched to a
+    thread pool for the same reason as the general run endpoint -- a
+    blocking retry must not stall the event loop.
+    """
+    if not body.confirm:
+        raise HTTPException(status_code=422, detail="BPM retry requires confirm=true.")
+    try:
+        result = await run_in_threadpool(analysis_jobs_service.retry_track, track_id)
+        return BpmAnalysisRunResult(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc))
+
+
+@router.post("/analysis/jobs/bpm_analysis/tracks/{track_id}/resume", response_model=BpmRetryResumeResult)
+async def resume_bpm_retries(track_id: int = Path(ge=1)) -> BpmRetryResumeResult:
+    """Clear only a track's automatic-retry pause ("Resume automatic retries").
+
+    Runs no analysis and writes no BPM/tag/review-decision field -- an
+    idempotent policy-only action.
+    """
+    try:
+        return BpmRetryResumeResult(**analysis_jobs_service.resume_retry(track_id))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
 
 
 @router.get("/analysis/mik/coverage", response_model=MikCoverageResponse)

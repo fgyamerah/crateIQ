@@ -109,7 +109,14 @@ Service map (`backend/app/services/`), current primary surfaces:
   `quality_findings_service` owns the durable `quality_review_findings`
   table (upsert on `track_id`/`reason_code`/`source`, no duplicate rows on
   repeat events) and has no import on `quality_review_service` or
-  `analysis_jobs_service`, so both of those import it without a cycle.
+  `analysis_jobs_service`, so both of those import it without a cycle. A
+  nullable `resolved_at` gives findings a small active/resolved lifecycle:
+  `record_finding()` always clears a prior `resolved_at` on a repeat event
+  (reactivating the same row rather than duplicating it), and
+  `resolve_finding()` sets it without deleting history; `_durable_items()`
+  filters to unresolved rows only, so a track whose finding was resolved by
+  a later successful retry drops out of the active Quality/Needs Review
+  view while its history row is retained.
 * `provider_routing_service` / `consensus_service` — evidence gathering and
   field-level HIGH/MEDIUM/LOW/CONFLICT consensus
 * `tag_write_service` — plan/backup/write/re-read/verify controlled tag
@@ -164,7 +171,30 @@ Service map (`backend/app/services/`), current primary surfaces:
   `audio_decode_failed` finding only when both direct aubio showed
   `decode_error` evidence and FFmpeg genuinely failed to decode (never for
   a missing tool, a timeout, a cancellation, or an unevidenced
-  `process_error`/benign "no tempo found").
+  `process_error`/benign "no tempo found"). That same strict two-stage
+  evidence -- and only once the visible finding write itself succeeds -- also
+  durably pauses the track from future automatic BPM retries, via a small
+  neutral `bpm_retry_policy_service` (`bpm_retry_pauses` table in the
+  selected library's `processed.db`, deliberately separate from Quality
+  Review's `reviewed`/`ignore`/`review_later`/`unresolved` decision; neither
+  ever implicitly drives the other). `_bpm_candidates()` excludes paused
+  tracks after missing-BPM eligibility and before `limit` (global or
+  scoped), reporting a bounded `suppressed_count`/warning rather than
+  substituting an unrelated candidate; every read path and a plain
+  successful analysis run never create the pause/finding tables unless a
+  pause/finding genuinely exists. Two narrow exact-track endpoints cover
+  user control: `POST /api/analysis/jobs/bpm_analysis/tracks/{id}/retry`
+  runs the identical blocking analysis with `track_ids=[id]`, `limit=1`,
+  bypassing only that one track's own pause (never a global/None scope);
+  `POST .../tracks/{id}/resume` clears only the pause -- no analysis, no
+  BPM/tag write. A successful retry (direct or FFmpeg-recovered) clears the
+  pause and resolves the finding; a repeated genuine failure reactivates the
+  same finding row and refreshes the same pause idempotently; a transient
+  retry failure (timeout/tool/OSError/cancellation) leaves the prior proven
+  pause and finding untouched. `QualityReview.tsx`'s durable finding detail
+  exposes "Retry BPM now" and, only while paused, "Resume automatic
+  retries" -- separate from `BpmReview.tsx`'s unrelated anomaly-review
+  `Queue` action.
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
 * `sync_destination_service` — Publish/SSD Sync source and destination

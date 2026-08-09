@@ -106,6 +106,10 @@ class AnalysisJobPreview(BaseModel):
     groups: list[DuplicateCandidateGroup] = Field(default_factory=list)
     quality_probes: list[QualityProbeResult] = Field(default_factory=list)
     next_step: Optional[str] = None
+    # bpm_analysis only: in-scope missing-BPM tracks excluded solely because
+    # an active retry pause is in effect (see BpmRetryTrackRequest). Always 0
+    # for every other job type.
+    suppressed_count: int = 0
 
 
 AnalysisOperationStatus = Literal["running", "completed", "failed", "cancelled"]
@@ -173,12 +177,32 @@ class BpmAnalysisRunResult(BaseModel):
     skipped: int
     failed: int
     recovered: int = 0
+    # In-scope missing-BPM tracks skipped solely because an active retry
+    # pause is in effect. 0 for a "Retry BPM now" call over its own exact
+    # track, since that call bypasses only that one track's pause.
+    suppressed_count: int = 0
     remaining_missing_bpm: int
     warnings: list[str] = Field(default_factory=list)
     results: list[AnalysisJobCandidate] = Field(default_factory=list)
     operation_id: Optional[str] = None
     cancelled: bool = False
     outcome: AnalysisOperationOutcome = "complete"
+
+
+class BpmRetryTrackRequest(BaseModel):
+    """Explicit confirmation for a narrow, exact-track "Retry BPM now" call."""
+    confirm: bool = False
+
+
+class BpmRetryResumeResult(BaseModel):
+    """Result of clearing only a track's automatic-retry pause.
+
+    No analysis is run and no BPM/tag/review-decision field changes -- this
+    purely reports whether a pause existed and was cleared.
+    """
+    track_id: int
+    resumed: bool
+    was_paused: bool
 
 
 class KeyAnalysisRunRequest(BpmAnalysisRunRequest):

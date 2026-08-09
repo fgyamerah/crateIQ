@@ -397,7 +397,20 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
             # which can legitimately exceed the external API's per-request
             # track_ids bound once tracks accumulate across multiple imports.
             from . import analysis_jobs_service
-            analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
+            bpm_result = analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
+            # Read the suppression count immediately, before key analysis
+            # runs -- if key analysis raises, this warning must still survive
+            # so the user isn't left without the only signal explaining why
+            # in-batch tracks still have no BPM.
+            suppressed = bpm_result.get("suppressed_count") or 0
+            if suppressed:
+                warnings.append(
+                    f"{suppressed} missing-BPM track(s) in this batch were skipped: automatic retries are "
+                    "paused after a proven decode failure. Open Audio Quality Review to retry or resume."
+                )
+            # Paused BPM tracks (proven two-stage decode failures) must not
+            # fail the batch -- they are simply excluded from BPM candidate
+            # selection; key analysis must still run over the full batch.
             analysis_jobs_service.run("key_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
         except Exception as exc:  # noqa: BLE001 - analysis is best-effort within Process All
             warnings.append(f"Analysis step skipped: {exc}")

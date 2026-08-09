@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
-from . import analysis_jobs_service, quality_findings_service
+from . import analysis_jobs_service, bpm_retry_policy_service, quality_findings_service
 
 _DECISIONS = {"reviewed", "ignore", "review_later", "unresolved"}
 _LOW_BITRATE_KBPS = 192
@@ -129,18 +129,21 @@ _DURABLE_ITEM_DEFAULTS = {
 _FFPROBE_ITEM_DEFAULTS = {
     "reason_code": None, "source": "ffprobe_preview", "severity": None, "blocking": False,
     "message": None, "details": None, "first_seen_at": None, "last_seen_at": None,
-    "occurrence_count": None,
+    "occurrence_count": None, "retry_paused": False,
 }
 
 
 def _durable_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
-    """Durable findings (e.g. BPM-analysis decode findings), orphans skipped.
+    """Active (unresolved) durable findings, orphans skipped.
 
     Read independently of any ffprobe snapshot, so these always survive a
     `refresh_preview()` snapshot replace -- the architectural reason this
-    module exists (see `quality_findings_service`).
+    module exists (see `quality_findings_service`). A resolved finding (e.g.
+    a genuine BPM decode failure that a later retry fixed) is deliberately
+    excluded here -- its history row is retained, not deleted, but it is no
+    longer "active" review content. See `quality_findings_service.resolve_finding`.
     """
-    findings = quality_findings_service.list_findings(conn=conn)
+    findings = [finding for finding in quality_findings_service.list_findings(conn=conn) if finding["resolved_at"] is None]
     if not findings:
         return []
     track_ids = {finding["track_id"] for finding in findings}
@@ -164,6 +167,10 @@ def _durable_items(conn: sqlite3.Connection) -> list[dict[str, Any]]:
             "first_seen_at": finding["first_seen_at"], "last_seen_at": finding["last_seen_at"],
             "occurrence_count": finding["occurrence_count"],
             "decision": finding["decision"], "note": finding["note"], "reviewed_at": finding["reviewed_at"],
+            "retry_paused": (
+                finding["reason_code"] == "audio_decode_failed"
+                and bpm_retry_policy_service.is_paused(finding["track_id"], conn=conn)
+            ),
         })
     return items
 

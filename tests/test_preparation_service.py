@@ -208,6 +208,77 @@ async def test_run_process_all_analysis_stage_is_scoped_to_its_own_batch(managed
 
 
 @async_test
+async def test_run_process_all_skips_paused_bpm_but_not_key_and_never_touches_outside_batch(managed_root, monkeypatch, tmp_path):
+    """A track paused after a proven two-stage BPM decode failure must be
+    excluded from Process All's BPM stage (BPM stays NULL, no tool call for
+    it) while key analysis still runs on it, the pause must not fail the
+    batch, exactly one bounded warning must surface, and a track outside the
+    captured batch must remain fully untouched."""
+    from backend.app.services import analysis_jobs_service, bpm_retry_policy_service
+
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "isolated_jobs.db")
+    backend_db.init_db()
+
+    paused_id = _seed_inbox_track(managed_root, artist="Paused Artist", title="Paused", filename="paused.mp3")
+    normal_id = _seed_inbox_track(managed_root, artist="Normal Artist", title="Normal", filename="normal.mp3")
+    outside_file = managed_root / "Inbox" / "outside.mp3"
+    _write(outside_file)
+    with sqlite3.connect(managed_root / "logs" / "processed.db") as conn:
+        conn.execute(
+            """INSERT INTO tracks (filepath, filename, artist, title, genre, status,
+                                    processed_at, pipeline_ver, storage_zone)
+               VALUES (?, 'outside.mp3', 'Outside Artist', 'Outside', 'House', 'pending',
+                       '2026-01-01T00:00:00Z', 'test', 'INBOX')""",
+            (str(outside_file),),
+        )
+        outside_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    bpm_retry_policy_service.pause(paused_id)
+
+    called_for: list[int] = []
+
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_keyfinder_binary", lambda: "/fake/keyfinder")
+
+    def fake_run(command, **kwargs):
+        from types import SimpleNamespace
+        called_for.append(command[0])
+        if command[0] == "/fake/aubio":
+            return SimpleNamespace(returncode=0, stdout="120.0 bpm\n", stderr="")
+        return SimpleNamespace(returncode=0, stdout="8A\n", stderr="")
+
+    monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_run)
+
+    batch = [paused_id, normal_id]
+    operation = preparation_operations_service.start_operation("process_all", track_count=len(batch))
+    await preparation_service.run_process_all(operation["id"], managed_root, batch)
+
+    saved = preparation_operations_service.get_operation(operation["id"])
+    assert saved["status"] == "completed"
+
+    with sqlite3.connect(managed_root / "logs" / "processed.db") as conn:
+        rows = {
+            row[0]: {"bpm": row[1], "key": row[2]}
+            for row in conn.execute(
+                "SELECT id, bpm, key_musical FROM tracks WHERE id IN (?, ?, ?)",
+                (paused_id, normal_id, outside_id),
+            ).fetchall()
+        }
+
+    assert rows[paused_id]["bpm"] is None, "a BPM-paused track's BPM must stay untouched by Process All"
+    assert rows[paused_id]["key"] is not None, "key analysis must still run on a BPM-paused track"
+    assert rows[normal_id]["bpm"] == 120.0
+    assert rows[normal_id]["key"] is not None
+    assert rows[outside_id]["bpm"] is None
+    assert rows[outside_id]["key"] is None, "a track outside the batch must never be touched"
+    assert called_for.count("/fake/aubio") == 1, "aubio must never run for the paused track"
+
+    suppression_warnings = [w for w in saved["warnings"] if "Audio Quality Review" in w]
+    assert len(suppression_warnings) == 1, "at most one bounded suppression warning must surface"
+    assert "1 missing-BPM track" in suppression_warnings[0]
+
+
+@async_test
 async def test_run_process_all_analysis_stage_accepts_a_batch_larger_than_2000(managed_root, monkeypatch, tmp_path):
     """An Inbox can legitimately accumulate more than 2000 tracks across
     multiple imports (workspace_service's _MAX_IMPORT_FILES only bounds a

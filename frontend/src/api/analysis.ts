@@ -11,6 +11,7 @@ import type {
   AnalysisJobDefinition,
   AnalysisOperation,
   BpmAnalysisRunResult,
+  BpmRetryResumeResult,
   KeyAnalysisRunResult,
   ReanalyzeRequest,
   UpdateAnomalyRequest,
@@ -64,3 +65,7 @@ export const runBpmAnalysis = (limit: number, trackIds?: number[]) =>
   apiFetch.post<BpmAnalysisRunResult>('/analysis/jobs/bpm_analysis/run', { confirm: true, limit, track_ids: trackIds })
 export const runKeyAnalysis = (limit: number, trackIds?: number[]) =>
   apiFetch.post<KeyAnalysisRunResult>('/analysis/jobs/key_analysis/run', { confirm: true, limit, track_ids: trackIds })
+export const retryBpmTrack = (trackId: number) =>
+  apiFetch.post<BpmAnalysisRunResult>(`/analysis/jobs/bpm_analysis/tracks/${trackId}/retry`, { confirm: true })
+export const resumeBpmRetries = (trackId: number) =>
+  apiFetch.post<BpmRetryResumeResult>(`/analysis/jobs/bpm_analysis/tracks/${trackId}/resume`, {})

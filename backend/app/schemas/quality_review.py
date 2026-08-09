@@ -46,6 +46,10 @@ class QualityReviewItem(BaseModel):
     decision: QualityReviewDecision = "unresolved"
     note: str = ""
     reviewed_at: str | None = None
+    # True only for an active audio_decode_failed finding whose track
+    # currently has an automatic-retry pause. False for every ffprobe item
+    # and for every other durable reason_code.
+    retry_paused: bool = False
 
 
 class QualityReviewSummary(BaseModel):

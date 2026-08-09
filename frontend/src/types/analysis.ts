@@ -172,6 +172,9 @@ export interface AnalysisJobPreview {
   groups: DuplicateCandidateGroup[]
   quality_probes: QualityProbeResult[]
   next_step: string | null
+  /** bpm_analysis only: in-scope missing-BPM tracks excluded solely because
+   * an active retry pause is in effect. Always 0 for other job types. */
+  suppressed_count: number
 }
 
 export type AnalysisOperationStatus = 'running' | 'completed' | 'failed' | 'cancelled'
@@ -222,12 +225,23 @@ export interface BpmAnalysisRunResult {
   skipped: number
   failed: number
   recovered: number
+  /** In-scope missing-BPM tracks skipped solely because an active retry
+   * pause is in effect. 0 for a "Retry BPM now" call over its own track. */
+  suppressed_count: number
   remaining_missing_bpm: number
   warnings: string[]
   results: AnalysisJobCandidate[]
   operation_id: string | null
   cancelled: boolean
   outcome: AnalysisOperationOutcome
+}
+
+/** Result of clearing only a track's automatic-retry pause. No analysis is
+ * run and no BPM/tag/review-decision field changes. */
+export interface BpmRetryResumeResult {
+  track_id: number
+  resumed: boolean
+  was_paused: boolean
 }
 
 export interface KeyAnalysisRunResult {

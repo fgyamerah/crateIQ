@@ -31,6 +31,9 @@ export interface QualityReviewItem {
   decision: QualityReviewDecision
   note: string
   reviewed_at: string | null
+  // True only for an active audio_decode_failed finding whose track
+  // currently has an automatic-retry pause.
+  retry_paused: boolean
 }
 
 export interface QualityReviewSummary {

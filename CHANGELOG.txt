@@ -2,6 +2,84 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Add BPM retry pause + explicit Retry/Resume
+
+- What changed: a track is now durably paused from future automatic BPM
+  retries only after a genuine two-stage decode failure is proven -- direct
+  aubio fails with explicit decoder/media-error evidence AND the FFmpeg
+  temporary decode recovery attempt also fails to recover usable audio (the
+  same strict evidence that already creates the durable `audio_decode_failed`
+  finding; a generic non-zero exit, no-tempo result, missing tool, timeout,
+  cancellation, OSError, or unsafe path never pauses). The pause is only
+  written once the visible finding write itself succeeds -- a hidden pause
+  with no visible finding is treated as unsafe, so a failed finding write
+  leaves the track un-paused rather than silently suppressed. New
+  `backend/app/services/bpm_retry_policy_service.py` is a small neutral
+  `bpm_retry_pauses` table (track_id primary key) in the selected library's
+  `processed.db`, deliberately separate from Quality Review's
+  `reviewed`/`ignore`/`review_later`/`unresolved` decision -- pausing/
+  resuming never touches that decision or note, and the decision never
+  implicitly enables/disables retries. Schema creation is additive; every
+  read path (`is_paused`, `paused_track_ids`) and `quality_findings_service
+  .resolve_finding` check table existence first and never create a table on
+  a read or a plain successful run, so a track that was never paused/flagged
+  leaves processed.db's schema untouched. `_bpm_candidates()` now excludes
+  paused tracks after missing-BPM eligibility and before the limit is
+  applied (global and scoped), never substituting an unrelated candidate;
+  `preview()`/`_run_bpm_analysis()`/Process All each report a bounded
+  `suppressed_count` and at most one summary warning pointing at Audio
+  Quality Review, with no track-id list exposed. Two new narrow exact-track
+  endpoints: `POST /api/analysis/jobs/bpm_analysis/tracks/{id}/retry`
+  (`BpmRetryTrackRequest{confirm}` -> `BpmAnalysisRunResult`) runs the
+  identical blocking `_run_bpm_analysis` with `track_ids=[id]`, `limit=1`,
+  bypassing only that one track's own pause (a global/None scope can never
+  bypass a pause -- there is no code path that reaches one); it never clears
+  the pause before analysis and never overwrites an existing BPM. `POST
+  .../tracks/{id}/resume` (`-> BpmRetryResumeResult{track_id, resumed,
+  was_paused}`) clears only the policy pause -- no analysis, no BPM/tag
+  write, decision/note untouched. `quality_review_findings` gained a
+  nullable `resolved_at` column (additive `ALTER TABLE ... ADD COLUMN`
+  migration) plus `quality_findings_service.resolve_finding()`; `record_
+  finding()` now always clears a prior `resolved_at` on a repeat event, so a
+  recurring genuine failure reactivates the same row (occurrence_count
+  incremented, decision/note preserved) instead of duplicating it.
+  `quality_review_service._durable_items()` now filters to unresolved rows
+  only and adds a `retry_paused` flag on each item. A successful BPM write
+  (direct or FFmpeg-recovered) in `_run_bpm_analysis` now clears the pause
+  (only if one exists) and resolves the `audio_decode_failed` finding for
+  that track -- history is retained, never deleted; an FFmpeg-recovered
+  retry may resolve `audio_decode_failed` while still recording
+  `recoverable_audio_decode_warning`. QualityReview.tsx's durable finding
+  detail gained a policy panel (paused/active state, truthful busy/success/
+  failure messaging, safe selection move/clear after a resolving retry) with
+  "Retry BPM now" and, only while paused, "Resume automatic retries" --
+  BpmReview's separate `Queue` anomaly-review action is untouched. The
+  page's "no changes" safety copy was narrowed: audio/tags remain untouched,
+  but an explicit retry may write a newly measured missing BPM into
+  CrateIQ's local index.
+- Why it changed: completes the BPM reliability P1 item now that exact
+  per-track scoped analysis exists (see the two entries below) -- a proven-
+  undecodable track was previously retried forever on every run with no way
+  to stop or explicitly retry it in isolation, and there was no reset path
+  if the user later replaced/fixed the file.
+- Files affected: backend/app/services/bpm_retry_policy_service.py (new),
+  backend/app/services/analysis_jobs_service.py,
+  backend/app/services/quality_findings_service.py,
+  backend/app/services/quality_review_service.py,
+  backend/app/services/preparation_service.py,
+  backend/app/schemas/analysis_jobs.py, backend/app/schemas/quality_review.py,
+  backend/app/api/routes/analysis.py, frontend/src/api/analysis.ts,
+  frontend/src/types/analysis.ts, frontend/src/types/qualityReview.ts,
+  frontend/src/pages/QualityReview.tsx, frontend/src/index.css,
+  tests/test_bpm_retry_policy.py (new), tests/test_backend_api.py,
+  tests/test_bpm_ffmpeg_fallback.py, NEXT_TASKS.txt, CHANGELOG.txt,
+  PROJECT_CONTEXT.md.
+- Migration notes: additive only. `bpm_retry_pauses` and `quality_review_
+  findings.resolved_at` are created/added lazily and only on first actual
+  write; an already-initialized library with no pauses/findings never gets
+  the new table until one is genuinely needed. No destructive change, no
+  music-file/tag write.
+
 [2026-08-09] — Harden scoped analysis limits
 
 - What changed: two correctness fixes to the scoped BPM/key analysis

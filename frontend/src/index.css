@@ -8773,6 +8773,10 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
 .quality-review-durable-finding { display: grid; gap: 12px; }
 .quality-review-durable-message { background: rgba(8,12,19,.46); border: 1px solid rgba(67,77,108,.58); border-radius: 9px; color: var(--text); font-size: 12.5px; line-height: 1.5; margin: 0; padding: 10px 12px; }
 .quality-review-metrics--durable { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.quality-review-retry-policy { background: rgba(8,12,19,.38); border: 1px solid rgba(67,77,108,.58); border-radius: 9px; display: grid; gap: 10px; padding: 10px 12px; }
+.quality-review-retry-policy > p { align-items: flex-start; color: var(--text-muted); display: flex; font-size: 12px; gap: 6px; line-height: 1.5; margin: 0; }
+.quality-review-retry-policy > p svg { color: var(--brand-cyan); flex-shrink: 0; margin-top: 2px; }
+.quality-review-retry-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .inbox-page .badge { max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; vertical-align: bottom; }
 .quality-review-metrics { display: grid; gap: 7px; grid-template-columns: repeat(4, minmax(0, 1fr)); }
 .quality-review-metrics span { background: rgba(8,12,19,.38); border: 1px solid rgba(67,77,108,.58); border-radius: 9px; color: var(--text-muted); display: grid; font-size: 11px; gap: 3px; padding: 8px; }

@@ -26,19 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Retry suppression for BPM tracks proven genuinely undecodable (both
-    direct aubio and the FFmpeg fallback fail). The current BPM candidate
-    query (`WHERE bpm IS NULL`) intentionally still retries these every run
-    -- full retryability was kept on purpose because there was no per-track-
-    scoped analysis contract or reset UI yet. The prerequisite has now
-    landed: analysis_jobs_service.run()/preview() accept an optional
-    track_ids scope (see CHANGELOG), so a future retry/reset workflow can
-    target an exact track without touching the global missing-BPM queue.
-    Adding a durable per-track suppression column without a way to reset it
-    after a user replaces/fixes a file would still be fragile hidden state
-    -- design and test the reset path explicitly as its own task; do not
-    implement suppression state without one.
-
 [ ] Design and test a reconciliation APPLY workflow (backups, per-action
     confirmation, restore path). Cycle 4 shipped DETECT/PROPOSE/REVIEW/
     VALIDATE only; no apply/execute endpoint exists anywhere yet

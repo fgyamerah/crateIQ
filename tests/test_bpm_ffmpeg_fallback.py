@@ -264,10 +264,12 @@ def test_generic_nonzero_exit_with_ffmpeg_decode_failure_creates_no_durable_find
     assert _durable_findings(bpm_env.db_path) == []
 
 
-def test_repeated_decode_failure_upserts_single_durable_finding(bpm_env, monkeypatch):
-    """A genuinely-undecodable track keeps bpm NULL, so it stays eligible for
-    re-analysis every run (retry suppression is a separate, deliberately
-    unstarted task) -- the durable finding must not multiply on repeat runs.
+def test_repeated_decode_failure_stays_paused_and_does_not_duplicate_finding(bpm_env, monkeypatch):
+    """A genuinely-undecodable track is paused after its first proven failure,
+    so a second normal (unscoped) run must not re-attempt it at all -- the
+    durable finding's occurrence_count stays 1. Retry pause/reactivation
+    behavior (via the explicit retry_track bypass) is covered in
+    tests/test_bpm_retry_policy.py.
     """
     source = bpm_env.track_dir / "still-undecodable.mp3"
     source.write_bytes(b"still-undecodable-disposable-fixture-bytes")
@@ -276,7 +278,10 @@ def test_repeated_decode_failure_upserts_single_durable_finding(bpm_env, monkeyp
     monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/fake/aubio")
     monkeypatch.setattr(analysis_jobs_service, "_resolve_ffmpeg_binary", lambda: "/fake/ffmpeg")
 
+    calls: list[list[str]] = []
+
     def fake_run(command, **kwargs):
+        calls.append(command)
         if command[0] == "/fake/aubio":
             return SimpleNamespace(
                 returncode=1, stdout="",
@@ -288,14 +293,25 @@ def test_repeated_decode_failure_upserts_single_durable_finding(bpm_env, monkeyp
 
     monkeypatch.setattr(analysis_jobs_service.subprocess, "run", fake_run)
 
-    analysis_jobs_service._run_bpm_analysis(10)
-    analysis_jobs_service._run_bpm_analysis(10)
+    first = analysis_jobs_service._run_bpm_analysis(10)
+    assert first["suppressed_count"] == 0
+    second = analysis_jobs_service._run_bpm_analysis(10)
+
+    # The track was paused by the first run's proven two-stage failure --
+    # the second run must skip it entirely (no new tool calls) rather than
+    # re-attempting it.
+    assert second["analyzed"] == 0
+    assert second["suppressed_count"] == 1
+    # Only the first run's 2 calls (direct aubio + ffmpeg decode -- ffmpeg
+    # itself failed to decode, so no fallback tempo call ever happens); the
+    # second run makes zero calls because the track was already excluded.
+    assert len(calls) == 2
 
     findings = _durable_findings(bpm_env.db_path)
     assert len(findings) == 1
     track_id, reason_code, source_tag, severity, occurrence_count, decision = findings[0]
     assert reason_code == "audio_decode_failed"
-    assert occurrence_count == 2
+    assert occurrence_count == 1
     assert decision == "unresolved"
 
 
