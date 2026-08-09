@@ -62,10 +62,13 @@ safe relative paths and neutral metadata/probe states only. It does not invoke
 ## Linux Mint / Ubuntu installation
 
 Run package-management commands yourself after reviewing them for your local
-machine. This guide does not install tools automatically. The legacy
-`setup.sh` bootstrap can install system/venv dependencies and configure Beets;
-it is not required for this focused tooling setup and should not be run solely
-to install one optional executable.
+machine. This guide does not install tools automatically. A legacy `setup.sh`
+bootstrap once installed system/venv dependencies and configured Beets; it has
+been retired and archived (`docs/archive/legacy-runtime/setup.sh.txt` — do not
+run) because it assumed an old `/music` layout, unattended systemd timers, and
+global `~/.config/beets` writes that conflict with the current managed
+workspace and safety model. Use `scripts/crateiq-local-services.sh` for local
+service management; install each optional tool below individually as needed.
 
 ### aubio
 

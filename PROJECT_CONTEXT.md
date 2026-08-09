@@ -228,20 +228,22 @@ task-level backlog):
 2. **Legacy `pipeline.py`/`config.py` coexistence** — remains partially
    load-bearing alongside the current FastAPI/React application, a source
    of confusion for anyone reading old code first.
-3. **Legacy scripts under `scripts/`** — some are still present and
-   potentially dangerous; not yet cleaned up. Verify before running.
-4. **"Legacy Direct Library" compatibility mode** remains alongside the
+3. **"Legacy Direct Library" compatibility mode** remains alongside the
    managed-workspace workflow.
-5. **Credential-dependent providers** (Discogs, Beatport, Spotify, Deezer,
+4. **Credential-dependent providers** (Discogs, Beatport, Spotify, Deezer,
    Last.fm) need live-credential verification before their real matching
    value can be confirmed in practice.
-6. **Reconciliation apply is unimplemented** — DETECT/PROPOSE/REVIEW/
+5. **Reconciliation apply is unimplemented** — DETECT/PROPOSE/REVIEW/
    VALIDATE exist; a real APPLY workflow (backups, per-action confirmation,
    restore path) is still only planned (see
    `docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md`).
 
 Publish/Sync configuration portability (hardcoded local paths) was fixed in
-this cycle — see Backend Architecture below.
+a prior cycle — see Backend Architecture below. The dangerous pre-managed-
+workspace runtime scripts and systemd units (unattended pipeline timer/
+watcher, `setup.sh`, `beet` CLI bootstrap, `rsync --delete` transfer script)
+were retired and archived to `docs/archive/legacy-runtime/` in this cycle;
+current local service management is `scripts/crateiq-local-services.sh`.
 
 ## Development Priorities
 

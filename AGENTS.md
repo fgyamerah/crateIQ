@@ -720,16 +720,14 @@ Current architecture-level gaps supported by current docs/source:
 1. Trusted-local, no-auth security model — no login, sessions, user model,
    roles, or route guards. Do not expose the backend remotely without
    addressing this first.
-2. Publish/Sync has a live configuration portability problem (hardcoded
-   local paths) that is still pending a fix.
-3. The legacy `pipeline.py` / `config.py` architecture remains partially
+2. The legacy `pipeline.py` / `config.py` architecture remains partially
    load-bearing and coexists with the current FastAPI/React application,
    which is a source of confusion for anyone reading old code first.
-4. Some legacy scripts under `scripts/` are still present and potentially
+3. Some legacy scripts under `scripts/` are still present and potentially
    dangerous; they have not yet been cleaned up.
-5. "Legacy Direct Library" remains as a compatibility mode alongside the
+4. "Legacy Direct Library" remains as a compatibility mode alongside the
    managed-workspace workflow.
-6. Several metadata providers (e.g. Discogs, Beatport, Spotify, Deezer,
+5. Several metadata providers (e.g. Discogs, Beatport, Spotify, Deezer,
    Last.fm) require credentials to be configured before they provide real
    verification value; without credentials they are effectively inert.
 

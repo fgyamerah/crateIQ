@@ -19,6 +19,10 @@ code, `AGENTS.md`, `README.md`, `PROJECT_CONTEXT.md`, `NEXT_TASKS.txt`, and
 * `DJToolkit_CONTEXT.txt` — the original "DJ Toolkit" project context
   document from before the crateIQ rename. Superseded in full by
   `PROJECT_CONTEXT.md`.
+* `legacy-runtime/` — retired pre-managed-workspace runtime scripts and
+  systemd units (unattended pipeline timer/watcher, `setup.sh`, `beet` CLI
+  bootstrap, `rsync --delete` transfer script). See its own `README.md` —
+  these are DO NOT RUN, kept as plain-text snapshots only.
 
 These documents are left largely as originally written. Do not edit them to
 make them look current — that would distort the historical record. If a

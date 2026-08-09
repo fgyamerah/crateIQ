@@ -2,6 +2,50 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-09] — Retire dangerous legacy runtime tooling
+
+- What changed: archived eight pre-managed-workspace "DJ Toolkit" runtime
+  artifacts as plain-text, non-executable snapshots under
+  docs/archive/legacy-runtime/ and removed them from active repository
+  paths: setup.sh (old /music tree bootstrap, sudo apt installs, beet CLI
+  install/config, global ~/.config/beets writes, systemd unit
+  installation), pipeline.sh (unattended shell wrapper around the legacy
+  automatic pipeline -- distinct from pipeline.py, which is untouched),
+  scripts/watch_inbox.sh (inotify-based automatic-processing watcher),
+  scripts/transfer.sh (rsync --delete transfer of an old
+  /music/library/sorted tree), systemd/djtoolkit.service,
+  systemd/djtoolkit.timer, systemd/djtoolkit-watch.service (unattended
+  timer/watcher units on old koolkatdj/djtoolkit repo paths), and
+  beets_config.yaml (legacy global Beets CLI config with move: yes against
+  the old /music layout). The now-empty systemd/ directory was removed.
+  Extended tests/test_no_beet_cli_invocation.py to also scan scripts/*.py
+  (AST) and scripts/*.sh (text) so active tooling can never reintroduce a
+  beet CLI invocation; archived .txt snapshots are outside both scanners'
+  glob patterns by construction. Corrected a stale AGENTS.md Section 17
+  entry that still listed the Phase 2 Publish/Sync portability fix as
+  open, and updated docs/operations/LOCAL_TOOLING.md's reference to the
+  now-archived setup.sh.
+- Why it changed: the Legacy Architecture Cleanup Audit flagged these as
+  live, discoverable, unattended-execution risks (old filesystem model,
+  automatic pipeline processing, beet CLI/global config assumptions,
+  rsync --delete) that conflict with the current managed Inbox -> Library
+  safety model and explicit-confirmation product design, even though none
+  of them were referenced by current FastAPI/React application code.
+- Files affected: setup.sh, pipeline.sh, scripts/watch_inbox.sh,
+  scripts/transfer.sh, beets_config.yaml, systemd/djtoolkit.service,
+  systemd/djtoolkit.timer, systemd/djtoolkit-watch.service (all moved to
+  docs/archive/legacy-runtime/*.txt); docs/archive/legacy-runtime/README.md
+  (new), docs/archive/README.md, docs/operations/LOCAL_TOOLING.md,
+  AGENTS.md, PROJECT_CONTEXT.md; tests/test_no_beet_cli_invocation.py.
+- Migration notes: none of these were invoked by current backend/frontend
+  code. If a machine still has old `djtoolkit`/`crateiq` user systemd units
+  installed from a prior setup.sh run, that is machine-level state outside
+  this repository -- check with
+  `systemctl --user list-unit-files | grep -E 'djtoolkit|crateiq'` and
+  `systemctl --user list-timers --all | grep -E 'djtoolkit|crateiq'`, and
+  disable/remove manually if found. This task did not modify any installed
+  systemd state.
+
 [2026-08-08] — Fix Publish/SSD Sync source portability and hardcoded destination
 
 - What changed: backend/app/core/config.py hardcoded a personal machine's
