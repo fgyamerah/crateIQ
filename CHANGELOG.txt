@@ -2,6 +2,88 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-10] — Correct reconciliation SQLite URI path encoding
+
+- What changed: read-only connections used by reconciliation apply backups,
+  preflight, and the shared pipeline database helper now build SQLite URIs
+  from canonical `Path.as_uri()` values. Valid selected library roots that
+  contain URI-reserved characters (for example `#`) now resolve to the same
+  database for apply, rollback, and ledger reads.
+- Why it changed: raw `file:<path>?mode=ro` construction could parse a valid
+  configured root as a different SQLite URI, making the ledger appear absent
+  after a successful reviewed apply.
+- Files affected: reconciliation apply service, shared read-only database
+  helper, focused regression coverage, PROJECT_CONTEXT, and the
+  reconciliation apply specification.
+- Migration notes: none. Existing database and ledger data are unchanged.
+
+[2026-08-09] — Harden reviewed reconciliation rollback and UI authorization
+
+- What changed: rollback now fail-closes on an exact DB-only operation
+  allowlist and verified Task 2 ledger provenance; it validates recorded
+  before/after row shape, current after-state drift, canonical selected-root
+  containment, and tracks collisions before restoring anything. Backup paths
+  reject symlink escapes. Plan parsing, identity hashing, action IDs, and
+  validation now derive from one immutable plan-artifact read. Apply and
+  rollback ledger JSON persist `verification_status: "verified"`.
+- UI: previews are action/request-bound, so a late response cannot authorize
+  a different selected action; confirmation shows the action ID, operation,
+  exact before/after DB references, and DB-only scope. Successful mutations
+  refresh authorization/ledger state. Maintenance copy now states the narrow
+  supported workflow truthfully.
+- Why it changed: independent review found legacy rollback authorization,
+  symlink, mutable-plan, and stale UI-state boundaries that needed to fail
+  closed.
+- Files affected: reconciliation apply service and plan validator, focused
+  regression tests, Reconciliation/Maintenance UI, and current docs.
+- Migration notes: none. The existing append-only ledger schema remains
+  authoritative; only additive JSON provenance fields are used.
+
+[2026-08-09] — Correct reconciliation apply backup safety
+
+- What changed: replaced the raw `processed.db` copy with a unique logical
+  SQLite backup created through SQLite's backup API while the apply/rollback
+  transaction holds a write reservation. The artifact is opened read-only,
+  checked with `PRAGMA quick_check`, verified against the exact pre-mutation
+  rows, and SHA-256 recorded before any mutation. Apply now accepts exactly
+  one selected action and rechecks a track target as a regular in-root file
+  immediately before updating its DB reference.
+- Why it changed: a main-file copy can omit committed WAL state and left an
+  unprotected concurrent-writer gap; preview-time target existence also did
+  not protect against a later missing target.
+- Files affected: reconciliation apply service and focused reconciliation
+  regression coverage, plus current-state UI/docs.
+- Migration notes: none. The existing append-only `reconciliation_ledger`
+  remains authoritative; no legacy schema file was changed.
+
+[2026-08-09] — Reviewed DB-only reconciliation apply and rollback
+
+- What changed: added current-backend reconciliation apply eligibility,
+  confirmed apply, and confirmed rollback endpoints plus a focused
+  Reconciliation UI. Apply reloads and revalidates an exact saved plan,
+  identifies actions by deterministic plan-index/content IDs, accepts only
+  selected `update_path_reference` and eligible
+  `mark_stale_processed_state_path` actions, and never trusts a client-sent
+  action body. Exactly one action may be applied per request. While holding
+  SQLite's write reservation, each action receives a unique logical SQLite
+  backup of the selected root's `logs/processed.db`; the backup includes
+  committed WAL state and is integrity-checked plus verified against the
+  exact pre-mutation rows before any write. Exact before/after rows,
+  plan/action identity, backup details, and verification state are retained
+  in the existing append-only reconciliation ledger JSON fields. Rollback
+  verifies the current rows still equal the recorded after state, restores
+  them transactionally, and appends a new ledger row.
+- Why it changed: the reconciliation workspace previously stopped at plan
+  validation, leaving a safe reviewed repair path unavailable even for clear
+  database-reference drift.
+- Files affected: `backend/app/services/reconciliation_apply_service.py`
+  (new), reconciliation route/schemas/plan service, Reconciliation frontend
+  API/types/page/styles, reconciliation apply tests, README, NEXT_TASKS,
+  PROJECT_CONTEXT, and this specification/changelog.
+- Migration notes: none. The service reuses the authoritative existing
+  `reconciliation_ledger` schema and stores additive apply context in its
+  structured before/after JSON fields. No legacy `db.py` change was made.
+
 [2026-08-09] — Add BPM retry pause + explicit Retry/Resume
 
 - What changed: a track is now durably paused from future automatic BPM

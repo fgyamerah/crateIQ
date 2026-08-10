@@ -1,8 +1,8 @@
 # Full Reconciliation Apply Spec
 
-**Status:** Phase 7 planning only  
-**Scope:** design specification, no runtime behavior  
-**Last updated:** 2026-05-06
+**Status:** Current backend Phase 1 DB-only apply implemented; filesystem and queue phases remain planned
+**Scope:** reviewed DB-only path-reference apply/rollback is runtime behavior; all filesystem and queue work remains design-only
+**Last updated:** 2026-08-10
 
 ## 1. Purpose
 
@@ -24,7 +24,22 @@ The apply model must be designed before implementation because path correction c
 - cue/set references if applicable
 - rollback ledgers
 
-The first implementation target must be DB-only reviewed reconciliation. File operations are explicitly out of scope until DB-only apply and rollback are proven.
+The first implementation target is DB-only reviewed reconciliation. The
+current FastAPI backend now supports an exact saved-plan, exactly-one-selected
+action workflow for `update_path_reference` (`tracks.filepath` and `filename`)
+and eligible `mark_stale_processed_state_path` actions. While holding SQLite's
+write reservation, it creates a unique logical SQLite backup of
+`<root>/logs/processed.db` under `<root>/logs/reconciliation_backups/`, so
+committed WAL state is included, then verifies the backup's integrity and
+exact pre-mutation rows before any mutation. It records exact before/after
+state plus plan/action identity and `verification_status` in the existing
+append-only `reconciliation_ledger`, and supports confirmed drift-checked
+DB-only rollback only for verified, current implementation operation types.
+Each preview/apply derives parsing, identity, action IDs, and validation from
+one immutable saved-plan snapshot; backup destinations must resolve inside the
+selected root, and read-only SQLite access uses safely encoded canonical
+paths. Music files, tags, queue JSON/JSONL, and all filesystem
+operations remain out of scope.
 
 ## 2. Non-Goals
 
@@ -336,6 +351,10 @@ Recommended extra fields:
 - `rollback_of_ledger_id`
 
 Ledger rows must be append-only. Rollback should not delete the original ledger.
+Current DB-only rollback eligibility additionally requires the exact supported
+operation type, verified apply provenance (plan/action/backup metadata and
+structured before/after state), and a persisted verification status. Older or
+malformed ledger rows remain readable but are not rollback-eligible.
 
 ## 9. Transaction Model
 
@@ -398,6 +417,8 @@ Rollback must verify:
 - Current values equal ledger `after_values`.
 - Reverting to `before_values` will not collide.
 - Root containment still holds.
+- The recorded operation and provenance match the current DB-only rollback
+  contract; a legacy row must never be authorized from payload shape alone.
 
 If verification fails, rollback must stop and report manual intervention required.
 
@@ -560,4 +581,3 @@ The first production candidate should stop at DB-only apply plus DB-only rollbac
 - Never use audit findings alone as apply instructions.
 - Always back up `<root>/logs/processed.db` before reconciliation apply work.
 - Always produce a rollback ledger before considering an apply operation complete.
-

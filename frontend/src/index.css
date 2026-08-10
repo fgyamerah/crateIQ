@@ -1778,6 +1778,12 @@ code {
 .reconciliation-plan-actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 4px 0; }
 .reconciliation-plan-summary { display: grid; gap: 10px; }
 .reconciliation-plan-summary > p { color: var(--text-muted); font-size: 12px; margin: 0; }
+.reconciliation-apply-panel, .reconciliation-apply-result, .reconciliation-rollback { display: grid; gap: 10px; margin-top: 14px; }
+.reconciliation-apply-panel { border-top: 1px solid var(--border); padding-top: 14px; }
+.reconciliation-apply-panel h3 { font-size: 14px; margin: 0; }
+.reconciliation-apply-panel > p, .reconciliation-apply-result > p { margin: 0; }
+.reconciliation-confirm { align-items: flex-start; color: var(--text); cursor: pointer; display: flex; font-size: 12px; gap: 8px; line-height: 1.45; }
+.reconciliation-confirm input { accent-color: var(--accent); flex: 0 0 auto; margin-top: 2px; }
 
 .metadata-repair-page {
   max-width: none;

@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Archive, CopyCheck, FileQuestion, FileX2, Loader2, RefreshCw, ShieldCheck, Workflow } from 'lucide-react'
 import { ApiError } from '../api/client'
@@ -9,6 +9,9 @@ import {
   fetchReconciliationLedger,
   fetchReconciliationLedgerEntry,
   fetchReconciliationQuarantine,
+  previewReconciliationApply,
+  applyReconciliationPlan,
+  rollbackReconciliationLedger,
   proposeReconciliationPlan,
   validateReconciliationPlan,
 } from '../api/reconciliation'
@@ -21,6 +24,8 @@ import type {
   ReconciliationLedgerEntry,
   ReconciliationPlanProposeResponse,
   ReconciliationPlanValidationResult,
+  ReconciliationApplyPreviewResponse,
+  ReconciliationApplyResponse,
 } from '../types/reconciliation'
 import PageHeader from '../components/PageHeader'
 import Badge, { type BadgeTone } from '../components/ui/Badge'
@@ -60,6 +65,16 @@ function prettyJson(value: string | null): string {
     return JSON.stringify(JSON.parse(value), null, 2)
   } catch {
     return value
+  }
+}
+
+function ledgerJson(value: string | null): Record<string, unknown> | null {
+  if (!value) return null
+  try {
+    const parsed: unknown = JSON.parse(value)
+    return parsed && typeof parsed === 'object' && !Array.isArray(parsed) ? parsed as Record<string, unknown> : null
+  } catch {
+    return null
   }
 }
 
@@ -137,6 +152,12 @@ function FindingDetail({ finding }: { finding: ReconciliationFinding | null }) {
 
 type WorkspaceTab = 'duplicates' | 'missing' | 'untracked' | 'quarantine' | 'plans'
 
+type ActionBoundPreview = {
+  actionId: string
+  requestId: number
+  data: ReconciliationApplyPreviewResponse
+}
+
 export default function Reconciliation() {
   const [tab, setTab] = useState<WorkspaceTab>('duplicates')
 
@@ -168,6 +189,29 @@ export default function Reconciliation() {
   const [validation, setValidation] = useState<ReconciliationPlanValidationResult | null>(null)
   const [loadingValidation, setLoadingValidation] = useState(false)
   const [validationError, setValidationError] = useState<string | null>(null)
+  const [selectedActionId, setSelectedActionId] = useState<string | null>(null)
+  const [applyPreview, setApplyPreview] = useState<ActionBoundPreview | null>(null)
+  const [applyResult, setApplyResult] = useState<ReconciliationApplyResponse | null>(null)
+  const [applyError, setApplyError] = useState<string | null>(null)
+  const [applyConfirm, setApplyConfirm] = useState(false)
+  const [applying, setApplying] = useState(false)
+  const [rollbackConfirmation, setRollbackConfirmation] = useState<{ ledgerId: string; confirmed: boolean } | null>(null)
+  const [rollingBack, setRollingBack] = useState(false)
+  const previewRequestId = useRef(0)
+  const ledgerDetailRequestId = useRef(0)
+  const selectedLedgerIdRef = useRef<string | null>(null)
+
+  function selectLedger(ledgerId: string | null) {
+    // Selection is the authorization boundary: never retain a detail,
+    // confirmation, or error that describes a different ledger row.
+    ledgerDetailRequestId.current += 1
+    selectedLedgerIdRef.current = ledgerId
+    setSelectedLedgerId(ledgerId)
+    setSelectedLedgerEntry(null)
+    setRollbackConfirmation(null)
+    setLedgerError(null)
+    setLoadingLedgerDetail(Boolean(ledgerId))
+  }
 
   async function loadDuplicates() {
     setDupLoading(true)
@@ -208,19 +252,23 @@ export default function Reconciliation() {
     }
   }
 
-  async function loadLedger() {
+  async function loadLedger(): Promise<ReconciliationLedgerEntry[]> {
     setLoadingLedgerList(true)
     setLedgerError(null)
     try {
       const rows = await fetchReconciliationLedger()
       setEntries(rows)
-      setSelectedLedgerId((current) => (current && rows.some((entry) => entry.ledger_id === current)) ? current : rows[0]?.ledger_id ?? null)
-      if (!rows.length) setSelectedLedgerEntry(null)
+      const current = selectedLedgerIdRef.current
+      const next = (current && rows.some((entry) => entry.ledger_id === current)) ? current : rows[0]?.ledger_id ?? null
+      if (next !== current) selectLedger(next)
+      if (!next) setSelectedLedgerEntry(null)
+      return rows
     } catch (err) {
       setLedgerError(messageFor(err, 'Could not load the reconciliation ledger.'))
     } finally {
       setLoadingLedgerList(false)
     }
+    return []
   }
 
   async function proposePlan() {
@@ -241,10 +289,84 @@ export default function Reconciliation() {
     setValidationError(null)
     try {
       setValidation(await validateReconciliationPlan({ latest: true }))
+      previewRequestId.current += 1
+      setApplyPreview(null)
+      setApplyResult(null)
+      setSelectedActionId(null)
     } catch (err) {
       setValidationError(messageFor(err, 'Could not validate the latest plan.'))
     } finally {
       setLoadingValidation(false)
+    }
+  }
+
+  async function previewSelectedAction(actionId: string) {
+    if (!validation?.plan_path) return
+    const requestId = ++previewRequestId.current
+    setSelectedActionId(actionId)
+    setApplyPreview(null)
+    setApplyResult(null)
+    setApplyError(null)
+    setApplyConfirm(false)
+    try {
+      const data = await previewReconciliationApply({ plan_path: validation.plan_path, reviewed_action_ids: [actionId] })
+      // Do not let a late request replace the authorization data for the
+      // currently selected action. Request identity is the correctness
+      // boundary even if transport cancellation is added later.
+      if (previewRequestId.current === requestId) setApplyPreview({ actionId, requestId, data })
+    } catch (err) {
+      if (previewRequestId.current === requestId) setApplyError(messageFor(err, 'Could not check DB-only apply eligibility.'))
+    }
+  }
+
+  async function refreshApplyAuthorization() {
+    if (!validation?.plan_path) return
+    previewRequestId.current += 1
+    setApplyPreview(null)
+    setSelectedActionId(null)
+    setApplyConfirm(false)
+    try {
+      setValidation(await validateReconciliationPlan({ plan_path: validation.plan_path }))
+    } catch (err) {
+      setValidationError(messageFor(err, 'Could not refresh reconciliation plan validation.'))
+    }
+  }
+
+  async function applySelectedAction() {
+    const currentPreview = applyPreview?.actionId === selectedActionId ? applyPreview.data : null
+    const eligibility = currentPreview?.actions[0]
+    if (!validation?.plan_path || !selectedActionId || !currentPreview || !eligibility?.eligible || !applyConfirm) return
+    setApplying(true)
+    setApplyError(null)
+    try {
+      const result = await applyReconciliationPlan({ plan_path: validation.plan_path, plan_id: currentPreview.plan_id, reviewed_action_ids: [selectedActionId], confirm: true })
+      setApplyResult(result)
+      await loadLedger()
+      await refreshApplyAuthorization()
+    } catch (err) {
+      setApplyError(messageFor(err, 'Could not apply the reviewed DB-only action.'))
+    } finally {
+      setApplying(false)
+    }
+  }
+
+  async function rollbackSelectedLedger() {
+    const ledgerId = selectedLedgerId
+    const ledgerDetail = selectedLedgerEntry?.ledger_id === ledgerId ? selectedLedgerEntry : null
+    const confirmationMatches = rollbackConfirmation?.ledgerId === ledgerId && rollbackConfirmation.confirmed
+    if (!ledgerId || !ledgerDetail || !canRollbackLedger || !confirmationMatches) return
+    setRollingBack(true)
+    setLedgerError(null)
+    try {
+      const result = await rollbackReconciliationLedger(ledgerId, true)
+      setRollbackConfirmation(null)
+      await loadLedger()
+      selectLedger(result.ledger_id)
+      await refreshApplyAuthorization()
+    } catch (err) {
+      setLedgerError(messageFor(err, 'Could not rollback this reconciliation entry.'))
+    } finally {
+      setRollingBack(false)
     }
   }
 
@@ -254,14 +376,30 @@ export default function Reconciliation() {
   useEffect(() => { void loadLedger() }, [])
 
   useEffect(() => {
-    if (!selectedLedgerId) return
-    let cancelled = false
+    const requestedLedgerId = selectedLedgerId
+    if (!requestedLedgerId) {
+      setSelectedLedgerEntry(null)
+      setLoadingLedgerDetail(false)
+      return
+    }
+    const requestId = ++ledgerDetailRequestId.current
+    setSelectedLedgerEntry(null)
+    setRollbackConfirmation(null)
     setLoadingLedgerDetail(true)
-    void fetchReconciliationLedgerEntry(selectedLedgerId)
-      .then((entry) => { if (!cancelled) setSelectedLedgerEntry(entry) })
-      .catch((err) => { if (!cancelled) setLedgerError(messageFor(err, 'Could not load ledger entry.')) })
-      .finally(() => { if (!cancelled) setLoadingLedgerDetail(false) })
-    return () => { cancelled = true }
+    void fetchReconciliationLedgerEntry(requestedLedgerId)
+      .then((entry) => {
+        if (ledgerDetailRequestId.current === requestId && selectedLedgerIdRef.current === requestedLedgerId && entry.ledger_id === requestedLedgerId) {
+          setSelectedLedgerEntry(entry)
+        }
+      })
+      .catch((err) => {
+        if (ledgerDetailRequestId.current === requestId && selectedLedgerIdRef.current === requestedLedgerId) {
+          setLedgerError(messageFor(err, 'Could not load ledger entry.'))
+        }
+      })
+      .finally(() => {
+        if (ledgerDetailRequestId.current === requestId && selectedLedgerIdRef.current === requestedLedgerId) setLoadingLedgerDetail(false)
+      })
   }, [selectedLedgerId])
 
   const missingFindings = useMemo(
@@ -276,8 +414,24 @@ export default function Reconciliation() {
   const selectedMissing = missingFindings.find((f) => f.finding_id === selectedMissingId) ?? missingFindings[0] ?? null
   const selectedUntracked = untrackedFindings.find((f) => f.finding_id === selectedUntrackedId) ?? untrackedFindings[0] ?? null
 
-  const ledgerDetail = selectedLedgerEntry ?? entries.find((entry) => entry.ledger_id === selectedLedgerId) ?? null
+  const ledgerDetail = selectedLedgerEntry?.ledger_id === selectedLedgerId ? selectedLedgerEntry : null
   const affectedTables = ledgerDetail ? parseTableList(ledgerDetail.affected_tables) : []
+  const currentPreview = applyPreview?.actionId === selectedActionId ? applyPreview.data : null
+  const currentEligibility = currentPreview?.actions[0]
+  const ledgerBefore = ledgerDetail ? ledgerJson(ledgerDetail.before_values_json) : null
+  const supportedRollbackOperation = ledgerDetail?.operation_type === 'update_path_reference' || ledgerDetail?.operation_type === 'mark_stale_processed_state_path'
+  const currentLedgerHasRollback = ledgerDetail ? entries.some((entry) => {
+    if (!entry.operation_type?.startsWith('rollback:')) return false
+    return ledgerJson(entry.before_values_json)?.rollback_of_ledger_id === ledgerDetail.ledger_id
+  }) : false
+  const canRollbackLedger = Boolean(
+    ledgerDetail?.status === 'applied'
+    && supportedRollbackOperation
+    && ledgerBefore?.apply_contract === 'crateiq_reconciliation_db_only_v1'
+    && ledgerBefore?.verification_status === 'verified'
+    && !currentLedgerHasRollback,
+  )
+  const rollbackConfirmedForCurrentLedger = rollbackConfirmation?.ledgerId === selectedLedgerId && rollbackConfirmation.confirmed
 
   const tabs: { id: WorkspaceTab; label: string; icon: ReactNode; count: number | null }[] = [
     { id: 'duplicates', label: 'Duplicates', icon: <CopyCheck size={13} />, count: dupSummary?.candidates ?? null },
@@ -291,14 +445,14 @@ export default function Reconciliation() {
     <div className="page">
       <PageHeader
         title="Library Reconciliation"
-        subtitle="Find, review, and plan library cleanup. Nothing here deletes, moves, or renames a file — plans stop at validation."
+        subtitle="Find, review, validate, and narrowly update database references. Music files are never moved, renamed, or deleted here."
         actions={<button className="btn btn--ghost btn--sm" onClick={() => { void loadDuplicates(); void loadFindings(); void loadQuarantine(); void loadLedger() }}>
           <RefreshCw size={13} /> Refresh all
         </button>}
       />
 
       <StatusStrip tone="info" icon={<ShieldCheck size={15} />}>
-        Review workspace only: findings and plans are evidence and proposals. No automatic keeper removal, path relink, quarantine action, or plan apply exists here.
+        DB-only reconciliation: a reviewed, validated action can update CrateIQ database path references with a verified backup. Music files are not moved.
       </StatusStrip>
 
       <div className="reconciliation-tabs" role="tablist" aria-label="Library reconciliation sections">
@@ -394,7 +548,7 @@ export default function Reconciliation() {
         <section className="section" role="tabpanel" aria-label="Plans">
           <div className="card">
             <div className="card-header"><h2 className="card-title">Propose a plan</h2></div>
-            <p className="muted">Detects candidates from the current findings and writes a plan artifact for review. Nothing is applied — apply is intentionally not built in this workspace.</p>
+            <p className="muted">Detects candidates from the current findings and writes a plan artifact for review. Reviewed DB-only apply is available for supported validated path-reference actions; music files are never moved, renamed, deleted, or tag-written.</p>
             {proposeError && <StatusStrip tone="danger" role="alert" onDismiss={() => setProposeError(null)}>{proposeError}</StatusStrip>}
             <div className="reconciliation-plan-actions">
               <button className="btn btn--primary btn--sm" onClick={() => void proposePlan()} disabled={proposing}>
@@ -406,7 +560,7 @@ export default function Reconciliation() {
             </div>
             {proposal && (
               <div className="reconciliation-plan-summary">
-                <p>Plan artifact: <code>{proposal.plan_artifact}</code> · apply supported: <strong>{String(proposal.apply_supported)}</strong></p>
+                <p>Plan artifact: <code>{proposal.plan_artifact}</code> · validate it before a reviewed DB-only action can be selected.</p>
                 <div className="table-wrapper">
                   <table className="table recon-table">
                     <thead><tr><th>Action</th><th>Old path</th><th>New path</th><th>Risk</th><th>Review tier</th></tr></thead>
@@ -470,6 +624,41 @@ export default function Reconciliation() {
                     </table>
                   </div>
                 </div>
+                <div className="reconciliation-apply-panel">
+                  <h3>Reviewed DB-only apply</h3>
+                  <p className="muted">Select exactly one validated action. This updates CrateIQ database path references only, creates and verifies a SQLite-consistent database backup first, and never moves, renames, deletes, or tag-writes music files.</p>
+                  <div className="table-wrapper">
+                    <table className="table recon-table">
+                      <thead><tr><th>Action</th><th>DB reference change</th><th>Eligibility</th><th>Review</th></tr></thead>
+                      <tbody>
+                        {validation.validation_records.map((record) => {
+                          const action = (record.action && typeof record.action === 'object' ? record.action : {}) as Record<string, unknown>
+                          const supported = record.action_type === 'update_path_reference' || record.action_type === 'mark_stale_processed_state_path'
+                          return <tr key={record.action_id ?? `${record.action_type}:${JSON.stringify(action)}`}>
+                            <td className="td-mono">{record.action_type}</td>
+                            <td className="td-mono recon-path">{String(action.old_path ?? '—')} → {String(action.new_path ?? action.replacement_path ?? '—')}</td>
+                            <td><LedgerBadge status={record.status} /></td>
+                            <td><button className="btn btn--ghost btn--sm" disabled={!supported || record.status === 'invalid' || !record.action_id} onClick={() => record.action_id && void previewSelectedAction(record.action_id)}>Review DB-only change</button></td>
+                          </tr>
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                  {applyError && <StatusStrip tone="danger" role="alert" onDismiss={() => setApplyError(null)}>{applyError}</StatusStrip>}
+                  {currentPreview && currentEligibility && <div className="reconciliation-apply-result">
+                    <p><strong>Action ID:</strong> <code>{currentEligibility.action_id}</code> · <strong>Operation:</strong> <code>{currentEligibility.operation_type}</code> · <strong>{currentEligibility.eligible ? 'eligible' : 'blocked'}</strong></p>
+                    <dl className="def-list recon-detail-fields">
+                      <DetailField label="Current DB reference (before)" value={<code>{String(currentEligibility.action?.old_path ?? '—')}</code>} />
+                      <DetailField label="Proposed DB reference (after)" value={<code>{String(currentEligibility.action?.new_path ?? currentEligibility.action?.replacement_path ?? '—')}</code>} />
+                      <DetailField label="Scope" value="DB-only; no music-file, tag, BPM, key, or cue change" />
+                    </dl>
+                    {currentEligibility.blockers.length ? <StatusStrip tone="warn">Blockers: {currentEligibility.blockers.join(', ')}</StatusStrip> : <>
+                      <label className="reconciliation-confirm"><input type="checkbox" checked={applyConfirm} onChange={(event) => setApplyConfirm(event.target.checked)} /> I authorize action <code>{currentEligibility.action_id}</code> to change exactly the displayed DB reference. I understand music files are not moved.</label>
+                      <button className="btn btn--primary btn--sm" disabled={!applyConfirm || applying || currentPreview.actions.length !== 1 || !currentEligibility.eligible} onClick={() => void applySelectedAction()}>{applying ? 'Applying DB reference…' : 'Apply reviewed DB-only change'}</button>
+                    </>}
+                  </div>}
+                  {applyResult && <StatusStrip tone="good">{applyResult.message} Action: {applyResult.results.map((item) => item.action_id).join(', ')}. Verification: {applyResult.results.map((item) => item.verification_status).join(', ')}.</StatusStrip>}
+                </div>
               </div>
             ) : <EmptyState message="Propose or validate a plan to inspect its actions." />}
           </div>
@@ -484,7 +673,7 @@ export default function Reconciliation() {
                     <thead><tr><th>Ledger ID</th><th className="nowrap">Timestamp</th><th>Operation</th><th>Status</th></tr></thead>
                     <tbody>
                       {entries.map((entry) => (
-                        <tr key={entry.ledger_id} className={`row--clickable${entry.ledger_id === selectedLedgerId ? ' row--selected' : ''}`} onClick={() => setSelectedLedgerId(entry.ledger_id)}>
+                        <tr key={entry.ledger_id} className={`row--clickable${entry.ledger_id === selectedLedgerId ? ' row--selected' : ''}`} onClick={() => selectLedger(entry.ledger_id)}>
                           <td className="td-mono">{entry.ledger_id}</td>
                           <td className="nowrap">{formatDateTime(entry.created_at)}</td>
                           <td className="td-mono">{entry.operation_type || '—'}</td>
@@ -509,6 +698,10 @@ export default function Reconciliation() {
                       </dl>
                       <div className="recon-json-block"><div className="recon-json-label">Before values</div><pre className="recon-json">{prettyJson(ledgerDetail.before_values_json)}</pre></div>
                       <div className="recon-json-block"><div className="recon-json-label">After values</div><pre className="recon-json">{prettyJson(ledgerDetail.after_values_json)}</pre></div>
+                      {canRollbackLedger && <div className="reconciliation-rollback">
+                        <label className="reconciliation-confirm"><input type="checkbox" checked={rollbackConfirmedForCurrentLedger} onChange={(event) => setRollbackConfirmation({ ledgerId: ledgerDetail.ledger_id, confirmed: event.target.checked })} /> I confirm rollback of this exact verified DB-only ledger entry.</label>
+                        <button className="btn btn--ghost btn--sm" disabled={!rollbackConfirmedForCurrentLedger || rollingBack || ledgerDetail.ledger_id !== selectedLedgerId} onClick={() => void rollbackSelectedLedger()}>{rollingBack ? 'Rolling back…' : 'Rollback DB-only action'}</button>
+                      </div>}
                     </>
                   ) : <EmptyState message="Select a ledger entry to inspect it." />}
                 </div>

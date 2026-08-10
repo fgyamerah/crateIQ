@@ -37,3 +37,17 @@ class ReconciliationPlanValidateResponse(BaseModel):
     skipped_actions: int
     reasons: Dict[str, int]
     validation_records: List[Dict[str, Any]]
+
+
+class ReconciliationApplyPreviewRequest(BaseModel):
+    plan_path: str
+    reviewed_action_ids: List[str]
+
+
+class ReconciliationApplyRequest(ReconciliationApplyPreviewRequest):
+    plan_id: str
+    confirm: bool = False
+
+
+class ReconciliationRollbackRequest(BaseModel):
+    confirm: bool = False

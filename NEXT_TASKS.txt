@@ -26,14 +26,14 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Design and test a reconciliation APPLY workflow (backups, per-action
-    confirmation, restore path). Cycle 4 shipped DETECT/PROPOSE/REVIEW/
-    VALIDATE only; no apply/execute endpoint exists anywhere yet
-    (`_path_reconcile_apply_auto_safe`/`_path_reconcile_mark_stale_pstate`
-    remain unreachable from the API by design). See
-    docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md and
-    docs/history/PUBLISH_RECONCILIATION_AND_WAVEFORM.md.
-    WARNING: back up <root>/logs/processed.db before any apply work.
+[ ] Design and test the next reconciliation apply phase for queue/reference
+    artifacts and any filesystem work. The current backend supports exactly
+    one reviewed, confirmed DB-only `tracks` path update or eligible
+    `processed_state` stale marker per request, with SQLite-consistent
+    root-contained backup/rollback; it does not rewrite JSON/JSONL queue files or move,
+    rename, delete, quarantine, or tag music files. Keep any filesystem phase
+    separately reviewed and reversible. See
+    docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md.
 
 [ ] Duplicate resolution plan and explicit review/backup design. Define
     any future cleanup workflow separately with per-file actions,

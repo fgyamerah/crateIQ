@@ -271,7 +271,7 @@ ROUTE_CONTRACTS: list[dict] = [
     {
         "route": "/reconciliation",
         "purpose": "Reconciliation ledger",
-        "access": "read-only; plan validation deferred",
+        "access": "read-only; plan validation and DB-only apply/rollback deferred",
         "endpoints": [
             ("/api/reconciliation/ledger", "list", ()),
         ],
@@ -367,7 +367,12 @@ DEFERRED_ENDPOINTS: dict[str, list[str]] = {
         "/api/metadata-sanitation/{id}/* (POST)",
         "/api/metadata-sanitation/apply-approved/* (POST)",
     ],
-    "/reconciliation": ["/api/reconciliation/validate-plan (POST)"],
+    "/reconciliation": [
+        "/api/reconciliation/validate-plan (POST)",
+        "/api/reconciliation/apply/preview (POST, DB-only apply eligibility check)",
+        "/api/reconciliation/apply (POST, explicit confirmed DB-only apply)",
+        "/api/reconciliation/ledger/{ledger_id}/rollback (POST, explicit confirmed DB-only rollback)",
+    ],
     "/settings": [
         "/api/settings (PATCH, local preference update)",
         "/api/analysis/mik/preview (POST, explicit read-only tag scan)",

@@ -36,13 +36,14 @@ def _relative(path_value: Any, root: Path) -> str | None:
         return None
 
 
-def _safe_action(action: dict[str, Any], root: Path) -> dict[str, Any]:
+def _safe_action(action: dict[str, Any], root: Path, index: int) -> dict[str, Any]:
     safe: dict[str, Any] = {}
     for key, value in action.items():
         if key in _PATH_FIELDS and isinstance(value, str) and value:
             safe[key] = _relative(value, root)
         else:
             safe[key] = value
+    safe["action_id"] = path_reconciliation.path_reconcile_action_id(index, action)
     return safe
 
 
@@ -67,7 +68,7 @@ def propose_plan() -> dict[str, Any]:
     json_path = log_dir / f"{day}_path_reconcile_plan.json"
     json_path.write_text(json.dumps(plan, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
 
-    safe_actions = [_safe_action(action, root) for action in plan.get("planned_actions", [])]
+    safe_actions = [_safe_action(action, root, index) for index, action in enumerate(plan.get("planned_actions", []))]
     return {
         "generated_at": plan.get("generated_at"),
         "plan_artifact": json_path.name,
@@ -77,9 +78,8 @@ def propose_plan() -> dict[str, Any]:
         "audit_summary": plan.get("audit_summary", {}),
         "limitations": plan.get("limitations", []),
         "message": (
-            "Plan proposal only. Review each action, then validate the latest plan before any future apply "
-            "workflow is considered. No file, tag, or database write was made by this request beyond the plan "
-            "artifact itself."
+            "Plan proposal only. Review each action, then validate the exact saved plan before selecting a "
+            "reviewed DB-only action. This request made no file, tag, or database write beyond the plan artifact."
         ),
     }
 
@@ -94,9 +94,11 @@ def augment_with_cross_action_checks(result: dict[str, Any]) -> dict[str, Any]:
     new_path_owners: dict[str, list[int]] = {}
     old_path_targets: dict[str, set[str]] = {}
     for idx, record in enumerate(records):
+        action = record.get("action") or {}
+        if isinstance(action, dict):
+            record["action_id"] = path_reconciliation.path_reconcile_action_id(idx, action)
         if record.get("action_type") != "update_path_reference":
             continue
-        action = record.get("action") or {}
         new_path = str(action.get("new_path") or "").strip()
         old_path = str(action.get("old_path") or "").strip()
         if new_path:

@@ -295,6 +295,15 @@ SYSTEM
 use — Quality, Duplicates, Reconciliation, Folders, and Audit — so they stay
 reachable without each competing for a permanent sidebar slot.
 
+Reconciliation supports a narrow reviewed DB-only path-reference workflow:
+select and validate exactly one saved-plan action, inspect its blockers, and
+explicitly confirm the change. CrateIQ holds a SQLite write reservation while
+it creates and verifies a logical `processed.db` backup (including committed
+WAL state), then records verified, root-contained rollback state in its
+append-only ledger. Rollback is limited to verified current DB-only ledger
+operations and never restores an outside-root path. It never moves, renames,
+deletes, or tags music files from this screen.
+
 ## Screenshots
 
 ### Library

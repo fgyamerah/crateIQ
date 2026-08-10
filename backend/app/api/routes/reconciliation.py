@@ -7,6 +7,9 @@ Reconciliation ledger, findings, and plan routes.
   GET  /api/reconciliation/findings              — read-only orphan/stale-path findings
   GET  /api/reconciliation/quarantine            — read-only quarantine listing
   POST /api/reconciliation/plans/propose         — propose (never apply) a reconciliation plan
+  POST /api/reconciliation/apply/preview         — DB-only apply eligibility check for reviewed actions
+  POST /api/reconciliation/apply                 — confirmed DB-only apply of one reviewed action
+  POST /api/reconciliation/ledger/{ledger_id}/rollback — confirmed DB-only rollback of an applied action
 """
 from __future__ import annotations
 
@@ -17,6 +20,9 @@ from fastapi import APIRouter, HTTPException, Query
 
 from ...schemas.reconciliation import (
     ReconciliationLedgerEntry,
+    ReconciliationApplyPreviewRequest,
+    ReconciliationApplyRequest,
+    ReconciliationRollbackRequest,
     ReconciliationPlanValidateRequest,
     ReconciliationPlanValidateResponse,
 )
@@ -25,6 +31,7 @@ from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
 from ...services import read_only as read_only_service
 from ...services import reconciliation_findings_service
 from ...services import reconciliation_plan_service
+from ...services import reconciliation_apply_service
 from utils import path_reconciliation
 
 router = APIRouter(tags=["reconciliation"])
@@ -82,6 +89,34 @@ async def propose_reconciliation_plan() -> ReconciliationPlanProposeResponse:
         return ReconciliationPlanProposeResponse(**reconciliation_plan_service.propose_plan())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
+
+
+def _apply_error(exc: reconciliation_apply_service.ReconciliationApplyError) -> HTTPException:
+    return HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
+
+
+@router.post("/reconciliation/apply/preview")
+async def preview_reconciliation_apply(body: ReconciliationApplyPreviewRequest) -> dict:
+    try:
+        return reconciliation_apply_service.preview(body.plan_path, body.reviewed_action_ids)
+    except reconciliation_apply_service.ReconciliationApplyError as exc:
+        raise _apply_error(exc)
+
+
+@router.post("/reconciliation/apply")
+async def apply_reconciliation_plan(body: ReconciliationApplyRequest) -> dict:
+    try:
+        return reconciliation_apply_service.apply(body.plan_path, body.plan_id, body.reviewed_action_ids, confirm=body.confirm)
+    except reconciliation_apply_service.ReconciliationApplyError as exc:
+        raise _apply_error(exc)
+
+
+@router.post("/reconciliation/ledger/{ledger_id}/rollback")
+async def rollback_reconciliation_ledger(ledger_id: str, body: ReconciliationRollbackRequest) -> dict:
+    try:
+        return reconciliation_apply_service.rollback(ledger_id, confirm=body.confirm)
+    except reconciliation_apply_service.ReconciliationApplyError as exc:
+        raise _apply_error(exc)
 
 
 @router.get("/reconciliation/findings", response_model=ReconciliationFindingsResponse)

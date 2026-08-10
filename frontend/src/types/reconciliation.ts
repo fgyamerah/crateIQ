@@ -13,12 +13,66 @@ export interface ReconciliationLedgerEntry {
 }
 
 export interface ReconciliationPlanValidationRecord {
+  action_id?: string
   action: Record<string, unknown> | unknown
   action_type: string
   status: 'valid' | 'invalid' | 'skipped'
   reason: string | null
   issues: string[]
   warnings: string[]
+}
+
+export interface ReconciliationApplyPreviewRequest {
+  plan_path: string
+  reviewed_action_ids: string[]
+}
+
+export interface ReconciliationApplyEligibility {
+  action_id: string
+  index?: number
+  operation_type?: string
+  eligible: boolean
+  blockers: string[]
+  action?: Record<string, unknown>
+}
+
+export interface ReconciliationApplyPreviewResponse {
+  plan_path: string
+  plan_id: string
+  root: string
+  db_only: boolean
+  actions: ReconciliationApplyEligibility[]
+  message: string
+}
+
+export interface ReconciliationApplyRequest extends ReconciliationApplyPreviewRequest {
+  plan_id: string
+  confirm: boolean
+}
+
+export interface ReconciliationApplyResult {
+  action_id: string
+  ledger_id: string
+  status: string
+  backup_path: string
+  backup_sha256: string
+  verification_status: string
+}
+
+export interface ReconciliationApplyResponse {
+  plan_id: string
+  db_only: boolean
+  results: ReconciliationApplyResult[]
+  message: string
+}
+
+export interface ReconciliationRollbackResponse {
+  ledger_id: string
+  rollback_of_ledger_id: string
+  status: string
+  backup_path: string
+  backup_sha256: string
+  verification_status: string
 }
 
 export interface ReconciliationPlanValidationResult {

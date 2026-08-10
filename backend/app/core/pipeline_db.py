@@ -33,9 +33,10 @@ def get_pipeline_conn() -> Iterator[sqlite3.Connection]:
             f"Pipeline database not found at {db_path}. "
             "Run the pipeline at least once to create it."
         )
-    # uri=True + ?mode=ro prevents any accidental write
+    # ``Path.as_uri`` encodes URI-reserved characters in a valid configured
+    # local root (for example '#'), while uri=True + mode=ro prevents writes.
     conn = sqlite3.connect(
-        f"file:{db_path}?mode=ro",
+        db_path.resolve().as_uri() + "?mode=ro",
         uri=True,
         check_same_thread=False,
     )

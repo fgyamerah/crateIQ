@@ -16,6 +16,7 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 import db
 import pipeline
+from utils import path_reconciliation
 
 
 def _library_db(root: Path, monkeypatch) -> Path:
@@ -296,8 +297,48 @@ def test_validate_plan_rejects_unsupported_action_type(library):
     assert any(reason.startswith("unsupported_action_type") for reason in payload["reasons"])
 
 
-def test_no_apply_endpoint_exists_for_reconciliation_plans(library):
-    test_client, _root, _db_path = library
-    for path in ("/api/reconciliation/plans/apply", "/api/reconciliation/apply", "/api/reconciliation/plans/propose/apply"):
-        response = test_client.post(path)
-        assert response.status_code == 404
+def test_apply_endpoint_is_confirmation_gated_single_action_db_only_surface(library):
+    test_client, root, db_path = library
+    old_path, new_path = _make_auto_safe_rename_fixture(root, db_path)
+    action = {
+        "action": "update_path_reference",
+        "old_path": str(old_path),
+        "new_path": str(new_path),
+        "confidence": 0.9,
+        "risk": "LOW",
+        "review_tier": "AUTO_SAFE_CANDIDATE",
+    }
+    plan_path = _plan_dir(root) / "guarded_apply_path_reconcile_plan.json"
+    plan_path.parent.mkdir(parents=True, exist_ok=True)
+    plan_path.write_text(json.dumps({"root": str(root), "planned_actions": [action]}), encoding="utf-8")
+    action_id = path_reconciliation.path_reconcile_action_id(0, action)
+
+    # The intentional route exists, but a body-less request never defaults to
+    # a broad apply. The old plan-only assertion is therefore replaced with
+    # the current guarded contract.
+    assert test_client.post("/api/reconciliation/apply").status_code == 422
+    preview = test_client.post("/api/reconciliation/apply/preview", json={"plan_path": str(plan_path), "reviewed_action_ids": [action_id]})
+    assert preview.status_code == 200
+    plan_id = preview.json()["plan_id"]
+
+    missing_confirm = test_client.post("/api/reconciliation/apply", json={"plan_path": str(plan_path), "plan_id": plan_id, "reviewed_action_ids": [action_id]})
+    assert missing_confirm.status_code == 422
+    assert missing_confirm.json()["detail"]["code"] == "confirmation_required"
+    missing_scope = test_client.post("/api/reconciliation/apply", json={"plan_path": str(plan_path), "plan_id": plan_id, "reviewed_action_ids": [], "confirm": True})
+    assert missing_scope.status_code == 422
+    assert missing_scope.json()["detail"]["code"] == "action_selection_required"
+
+    unsupported = {"action": "delete_file", "old_path": str(old_path), "review_tier": "AUTO_SAFE_CANDIDATE", "risk": "LOW"}
+    unsupported_path = _plan_dir(root) / "unsupported_path_reconcile_plan.json"
+    unsupported_path.write_text(json.dumps({"root": str(root), "planned_actions": [unsupported]}), encoding="utf-8")
+    unsupported_id = path_reconciliation.path_reconcile_action_id(0, unsupported)
+    unsupported_preview = test_client.post("/api/reconciliation/apply/preview", json={"plan_path": str(unsupported_path), "reviewed_action_ids": [unsupported_id]})
+    assert unsupported_preview.status_code == 200
+    rejected = test_client.post("/api/reconciliation/apply", json={"plan_path": str(unsupported_path), "plan_id": unsupported_preview.json()["plan_id"], "reviewed_action_ids": [unsupported_id], "confirm": True})
+    assert rejected.status_code == 422
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT filepath FROM tracks").fetchone()[0] == str(old_path)
+        assert conn.execute("SELECT COUNT(*) FROM reconciliation_ledger").fetchone()[0] == 0
+
+    for path in ("/api/reconciliation/plans/apply", "/api/reconciliation/plans/propose/apply"):
+        assert test_client.post(path).status_code == 404

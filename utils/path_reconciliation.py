@@ -1423,6 +1423,26 @@ def _path_reconcile_action_signature(action: dict) -> str:
     )
 
 
+def path_reconcile_action_id(index: int, action: dict) -> str:
+    """
+    Stable identity for one ``planned_actions[index]`` entry within a single
+    plan artifact, used by the backend's DB-only apply/rollback contract to
+    let a caller name exactly which reviewed action(s) to apply without
+    trusting a re-sent copy of the action body itself. Combines the position
+    (defends against two structurally-identical actions at different
+    indexes) with a content hash (defends against the same index silently
+    meaning something else after the plan file changes) so a stale index
+    from an earlier plan version cannot be replayed against a newer one.
+    """
+    import hashlib
+    import json
+
+    digest = hashlib.sha256(
+        json.dumps(action, sort_keys=True, default=str).encode("utf-8")
+    ).hexdigest()[:12]
+    return f"{index}-{digest}"
+
+
 def _path_reconcile_canonical_paths(root: Path) -> set[str]:
     db_path = _path_audit_db_path(root)
     if not db_path.exists():
@@ -1487,7 +1507,10 @@ def _path_reconcile_validate_action(
     elif action_type not in allowed_actions:
         issues.append(f"unsupported_action_type:{action_type}")
 
-    if action_type in report_only_actions or action.get("report_only") is True:
+    # ``report_only`` is a planner semantic of these exact non-relink
+    # operations.  It is not an artifact-controlled opt-out from neutral
+    # validation for a mutating update_path_reference action.
+    if action_type in report_only_actions:
         return {
             "action": action,
             "action_type": action_type,
@@ -1572,11 +1595,16 @@ def _path_reconcile_validate_action(
     }
 
 
-def path_reconcile_validate_plan(plan_path: Path) -> dict:
-    import json
+def path_reconcile_validate_plan_contents(plan: dict, plan_path: Path) -> dict:
+    """Validate an already-loaded reconciliation plan without reading it again.
+
+    This intentionally accepts the parsed artifact so a caller that needs a
+    plan identity can derive the identity, action IDs, and validation result
+    from one immutable file snapshot.  The helper remains deterministic and
+    read-only; database reads are the existing validation evidence only.
+    """
     from datetime import datetime, timezone
 
-    plan = json.loads(plan_path.read_text(encoding="utf-8"))
     if not isinstance(plan, dict):
         raise ValueError("plan json must be an object")
 
@@ -1632,6 +1660,14 @@ def path_reconcile_validate_plan(plan_path: Path) -> dict:
         "validation_records": validation_records,
     }
     return result
+
+
+def path_reconcile_validate_plan(plan_path: Path) -> dict:
+    """Load and validate a plan artifact for legacy/path-based callers."""
+    import json
+
+    plan = json.loads(plan_path.read_text(encoding="utf-8"))
+    return path_reconcile_validate_plan_contents(plan, plan_path)
 
 
 def path_reconcile_latest_plan_path(root: Path) -> Path | None:

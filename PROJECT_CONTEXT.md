@@ -204,11 +204,22 @@ Service map (`backend/app/services/`), current primary surfaces:
   path. Destination is an explicit, user-configured absolute path (Settings
   -> Publish / SSD Sync) with no default; execution is blocked until it is
   configured and validated safe.
-* reconciliation services — duplicate/orphan/quarantine detection, plan
-  propose/validate (apply remains unimplemented — see Known Issues). The
-  detection/planning engine lives in the neutral `utils/path_reconciliation.py`
-  module (no FastAPI import, no `pipeline.py` import); these services no
-  longer import private `pipeline.py` helpers.
+* reconciliation services — duplicate/orphan/quarantine detection; plan
+  propose/validate; and a narrow reviewed DB-only apply/rollback surface.
+  Apply reloads and revalidates an exact saved plan, accepts exactly one
+  selected `update_path_reference` or eligible
+  `mark_stale_processed_state_path` action, then holds SQLite's write
+  reservation while it creates and verifies a unique logical SQLite backup
+  (including committed WAL state) before mutation. Exact before/after state
+  plus verified operation provenance is retained in the existing append-only
+  ledger; SQLite read-only URIs safely encode selected-root path characters;
+  rollback accepts only those current DB-only operations and rejects
+  outside-root restoration. It never moves, renames,
+  deletes, or tags a music file and never rewrites queue artifacts. The
+  detection/planning engine
+  lives in the neutral `utils/path_reconciliation.py` module (no FastAPI or
+  `pipeline.py` import); current backend services do not import private
+  `pipeline.py` helpers.
 * `pipeline.py` compatibility — see Legacy Compatibility below
 
 Route groups: `/api/workspace*`, `/api/tracks*`, `/api/library*`,
@@ -343,9 +354,12 @@ task-level backlog):
 4. **Credential-dependent providers** (Discogs, Beatport, Spotify, Deezer,
    Last.fm) need live-credential verification before their real matching
    value can be confirmed in practice.
-5. **Reconciliation apply is unimplemented** — DETECT/PROPOSE/REVIEW/
-   VALIDATE exist; a real APPLY workflow (backups, per-action confirmation,
-   restore path) is still only planned (see
+5. **Reconciliation filesystem and queue repair remain future work** —
+   reviewed DB-only apply and DB-only rollback now support allowlisted,
+   sufficiently proven current path-reference operations. Filesystem
+   move/rename/delete/quarantine, queue/reference-file rewriting, filesystem
+   rollback, weak/ambiguous automated repair, and `processed_state` relinks
+   without sufficient source-row proof remain unsupported (see
    `docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md`).
 
 Publish/Sync configuration portability (hardcoded local paths) was fixed in

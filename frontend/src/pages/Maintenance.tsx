@@ -13,7 +13,7 @@ const AREAS = [
   },
   {
     to: '/reconciliation', icon: Database, label: 'Reconciliation',
-    description: 'Library reconciliation ledger and path-audit findings. Evidence and proposals only -- no automatic keeper removal or path relink.',
+    description: 'Review-first DB-only reconciliation for supported path references, with confirmation-gated rollback. No music-file move, rename, delete, quarantine, filesystem rollback, queue rewrite, or weak/ambiguous auto-repair.',
   },
   {
     to: '/folders', icon: FolderTree, label: 'Folders',
