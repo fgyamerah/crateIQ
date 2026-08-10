@@ -48,10 +48,21 @@ P1 / HIGH
     verified restore path. Keep it separately reviewed. See
     docs/architecture/DUPLICATE_RESOLUTION_SPEC.md.
 
-[ ] Metadata model extension (strategy Phase 2): additive tracks columns
-    for identity + structured artist/title/version, field_provenance
-    table, optional fpcalc fingerprinting. Preflight has landed, so this
-    is now unblocked.
+[ ] Metadata model Phase 2 follow-up: structured artist/title/version
+    representation. The additive `field_provenance` model (see
+    CHANGELOG.txt / PROJECT_CONTEXT.md) intentionally did not add
+    canonical/display-artist, base-title, or version/remix columns --
+    `modules/filename_parse.py` already derives artist/title/version at
+    parse time, but no current write path persists a structured
+    artist/title/version split back into the index, so adding those columns
+    now would be dead schema. Revisit once a concrete consumer (e.g. a
+    version-aware duplicate/compatibility view) needs it.
+
+[ ] Metadata model Phase 2 follow-up: explicit, bounded `existing_local_value`
+    provenance backfill for tracks that predate field_provenance (read/
+    preview before write, no network, never auto-run). Deferred because no
+    current workflow depends on baseline provenance existing for
+    already-indexed tracks; add only when a concrete consumer needs it.
 
 [ ] Genre intelligence layer (strategy Phase 3): genre_taxonomy.json,
     genre_mappings.json, deterministic resolver, genre-normalize

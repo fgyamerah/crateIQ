@@ -22,6 +22,7 @@ from pydantic import BaseModel
 
 from ...schemas.track import CompatibleTracksResponse, TrackDetail, TrackStats, TrackSummary
 from ...services import read_only as read_only_service
+from ...services import track_identity_service
 from ...services import track_service
 from ...services import track_source_service
 
@@ -214,7 +215,49 @@ async def get_track(track_id: int) -> TrackDetail:
     if not track:
         raise HTTPException(status_code=404, detail=f"Track {track_id} not found.")
     queue_item = read_only_service.lookup_enrichment_queue_item(track.filepath)
-    return TrackDetail.from_track(track, enrichment_queue_item=queue_item)
+    extras = track_service.get_track_identity_and_provenance(track_id)
+    return TrackDetail.from_track(
+        track, enrichment_queue_item=queue_item,
+        identity=extras["identity"], provenance=extras["provenance"],
+    )
+
+
+# ---------------------------------------------------------------------------
+# POST /api/tracks/{track_id}/fingerprint
+# ---------------------------------------------------------------------------
+
+class FingerprintResponse(BaseModel):
+    status: str
+    track_id: int
+    algorithm: Optional[str] = None
+    duration_sec: Optional[float] = None
+    computed_at: Optional[str] = None
+    message: Optional[str] = None
+
+
+@router.post("/tracks/{track_id}/fingerprint", response_model=FingerprintResponse)
+async def compute_track_fingerprint(track_id: int) -> FingerprintResponse:
+    """
+    Explicit, single-track, local-only Chromaprint fingerprint compute.
+
+    Optional identity-strengthening evidence only -- never required to open
+    or use the library. Truthfully reports 'unavailable' if fpcalc is not
+    installed, rather than failing. Never contacts the network (that only
+    happens via the separate, credential-gated AcoustID lookup path).
+    """
+    try:
+        source = track_source_service.validated_track_source(track_id)
+    except track_source_service.TrackSourceNotFound:
+        raise HTTPException(status_code=404, detail=f"Track {track_id} not found.")
+    except (track_source_service.TrackSourcePathRejected, track_source_service.TrackSourceUnavailable) as exc:
+        return FingerprintResponse(status="error", track_id=track_id, message=str(exc))
+
+    result = track_identity_service.compute_and_store(source.path, track_id)
+    return FingerprintResponse(
+        status=result["status"], track_id=track_id,
+        algorithm=result.get("algorithm"), duration_sec=result.get("duration_sec"),
+        computed_at=result.get("computed_at"), message=result.get("message"),
+    )
 
 
 # ---------------------------------------------------------------------------

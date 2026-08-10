@@ -289,6 +289,48 @@ auto-applied. Existing non-empty metadata is never silently overwritten,
 except an explicit junk/placeholder-value exception paired with a HIGH
 replacement.
 
+## Field Provenance / Track Identity (Metadata Model Phase 2)
+
+Additive foundation living in the same selected-library index DB as
+`quality_review_findings`/`bpm_retry_pauses` (`<root>/logs/processed.db`),
+created lazily on first write, never on a read.
+
+* `field_provenance_service` owns a `field_provenance` table recording, per
+  `(track_id, field_name)`: the observed/applied value, `origin`
+  (`provider` | `user` | `system`), `source`, an optional provider
+  `confidence` verdict (HIGH/MEDIUM/LOW/CONFLICT), a bounded reason/evidence
+  reference, and current-vs-history status via `is_current` (enforced by a
+  partial unique index — at most one current row per field). A `confidence`
+  value may only be paired with `origin='provider'`; `record()` rejects any
+  attempt to pair it with `user`/`system` origin, so a manual edit can never
+  masquerade as provider HIGH confidence. Recording an identical repeat
+  event refreshes the current row instead of duplicating it (Process All
+  reruns are idempotent); a genuinely different value closes the previous
+  row into history and inserts a new current one. Wired into the two
+  authoritative write paths: `enrichment_review_service.apply_selected()`
+  (HIGH-confidence Process All auto-apply and explicit enrichment-review
+  apply both funnel through it — `origin='provider'`) and
+  `workspace_service.edit_inbox_track_metadata()` /
+  `bulk_edit_apply()` (manual Inbox edits — `origin='user'`, no
+  confidence). It only records local-index decisions; it never writes tags
+  itself — tag writes still go through `tag_write_service`.
+* `track_identity_service` owns a `track_fingerprints` table caching an
+  optional, local-only Chromaprint fingerprint per track, reusing the
+  existing `fpcalc`/`acoustid_client.fingerprint_file` capability (no new
+  dependency, no network call, no `beet` CLI). Explicit per-track action
+  only (`POST /api/tracks/{id}/fingerprint`), never automatic and never
+  required to open/use the library; a missing `fpcalc` tool yields a
+  truthful `unavailable` status rather than a failure. Track numeric `id`
+  remains the sole stable local identity — a fingerprint is optional
+  corroborating evidence only, never a primary key, and is never used to
+  auto-deduplicate tracks (duplicate resolution stays a separate, explicit
+  workflow).
+* `GET /api/tracks/{id}` exposes both as additive, backward-compatible
+  `identity`/`provenance` fields; a plain GET never creates either table.
+* No structured artist/title/version columns and no backfill of provenance
+  for pre-existing tracks were added — both are deferred until a concrete
+  consumer needs them (see `NEXT_TASKS.txt`).
+
 ## Metadata Write Safety
 
 All controlled tag writes go through `tag_write_service`'s exact contract:
@@ -324,7 +366,10 @@ informational, matching its pre-existing status.
 
 * Managed workspace (music files) under the configured root:
   `Inbox/`, `Library/`, `Quarantine/`
-* Pipeline/index DB (compatibility): `<root>/logs/processed.db`
+* Pipeline/index DB (compatibility): `<root>/logs/processed.db` — also
+  hosts the additive `field_provenance` and `track_fingerprints` tables
+  (see Field Provenance / Track Identity above), created lazily on first
+  write
 * Backend jobs/operations DB: `backend/data/jobs.db` (job history, analysis/
   waveform/publish/preparation operations, tag-write history — separate
   from the music index)

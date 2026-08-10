@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from . import library_setup_service, tag_write_service
+from . import field_provenance_service, library_setup_service, tag_write_service
 from ..core.library_root import assert_path_under_root, assert_safe_new_root_path
 from ..core.preflight import redact_path
 
@@ -872,6 +872,11 @@ def edit_inbox_track_metadata(
 
         set_sql = ", ".join(f"{field} = ?" for field in updates)
         conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
+        for field, value in updates.items():
+            field_provenance_service.record(
+                track_id, field, value, origin="user", source="manual_edit",
+                reason="Manual single-track edit (Inbox inline edit).", conn=conn,
+            )
         conn.commit()
 
     from . import preparation_service  # local import breaks the module import cycle
@@ -993,6 +998,11 @@ def bulk_edit_apply(
 
             set_sql = ", ".join(f"{f} = ?" for f in updates)
             conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
+            for field, value in updates.items():
+                field_provenance_service.record(
+                    track_id, field, value, origin="user", source="bulk_edit",
+                    reason="Manual bulk Inbox edit.", conn=conn,
+                )
             changed_ids.append(track_id)
             results[track_id] = {"track_id": track_id, "status": "changed", "fields": list(updates)}
         conn.commit()

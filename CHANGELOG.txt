@@ -2,6 +2,67 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-10] — Add Metadata Model Phase 2: field provenance + optional fingerprint identity
+
+- What changed: added an additive, current-backend field-level metadata
+  provenance model. `field_provenance_service` owns a new `field_provenance`
+  table in the selected library's existing local index (same `processed.db`
+  as `quality_review_findings`/`bpm_retry_pauses`, created only on a write
+  path, never on a read), recording per (track_id, field_name) the value,
+  origin (`provider` | `user` | `system`), source, a provider confidence
+  verdict where one applies, a bounded reason/evidence reference, and
+  current/history status via a partial-unique-index-enforced
+  `is_current` flag. A repeat event with an identical value/origin/source/
+  confidence refreshes the existing current row instead of duplicating it
+  (Process All reruns cannot explode rows); a genuinely different value
+  closes the previous current row into immutable history and inserts a new
+  one. `record()` hard-rejects pairing a confidence verdict with a non-
+  `provider` origin, so a manual/user edit can never masquerade as provider
+  HIGH confidence. Wired into the two authoritative current write paths:
+  `enrichment_review_service.apply_selected()` (covers both HIGH-confidence
+  Process All auto-apply and explicit enrichment-review apply, since both
+  already funnel through this one function) records `origin='provider'`
+  with the item's own confidence/source/evidence; `workspace_service`'s
+  manual single-track (`edit_inbox_track_metadata`) and bulk
+  (`bulk_edit_apply`) Inbox edits record `origin='user'`,
+  `source='manual_edit'`/`'bulk_edit'`, no confidence. Also added
+  `track_identity_service`, an optional local-only Chromaprint fingerprint
+  cache (`track_fingerprints` table, same additive/read-never-creates
+  pattern) that reuses the existing `fpcalc`/Chromaprint capability already
+  used by the AcoustID provider adapter (`acoustid_client.fingerprint_file`,
+  plus a new `acoustid_client.fpcalc_available()` credential-free check) --
+  explicit per-track action only, never automatic, never required to open
+  or use the library, truthfully reports `unavailable` rather than failing
+  when the tool is missing, and never makes a network call (AcoustID lookup
+  remains a separate, credential-gated path, unchanged). Track numeric `id`
+  remains the sole stable local identity; a fingerprint is only optional
+  corroborating evidence, never a primary key. `GET /api/tracks/{id}` gained
+  two additive, backward-compatible fields (`identity`, `provenance`)
+  populated via the existing read-only pipeline connection -- a plain GET
+  never creates either new table. Added `POST /api/tracks/{id}/fingerprint`
+  for the explicit local fingerprint compute action. No destructive
+  migration, no rewrite of existing artist/title/genre/BPM/key values, no
+  backfill of provenance for pre-existing tracks, no new dependency, no
+  `beet` CLI usage, no structured artist/title/version columns (deferred --
+  see NEXT_TASKS.txt; no current write path needs them yet).
+- Why it changed: implements the open metadata-model Phase 2 backlog item --
+  an additive identity/provenance foundation that the future genre
+  intelligence layer (Phase 3) and any richer review UI can build on,
+  without rewriting the existing tag-write, consensus, or reconciliation
+  contracts.
+- Files affected: backend/app/services/field_provenance_service.py (new),
+  backend/app/services/track_identity_service.py (new),
+  backend/app/services/providers/acoustid_client.py,
+  backend/app/services/enrichment_review_service.py,
+  backend/app/services/workspace_service.py,
+  backend/app/services/track_service.py,
+  backend/app/schemas/track.py, backend/app/api/routes/tracks.py,
+  tests/test_field_provenance.py (new), NEXT_TASKS.txt, PROJECT_CONTEXT.md.
+- Migration notes: fully additive; an existing selected library opens
+  unchanged and the new tables/columns are created lazily the first time a
+  covered write path actually runs (or never, if none does). No schema
+  change happens on any read-only GET.
+
 [2026-08-10] — Add plan-first duplicate resolution contract (no file execution)
 
 - What changed: added a new, separate `duplicate_resolution_plan_service` and

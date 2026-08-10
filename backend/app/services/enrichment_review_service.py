@@ -6,8 +6,16 @@ from pathlib import Path
 from typing import Any
 from modules.metadata_clean import _read_tags as _read_embedded_tags
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
-from . import analysis_jobs_service, musicbrainz_client, settings_service
+from . import analysis_jobs_service, field_provenance_service, musicbrainz_client, settings_service
 from .musicbrainz_client import MusicBrainzError
+
+_PROVENANCE_CONFIDENCES = {'HIGH', 'MEDIUM', 'LOW', 'CONFLICT'}
+
+
+def _provenance_confidence(item_confidence: Any) -> str | None:
+    """Map an item's free-form display confidence to a valid provenance verdict, or None."""
+    candidate = str(item_confidence or '').strip().upper()
+    return candidate if candidate in _PROVENANCE_CONFIDENCES else None
 
 _ALLOWED = ('artist', 'title', 'genre')
 _DECISIONS = {'pending', 'applied', 'ignored', 'review_later'}
@@ -119,7 +127,19 @@ def apply_selected(items:list[dict[str,Any]],confirm:bool):
             if not row: failed+=1; warnings.append('Track no longer exists.'); continue
             if any(row[field] for field in fields): skipped+=1; warnings.append('Existing non-empty metadata is never overwritten.'); continue
             conn.execute(f"UPDATE tracks SET {', '.join(f'{field}=?' for field in fields)}, enrichment_source=?, enrichment_updated_at=?, enrichment_reviewed_at=? WHERE id=?",(*fields.values(),item['source_id'],now,now,item['track_id']))
-            conn.execute("UPDATE enrichment_review_decisions SET decision='applied',updated_at=?,applied_at=? WHERE snapshot_id=? AND suggestion_id=?",(now,now,snapshot['id'],item['suggestion_id'])); applied+=1
+            conn.execute("UPDATE enrichment_review_decisions SET decision='applied',updated_at=?,applied_at=? WHERE snapshot_id=? AND suggestion_id=?",(now,now,snapshot['id'],item['suggestion_id']))
+            provenance_confidence = _provenance_confidence(item.get('confidence'))
+            item_evidence = item.get('evidence') or {}
+            for field, field_value in fields.items():
+                field_evidence = item_evidence.get(field)
+                field_provenance_service.record(
+                    item['track_id'], field, field_value,
+                    origin='provider', source=item['source_id'],
+                    confidence=provenance_confidence, reason=item.get('reason'),
+                    evidence={'providers': field_evidence} if field_evidence else None,
+                    conn=conn,
+                )
+            applied+=1
         review=_response(conn,snapshot)
     return {'applied':applied,'skipped':skipped,'failed':failed,'warnings':warnings,'review':review}
 

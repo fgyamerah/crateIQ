@@ -97,6 +97,8 @@ class TrackDetail(BaseModel):
     issues:         List[str] = []
     recommended_action: Optional[str] = None
     recommended_route: Optional[str] = None
+    identity:       Optional[Dict[str, Any]] = None
+    provenance:     Dict[str, Any] = {}
 
     @classmethod
     def from_track(
@@ -104,6 +106,8 @@ class TrackDetail(BaseModel):
         t: Track,
         *,
         enrichment_queue_item: Optional[Dict[str, Any]] = None,
+        identity: Optional[Dict[str, Any]] = None,
+        provenance: Optional[Dict[str, Any]] = None,
     ) -> "TrackDetail":
         recommended_action, recommended_route = _recommended_issue_route(t.issues)
         return cls(
@@ -130,6 +134,8 @@ class TrackDetail(BaseModel):
             issues=t.issues,
             recommended_action=recommended_action,
             recommended_route=recommended_route,
+            identity=identity,
+            provenance=provenance or {},
         )
 
 

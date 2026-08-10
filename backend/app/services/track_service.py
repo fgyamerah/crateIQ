@@ -8,7 +8,7 @@ empty results so callers can decide what to surface.
 from __future__ import annotations
 
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.library_root import selected_library_root
 from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists
@@ -461,6 +461,39 @@ def get_issue_counts() -> dict[str, int]:
 
 def get_track_by_id(track_id: int) -> Optional[Track]:
     return get_track(track_id)
+
+
+# ---------------------------------------------------------------------------
+# get_track_identity_and_provenance -- read-only, additive detail
+# ---------------------------------------------------------------------------
+
+def get_track_identity_and_provenance(track_id: int) -> Dict[str, Any]:
+    """
+    Read-only additive identity/provenance detail for one track (Metadata
+    Model Phase 2). Uses the same read-only pipeline connection as
+    `get_track()` -- never creates schema, matching the plain-GET contract:
+    absence of recorded provenance/fingerprint data means exactly that,
+    never an error.
+    """
+    from . import field_provenance_service, track_identity_service
+
+    empty: Dict[str, Any] = {"identity": None, "provenance": {}}
+    if not pipeline_db_exists():
+        return empty
+    try:
+        with get_pipeline_conn() as conn:
+            fingerprint = track_identity_service.get_for_track(track_id, conn=conn)
+            provenance = field_provenance_service.current_for_track(track_id, conn=conn)
+        identity = {
+            "track_id": track_id,
+            "fingerprint_available": fingerprint is not None,
+            "fingerprint_algorithm": fingerprint["algorithm"] if fingerprint else None,
+            "fingerprint_computed_at": fingerprint["computed_at"] if fingerprint else None,
+        }
+        return {"identity": identity, "provenance": provenance}
+    except Exception as exc:
+        log.exception("get_track_identity_and_provenance(%s) failed: %s", track_id, exc)
+        return empty
 
 
 # ---------------------------------------------------------------------------

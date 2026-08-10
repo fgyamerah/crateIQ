@@ -63,6 +63,16 @@ def _resolve_fpcalc_binary() -> str | None:
     return resolved if resolved and os.access(resolved, os.X_OK) else None
 
 
+def fpcalc_available() -> bool:
+    """Local, credential-free check: is the fpcalc (Chromaprint) tool usable?
+
+    Callers that only need local fingerprinting (no AcoustID lookup) should
+    use this instead of `capability()`, which also requires an AcoustID
+    client key.
+    """
+    return _resolve_fpcalc_binary() is not None
+
+
 def fingerprint_file(path: Path) -> tuple[str | None, float | None, str | None]:
     """
     Compute a Chromaprint fingerprint for one managed Inbox copy.
