@@ -2,6 +2,44 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-10] — Add plan-first duplicate resolution contract (no file execution)
+
+- What changed: added a new, separate `duplicate_resolution_plan_service` and
+  read-only `GET /api/duplicates/resolution-plan` endpoint that derives a
+  deterministic, reproducible per-track plan from the latest saved Duplicate
+  Review snapshot and its existing human decisions. Actions use a
+  conservative vocabulary (`keep`, `candidate_for_reversible_resolution`,
+  `no_action`, `review_required`) -- `delete` is never emitted. A group
+  becomes plan-eligible only with verified content-checksum grouping
+  evidence, exactly one explicit keeper, every other member reviewed, and
+  every member path re-verified under the selected root with a file that
+  currently exists; any ambiguity or drift blocks the whole group instead of
+  guessing. Candidate items carry an `execution_requirements` object
+  describing what a future apply phase would need to prove (identity
+  evidence labeled truthfully as a checksum prefix, not a full hash; current
+  stat; backup/collision/restore/ledger requirements) -- none of it is
+  implemented yet. Added a minimal read-only `Duplicate Resolution Plan`
+  frontend page (linked from Duplicate Review), explicitly labeled
+  "Plan only -- no files changed." There is no apply/execute endpoint
+  anywhere in this surface, and the existing Duplicate Review page and its
+  decisions are unchanged.
+- Why it changed: completes the P1 "Duplicate resolution plan and explicit
+  review/backup design" backlog item -- a plan-first contract and backup/
+  restore design must exist and be proven safe before any future file-action
+  phase is implemented.
+- Files affected: backend/app/services/duplicate_resolution_plan_service.py
+  (new), backend/app/schemas/duplicate_resolution_plan.py (new),
+  backend/app/api/routes/duplicates.py, frontend/src/pages/
+  DuplicateResolutionPlan.tsx (new), frontend/src/pages/Duplicates.tsx,
+  frontend/src/api/duplicateResolutionPlan.ts (new), frontend/src/types/
+  duplicateResolutionPlan.ts (new), frontend/src/App.tsx, frontend/src/
+  index.css, tests/test_duplicate_resolution_plan.py (new),
+  tests/test_supported_route_contracts.py,
+  docs/architecture/DUPLICATE_RESOLUTION_SPEC.md (new), NEXT_TASKS.txt,
+  PROJECT_CONTEXT.md.
+- Migration notes: none. No schema change, no new file writes, no change to
+  existing duplicate_review_snapshots/duplicate_review_decisions behavior.
+
 [2026-08-10] — Correct reconciliation SQLite URI path encoding
 
 - What changed: read-only connections used by reconciliation apply backups,

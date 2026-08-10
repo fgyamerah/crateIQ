@@ -35,10 +35,18 @@ P1 / HIGH
     separately reviewed and reversible. See
     docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md.
 
-[ ] Duplicate resolution plan and explicit review/backup design. Define
-    any future cleanup workflow separately with per-file actions,
-    backups, confirmations, and zero destructive defaults. Do not attach
-    file actions to the current Duplicate Review page.
+[ ] Design and implement the future confirmation-gated, reversible duplicate
+    resolution apply phase. The current backend supports only a read-only,
+    plan-first `/duplicates/resolution-plan` surface (deterministic
+    per-track `keep` / `candidate_for_reversible_resolution` / `no_action` /
+    `review_required` plan derived from the latest saved Duplicate Review
+    snapshot and its human decisions); it has no apply/execute endpoint and
+    performs zero file, tag, or track-metadata writes. A future apply phase
+    must re-verify every actionability rule at execution time, take a
+    hash-verified backup before any mutation, use a reversible hold rather
+    than a permanent delete, and record an append-only ledger entry with a
+    verified restore path. Keep it separately reviewed. See
+    docs/architecture/DUPLICATE_RESOLUTION_SPEC.md.
 
 [ ] Metadata model extension (strategy Phase 2): additive tracks columns
     for identity + structured artist/title/version, field_provenance

@@ -8752,6 +8752,17 @@ tr.is-selected td:first-child { box-shadow: inset 2px 0 0 var(--brand-cyan); }
 .duplicates-decision-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .duplicates-track-review label { color: var(--text-muted); display: grid; font-size: 11px; gap: 4px; }
 .duplicates-track-review textarea.form-input { min-height: 58px; resize: vertical; }
+.resolution-plan-list { display: grid; gap: 10px; }
+.resolution-plan-group { background: rgba(8,12,19,.46); border: 1px solid rgba(67,77,108,.58); border-radius: 11px; display: grid; gap: 10px; padding: 12px; }
+.resolution-plan-group-heading { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; }
+.resolution-plan-group-heading strong { overflow-wrap: anywhere; }
+.resolution-plan-group-meta { color: var(--text-muted); font-size: 11px; }
+.resolution-plan-group-blockers { color: #fca5a5; font-size: 12px; margin: 0; }
+.resolution-plan-items { display: grid; gap: 6px; }
+.resolution-plan-item { align-items: center; background: rgba(20,25,37,.6); border: 1px solid var(--border); border-radius: 8px; display: flex; flex-wrap: wrap; gap: 8px; padding: 8px 10px; }
+.resolution-plan-item code { color: #b9f5ff; font-size: 11.5px; overflow-wrap: anywhere; }
+.resolution-plan-item-blockers { color: #fca5a5; font-size: 11px; }
+.resolution-plan-item-note { color: var(--text-muted); flex-basis: 100%; font-size: 11px; }
 .quality-review-page { display: grid; gap: 16px; padding-bottom: 44px; }
 .quality-review-header { margin-bottom: 0; }
 .quality-review-header-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }

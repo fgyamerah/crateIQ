@@ -86,6 +86,7 @@ export default function Duplicates() {
         <p className="page-subtitle">Review duplicate candidates without changing files. Decisions are stored only in CrateIQ’s local index.</p>
       </div>
       <div className="duplicates-header-actions">
+        <Link className="btn btn--ghost btn--sm" to="/duplicate-resolution-plan">Resolution Plan</Link>
         <Link className="btn btn--ghost btn--sm" to="/jobs">Analysis Jobs</Link>
         <Link className="btn btn--ghost btn--sm" to="/settings">Settings</Link>
         <button className="btn btn--primary btn--sm" disabled={refreshing} onClick={() => void refresh()}><RefreshCw size={14} /> {refreshing ? 'Refreshing…' : 'Refresh preview'}</button>

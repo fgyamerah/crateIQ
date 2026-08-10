@@ -220,6 +220,15 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/duplicate-resolution-plan",
+        "purpose": "Plan-first duplicate resolution: read-only per-track status derived from the latest "
+                   "reviewed snapshot and its decisions. No apply/execute endpoint exists.",
+        "access": "read-only",
+        "endpoints": [
+            ("/api/duplicates/resolution-plan", "dict", ("groups", "summary", "safety", "apply_supported")),
+        ],
+    },
+    {
         "route": "/crates",
         "purpose": "Manual local crate review",
         "access": "read-only list; crate editing deferred",

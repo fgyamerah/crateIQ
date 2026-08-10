@@ -84,7 +84,9 @@ Legacy/placeholder routes (`Dashboard`, `Collection`, `Tracks`,
 independently mounted; specialist pages (Beets Review, Enrichment Review,
 Metadata Repair, Metadata Sanitation, BPM Review, Genre Taxonomy, Quality
 Review) remain reachable as deep links from Needs Review / Maintenance
-rather than living in the primary sidebar.
+rather than living in the primary sidebar. `/duplicate-resolution-plan`
+(read-only "Plan only — no files changed.") is a deep link from
+`/duplicates` and is not in the primary sidebar either.
 
 ## Backend Architecture
 
@@ -220,6 +222,23 @@ Service map (`backend/app/services/`), current primary surfaces:
   lives in the neutral `utils/path_reconciliation.py` module (no FastAPI or
   `pipeline.py` import); current backend services do not import private
   `pipeline.py` helpers.
+* `duplicate_review_service` / `duplicate_resolution_plan_service` — the
+  former owns the sole authoritative DB-only human review state
+  (`keep`/`ignore`/`review_later`/`unresolved`) against a saved rmlint
+  preview snapshot; never deletes, moves, renames, quarantines, or writes a
+  tag/file. The latter is a separate, read-only plan-first layer
+  (`GET /api/duplicates/resolution-plan`) that derives a deterministic plan
+  from the latest snapshot plus its decisions -- `keep` /
+  `candidate_for_reversible_resolution` / `no_action` / `review_required`
+  per track, never `delete`. A group is plan-eligible only with verified
+  content-checksum grouping evidence, exactly one explicit keeper, all other
+  members reviewed, and every member path/file re-verified live against the
+  selected root; any ambiguity or drift blocks the whole group. Candidate
+  items carry an `execution_requirements` object (truthfully labeled
+  identity evidence, current stat, backup/collision/restore/ledger
+  requirements) describing what a future apply phase must prove -- no
+  apply/execute endpoint exists yet. See
+  `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`.
 * `pipeline.py` compatibility — see Legacy Compatibility below
 
 Route groups: `/api/workspace*`, `/api/tracks*`, `/api/library*`,
@@ -361,6 +380,13 @@ task-level backlog):
    rollback, weak/ambiguous automated repair, and `processed_state` relinks
    without sufficient source-row proof remain unsupported (see
    `docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md`).
+6. **Duplicate resolution apply remains future work** — the current backend
+   supports only a read-only, plan-first `/duplicates/resolution-plan`
+   surface derived from the latest saved Duplicate Review snapshot and its
+   human decisions; it has no apply/execute endpoint and performs zero file,
+   tag, or track-metadata writes. A future confirmation-gated, reversible
+   apply phase with backup/collision/ledger/restore support is designed but
+   unimplemented (see `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`).
 
 Publish/Sync configuration portability (hardcoded local paths) was fixed in
 a prior cycle — see Backend Architecture below. The dangerous pre-managed-

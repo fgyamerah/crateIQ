@@ -3,6 +3,7 @@ import Layout from './components/Layout'
 import CrateMind from './pages/CrateMind'
 import Crates from './pages/Crates'
 import Duplicates from './pages/Duplicates'
+import DuplicateResolutionPlan from './pages/DuplicateResolutionPlan'
 import SmartCrates from './pages/SmartCrates'
 import LibraryView from './components/library/LibraryView'
 import Inbox from './pages/Inbox'
@@ -62,6 +63,7 @@ export default function App() {
           <Route path="bpm-review" element={<ErrorBoundary><BpmReview /></ErrorBoundary>} />
           <Route path="jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
           <Route path="duplicates" element={<ErrorBoundary><Duplicates /></ErrorBoundary>} />
+          <Route path="duplicate-resolution-plan" element={<ErrorBoundary><DuplicateResolutionPlan /></ErrorBoundary>} />
           <Route path="crates" element={<ErrorBoundary><Crates /></ErrorBoundary>} />
           <Route path="smart-crates" element={<ErrorBoundary><SmartCrates /></ErrorBoundary>} />
           <Route path="set-builder" element={<ErrorBoundary><SetBuilder /></ErrorBoundary>} />

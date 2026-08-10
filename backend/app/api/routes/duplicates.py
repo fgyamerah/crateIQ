@@ -1,10 +1,17 @@
-"""Safe duplicate review API: database-only decisions, never file actions."""
+"""Safe duplicate review API: database-only decisions, never file actions.
+
+Also exposes a read-only, plan-first duplicate resolution surface
+(``/duplicates/resolution-plan``) that is separate from review state and has
+no apply/execute endpoint. See
+``docs/architecture/DUPLICATE_RESOLUTION_SPEC.md``.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Path
 
+from ...schemas.duplicate_resolution_plan import DuplicateResolutionPlanResponse
 from ...schemas.duplicate_review import DuplicateReviewDecisionUpdate, DuplicateReviewResponse
-from ...services import duplicate_review_service
+from ...services import duplicate_resolution_plan_service, duplicate_review_service
 
 router = APIRouter(tags=["duplicates"])
 
@@ -36,5 +43,15 @@ async def update_duplicate_review_decision(
         return DuplicateReviewResponse(**duplicate_review_service.update_decision(group_id, track_id, body.decision, body.note))
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/duplicates/resolution-plan", response_model=DuplicateResolutionPlanResponse)
+async def get_duplicate_resolution_plan() -> DuplicateResolutionPlanResponse:
+    """Plan-first only: propose per-track resolution status from the latest reviewed
+    snapshot and its human decisions. No apply/execute endpoint exists."""
+    try:
+        return DuplicateResolutionPlanResponse(**duplicate_resolution_plan_service.get_plan())
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
