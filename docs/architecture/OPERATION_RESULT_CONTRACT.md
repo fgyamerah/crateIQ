@@ -15,8 +15,11 @@ immediate implementation work.
 ## 1. Current-State Inventory
 
 Every workflow ships a distinct operation model with its own status
-vocabulary, its own count fields, and its own persistence contract inside
-the backend's `jobs.db` (never in the trusted pipeline `processed.db`).
+vocabulary and its own count fields.  Most workflows persist their
+operation rows inside the backend's `jobs.db`.  Reconciliation is the
+explicit exception: its append-only reconciliation ledger
+(`reconciliation_ledger` table) is stored in the selected library's
+`<root>/logs/processed.db`, not in `jobs.db`.
 
 ### 1.1 Inbox Process All / Preparation Operations
 
@@ -334,12 +337,12 @@ rolls back the entire transaction and no ledger entry is written.
 Rollback (`POST /ledger/{ledger_id}/rollback`, `confirm=true`):
 - `ledger_id` (new rollback ledger entry ID)
 - `rollback_of_ledger_id` (references the original apply ledger entry)
-- `status`
+- `status` (`rolled_back`)
 - `backup_path`, `backup_sha256`
-- `verification_status`
+- `verification_status` (`verified`)
 
 Rollback creates a new ledger entry with `operation_type` prefixed
-`rollback:`. It reads the original apply provenance, verifies the current
+`rollback:` and `status` set to `rolled_back`. It reads the original apply provenance, verifies the current
 DB state matches the applied after-state, creates a backup of the
 current-state, restores the before-state with postcondition checks, and
 writes a new ledger row. Idempotent — a second rollback of the same ledger
@@ -457,7 +460,7 @@ implicitly confirmed), NO `blockers`, NO `outcome`, NO `cancel_requested`
 | Analysis          | `running`, `completed`, `failed`, `cancelled` + **derived** `outcome`               |
 | Waveform Bulk     | `running`, `completed`, `failed`, `cancelled`                                       |
 | Tag Write         | `previewed`, `running`, `completed`, `failed`, `partially_failed`, `restored`       |
-| Reconciliation    | `valid`/`invalid`/`skipped` (plan), `applied` (ledger), `verified` (postcondition)  |
+| Reconciliation    | `valid`/`invalid`/`skipped` (plan), `applied` / `rolled_back` (ledger), `verified` (postcondition)  |
 | Publish           | `running`, `completed`, `failed`, `cancelled`                                       |
 | Jobs              | `pending`, `running`, `succeeded`, `failed`, `cancelled`                            |
 
@@ -486,7 +489,7 @@ implicitly confirmed), NO `blockers`, NO `outcome`, NO `cancel_requested`
 5. **Reconciliation is not a unified `status`.** It splits across three
    vocabularies: plan validation `status` (`valid`/`invalid`/`skipped`),
    apply eligibility (`eligible` boolean + `blockers`), and ledger
-   `status` (`applied`).
+   `status` (`applied` / `rolled_back`).
 
 ### 2.2 `status` vs Derived `outcome`
 
@@ -867,7 +870,7 @@ This document does NOT authorize:
 | `tag_write_operations`   | `jobs.db`     | `{uuid_hex}`           | `previewed/running/completed/failed/partially_failed/restored` | NO | INLINE | NO |
 | `publish_operations`     | `jobs.db`     | `{uuid_hex}`           | `running/completed/failed/cancelled` | NO | YES | NO (export) / via jobs (sync) |
 | `jobs`                   | `jobs.db`     | `{uuid_dashed}`        | `pending/running/succeeded/failed/cancelled` | NO | NO  | YES (SIGTERM) |
-| `reconciliation_ledger`  | `processed.db`| `recon-{uuid_hex}`     | `applied`                   | NO        | YES     | NO (synchronous) |
+| `reconciliation_ledger`  | `processed.db`| `recon-{uuid_hex}`     | `applied` / `rolled_back`   | NO        | YES     | NO (synchronous) |
 | `waveform_jobs`          | `jobs.db`     | `{uuid_dashed}`        | `queued/processing/succeeded/failed/cancelled` | NO | NO  | YES     |
 
 ---
