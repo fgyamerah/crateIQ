@@ -26,12 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Define a shared operation/result contract inventory across the current
-    major workflows: Process All, BPM/key analysis, waveform operations,
-    tag writes, reconciliation, Publish/export/sync, and jobs. Start from
-    the existing operation models and identify the minimum common
-    vocabulary before rewriting any service.
-
 [ ] Fix the Library overview/quality KPI aggregation so `/api/library/overview`
     and `/api/library/quality` do not blur storage zones. If the current
     code still aggregates across all zones, treat it as a high-priority
@@ -64,6 +58,19 @@ P2 / MEDIUM
     exist for the remaining toolkit-runner-compatible commands, the
     compatibility wizard is proven unused or migrated, and the remaining
     pipeline/config/db dependencies are audited.
+
+[ ] Add a derived `outcome` (matching the analysis_operations `derive_outcome`
+    pattern) to preparation_operations and waveform_operations read paths so
+    `status='completed'` with a non-zero `failed_count` cannot render as
+    plain success. Do not change persisted status columns. A read-only
+    adapter in the service layer is sufficient.
+
+[ ] Implement a read-only shared operation-list adapter function in the
+    backend service layer that normalizes the diverging count-field names
+    (succeeded/generated/written_count/applied_count) and status vocabularies
+    (`completed` vs `succeeded`) into the minimum common vocabulary defined
+    in `docs/architecture/OPERATION_RESULT_CONTRACT.md` Section 3.1. This is
+    a read-side only change with no schema migration.
 
 [ ] Needs Review still lacks a cross-category bulk acceptance flow for
     high-confidence items. Design the review semantics before adding any

@@ -173,7 +173,7 @@ The forward-looking work is organized around current product gaps, not the old p
 Current status: `PARTIAL`
 
 - Frontend test foundation: Vitest 1.x (compatible with the current Vite 5 stack), React Testing Library, jest-dom, and jsdom. The non-interactive `npm --prefix frontend run test` check covers Publish safety gates, Needs Review selection, representative legacy redirects, and readiness degraded/error rendering with mocked frontend APIs.
-- Shared operation/result contract inventory across Process All, BPM/key analysis, waveform, tag write, reconciliation, Publish/export/sync, and jobs.
+- Shared operation/result contract inventory across Process All, BPM/key analysis, waveform, tag write, reconciliation, Publish/export/sync, and jobs is defined in `docs/architecture/OPERATION_RESULT_CONTRACT.md`. Implementation convergence (read adapters, shared outcome derivation, frontend type normalization) remains future work.
 - Mutating-route contract coverage for confirmation gates, stale-preview invalidation, review state, and degraded/error states.
 
 ### B. Product Navigation / Command-center Home

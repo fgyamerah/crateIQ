@@ -9,6 +9,13 @@ documents live in `docs/archive/` (see `docs/archive/README.md`). For
 exhaustive rules and safety policy, `AGENTS.md` is authoritative — this file
 summarizes and links rather than duplicating it.
 
+The shared operation/result contract across the major workflows (Process
+All, analysis, waveform, tag write, reconciliation, Publish, and jobs) is
+defined in `docs/architecture/OPERATION_RESULT_CONTRACT.md`. It inventories
+current-state divergences, proposes a minimum common vocabulary, and
+prescribes an incremental, read-adapter-first convergence strategy. No
+runtime behavior or API/schema changes are authorized by that document.
+
 ## Product
 
 CrateIQ is a local-first DJ library preparation and management application.

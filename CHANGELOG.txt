@@ -2,6 +2,29 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-11] — Define shared operation/result contract inventory and minimum common vocabulary
+
+- What changed: created `docs/architecture/OPERATION_RESULT_CONTRACT.md`,
+  a comprehensive architecture-planning document that inventories the
+  current operation/result models across all seven major workflow families
+  (Process All, BPM/key analysis, waveform, tag write, reconciliation,
+  Publish/export/sync, and jobs), identifies divergences, proposes a
+  minimum shared contract, and recommends a staged, backward-compatible
+  convergence strategy.
+- Why it changed: the prior roadmap described a shared operation/result
+  vocabulary as a future goal without a grounded inventory. This document
+  gives future coding agents and developers one evidence-based contract to
+  reference and a concrete, incremental migration path that does not
+  require a flag-day rewrite.
+- Files affected: `docs/architecture/OPERATION_RESULT_CONTRACT.md` (new),
+  `NEXT_TASKS.txt` (removed completed P1 item; added two narrow P2
+  follow-up items), `docs/CRATEIQ_ROADMAP.md` (updated Contract & Test
+  Foundation description), `PROJECT_CONTEXT.md` (added contract pointer),
+  `CHANGELOG.txt` (this entry).
+- Migration notes: defines architecture/planning only; changes no runtime
+  behavior, no API/schema, no database state, and no application source
+  code.
+
 [2026-08-11] — Add frontend automated test foundation
 
 - What changed: added a Vitest 1.x + React Testing Library/jsdom harness with
