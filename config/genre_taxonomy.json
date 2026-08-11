@@ -1,0 +1,26 @@
+{
+  "_comment": "Repository-controlled preferred genre taxonomy for CrateIQ Genre Intelligence (Phase 3). Edit here to change the default preferred-genre list without touching Python code. User additions/edits/disables live in the local index (genre_taxonomy table) and override these defaults by name; this file is never written to by the app.",
+  "schema_version": 1,
+  "genres": [
+    {"name": "Afro House", "parent_name": null, "description": null},
+    {"name": "Afro Tech", "parent_name": null, "description": null},
+    {"name": "Amapiano", "parent_name": null, "description": null},
+    {"name": "Amapiano Gospel", "parent_name": "Amapiano", "description": null},
+    {"name": "Afrobeats", "parent_name": null, "description": null},
+    {"name": "Afrobeat", "parent_name": null, "description": null},
+    {"name": "Highlife", "parent_name": null, "description": null},
+    {"name": "Hiplife", "parent_name": null, "description": null},
+    {"name": "Gospel", "parent_name": null, "description": null},
+    {"name": "House", "parent_name": null, "description": null},
+    {"name": "Deep House", "parent_name": "House", "description": null},
+    {"name": "Soulful House", "parent_name": "House", "description": null},
+    {"name": "Dancehall", "parent_name": null, "description": null},
+    {"name": "Reggae", "parent_name": null, "description": null},
+    {"name": "Hip Hop", "parent_name": null, "description": null},
+    {"name": "R&B", "parent_name": null, "description": null},
+    {"name": "Pop", "parent_name": null, "description": null},
+    {"name": "Electronic", "parent_name": null, "description": null},
+    {"name": "Unknown", "parent_name": null, "description": null},
+    {"name": "Needs Review", "parent_name": null, "description": null}
+  ]
+}

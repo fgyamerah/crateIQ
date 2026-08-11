@@ -129,7 +129,26 @@ def test_normalize_genre_maps_through_taxonomy(genre_conn):
 
 def test_normalize_genre_missing_table_returns_none():
     conn = sqlite3.connect(":memory:")
-    assert cs.normalize_genre(conn, "Deep House") is None
+    assert cs.normalize_genre(conn, "totally-unknown-genre-xyz") is None
+    conn.close()
+
+
+@pytest.mark.parametrize(
+    "variant",
+    ["Afro-House", "Afro House", "afro_house", "  AFRO   HOUSE  ", "aFrO hOuSe"],
+)
+def test_normalize_genre_variants_follow_shared_contract(variant):
+    conn = sqlite3.connect(":memory:")
+    conn.execute("CREATE TABLE genre_mappings(raw_genre TEXT, normalized_genre TEXT, enabled INTEGER DEFAULT 1)")
+    conn.execute(
+        "INSERT INTO genre_mappings (raw_genre, normalized_genre, enabled) VALUES (?, ?, 1)",
+        ("Afro-House", "Afro Tech"),
+    )
+
+    assert cs.normalize_genre(conn, variant) == "Afro Tech"
+
+    consensus = cs.build_track_consensus(1, {"beatport": [_candidate("beatport", genre=variant)]}, conn=conn)
+    assert consensus.fields["genre"].value == "Afro Tech"
     conn.close()
 
 
@@ -143,6 +162,35 @@ def test_genre_beatport_authority_wins_over_generic_source(genre_conn):
     assert consensus.fields["genre"].reason_code == "beatport_genre_authority"
 
 
+def test_genre_identity_high_with_single_authority_source_stays_medium(genre_conn):
+    candidates = {
+        "beets": [_candidate("beets", artist="DJ Koze", title="Pick Up")],
+        "musicbrainz": [_candidate("musicbrainz", artist="DJ Koze", title="Pick Up")],
+        "beatport": [_candidate("beatport", genre="Deep House")],
+    }
+    consensus = cs.build_track_consensus(1, candidates, conn=genre_conn)
+    assert consensus.identity_confidence == "HIGH"
+    assert consensus.fields["genre"].value == "Deep House"
+    assert consensus.fields["genre"].confidence == "MEDIUM"
+    assert consensus.fields["genre"].reason_code == "beatport_genre_authority"
+
+
+def test_genre_agreement_can_be_high_regardless_of_identity_value(genre_conn):
+    candidates = [
+        _candidate("beatport", genre="Deep House"),
+        _candidate("lastfm", genre="Deep House"),
+    ]
+    low_identity = cs._genre_verdict(candidates, "LOW", conn=genre_conn)
+    high_identity = cs._genre_verdict(candidates, "HIGH", conn=genre_conn)
+
+    assert low_identity.value == "Deep House"
+    assert high_identity.value == "Deep House"
+    assert low_identity.confidence == "HIGH"
+    assert high_identity.confidence == "HIGH"
+    assert low_identity.reason_code == "beatport_genre_authority"
+    assert high_identity.reason_code == "beatport_genre_authority"
+
+
 def test_genre_authority_conflict_detected(genre_conn):
     candidates = {
         "beatport": [_candidate("beatport", genre="Deep House")],
@@ -150,6 +198,20 @@ def test_genre_authority_conflict_detected(genre_conn):
     }
     consensus = cs.build_track_consensus(1, candidates, conn=genre_conn)
     assert consensus.fields["genre"].confidence == "CONFLICT"
+
+
+def test_genre_conflict_remains_conflict_even_with_high_identity(genre_conn):
+    candidates = {
+        "beets": [_candidate("beets", artist="DJ Koze", title="Pick Up")],
+        "musicbrainz": [_candidate("musicbrainz", artist="DJ Koze", title="Pick Up")],
+        "beatport": [_candidate("beatport", genre="Deep House")],
+        "discogs": [_candidate("discogs", genre="Amapiano")],
+    }
+    consensus = cs.build_track_consensus(1, candidates, conn=genre_conn)
+    assert consensus.identity_confidence == "HIGH"
+    assert consensus.fields["genre"].confidence == "CONFLICT"
+    assert consensus.fields["genre"].value is None
+    assert consensus.fields["genre"].reason_code == "genre_authority_disagreement"
 
 
 def test_genre_never_forces_all_electronic_styles_into_one_bucket(genre_conn):
@@ -174,3 +236,25 @@ def test_genre_no_evidence(genre_conn):
     consensus = cs.build_track_consensus(1, {"beets": [_candidate("beets", artist="X")]}, conn=genre_conn)
     assert consensus.fields["genre"].confidence == "LOW"
     assert consensus.fields["genre"].reason_code == "no_evidence"
+
+
+def test_genre_repo_default_mapping_honored_without_db_rows():
+    conn = sqlite3.connect(":memory:")
+    consensus = cs.build_track_consensus(1, {"beatport": [_candidate("beatport", genre="deep house")]}, conn=conn)
+    assert consensus.fields["genre"].value == "Deep House"
+    conn.close()
+
+
+def test_genre_exact_canonical_honored_without_db_rows():
+    conn = sqlite3.connect(":memory:")
+    consensus = cs.build_track_consensus(1, {"beatport": [_candidate("beatport", genre="House")]}, conn=conn)
+    assert consensus.fields["genre"].value == "House"
+    conn.close()
+
+
+def test_genre_repo_needs_review_entry_stays_unresolved():
+    conn = sqlite3.connect(":memory:")
+    consensus = cs.build_track_consensus(1, {"lastfm": [_candidate("lastfm", genre="afro")]}, conn=conn)
+    assert consensus.fields["genre"].value is None
+    assert consensus.fields["genre"].confidence == "LOW"
+    conn.close()

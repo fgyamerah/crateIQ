@@ -1,0 +1,22 @@
+{
+  "_comment": "Repository-controlled default raw-genre -> preferred-genre mappings for CrateIQ Genre Intelligence (Phase 3). Keys are matched after deterministic normalization (casefold, whitespace/hyphen/underscore collapse, punctuation strip except '&'). A repository default mapping is only tier 3 in the resolver precedence: an explicit enabled user mapping (tier 1) or an exact enabled preferred-genre name match (tier 2) always wins first. Entries with \"needs_review\": true intentionally do not collapse a generic/ambiguous raw label (e.g. 'afro', 'dance') into a specific preferred genre; a user may still override any of these with an explicit manual mapping. This file is never written to by the app -- user mappings live in the local index (genre_mappings table).",
+  "schema_version": 1,
+  "mappings": [
+    {"raw_genre": "afrohouse", "normalized_genre": "Afro House", "confidence": "high"},
+    {"raw_genre": "afro house", "normalized_genre": "Afro House", "confidence": "high"},
+    {"raw_genre": "afro tech", "normalized_genre": "Afro Tech", "confidence": "high"},
+    {"raw_genre": "amapiano", "normalized_genre": "Amapiano", "confidence": "high"},
+    {"raw_genre": "ampiano", "normalized_genre": "Amapiano", "confidence": "low"},
+    {"raw_genre": "afrobeats", "normalized_genre": "Afrobeats", "confidence": "high"},
+    {"raw_genre": "afro beats", "normalized_genre": "Afrobeats", "confidence": "high"},
+    {"raw_genre": "afrobeat", "normalized_genre": "Afrobeat", "confidence": "high"},
+    {"raw_genre": "high life", "normalized_genre": "Highlife", "confidence": "high"},
+    {"raw_genre": "highlife", "normalized_genre": "Highlife", "confidence": "high"},
+    {"raw_genre": "hiplife", "normalized_genre": "Hiplife", "confidence": "high"},
+    {"raw_genre": "gospel", "normalized_genre": "Gospel", "confidence": "high"},
+    {"raw_genre": "deep house", "normalized_genre": "Deep House", "confidence": "high"},
+    {"raw_genre": "soulful house", "normalized_genre": "Soulful House", "confidence": "high"},
+    {"raw_genre": "afro", "normalized_genre": null, "confidence": "low", "needs_review": true},
+    {"raw_genre": "dance", "normalized_genre": null, "confidence": "low", "needs_review": true}
+  ]
+}

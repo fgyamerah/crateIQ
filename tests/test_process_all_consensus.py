@@ -358,6 +358,7 @@ def test_enrich_tracks_is_idempotent_on_repeated_runs(managed_root, monkeypatch)
         "beets": [ProviderCandidate(provider="beets", artist="DJ Koze", title="Pick Up")],
         "musicbrainz": [ProviderCandidate(provider="musicbrainz", artist="DJ Koze", title="Pick Up")],
         "beatport": [ProviderCandidate(provider="beatport", genre="Deep House")],
+        "lastfm": [ProviderCandidate(provider="lastfm", genre="Deep House")],
     }
     calls = []
 

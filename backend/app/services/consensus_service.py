@@ -15,11 +15,14 @@ Strong identity signals (in order of strength):
   - a single provider's own 'high' confidence tier, alone
 
 Genre gets special handling: raw provider genre/style strings are mapped
-through the existing genre_mappings table (same one Genre Taxonomy uses,
-see backend/app/api/routes/genres.py) rather than used verbatim, and
-Beatport/Discogs (electronic/DJ-catalogue authorities) are weighted above
-generic sources once track identity itself is already strong -- never
-forcing every electronic subgenre into one bucket.
+through the same deterministic genre resolver Genre Taxonomy uses (see
+backend/app/services/genre_taxonomy_service.py) rather than used verbatim,
+and Beatport/Discogs (electronic/DJ-catalogue authorities) are weighted
+above generic sources when the genre evidence itself agrees -- never
+forcing every electronic subgenre into one bucket. Track identity is a
+separate track-association signal and must not lift genre confidence by
+itself; provider genre evidence is still just evidence for the
+taxonomy/mapping contract to accept or send to review.
 
 HIGH auto-apply requires: strong identity evidence AND no conflicting
 value for that specific field AND the field-level agreement rule above.
@@ -31,6 +34,7 @@ from dataclasses import dataclass, field as dc_field
 from pathlib import Path
 from typing import Any
 
+from . import genre_taxonomy_service
 from .providers.base import ProviderCandidate
 
 Confidence = str  # "HIGH" | "MEDIUM" | "LOW" | "CONFLICT"
@@ -61,17 +65,14 @@ class TrackConsensus:
 
 
 def normalize_genre(conn: sqlite3.Connection, raw_genre: str | None) -> str | None:
-    """Map a raw provider genre/style string through the existing genre_mappings table."""
-    if not raw_genre or not raw_genre.strip():
-        return None
-    key = raw_genre.strip().casefold()
-    try:
-        row = conn.execute(
-            "SELECT normalized_genre FROM genre_mappings WHERE raw_genre = ? AND enabled = 1", (key,)
-        ).fetchone()
-    except sqlite3.OperationalError:
-        return None  # genre_mappings table not yet initialized -- no mapping available
-    return row[0] if row else None
+    """Map a raw provider genre/style string through the shared resolver.
+
+    Delegates to `genre_taxonomy_service.resolve_consensus_genre`, a small
+    adapter over the authoritative deterministic resolver used by Genre
+    Taxonomy preview/apply. This keeps consensus on the same normalization
+    contract without duplicating mapping logic here.
+    """
+    return genre_taxonomy_service.resolve_consensus_genre(conn, raw_genre)
 
 
 def _identity_verdict(candidates: list[ProviderCandidate]) -> tuple[Confidence, str]:
@@ -175,16 +176,16 @@ def _genre_verdict(
     if not normalized_by_provider:
         return FieldConsensus(field="genre", value=None, confidence="LOW", reason_code="unrecognized_genre_terms", evidence=[f"{c.provider}: {c.genre or c.style}" for c in genre_candidates])
 
-    # Electronic/DJ-catalogue authorities are trusted above generic sources
-    # once identity is already strong -- but never override a disagreeing
-    # authority with a lower-priority source.
+    # Genre confidence is derived from genre evidence only. Track identity is
+    # computed separately and is intentionally not used to lift the genre
+    # verdict.
     for authority in _GENRE_AUTHORITY_ORDER:
         if authority in normalized_by_provider:
             authoritative_value = normalized_by_provider[authority]
             others = {v for p, v in normalized_by_provider.items() if p != authority}
             if others and others != {authoritative_value}:
                 return FieldConsensus(field="genre", value=None, confidence="CONFLICT", reason_code="genre_authority_disagreement", evidence=evidence)
-            confidence = "HIGH" if identity == "HIGH" else "MEDIUM"
+            confidence = "HIGH" if len(normalized_by_provider) >= 2 else "MEDIUM"
             return FieldConsensus(field="genre", value=authoritative_value, confidence=confidence, reason_code=f"{authority}_genre_authority", evidence=evidence)
 
     distinct_values = set(normalized_by_provider.values())

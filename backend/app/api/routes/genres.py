@@ -1,126 +1,224 @@
+"""Thin typed adapter over `genre_taxonomy_service` (Genre Intelligence Phase 3).
+
+Business logic (repository config loading, precedence resolution, preview,
+apply, provenance) lives in the service module; this file only handles HTTP
+concerns: request/response models, path lookup, and confirm/validation
+errors.
+"""
 from __future__ import annotations
-import json, sqlite3
-from datetime import datetime, timezone
+
+import sqlite3
+
 from fastapi import APIRouter, HTTPException, Path
 from pydantic import BaseModel, Field
-from ...core.library_root import library_db_path, selected_library_root
 
-router=APIRouter(tags=['genres'])
-PREFERRED=['Afro House','Afro Tech','Amapiano','Amapiano Gospel','Afrobeats','Afrobeat','Highlife','Hiplife','Gospel','House','Deep House','Soulful House','Dancehall','Reggae','Hip Hop','R&B','Pop','Electronic','Unknown','Needs Review']
-MAPPINGS={'afrohouse':'Afro House','afro house':'Afro House','afro-house':'Afro House','afro tech':'Afro Tech','amapiano':'Amapiano','ampiano':'Amapiano','afrobeats':'Afrobeats','afro beats':'Afrobeats','afrobeat':'Afrobeat','high life':'Highlife','highlife':'Highlife','hiplife':'Hiplife','gospel':'Gospel','deep house':'Deep House','soulful house':'Soulful House'}
-def now():return datetime.now(timezone.utc).isoformat()
+from ...core.library_root import library_db_path, selected_library_root
+from ...services import genre_taxonomy_service as svc
+
+router = APIRouter(tags=["genres"])
+
+
 def db():
- p=library_db_path(selected_library_root())
- if not p.is_file():raise ValueError('Configured library is not initialized.')
- return p
-def ensure(c):
- c.execute('CREATE TABLE IF NOT EXISTS genre_taxonomy(id INTEGER PRIMARY KEY,name TEXT UNIQUE NOT NULL,parent_name TEXT,description TEXT,enabled INTEGER NOT NULL DEFAULT 1,sort_order INTEGER NOT NULL,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)')
- c.execute('CREATE TABLE IF NOT EXISTS genre_mappings(id INTEGER PRIMARY KEY,raw_genre TEXT UNIQUE NOT NULL,normalized_genre TEXT NOT NULL,confidence TEXT NOT NULL,source TEXT NOT NULL,enabled INTEGER NOT NULL DEFAULT 1,created_at TEXT NOT NULL,updated_at TEXT NOT NULL)')
- c.execute('CREATE TABLE IF NOT EXISTS genre_review_snapshots(id INTEGER PRIMARY KEY,created_at TEXT NOT NULL,items_json TEXT NOT NULL)')
- c.execute('CREATE TABLE IF NOT EXISTS genre_review_decisions(snapshot_id INTEGER,track_id INTEGER,decision TEXT NOT NULL,note TEXT NOT NULL DEFAULT \'\',updated_at TEXT NOT NULL,applied_at TEXT,PRIMARY KEY(snapshot_id,track_id))')
- cols={r[1] for r in c.execute('PRAGMA table_info(tracks)')}
- for n in ('normalized_genre','genre_source','genre_reviewed_at','genre_updated_at'):
-  if n not in cols:c.execute(f'ALTER TABLE tracks ADD COLUMN {n} TEXT')
- for i,name in enumerate(PREFERRED):c.execute('INSERT OR IGNORE INTO genre_taxonomy(name,sort_order,created_at,updated_at) VALUES(?,?,?,?)',(name,i,now(),now()))
- for raw,norm in MAPPINGS.items():c.execute('INSERT OR IGNORE INTO genre_mappings(raw_genre,normalized_genre,confidence,source,created_at,updated_at) VALUES(?,?,?,?,?,?)',(raw,norm,'low' if raw=='ampiano' else 'high','default_taxonomy',now(),now()))
-def taxonomy(c):return [dict(r) for r in c.execute('SELECT * FROM genre_taxonomy ORDER BY sort_order,name')]
-def mapping(c):return [dict(r) for r in c.execute('SELECT * FROM genre_mappings ORDER BY raw_genre')]
-class GenreIn(BaseModel):name:str=Field(min_length=1,max_length=100);parent_name:str|None=None;description:str|None=None;enabled:bool=True;sort_order:int=100
-class MappingIn(BaseModel):raw_genre:str=Field(min_length=1,max_length=200);normalized_genre:str=Field(min_length=1,max_length=100);confidence:str='manual';source:str='user_mapping';enabled:bool=True
-class DecisionIn(BaseModel):decision:str='pending';note:str=''
-class ApplyIn(BaseModel):confirm:bool=False;track_ids:list[int]=Field(default_factory=list)
-@router.get('/genres/taxonomy')
+    p = library_db_path(selected_library_root())
+    if not p.is_file():
+        raise ValueError("Configured library is not initialized.")
+    return p
+
+
+class GenreIn(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    parent_name: str | None = None
+    description: str | None = None
+    enabled: bool = True
+    sort_order: int = 100
+
+
+class MappingIn(BaseModel):
+    raw_genre: str = Field(min_length=1, max_length=200)
+    normalized_genre: str = Field(min_length=1, max_length=100)
+    confidence: str = "manual"
+    source: str = "user_mapping"
+    enabled: bool = True
+
+
+class ApplyIn(BaseModel):
+    confirm: bool = False
+    track_ids: list[int] = Field(default_factory=list)
+
+
+def _repo_fallback_taxonomy() -> dict:
+    return {"genres": [{"id": None, **g, "enabled": 1, "source": "repository"} for g in svc.repo_taxonomy()]}
+
+
+@router.get("/genres/taxonomy")
 def get_taxonomy():
- try:
-  with sqlite3.connect(db()) as c:
-   c.row_factory=sqlite3.Row
-   if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='genre_taxonomy'").fetchone():return {'genres':[{'id':None,'name':name,'enabled':1,'sort_order':i} for i,name in enumerate(PREFERRED)]}
-   return {'genres':taxonomy(c)}
- except ValueError:return {'genres':[{'id':None,'name':name,'enabled':1,'sort_order':i} for i,name in enumerate(PREFERRED)]}
-@router.post('/genres/taxonomy')
-def add_taxonomy(body:GenreIn):
- with sqlite3.connect(db()) as c:
-  ensure(c)
-  try:c.execute('INSERT INTO genre_taxonomy(name,parent_name,description,enabled,sort_order,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(body.name.strip(),body.parent_name,body.description,int(body.enabled),body.sort_order,now(),now()))
-  except sqlite3.IntegrityError:raise HTTPException(422,'Preferred genre already exists.')
- return get_taxonomy()
-@router.patch('/genres/taxonomy/{genre_id}')
-def patch_taxonomy(body:GenreIn,genre_id:int=Path(ge=1)):
- with sqlite3.connect(db()) as c:
-  c.row_factory=sqlite3.Row;ensure(c); existing=c.execute('SELECT * FROM genre_taxonomy WHERE id=?',(genre_id,)).fetchone()
-  if not existing:raise HTTPException(404,'Preferred genre not found.')
-  duplicate=c.execute('SELECT id FROM genre_taxonomy WHERE LOWER(name)=LOWER(?) AND id<>?',(body.name.strip(),genre_id)).fetchone()
-  if duplicate:raise HTTPException(422,'Preferred genre already exists.')
-  c.execute('UPDATE genre_taxonomy SET name=?,parent_name=?,description=?,enabled=?,sort_order=?,updated_at=? WHERE id=?',(body.name.strip(),body.parent_name,body.description,int(body.enabled),body.sort_order,now(),genre_id))
- return get_taxonomy()
-@router.delete('/genres/taxonomy/{genre_id}')
-def disable_taxonomy(genre_id:int=Path(ge=1)):
- with sqlite3.connect(db()) as c:
-  ensure(c); changed=c.execute('UPDATE genre_taxonomy SET enabled=0,updated_at=? WHERE id=?',(now(),genre_id)).rowcount
-  if not changed:raise HTTPException(404,'Preferred genre not found.')
- return get_taxonomy()
-@router.get('/genres/mappings')
+    try:
+        path = db()
+    except ValueError:
+        return _repo_fallback_taxonomy()
+    with sqlite3.connect(path) as c:
+        c.row_factory = sqlite3.Row
+        try:
+            return {"genres": svc.effective_taxonomy(c)}
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+
+
+@router.post("/genres/taxonomy")
+def add_taxonomy(body: GenreIn):
+    with sqlite3.connect(db()) as c:
+        svc.ensure_tables(c)
+        if svc.taxonomy_rows_for_key(c, body.name):
+            raise HTTPException(422, "Preferred genre already exists.")
+        now = svc.now()
+        try:
+            c.execute(
+                "INSERT INTO genre_taxonomy(name,parent_name,description,enabled,sort_order,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (body.name.strip(), body.parent_name, body.description, int(body.enabled), body.sort_order, now, now),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(422, "Preferred genre already exists.")
+    return get_taxonomy()
+
+
+@router.patch("/genres/taxonomy/{genre_id}")
+def patch_taxonomy(body: GenreIn, genre_id: int = Path(ge=1)):
+    with sqlite3.connect(db()) as c:
+        c.row_factory = sqlite3.Row
+        svc.ensure_tables(c)
+        existing = c.execute("SELECT * FROM genre_taxonomy WHERE id=?", (genre_id,)).fetchone()
+        if not existing:
+            raise HTTPException(404, "Preferred genre not found.")
+        if svc.taxonomy_rows_for_key(c, body.name, exclude_id=genre_id):
+            raise HTTPException(422, "Preferred genre already exists.")
+        c.execute(
+            "UPDATE genre_taxonomy SET name=?,parent_name=?,description=?,enabled=?,sort_order=?,updated_at=? WHERE id=?",
+            (body.name.strip(), body.parent_name, body.description, int(body.enabled), body.sort_order, svc.now(), genre_id),
+        )
+    return get_taxonomy()
+
+
+@router.delete("/genres/taxonomy/{genre_id}")
+def disable_taxonomy(genre_id: int = Path(ge=1)):
+    with sqlite3.connect(db()) as c:
+        svc.ensure_tables(c)
+        changed = c.execute(
+            "UPDATE genre_taxonomy SET enabled=0,updated_at=? WHERE id=?", (svc.now(), genre_id)
+        ).rowcount
+        if not changed:
+            raise HTTPException(404, "Preferred genre not found.")
+    return get_taxonomy()
+
+
+@router.get("/genres/mappings")
 def get_mappings():
- try:
-  with sqlite3.connect(db()) as c:
-   c.row_factory=sqlite3.Row
-   if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='genre_mappings'").fetchone():return {'mappings':[]}
-   return {'mappings':mapping(c)}
- except ValueError:return {'mappings':[]}
-@router.post('/genres/mappings')
-def add_mapping(body:MappingIn):
- with sqlite3.connect(db()) as c:
-  ensure(c); valid={x['name'] for x in taxonomy(c) if x['enabled']}
-  if body.normalized_genre not in valid:raise HTTPException(422,'Normalized genre must be in the preferred taxonomy.')
-  if body.confidence not in {'high','medium','low','manual'} or body.source not in {'default_taxonomy','user_mapping','imported_metadata','filename_hint'}:raise HTTPException(422,'Invalid mapping confidence or source.')
-  if body.raw_genre.strip().casefold() in {'afro','dance'} and body.normalized_genre != 'Needs Review':raise HTTPException(422,'Ambiguous raw genres must map to Needs Review.')
-  try:c.execute('INSERT INTO genre_mappings(raw_genre,normalized_genre,confidence,source,enabled,created_at,updated_at) VALUES(?,?,?,?,?,?,?)',(body.raw_genre.strip().casefold(),body.normalized_genre,body.confidence,body.source,int(body.enabled),now(),now()))
-  except sqlite3.IntegrityError:raise HTTPException(422,'Raw genre mapping already exists.')
- return get_mappings()
-@router.patch('/genres/mappings/{mapping_id}')
-def patch_mapping(body:MappingIn,mapping_id:int=Path(ge=1)):
- with sqlite3.connect(db()) as c:
-  c.row_factory=sqlite3.Row;ensure(c)
-  if not c.execute('SELECT id FROM genre_mappings WHERE id=?',(mapping_id,)).fetchone():raise HTTPException(404,'Genre mapping not found.')
-  valid={x['name'] for x in taxonomy(c) if x['enabled']}
-  if body.normalized_genre not in valid or body.confidence not in {'high','medium','low','manual'} or body.source not in {'default_taxonomy','user_mapping','imported_metadata','filename_hint'}:raise HTTPException(422,'Invalid normalized genre, confidence, or source.')
-  duplicate=c.execute('SELECT id FROM genre_mappings WHERE LOWER(raw_genre)=LOWER(?) AND id<>?',(body.raw_genre.strip(),mapping_id)).fetchone()
-  if duplicate:raise HTTPException(422,'Raw genre mapping already exists.')
-  c.execute('UPDATE genre_mappings SET raw_genre=?,normalized_genre=?,confidence=?,source=?,enabled=?,updated_at=? WHERE id=?',(body.raw_genre.strip().casefold(),body.normalized_genre,body.confidence,body.source,int(body.enabled),now(),mapping_id))
- return get_mappings()
-@router.delete('/genres/mappings/{mapping_id}')
-def disable_mapping(mapping_id:int=Path(ge=1)):
- with sqlite3.connect(db()) as c:
-  ensure(c); changed=c.execute('UPDATE genre_mappings SET enabled=0,updated_at=? WHERE id=?',(now(),mapping_id)).rowcount
-  if not changed:raise HTTPException(404,'Genre mapping not found.')
- return get_mappings()
-@router.get('/genres/review')
+    try:
+        path = db()
+    except ValueError:
+        return {"mappings": [
+            {"id": None, "raw_genre": m["raw_genre"],
+             "normalized_genre": svc.NEEDS_REVIEW if m["needs_review"] else m["normalized_genre"],
+             "confidence": m["confidence"], "source": "default_taxonomy", "enabled": 1}
+            for m in svc.repo_mappings()
+        ]}
+    with sqlite3.connect(path) as c:
+        c.row_factory = sqlite3.Row
+        try:
+            return {"mappings": svc.effective_mappings(c)}
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+
+
+@router.post("/genres/mappings")
+def add_mapping(body: MappingIn):
+    with sqlite3.connect(db()) as c:
+        c.row_factory = sqlite3.Row
+        svc.ensure_tables(c)
+        target = svc.resolve_taxonomy_name(c, body.normalized_genre)
+        if target.name is None:
+            raise HTTPException(422, "Normalized genre must be in the preferred taxonomy.")
+        if body.confidence not in svc.VALID_CONFIDENCES or body.source not in svc.VALID_SOURCES:
+            raise HTTPException(422, "Invalid mapping confidence or source.")
+        if svc.mapping_rows_for_key(c, body.raw_genre):
+            raise HTTPException(422, "Raw genre mapping already exists.")
+        try:
+            c.execute(
+                "INSERT INTO genre_mappings(raw_genre,normalized_genre,confidence,source,enabled,created_at,updated_at) "
+                "VALUES(?,?,?,?,?,?,?)",
+                (body.raw_genre.strip(), target.name, body.confidence, body.source,
+                 int(body.enabled), svc.now(), svc.now()),
+            )
+        except sqlite3.IntegrityError:
+            raise HTTPException(422, "Raw genre mapping already exists.")
+    return get_mappings()
+
+
+@router.patch("/genres/mappings/{mapping_id}")
+def patch_mapping(body: MappingIn, mapping_id: int = Path(ge=1)):
+    with sqlite3.connect(db()) as c:
+        c.row_factory = sqlite3.Row
+        svc.ensure_tables(c)
+        if not c.execute("SELECT id FROM genre_mappings WHERE id=?", (mapping_id,)).fetchone():
+            raise HTTPException(404, "Genre mapping not found.")
+        target = svc.resolve_taxonomy_name(c, body.normalized_genre)
+        if target.name is None or body.confidence not in svc.VALID_CONFIDENCES or body.source not in svc.VALID_SOURCES:
+            raise HTTPException(422, "Invalid normalized genre, confidence, or source.")
+        if svc.mapping_rows_for_key(c, body.raw_genre, exclude_id=mapping_id):
+            raise HTTPException(422, "Raw genre mapping already exists.")
+        c.execute(
+            "UPDATE genre_mappings SET raw_genre=?,normalized_genre=?,confidence=?,source=?,enabled=?,updated_at=? WHERE id=?",
+            (body.raw_genre.strip(), target.name, body.confidence, body.source,
+             int(body.enabled), svc.now(), mapping_id),
+        )
+    return get_mappings()
+
+
+@router.delete("/genres/mappings/{mapping_id}")
+def disable_mapping(mapping_id: int = Path(ge=1)):
+    with sqlite3.connect(db()) as c:
+        svc.ensure_tables(c)
+        changed = c.execute(
+            "UPDATE genre_mappings SET enabled=0,updated_at=? WHERE id=?", (svc.now(), mapping_id)
+        ).rowcount
+        if not changed:
+            raise HTTPException(404, "Genre mapping not found.")
+    return get_mappings()
+
+
+_SAFETY = ["db_only", "review_first", "no_tag_writes", "no_file_writes"]
+
+
+@router.get("/genres/review")
 def review():
- try:
-  with sqlite3.connect(db()) as c:
-   c.row_factory=sqlite3.Row
-   if not c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='genre_review_snapshots'").fetchone():return {'summary':{'pending':0,'high_confidence':0,'needs_review':0,'missing_genre':0,'applied':0},'items':[],'safety':['db_only','review_first','no_tag_writes','no_file_writes'],'message':'Refresh preview to review local genre values.'}
-   snap=c.execute('SELECT * FROM genre_review_snapshots ORDER BY id DESC LIMIT 1').fetchone()
-  if not snap:return {'summary':{'pending':0,'high_confidence':0,'needs_review':0,'missing_genre':0,'applied':0},'items':[],'safety':['db_only','review_first','no_tag_writes','no_file_writes'],'message':'Refresh preview to review local genre values.'}
-  items=json.loads(snap['items_json']);return {'summary':{'pending':len(items),'high_confidence':sum(x['confidence']=='high' for x in items),'needs_review':sum(x['suggested_genre']=='Needs Review' for x in items),'missing_genre':sum(not x['raw_genre'] for x in items),'applied':0},'items':items,'safety':['db_only','review_first','no_tag_writes','no_file_writes']}
- except ValueError:return {'summary':{'pending':0,'high_confidence':0,'needs_review':0,'missing_genre':0,'applied':0},'items':[],'safety':['db_only','review_first','no_tag_writes','no_file_writes'],'message':'Initialize the local index before genre review.'}
-@router.post('/genres/review/preview-refresh')
+    try:
+        with sqlite3.connect(db()) as c:
+            items = svc.latest_snapshot_items(c)
+    except ValueError:
+        return {"summary": svc.summarize([]), "items": [], "safety": _SAFETY,
+                "message": "Initialize the local index before genre review."}
+    if items is None:
+        return {"summary": svc.summarize([]), "items": [], "safety": _SAFETY,
+                "message": "Refresh preview to review local genre values."}
+    return {"summary": svc.summarize(items), "items": items, "safety": _SAFETY}
+
+
+@router.post("/genres/review/preview-refresh")
 def refresh():
- with sqlite3.connect(db()) as c:
-  c.row_factory=sqlite3.Row;ensure(c); maps={x['raw_genre']:x for x in mapping(c) if x['enabled']};items=[]
-  for row in c.execute('SELECT id,title,artist,genre FROM tracks'):
-   raw=(row['genre'] or '').strip(); key=raw.casefold(); hit=maps.get(key); suggested=hit['normalized_genre'] if hit else ('Needs Review' if raw else None)
-   if suggested:items.append({'track_id':row['id'],'title':row['title'],'artist':row['artist'],'raw_genre':raw,'current_genre':raw,'suggested_genre':suggested,'confidence':hit['confidence'] if hit else 'low','reason':'matched mapping' if hit else 'ambiguous or missing genre; no automatic guess','decision':'pending','note':''})
-  c.execute('INSERT INTO genre_review_snapshots(created_at,items_json) VALUES(?,?)',(now(),json.dumps(items)));return {'summary':{'pending':len(items),'high_confidence':sum(x['confidence']=='high' for x in items),'needs_review':sum(x['suggested_genre']=='Needs Review' for x in items),'missing_genre':sum(not x['raw_genre'] for x in items),'applied':0},'items':items,'safety':['db_only','review_first','no_tag_writes','no_file_writes']}
-@router.post('/genres/review/apply')
-def apply(body:ApplyIn):
- if not body.confirm:raise HTTPException(422,'Apply requires confirm=true.')
- with sqlite3.connect(db()) as c:
-  c.row_factory=sqlite3.Row;ensure(c);snap=c.execute('SELECT * FROM genre_review_snapshots ORDER BY id DESC LIMIT 1').fetchone()
-  if not snap:raise HTTPException(422,'Refresh preview first.')
-  selected={x['track_id']:x for x in json.loads(snap['items_json'])};applied=skipped=0
-  for id in body.track_ids:
-   item=selected.get(id)
-   if not item or item['suggested_genre']=='Needs Review':skipped+=1;continue
-   c.execute('UPDATE tracks SET normalized_genre=?,genre_source=?,genre_reviewed_at=?,genre_updated_at=? WHERE id=?',(item['suggested_genre'],'genre_taxonomy',now(),now(),id));applied+=1
-  return {'applied':applied,'skipped':skipped,'failed':0,'warnings':['Raw genre is preserved; only normalized_genre was written.']}
+    with sqlite3.connect(db()) as c:
+        c.row_factory = sqlite3.Row
+        items = svc.build_preview_items(c)
+        svc.save_preview_snapshot(c, items)
+    return {"summary": svc.summarize(items), "items": items, "safety": _SAFETY}
+
+
+@router.post("/genres/review/apply")
+def apply(body: ApplyIn):
+    if not body.confirm:
+        raise HTTPException(422, "Apply requires confirm=true.")
+    with sqlite3.connect(db()) as c:
+        c.row_factory = sqlite3.Row
+        try:
+            return svc.apply_selected(c, body.track_ids)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))

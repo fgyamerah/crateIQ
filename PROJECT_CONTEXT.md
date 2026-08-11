@@ -289,6 +289,56 @@ auto-applied. Existing non-empty metadata is never silently overwritten,
 except an explicit junk/placeholder-value exception paired with a HIGH
 replacement.
 
+## Genre Intelligence (Strategy Phase 3)
+
+`genre_taxonomy_service` is the single deterministic genre taxonomy/mapping
+resolver; `backend/app/api/routes/genres.py` (`/api/genres/*`) is a thin
+typed adapter over it, and `consensus_service.normalize_genre` delegates to
+the same service-layer resolver adapter (`resolve_consensus_genre`) -- one
+shared mapping contract, not a second hardcoded table.
+
+* **Repository config**: `config/genre_taxonomy.json` (preferred genre
+  list) and `config/genre_mappings.json` (default raw-genre -> preferred-
+  genre mappings), both schema-validated and cached at load time
+  (`repo_taxonomy()` / `repo_mappings()`), in deterministic file order.
+  Never written to by the app -- edits always land in the local index.
+* **Local index overrides**: the existing `genre_taxonomy` / `genre_mappings`
+  tables in the selected library's `processed.db` hold only user
+  customizations (additions, edits, disables). A DB row for a given
+  name/raw-genre fully overrides the matching repository default at
+  resolution time; disabling only affects future resolution, never
+  already-stored track values.
+* **Resolution precedence** (`resolve_genre()`), per raw genre string:
+  1. an explicit enabled user mapping;
+  2. an exact match against an enabled preferred canonical genre name
+     (identity match, not a guess);
+  3. an enabled repository default mapping;
+  4. no hit -> Needs Review. Ambiguous/unmapped raw genres (e.g. generic
+     "afro", "dance") are never guessed -- their repository default entries
+     explicitly mark `needs_review: true`; only an explicit user mapping may
+     collapse them to a specific genre.
+* **Normalization**: deterministic casefold + whitespace/hyphen/underscore
+  collapse + punctuation strip (keeping `&`), pinned by tests. The same
+  `normalize_key()` contract is used for resolver lookups and write-time
+  duplicate checks, so punctuation/spacing variants resolve consistently.
+* **Preview/apply contract**: `GET /api/genres/review` is read-only.
+  `POST /api/genres/review/preview-refresh` computes a fresh resolution per
+  track (never touches track columns) and saves a review snapshot.
+  `POST /api/genres/review/apply` is explicit, selected-track-scoped,
+  requires `confirm: true`, preserves the raw `genre` column, writes only
+  `normalized_genre`/genre provenance columns, and records provenance via
+  `field_provenance_service` (`origin="system"`, no confidence value --
+  deterministic app logic never masquerades as provider confidence).
+  Needs-Review items and disabled/invalid-target mappings are always
+  skipped, never auto-applied. Repeated apply of an identical mapping is
+  idempotent (no duplicate provenance rows, matching `field_provenance_
+  service`'s existing repeat-event contract).
+* **Needs Review integration**: unchanged and already consolidated --
+  `metadata_repair_queue_service`'s `missing_genre`/`missing_normalized_genre`
+  issues and `needs_review_service`'s GENRE category read the same
+  `tracks.normalized_genre` column this service writes, so an applied
+  normalized genre clears its own pending Needs Review entry.
+
 ## Field Provenance / Track Identity (Metadata Model Phase 2)
 
 Additive foundation living in the same selected-library index DB as

@@ -2,6 +2,64 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-10] — Complete Genre Intelligence Phase 3: deterministic taxonomy/mapping resolver
+
+- What changed: consolidated the existing monolithic Genre Taxonomy route
+  (hardcoded `PREFERRED`/`MAPPINGS` constants seeded into the local index on
+  every mutating call) into a testable service, `genre_taxonomy_service`,
+  backed by two new version-controlled config files: `config/genre_taxonomy.json`
+  (preferred genre list) and `config/genre_mappings.json` (default raw-genre
+  mappings). Both are schema-validated and cached at load time. `backend/app/
+  api/routes/genres.py` is now a thin typed adapter over the service; no
+  behavior moved into `pipeline.py` and no second genre subsystem was added.
+  Resolution follows an explicit, deterministic four-tier precedence: (1) an
+  explicit enabled user mapping in the local index; (2) an exact match
+  against an enabled preferred canonical genre name (identity match, not a
+  guess); (3) an enabled repository default mapping; (4) no hit -> Needs
+  Review, never guessed. Generic/ambiguous raw labels (e.g. "afro", "dance")
+  intentionally have no repository default mapping to a specific genre --
+  their config entries mark `needs_review: true` -- but an explicit user
+  mapping may still collapse them. Repository defaults are never written to
+  the local index automatically; the DB tables now hold only user
+  customizations, which override repo defaults by name/raw-genre at
+  resolution time. Deterministic normalization now uses one shared
+  `normalize_key()` contract everywhere (lookup, preview, and write
+  validation), preserving the user's raw spelling while comparing by a
+  normalized key. `consensus_service.normalize_genre` now delegates to the
+  same service-layer resolver adapter (`resolve_consensus_genre`) used by
+  Genre Taxonomy preview, so provider consensus, preview, and the resolver
+  contract stay aligned without a second reduced lookup path. Write-time
+  genre and taxonomy edits now reject duplicate normalized keys rather than
+  relying on case-insensitive raw-string checks, and legacy duplicate
+  normalized-key rows fail closed as explicit review/ambiguity results
+  instead of depending on SQLite scan order. `apply_selected()` is explicit,
+  selected-track-scoped, requires confirmation, preserves the raw `genre`
+  column, writes only `normalized_genre`/genre provenance columns, and
+  records provenance via `field_provenance_service` (`origin="system"`,
+  never masquerading as provider confidence); repeated apply of an identical
+  mapping is idempotent and does not duplicate provenance rows. Needs Review
+  wiring (`needs_review_service` GENRE category, `metadata_repair_queue_service`
+  missing_genre/missing_normalized_genre issues) was already consolidated
+  and required no changes -- applying a normalized genre now correctly
+  clears its own pending queue entry. Updated `frontend/src/pages/Genres.tsx`
+  to show the mapping/review source and reason columns truthfully and to
+  guard disable actions for repository-default entries that have no local
+  override row yet (id is null until first overridden).
+- Why it changed: completes the previously-partial Genre Intelligence Phase
+  3 backlog item using the current product's service-layer architecture
+  instead of a parallel/legacy implementation, per the deterministic
+  precedence model (no fuzzy/LLM guessing of ambiguous genre labels).
+- Files affected: `config/genre_taxonomy.json` (new), `config/genre_mappings.json`
+  (new), `backend/app/services/genre_taxonomy_service.py` (new),
+  `backend/app/api/routes/genres.py`, `backend/app/services/consensus_service.py`,
+  `frontend/src/pages/Genres.tsx`, `tests/test_genre_taxonomy_service.py` (new).
+- Migration notes: none. The `/api/genres/*` route contract, request/response
+  shapes, and local-index schema are unchanged (two additive fields,
+  `source`/`needs_review`, were added to genre review preview items). Any
+  raw genre previously seeded verbatim into the `genre_taxonomy`/
+  `genre_mappings` DB tables by the old `ensure()` on first mutating call is
+  left in place as a local override; it is not removed automatically.
+
 [2026-08-10] — Add Metadata Model Phase 2: field provenance + optional fingerprint identity
 
 - What changed: added an additive, current-backend field-level metadata

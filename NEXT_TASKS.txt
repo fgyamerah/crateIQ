@@ -64,10 +64,6 @@ P1 / HIGH
     current workflow depends on baseline provenance existing for
     already-indexed tracks; add only when a concrete consumer needs it.
 
-[ ] Genre intelligence layer (strategy Phase 3): genre_taxonomy.json,
-    genre_mappings.json, deterministic resolver, genre-normalize
-    preview/apply command, review integration.
-
 [ ] Review and approve docs/CRATEIQ_ROADMAP.md, then implement Phase 1
     Foundation and design system per the approved roadmap.
 
