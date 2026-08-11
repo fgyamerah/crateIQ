@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, HardDrive, Loader2, RefreshCw, ShieldCheck } from 'lucide-react'
 import { ApiError } from '../api/client'
 import { fetchCrates } from '../api/crates'
@@ -65,6 +65,7 @@ export default function Publish() {
   const [readinessError, setReadinessError] = useState<string | null>(null)
 
   const [exportPreview, setExportPreview] = useState<PublishExportPreview | null>(null)
+  const [exportPreviewSelection, setExportPreviewSelection] = useState<{ crateId: number; exportTarget: PublishExportTarget } | null>(null)
   const [exportPreviewLoading, setExportPreviewLoading] = useState(false)
   const [exportPreviewError, setExportPreviewError] = useState<string | null>(null)
   const [exportConfirming, setExportConfirming] = useState(false)
@@ -81,6 +82,10 @@ export default function Publish() {
   const [operations, setOperations] = useState<PublishOperationSummary[]>([])
   const [operationsLoading, setOperationsLoading] = useState(true)
   const [refreshSignal, setRefreshSignal] = useState(0)
+  const exportPreviewRequestId = useRef(0)
+  const currentExportInput = useRef({ crateId, exportTarget })
+
+  currentExportInput.current = { crateId, exportTarget }
 
   useEffect(() => {
     fetchCrates()
@@ -90,7 +95,9 @@ export default function Publish() {
 
   // A stale preview must never remain confirmable once the selection changes.
   useEffect(() => {
-    setExportPreview(null); setExportPreviewError(null); setExportResult(null); setExportError(null)
+    exportPreviewRequestId.current += 1
+    setExportPreviewLoading(false)
+    setExportPreview(null); setExportPreviewSelection(null); setExportPreviewError(null); setExportResult(null); setExportError(null)
   }, [crateId, exportTarget])
   useEffect(() => {
     setSyncPreview(null); setSyncPreviewError(null); setSyncStatus(null); setSyncError(null)
@@ -119,19 +126,42 @@ export default function Publish() {
 
   const runExportPreview = async () => {
     if (!crateId) return
+    const requestedCrateId = crateId
+    const requestedExportTarget = exportTarget
+    const requestId = exportPreviewRequestId.current + 1
+    exportPreviewRequestId.current = requestId
+    const isCurrentRequest = () => (
+      exportPreviewRequestId.current === requestId
+      && currentExportInput.current.crateId === requestedCrateId
+      && currentExportInput.current.exportTarget === requestedExportTarget
+    )
+
     setExportPreviewLoading(true); setExportPreviewError(null); setExportResult(null); setExportError(null)
-    try { setExportPreview(await previewPublishExport(crateId, exportTarget)) }
-    catch (err) { setExportPreviewError(messageOf(err)); setExportPreview(null) }
-    finally { setExportPreviewLoading(false) }
+    try {
+      const preview = await previewPublishExport(requestedCrateId, requestedExportTarget)
+      if (isCurrentRequest()) {
+        setExportPreview(preview)
+        setExportPreviewSelection({ crateId: requestedCrateId, exportTarget: requestedExportTarget })
+      }
+    } catch (err) {
+      if (isCurrentRequest()) { setExportPreviewError(messageOf(err)); setExportPreview(null); setExportPreviewSelection(null) }
+    } finally {
+      if (isCurrentRequest()) setExportPreviewLoading(false)
+    }
   }
 
   const runExportConfirm = async () => {
-    if (!crateId || !exportPreview || exportPreview.blockers.length > 0) return
+    const previewMatchesCurrentSelection = (
+      exportPreviewSelection?.crateId === crateId
+      && exportPreviewSelection.exportTarget === exportTarget
+    )
+    if (!crateId || !exportPreview || !previewMatchesCurrentSelection || exportPreview.blockers.length > 0) return
     setExportConfirming(true); setExportError(null)
     try {
       const result = await confirmPublishExport(crateId, exportTarget)
       setExportResult(result)
       setExportPreview(null) // a repeat export requires a fresh preview
+      setExportPreviewSelection(null)
       setRefreshSignal((n) => n + 1)
       loadReadiness()
     } catch (err) { setExportError(messageOf(err)) }
@@ -178,7 +208,11 @@ export default function Publish() {
     return () => window.clearInterval(timer)
   }, [syncStatus, loadReadiness])
 
-  const exportConfirmDisabled = !exportPreview || exportPreview.blockers.length > 0 || exportConfirming
+  const exportPreviewMatchesCurrentSelection = (
+    exportPreviewSelection?.crateId === crateId
+    && exportPreviewSelection.exportTarget === exportTarget
+  )
+  const exportConfirmDisabled = !exportPreview || !exportPreviewMatchesCurrentSelection || exportPreview.blockers.length > 0 || exportConfirming
   const syncConfirmDisabled = !syncPreview || syncPreview.blockers.length > 0 || syncConfirming || syncStatus?.status === 'running'
 
   const selectedCrateLabel = useMemo(() => {

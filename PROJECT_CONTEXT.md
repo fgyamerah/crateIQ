@@ -52,7 +52,8 @@ supported under Settings -> Advanced as a secondary compatibility mode.
 ## Current Stack
 
 * FastAPI backend (Pydantic, Uvicorn)
-* React 18 / Vite / TypeScript frontend
+* React 18 / Vite / TypeScript frontend, with a Vitest + React Testing
+  Library/jsdom component and route-contract test harness
 * Python service layer under `backend/app/services/`
 * SQLite for tracks, jobs, and operational state
 * Local filesystem for the managed music workspace

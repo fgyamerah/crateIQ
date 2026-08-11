@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-11] — Add frontend automated test foundation
+
+- What changed: added a Vitest 1.x + React Testing Library/jsdom harness with
+  a non-interactive frontend test command and focused behavioral coverage for
+  Publish confirmation/stale-preview safeguards, legacy redirects, and
+  readiness degraded/error diagnostics.
+- Why it changed: frontend safety and state behavior now has a deterministic
+  repository check compatible with the current Vite 5/React 18 stack.
+- Files affected: `frontend/src/pages/Publish.tsx`, frontend test
+  configuration/setup/tests, frontend package manifest/lockfile, and current
+  developer/planning documentation.
+- Migration notes: preserves the preview requirement while preventing a late
+  preview response from authorizing a different crate or export format.
+
 [2026-08-11] — Rebaseline roadmap and backlog to current product state
 
 - What changed: reworked `docs/CRATEIQ_ROADMAP.md` into a living current-

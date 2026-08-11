@@ -496,6 +496,7 @@ and exact safety boundaries.
 .venv/bin/python -m pytest -q
 
 # Frontend checks
+npm --prefix frontend run test
 npm --prefix frontend run typecheck
 npm --prefix frontend run build
 

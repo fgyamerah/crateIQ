@@ -26,13 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Build a deliberately scoped frontend automated test foundation. Make
-    the harness choice a dedicated dependency decision first; do not add
-    Vitest/Jest incidentally. Initial coverage should focus on safety and
-    state behavior: confirmation-gated actions, stale-preview invalidation,
-    review selection/state, degraded/error states, supported route
-    redirects, and deferred mutating-route contract coverage.
-
 [ ] Define a shared operation/result contract inventory across the current
     major workflows: Process All, BPM/key analysis, waveform operations,
     tag writes, reconciliation, Publish/export/sync, and jobs. Start from

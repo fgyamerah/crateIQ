@@ -69,7 +69,7 @@ Current status: `IMPLEMENTED`
 Current status: `PARTIAL`
 
 - Exists now: `/api/runtime/readiness`, `ready` / `degraded` / `not_ready` runtime semantics, shared `PageHeader` / `Badge` / `EmptyState` / `StatusStrip` primitives, and a consistent read-only health/status surface in several areas.
-- Remains: a dedicated frontend automated test harness, a shared operation/result vocabulary across workflows, and fully unified status/error contracts.
+- Remains: a shared operation/result vocabulary across workflows and fully unified status/error contracts. The frontend test foundation now covers Publish confirmation/stale-preview gates, Needs Review selection, representative redirects, and runtime degraded/error states.
 - Superseded: any plan that reintroduces pipeline-specific status language or treats readiness as a write-capable or scanning endpoint.
 - Depends on: runtime readiness, shared shell primitives, and route-level contracts.
 - Safety boundaries: readiness stays read-only, no health scan runs during render, and no auto-fix behavior is hidden behind the contract.
@@ -151,7 +151,7 @@ Current status: `PARTIAL`
 - Exists now: responsive CSS, semantic controls, virtualization, loading/error states, and keyboard-friendly interactions in the main routes.
 - Remains: automated a11y/performance validation, stronger mobile and touch support, and browser-backed verification of the workflows that matter.
 - Superseded: cosmetic polish that ignores evidence-based performance or accessibility work.
-- Depends on: stable routes/components and the eventual frontend test foundation.
+- Depends on: stable routes/components and the frontend test foundation.
 - Safety boundaries: performance work must not bypass confirmation or move scans into render.
 
 ### Phase 10 — End-to-end hardening and release readiness
@@ -159,7 +159,7 @@ Current status: `PARTIAL`
 Current status: `PARTIAL`
 
 - Exists now: strong backend regression coverage, supported-route contract guards, and a route/component architecture that can support a release gate.
-- Remains: a frontend automated test harness, deterministic end-to-end fixture flow, and a release checklist that reflects the actual current contracts.
+- Remains: deterministic end-to-end fixture flow and a release checklist that reflects the actual current contracts; the focused frontend unit/component harness is now in place.
 - Superseded: claims of release readiness based on backend coverage alone.
 - Depends on: the contract/test foundation and the stable route/status model.
 - Safety boundaries: only repository-controlled fixtures belong in hardening work; no real library, SSD, or Rekordbox DB should be used.
@@ -170,9 +170,9 @@ The forward-looking work is organized around current product gaps, not the old p
 
 ### A. Contract & Test Foundation
 
-Current status: `PLANNED`
+Current status: `PARTIAL`
 
-- Frontend automated test foundation, with a deliberate dependency decision before adding Vitest/Jest or any other harness.
+- Frontend test foundation: Vitest 1.x (compatible with the current Vite 5 stack), React Testing Library, jest-dom, and jsdom. The non-interactive `npm --prefix frontend run test` check covers Publish safety gates, Needs Review selection, representative legacy redirects, and readiness degraded/error rendering with mocked frontend APIs.
 - Shared operation/result contract inventory across Process All, BPM/key analysis, waveform, tag write, reconciliation, Publish/export/sync, and jobs.
 - Mutating-route contract coverage for confirmation gates, stale-preview invalidation, review state, and degraded/error states.
 
