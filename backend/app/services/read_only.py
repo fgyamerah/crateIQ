@@ -22,7 +22,7 @@ from ..core.library_root import (
     library_db_path,
     selected_library_root,
 )
-from ..core.pipeline_db import get_pipeline_conn
+from ..core.pipeline_db import get_pipeline_conn, storage_zone_predicate
 
 log = logging.getLogger(__name__)
 _QUEUE_CACHE: dict[str, Any] = {
@@ -611,6 +611,7 @@ def build_overview_payload() -> dict[str, Any]:
 
     try:
         with get_pipeline_conn() as conn:
+            library_where, library_params = storage_zone_predicate(conn, "LIBRARY")
             agg = conn.execute(
                 """SELECT
                        COUNT(*) AS total_tracks,
@@ -622,29 +623,35 @@ def build_overview_payload() -> dict[str, Any]:
                                       OR TRIM(COALESCE(key_musical,'')) != '') THEN 1 ELSE 0 END) AS tracks_analyzed,
                        SUM(CASE WHEN TRIM(COALESCE(artist,'')) = '' THEN 1 ELSE 0 END) AS tracks_missing_artist,
                        SUM(CASE WHEN TRIM(COALESCE(title,'')) = '' THEN 1 ELSE 0 END) AS tracks_missing_title
-                   FROM tracks"""
+                   FROM tracks
+                   WHERE """ + library_where,
+                library_params,
             ).fetchone()
 
             confidence_rows = conn.execute(
                 """SELECT COALESCE(NULLIF(TRIM(parse_confidence), ''), 'UNKNOWN') AS parse_confidence,
                           COUNT(*) AS cnt
                    FROM tracks
+                   WHERE """ + library_where + """
                    GROUP BY COALESCE(NULLIF(TRIM(parse_confidence), ''), 'UNKNOWN')
                    ORDER BY CASE COALESCE(NULLIF(TRIM(parse_confidence), ''), 'UNKNOWN')
                                 WHEN 'HIGH' THEN 0
                                 WHEN 'MEDIUM' THEN 1
                                 WHEN 'LOW' THEN 2
                                 ELSE 3
-                            END"""
+                            END""",
+                library_params,
             ).fetchall()
 
             genre_rows = conn.execute(
                 """SELECT COALESCE(NULLIF(TRIM(genre), ''), 'UNKNOWN') AS genre,
                           COUNT(*) AS cnt
                    FROM tracks
+                   WHERE """ + library_where + """
                    GROUP BY COALESCE(NULLIF(TRIM(genre), ''), 'UNKNOWN')
                    ORDER BY cnt DESC, LOWER(COALESCE(NULLIF(TRIM(genre), ''), 'UNKNOWN'))
-                   LIMIT 10"""
+                   LIMIT 10""",
+                library_params,
             ).fetchall()
 
         return {

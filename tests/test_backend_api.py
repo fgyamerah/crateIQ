@@ -15,7 +15,20 @@ from fastapi.testclient import TestClient
 import backend.app.main as backend_main
 from backend.app.core import db as backend_db
 from backend.app.core.library_root import assert_path_under_root
-from backend.app.services import analysis_jobs_service, analysis_operations_service, bpm_retry_policy_service, mik_metadata_service, musicbrainz_client, publish_readiness_service, publish_sync_service, rsync_runner, settings_service, sync_destination_service
+from backend.app.services import (
+    analysis_jobs_service,
+    analysis_operations_service,
+    bpm_retry_policy_service,
+    mik_metadata_service,
+    musicbrainz_client,
+    publish_readiness_service,
+    publish_sync_service,
+    read_only,
+    rsync_runner,
+    settings_service,
+    sync_destination_service,
+    track_service,
+)
 from modules import metadata_repair, metadata_sanitation
 
 
@@ -136,6 +149,53 @@ def _create_tracks_db(root: Path) -> Path:
     )
     conn.commit()
     conn.close()
+    return db_path
+
+
+def _create_mixed_zone_tracks_db(root: Path) -> Path:
+    """Create a zone-mixed index fixture without touching managed media."""
+    db_path = root / "logs" / "processed.db"
+    db_path.parent.mkdir(parents=True, exist_ok=True)
+    with sqlite3.connect(db_path) as conn:
+        conn.execute(
+            """
+            CREATE TABLE tracks (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                filepath TEXT NOT NULL UNIQUE,
+                filename TEXT NOT NULL,
+                artist TEXT,
+                title TEXT,
+                genre TEXT,
+                bpm REAL,
+                key_musical TEXT,
+                key_camelot TEXT,
+                status TEXT NOT NULL DEFAULT 'pending',
+                quality_tier TEXT,
+                parse_confidence TEXT,
+                storage_zone TEXT
+            )
+            """
+        )
+        conn.executemany(
+            """
+            INSERT INTO tracks (
+                filepath, filename, artist, title, genre, bpm, key_musical,
+                key_camelot, status, quality_tier, parse_confidence, storage_zone
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            [
+                (str(root / "Library" / "library.mp3"), "library.mp3", "Good Artist", "Good Title",
+                 "House", 120.0, "A Minor", "8A", "ok", "HIGH", "HIGH", "LIBRARY"),
+                # A null zone is a legacy Library row under the established convention.
+                (str(root / "legacy.mp3"), "legacy.mp3", None, "Legacy Title",
+                 "Disco", None, None, None, "ok", "HIGH", "MEDIUM", None),
+                # These rows would materially inflate metrics if a Library endpoint scanned all tracks.
+                (str(root / "Inbox" / "inbox.mp3"), "inbox.mp3", None, None,
+                 "Inbox Genre", 130.0, "E Minor", "9A", "ok", "HIGH", "LOW", "INBOX"),
+                (str(root / "Quarantine" / "quarantine.mp3"), "quarantine.mp3", "Quarantined", "Track",
+                 "Quarantine Genre", 126.0, "D Minor", "2A", "ok", "HIGH", "HIGH", "QUARANTINE"),
+            ],
+        )
     return db_path
 
 
@@ -909,6 +969,71 @@ def test_library_quality_endpoint_reports_progress_and_actions(client):
     }
     assert payload["recommended_next_actions"]
     assert any(action["target"] == "/issues" for action in payload["recommended_next_actions"])
+
+
+def test_library_overview_and_quality_scope_track_metrics_to_library_zone(tmp_path, monkeypatch):
+    root = tmp_path / "mixed_zone_root"
+    root.mkdir(parents=True)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(backend_main, "init_db", lambda: None)
+    db_path = _create_mixed_zone_tracks_db(root)
+
+    with TestClient(backend_main.app) as test_client:
+        before = db_path.read_bytes()
+        overview_response = test_client.get("/api/library/overview")
+        quality_response = test_client.get("/api/library/quality")
+        after = db_path.read_bytes()
+
+    assert overview_response.status_code == 200
+    assert overview_response.json() == {
+        "total_tracks": 2,
+        "tracks_with_bpm": 1,
+        "tracks_with_camelot_key": 1,
+        "tracks_analyzed": 1,
+        "tracks_missing_artist": 1,
+        "tracks_missing_title": 0,
+        "parse_confidence_breakdown": {"HIGH": 1, "MEDIUM": 1},
+        "genre_top_counts": [
+            {"genre": "Disco", "count": 1},
+            {"genre": "House", "count": 1},
+        ],
+    }
+
+    assert quality_response.status_code == 200
+    quality = quality_response.json()
+    assert quality["total_tracks"] == 2
+    assert quality["issue_total"] == 2
+    assert quality["issues_by_type"] == {
+        "missing_artist": 1,
+        "missing_title": 0,
+        "suspicious_artist": 0,
+        "suspicious_title": 0,
+        "weak_filename_parse": 1,
+    }
+    assert quality["coverage"] == {
+        "with_artist": 1,
+        "with_title": 2,
+        "with_bpm": 1,
+        "with_camelot": 1,
+        "with_genre": 2,
+    }
+    assert after == before
+
+
+def test_library_kpi_reads_treat_pre_zone_database_as_legacy_library_without_mutation(tmp_path, monkeypatch):
+    root = tmp_path / "pre_zone_root"
+    root.mkdir(parents=True)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    db_path = _create_tracks_db(root)
+    before = db_path.read_bytes()
+
+    overview = read_only.build_overview_payload()
+    issue_counts = track_service.get_issue_counts(storage_zone="LIBRARY")
+
+    assert overview["total_tracks"] == 4
+    assert overview["parse_confidence_breakdown"] == {"HIGH": 1, "MEDIUM": 1, "LOW": 2}
+    assert issue_counts == track_service.get_issue_counts()
+    assert db_path.read_bytes() == before
 
 
 def test_library_readiness_no_tracks_is_a_blocker(tmp_path, monkeypatch):

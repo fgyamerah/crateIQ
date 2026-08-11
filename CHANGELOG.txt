@@ -2,6 +2,21 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-11] — Scope Library KPIs to managed Library tracks
+
+- What changed: `/api/library/overview` and the track-derived metrics in
+  `/api/library/quality` now use the Library storage-zone population,
+  including legacy/null-zone rows. Inbox and Quarantine rows no longer affect
+  Library totals, coverage, confidence/genre breakdowns, or issue counts.
+- Why it changed: visible Library KPIs previously aggregated all track rows,
+  which could misrepresent the promoted managed Library.
+- Files affected: `backend/app/core/pipeline_db.py`,
+  `backend/app/services/read_only.py`, `backend/app/services/track_service.py`,
+  `backend/app/api/routes/library.py`, `tests/test_backend_api.py`,
+  `NEXT_TASKS.txt`, and `CHANGELOG.txt`.
+- Migration notes: no migration or database write is performed by these GET
+  paths; a pre-storage-zone database is read as legacy Library data.
+
 [2026-08-11] — Define shared operation/result contract inventory and minimum common vocabulary
 
 - What changed: created `docs/architecture/OPERATION_RESULT_CONTRACT.md`,

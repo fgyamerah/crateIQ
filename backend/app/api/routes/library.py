@@ -24,7 +24,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel
 
 from ...core.library_root import selected_library_root
-from ...core.pipeline_db import get_pipeline_conn, pipeline_db_exists
+from ...core.pipeline_db import get_pipeline_conn, pipeline_db_exists, storage_zone_predicate
 from ...schemas.library_readiness import LibraryReadinessResponse
 from ...services import library_readiness_service, read_only as read_only_service
 from ...services import track_service
@@ -279,8 +279,11 @@ def _quality_coverage_payload(total_tracks: int, overview: dict[str, Any]) -> di
     if pipeline_db_exists():
         try:
             with get_pipeline_conn() as conn:
+                library_where, library_params = storage_zone_predicate(conn, "LIBRARY")
                 row = conn.execute(
-                    "SELECT COUNT(*) AS cnt FROM tracks WHERE TRIM(COALESCE(genre,'')) != ''"
+                    "SELECT COUNT(*) AS cnt FROM tracks "
+                    f"WHERE {library_where} AND TRIM(COALESCE(genre,'')) != ''",
+                    library_params,
                 ).fetchone()
             with_genre = int(row["cnt"] or 0) if row else 0
         except Exception:
@@ -352,7 +355,7 @@ def _quality_actions(
 async def get_library_quality() -> LibraryQualityResponse:
     overview = read_only_service.build_overview_payload()
     total_tracks = int(overview.get("total_tracks", 0) or 0)
-    issue_counts = track_service.get_issue_counts()
+    issue_counts = track_service.get_issue_counts(storage_zone="LIBRARY")
     issue_total = sum(int(issue_counts.get(key, 0) or 0) for key in (
         "missing_artist",
         "missing_title",

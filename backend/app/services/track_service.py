@@ -11,7 +11,7 @@ import logging
 from typing import Any, Dict, List, Optional, Tuple
 
 from ..core.library_root import selected_library_root
-from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists
+from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists, storage_zone_predicate
 from ..models.track import Track
 from ..schemas.track import CompatibleTrackItem, CompatibleTracksResponse, TrackStats, TrackIssueItem
 from modules.harmonic import bpm_score, camelot_distance, camelot_score, genre_score
@@ -434,7 +434,8 @@ def get_stats(storage_zone: Optional[str] = None) -> TrackStats:
         return empty
 
 
-def get_issue_counts() -> dict[str, int]:
+def get_issue_counts(storage_zone: Optional[str] = None) -> dict[str, int]:
+    """Return computed issue counts, optionally restricted to one storage zone."""
     counts = {
         "missing_artist": 0,
         "missing_title": 0,
@@ -446,7 +447,11 @@ def get_issue_counts() -> dict[str, int]:
         return counts
     try:
         with get_pipeline_conn() as conn:
-            rows = conn.execute("SELECT * FROM tracks").fetchall()
+            if storage_zone:
+                where_sql, params = storage_zone_predicate(conn, storage_zone)
+                rows = conn.execute(f"SELECT * FROM tracks WHERE {where_sql}", params).fetchall()
+            else:
+                rows = conn.execute("SELECT * FROM tracks").fetchall()
         for row in rows:
             track = Track.from_row(row)
             issue_set = set(track.issues)

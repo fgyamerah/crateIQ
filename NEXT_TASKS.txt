@@ -26,7 +26,7 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Fix the Library overview/quality KPI aggregation so `/api/library/overview`
+[x] Fix the Library overview/quality KPI aggregation so `/api/library/overview`
     and `/api/library/quality` do not blur storage zones. If the current
     code still aggregates across all zones, treat it as a high-priority
     correctness issue because the visible Library metrics can mislead users.

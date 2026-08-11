@@ -12,7 +12,7 @@ import contextlib
 import logging
 import sqlite3
 from pathlib import Path
-from typing import Iterator
+from typing import Iterator, Sequence
 
 from .library_root import library_db_path
 
@@ -53,3 +53,22 @@ def pipeline_db_exists() -> bool:
 
 def pipeline_db_path() -> Path:
     return library_db_path()
+
+
+def storage_zone_predicate(
+    conn: sqlite3.Connection,
+    storage_zone: str,
+) -> tuple[str, Sequence[object]]:
+    """Return a read-only SQL predicate for a managed storage zone.
+
+    Pre-managed-workspace databases do not have ``storage_zone``. Their rows
+    predate Inbox/Library separation and are therefore interpreted as the
+    Library population, without altering the database from a GET path.
+    Null values in a database that does have the column retain that same
+    legacy-Library meaning.
+    """
+    zone = storage_zone.upper()
+    columns = {str(row["name"]) for row in conn.execute("PRAGMA table_info(tracks)")}
+    if "storage_zone" in columns:
+        return "COALESCE(storage_zone, 'LIBRARY') = ?", (zone,)
+    return ("1 = 1", ()) if zone == "LIBRARY" else ("1 = 0", ())
