@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-11] — Rebaseline roadmap and backlog to current product state
+
+- What changed: reworked `docs/CRATEIQ_ROADMAP.md` into a living current-
+  state roadmap with explicit implementation statuses; rebuilt
+  `NEXT_TASKS.txt` as an active queue; refreshed `PROJECT_CONTEXT.md`'s
+  updated date.
+- Why it changed: the prior planning docs lagged the current application
+  after the completed 2026-08 five-task cycle, and the roadmap/backlog now
+  need to describe what exists today instead of the old pre-implementation
+  phase narrative.
+- Files affected: `docs/CRATEIQ_ROADMAP.md`, `NEXT_TASKS.txt`,
+  `PROJECT_CONTEXT.md`, `CHANGELOG.txt`.
+- Migration notes: no runtime or product behavior changed.
+
 [2026-08-10] — Complete Genre Intelligence Phase 3: deterministic taxonomy/mapping resolver
 
 - What changed: consolidated the existing monolithic Genre Taxonomy route

@@ -26,340 +26,95 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Design and test the next reconciliation apply phase for queue/reference
-    artifacts and any filesystem work. The current backend supports exactly
-    one reviewed, confirmed DB-only `tracks` path update or eligible
-    `processed_state` stale marker per request, with SQLite-consistent
-    root-contained backup/rollback; it does not rewrite JSON/JSONL queue files or move,
-    rename, delete, quarantine, or tag music files. Keep any filesystem phase
-    separately reviewed and reversible. See
-    docs/architecture/FULL_RECONCILIATION_APPLY_SPEC.md.
+[ ] Build a deliberately scoped frontend automated test foundation. Make
+    the harness choice a dedicated dependency decision first; do not add
+    Vitest/Jest incidentally. Initial coverage should focus on safety and
+    state behavior: confirmation-gated actions, stale-preview invalidation,
+    review selection/state, degraded/error states, supported route
+    redirects, and deferred mutating-route contract coverage.
 
-[ ] Design and implement the future confirmation-gated, reversible duplicate
-    resolution apply phase. The current backend supports only a read-only,
-    plan-first `/duplicates/resolution-plan` surface (deterministic
-    per-track `keep` / `candidate_for_reversible_resolution` / `no_action` /
-    `review_required` plan derived from the latest saved Duplicate Review
-    snapshot and its human decisions); it has no apply/execute endpoint and
-    performs zero file, tag, or track-metadata writes. A future apply phase
-    must re-verify every actionability rule at execution time, take a
-    hash-verified backup before any mutation, use a reversible hold rather
-    than a permanent delete, and record an append-only ledger entry with a
-    verified restore path. Keep it separately reviewed. See
-    docs/architecture/DUPLICATE_RESOLUTION_SPEC.md.
+[ ] Define a shared operation/result contract inventory across the current
+    major workflows: Process All, BPM/key analysis, waveform operations,
+    tag writes, reconciliation, Publish/export/sync, and jobs. Start from
+    the existing operation models and identify the minimum common
+    vocabulary before rewriting any service.
 
-[ ] Metadata model Phase 2 follow-up: structured artist/title/version
-    representation. The additive `field_provenance` model (see
-    CHANGELOG.txt / PROJECT_CONTEXT.md) intentionally did not add
-    canonical/display-artist, base-title, or version/remix columns --
-    `modules/filename_parse.py` already derives artist/title/version at
-    parse time, but no current write path persists a structured
-    artist/title/version split back into the index, so adding those columns
-    now would be dead schema. Revisit once a concrete consumer (e.g. a
-    version-aware duplicate/compatibility view) needs it.
+[ ] Fix the Library overview/quality KPI aggregation so `/api/library/overview`
+    and `/api/library/quality` do not blur storage zones. If the current
+    code still aggregates across all zones, treat it as a high-priority
+    correctness issue because the visible Library metrics can mislead users.
 
-[ ] Metadata model Phase 2 follow-up: explicit, bounded `existing_local_value`
-    provenance backfill for tracks that predate field_provenance (read/
-    preview before write, no network, never auto-run). Deferred because no
-    current workflow depends on baseline provenance existing for
-    already-indexed tracks; add only when a concrete consumer needs it.
+[ ] Design the next reconciliation follow-up as queue/reference artifact
+    reconciliation first. Keep filesystem move/rename/quarantine behavior
+    separate, later reviewed, and explicitly high-risk. Never imply broad
+    delete or automatic mutation is authorized.
 
-[ ] Review and approve docs/CRATEIQ_ROADMAP.md, then implement Phase 1
-    Foundation and design system per the approved roadmap.
+[ ] Design the future confirmation-gated, reversible duplicate-resolution
+    apply phase. Current functionality is plan-only. Any execution phase
+    must revalidate at execution time, take a hash-verified backup, use a
+    reversible hold/quarantine path instead of permanent delete, check for
+    collisions, preserve root containment, record append-only provenance,
+    provide a verified restore path, and require explicit confirmation.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM
 ----------------------------------------------------------------------
 
-[ ] Two narrow backend reads of the legacy root config.py remain after the
-    Phase 5 pipeline/config dependency-isolation cycle, both left
-    intentionally unchanged because no current explicit runtime source
-    exists to replace them with: (1) health.py's _toolkit_version() reads
-    config.PIPELINE_VERSION for GET /api/version -- low risk, a version
-    string with no path-resolution behavior; (2) export_validation.py's
-    _output_paths() reads config.REKORDBOX_M3U_EXPORT_DIR /
-    REKORDBOX_XML_EXPORT_DIR / LOGS_DIR (falling back to hardcoded
-    /mnt/music_ssd/KKDJ paths) to display informational output-path context
-    in POST /api/exports/validate's response, consumed by Export.tsx.
-    Revisit only if/when Publish/SSD Sync-style explicit destination
-    configuration is extended to cover Rekordbox M3U/XML export too;
-    otherwise this is legacy-config-backed display context, not a
-    dependency actually gating current backend behavior.
+[ ] Two narrow backend reads of the legacy root `config.py` remain after
+    the pipeline/config dependency-isolation cycle and are intentionally
+    unchanged for now: the backend version string and the export-context
+    display values. Revisit only if an explicit runtime config source is
+    introduced for those surfaces.
 
-[ ] Legacy Direct Library removal preconditions (Phase 7 deprecation
-    boundary, see docs/architecture/LEGACY_DIRECT_LIBRARY_BOUNDARY.md): a
-    future removal phase needs (1) current FastAPI-backend equivalents for
-    all 19 toolkit_runner-allowlisted commands and 7 CLI-only maintenance
-    subcommands, or an explicit decision to drop them; (2) confirmation
-    zero real installs still use the Settings -> Advanced "Legacy Direct
-    Library" setup wizard, or a migration path off it; (3) a dependency
-    audit of pipeline.py/config.py/db.py and the modules/ai/intelligence
-    trees still backing them; (4) proof the DJ_MUSIC_ROOT env bridge in
-    scripts/crateiq-local-services.sh is unused before deleting it. No
-    removal date is set.
+[ ] Legacy Direct Library removal preconditions remain open. Do not plan a
+    removal date until the current FastAPI equivalents or explicit drops
+    exist for the remaining toolkit-runner-compatible commands, the
+    compatibility wizard is proven unused or migrated, and the remaining
+    pipeline/config/db dependencies are audited.
 
-[ ] No frontend automated test framework exists in this repo (no
-    vitest/jest, no `test` npm script). Recent feature cycles relied on
-    typecheck + build + manual/live verification instead, per this
-    repo's "don't add dependencies casually" rule. Worth a dedicated
-    task to introduce one deliberately (e.g. vitest +
-    @testing-library/react) with its own justification/scope.
+[ ] Needs Review still lacks a cross-category bulk acceptance flow for
+    high-confidence items. Design the review semantics before adding any
+    bulk mutation path so approval and execution stay separate.
 
-[ ] If/when real credentials for Discogs/Spotify/Last.fm/YouTube/
-    AcoustID/Beatport become available, re-run live verification for
-    each (Settings -> Metadata Sources -> Test) to confirm genuinely
-    successful requests, not just truthful "needs_setup" reporting.
+[ ] Credential-backed provider coverage still needs a deliberate review for
+    the currently active credential-gated providers once real credentials
+    are configured. Keep legacy provider names out of the active set.
 
-[ ] Needs Review has no cross-category bulk "Accept N high-confidence
-    recommendations" action yet -- deliberately deferred rather than
-    shipped half-safe. Resolution currently routes through each item's
-    specialist page (Enrichment Review, Genre Taxonomy, BPM Review,
-    Metadata Repair).
-
-[ ] Library overview/quality KPI cards (/api/library/overview,
-    /api/library/quality) are not yet storage_zone-aware -- they still
-    aggregate across all zones rather than Library-only.
-
-[ ] Consider consolidating Settings.tsx's own import scan/import UI into
-    a pointer at /inbox, or vice versa, so Import has exactly one home
-    instead of two UI entry points calling the same API.
-
-[ ] Live browser UI verification of the Manual Crates transition-context
-    row and Smart Crates filter-funnel pill chain (only verified via
-    live backend API calls so far): connector row placement/wrapping and
-    funnel pill chain on narrow viewports, plus an a11y label review.
-
-[ ] Safe Beets suggestion adapter and selected-field confidence review,
-    if Beets can supply suggestions without touching its user config or
-    library (temporary-config, no-tag-write adapter). Keep broad
-    automatic enrichment and overwrites out of scope.
-
-[ ] Quality remediation planning and explicit backup/review design.
-    Define any future transcode/replace workflow separately with file
-    backups, explicit per-track confirmation, and zero automatic action.
-
-[ ] Extract an intelligence/harmonic/ pure engine from modules/harmonic.py
-    (strategy Phase 4), with golden-file tests pinning current
-    set-builder scoring first; add notation conversion (Camelot <->
-    traditional <-> Open Key) and half/double-time BPM awareness; switch
-    the compatible-tracks endpoint's genre scoring to taxonomy-driven
-    relations instead of the hardcoded _GENRE_RELATIONS.
-
-[ ] Promote enrichment response caching (provider, query-hash, TTL) from
-    P3 to a pre-MusicBrainz-scale requirement.
-
-[ ] Contract coverage for deferred mutating endpoints (see
-    DEFERRED_ENDPOINTS in tests/test_supported_route_contracts.py).
-    Exports/validate and reconciliation/validate-plan are in-process and
-    could be tested with fixtures; job-spawning and rsync endpoints need
-    a mocked runner layer.
-
-[ ] Resolve the FastAPI/Starlette TestClient HTTP client deprecation
-    warning (evaluate the supported httpx2 migration separately; current
-    tests pass).
-
-[ ] Frontend build-tool dependency upgrade: plan and test the Vite major
-    upgrade required to clear the remaining development-only npm audit
-    advisories. Do not use `npm audit fix --force`.
-
-[ ] artist-repair: wire HIGH-confidence auto-apply through the tagger on
-    --apply (currently write-eligible but not yet wired through).
-
-[ ] artist-repair: build-known-artists scan uses folder depth 1+2; add a
-    tag-sample depth option for deeper libraries.
-
-[ ] artist-repair review queue approval workflow
-    (artist-repair --approve-queue).
-
-[ ] Collection workspace follow-ups (pagination for large folders,
-    duplicate scan review UI, virtual list for very large track sets).
-    NOTE: /collection now redirects to Library in the current app
-    (superseded by Inbox/Library) -- confirm this work is still wanted
-    before resuming.
-
-[ ] set-builder: honour quality_tier -- exclude LOW tracks from auto
-    sets, or add an --exclude-low flag.
-
-[ ] Deezer/Spotify album-detail call to retrieve record label.
-
-[ ] Per-run config snapshots: store config JSON in pipeline_runs table to
-    enable debugging of historical runs.
-
-[ ] Inject fewshot_examples.jsonl into the Ollama prompt via
-    _build_prompt(); add a --min-confidence filter flag to build-fewshot.
-
-[ ] Artist Intelligence Phase 3 follow-ups: populate the alias store from
-    an existing library scan (auto-discover variants); add an
-    --add-alias CLI flag; add a review-queue approval workflow
-    (artist-intelligence --approve-queue).
+[ ] Resolve the FastAPI/Starlette `TestClient` HTTP-client deprecation and
+    plan the current frontend build-tool upgrade path without changing the
+    product contract.
 
 ----------------------------------------------------------------------
 P3 / LOW
 ----------------------------------------------------------------------
 
-[ ] Bulk/manual filename rename across multiple selected Inbox tracks
-    (collision handling for a *bulk* rename is materially harder than
-    the single-track contract already shipped).
+[ ] Set Builder refinement: add a real draft/reorder/notes/readiness
+    workspace around the current functional flow. Keep the current safe
+    job-backed behavior intact and do not invent unsupported compatibility
+    scoring.
 
-[ ] Wire Genre Taxonomy suggestions into the inline/bulk Genre editors
-    (they currently accept any valid non-empty string by product
-    decision). Worth reconsidering once taxonomy-assisted entry
-    (autocomplete) is prioritized.
+[ ] Library workspace follow-ups: URL-backed reproducible views plus a
+    stronger provenance/history inspector if the current local-storage
+    state proves too limited for replayable workflows.
 
-[ ] Inbox import result doesn't surface per-source `warnings` text (e.g.
-    the self-import containment rejection message) in the UI -- only
-    imported/duplicate/failed counts are shown. The backend already
-    returns it via WorkspaceImportResult.warnings; this is a frontend
-    display gap in frontend/src/pages/Inbox.tsx.
+[ ] Accessibility / responsive / performance follow-up work: browser-backed
+    verification, keyboard and touch polish, and measured large-library
+    performance checks.
 
-[ ] Unify the Music Review (Listening) page's decorative waveform:
-    frontend/src/pages/Listening.tsx still renders the retired
-    ThreeBandWaveform placeholder for its browser-preview-only queue.
-    Could swap to EmptyWaveform for full consistency.
+[ ] Release-readiness hardening after the test foundation exists: route
+    smoke coverage, deterministic fixture-based end-to-end checks, and a
+    release checklist that reflects the actual supported routes and
+    contracts.
 
-[ ] Add a persisted-history table for bulk waveform runs (a drillable
-    table + detail rail matching AnalysisOperationsHistory.tsx's pattern
-    for BPM/key runs).
+----------------------------------------------------------------------
+DEFERRED / PARKED
+----------------------------------------------------------------------
 
-[ ] Represent long-form DJ mixes in a future waveform sample -- real
-    verification topped out at 11:06; multi-hour behavior is covered
-    only by synthetic tests and timeout/pair ceilings.
+[ ] Structured artist/title/version metadata representation. No concrete
+    current consumer exists, so adding dead schema now would be premature.
+    Revisit only if a real version-aware workflow needs it.
 
-[ ] Verify waveform rendering on a physical touch device and a
-    non-Chrome browser (touch verification so far used CDP emulation in
-    headless Chrome).
-
-[ ] Add a Settings surface for the waveform cache (footprint/preview and
-    confirmation-gated clear currently exist only as API routes).
-
-[ ] Decide whether waveform cleanup ever needs a scheduled pass (it
-    currently runs only at startup, after each publication, and on the
-    manual action).
-
-[ ] Continue deeper page-by-page visual polish where real workflows need
-    it; prioritize observed usability defects and responsive behavior.
-
-[ ] Table: mockup's "Energy" column is a 5-bar horizontal EQ meter;
-    current "Quality" column is a compact vertical 4-bar meter driven by
-    the real quality_tier field. Revisit only if an actual per-track
-    energy/loudness metric becomes available.
-
-[ ] Wire genre/BPM/has-key filter chips into the Issues/Enrichment
-    sections too, or keep them Library-only by design.
-
-[ ] docs/generated/repo_file_index.md is stale. Regenerate via
-    tools/static_analysis/generate_repo_inventory.py when convenient.
-
-[ ] Expose a duplicates count via a read API (dedupe is CLI-only today)
-    so the Library overview "Duplicates" card can show a real number.
-
-[ ] Resolve duplicate Vite config: frontend/vite.config.js shadows
-    frontend/vite.config.ts (Vite resolves .js first; both currently
-    carry identical config). Needs explicit approval to delete the
-    unused one.
-
-[ ] Wire readiness awareness into the Jobs page (disable submission
-    hints when relevant binaries are missing).
-
-[ ] metadata-enrich-online: duration booster -- add duration_ms to
-    EnrichmentCandidate and parse from Spotify/Deezer/Traxsource
-    responses (+0.03 boost when within 3s).
-
-[ ] Traxsource: verify CSS selectors against the live site before
-    production use (selectors in _SEL_* constants in
-    traxsource_lookup.py). NOTE: Traxsource is legacy/pipeline.py-era,
-    not part of the current provider_routing_service set (see AGENTS.md
-    Section 4.5).
-
-[ ] Cache Spotify/Deezer/Traxsource results to avoid re-hitting APIs on
-    re-runs.
-
-[ ] ISRC -> MusicBrainz lookup as a zero-credential fallback.
-
-[ ] Future: a label_intelligence package mirroring the artist_intelligence
-    pattern.
-
-[ ] label-clean Phase 2: Discogs and Beatport providers (single-track
-    label resolution).
-
-[ ] BpmReview: collapsible re-analysis log panel (same pattern as
-    SetBuilder).
-
-[ ] SsdSync: make sync history use .table/.table-wrapper for
-    consistency; show last-synced timestamp from the most recent
-    succeeded sync job.
-
-[ ] Job retention policy -- auto-clean logs older than N days.
-
-[ ] POST /api/jobs/{id}/cancel: handle SIGKILL fallback if SIGTERM is
-    ignored after timeout.
-
-[ ] GET /api/jobs/{id}/logs: SSE streaming for live log tail (currently
-    polls 2s); consider a WebSocket alternative.
-
-[ ] rsync --bwlimit option for bandwidth throttling during sync.
-
-[ ] BPM anomaly: per-track reanalyze (requires pipeline support for
-    --track-id).
-
-[ ] Rekordbox hot-cue write-back (blocked by MIK-first policy -- MIK is
-    the authoritative cue source; if/when implementing, must only write
-    cues to tracks MIK has NOT touched and never overwrite existing
-    POSITION_MARK entries).
-
-[ ] Route tracks in letter playlists: decide whether to exclude route
-    folders or assign the correct letter instead of '#'; validate in
-    Rekordbox UI first.
-
-[ ] Windows transfer automation: automate sync of the library to an SSD
-    (rsync or a dedicated subcommand), triggering rekordbox-export after
-    sync.
-
-[ ] Support 24-bit AIFF output for ALAC source M4A in convert-audio
-    (currently always uses pcm_s16be regardless of source bit depth).
-
-[ ] Post-convert MIK analysis trigger: after convert-audio completes,
-    optionally queue new .aiff files for Mixed In Key. Blocked on MIK
-    offering a CLI interface.
-
-[ ] convert-audio: configurable output codec via --codec flag
-    (pcm_s16be / pcm_s24be / pcm_f32be).
-
-[ ] BPM normalization layer as a fallback for tracks MIK has not
-    processed (lower priority now that MIK is authoritative).
-
-[ ] Validate _read_existing_analysis() against real MIK-tagged MP3/FLAC/
-    M4A files; confirm TKEY/TBPM/INITIALKEY/tmpo are read correctly.
-
-[ ] Tagger: skip BPM/key writes when values came from MIK (no-op write
-    prevention) -- add a "source=mik" marker to detect this.
-
-[ ] Energy tag write-back: write energy tier (Peak/Mid/Chill) into tags
-    (MP3 TXXX:ENERGY, FLAC ENERGY) to enable Rekordbox filtering and
-    smart playlists.
-
-[ ] ai-normalize: add a --resume/skip-already-normalized flag (detect
-    via a TXXX:AI_NORMALIZED marker, similar to TXXX:PROCESSED).
-
-[ ] ai-normalize: batch mode with rate limiting and a --workers flag
-    (safe since Ollama handles concurrent requests).
-
-[ ] LLM metadata assist integration via the Claude API for genre
-    inference/metadata disambiguation (cloud fallback when Ollama is
-    unavailable). The prior utils/llm_client.py wrapper was removed in
-    Phase 6 as dead code (zero callers); this would need a fresh
-    implementation, not a revival of the old wrapper.
-
-[ ] audit-quality: quality-tier playlists (LOW.m3u8 / MEDIUM.m3u8 /
-    HIGH.m3u8 / LOSSLESS.m3u8 under M3U_DIR/Quality/).
-
-[ ] audit-quality: re-check already-tagged files incrementally (skip
-    re-probe when quality_tier is already set and the file is
-    unchanged).
-
-[ ] Interactive review workflow: populate review_decisions.jsonl via a
-    future 'ai-review' CLI command.
-
-======================================================================
-END OF NEXT TASKS
-======================================================================
+[ ] Explicit `existing_local_value` provenance backfill for tracks that
+    predate `field_provenance`. No current workflow depends on baseline
+    provenance existing for already-indexed tracks, so keep it parked until
+    a concrete consumer appears.

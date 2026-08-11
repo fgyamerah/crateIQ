@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-08-08
+**Updated:** 2026-08-11
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
