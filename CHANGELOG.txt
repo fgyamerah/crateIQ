@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-12] — Reconciliation reference-artifact apply preview (Stage 3)
+
+- Added read-only `POST /api/reconciliation/reference-apply/preview` for one
+  exact reviewed reference-plan action. It binds request plan ID and preview
+  output to one plan-byte snapshot and returns its SHA-256.
+- Preview rechecks Stage 2 structure, bounded Stage 1 source evidence, exact
+  artifact pre-state, canonical target state, and provenance collisions; it
+  returns deterministic fail-closed blockers and never applies, writes a
+  ledger, or changes artifacts.
+- Files affected: reconciliation route/schema, reference plan/apply services,
+  focused Stage 3 tests, and current task/context documentation.
+- Migration notes: no database migration and no reference-artifact apply or
+  rollback behavior were added.
+
 [2026-08-12] — Reconciliation reference-artifact plan proposal (Stage 2)
 
 - Added additive proposal and validation endpoints for persisted, distinct

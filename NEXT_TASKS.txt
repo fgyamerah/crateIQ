@@ -26,10 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Implement reconciliation reference-artifact apply preview with
-    revalidation (Stage 3). Revalidate selected actions against current state
-    at preview time, surfacing any new blockers. See Section 12 Stage 3.
-
 [ ] Implement reconciliation reference-artifact single-action apply
     (Stage 4). Confirmed apply of one reviewed correction at a time for
     Category B artifacts (cue_points, set_playlist_tracks, field_provenance,

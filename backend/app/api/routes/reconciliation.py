@@ -8,6 +8,7 @@ Reconciliation ledger, findings, and plan routes.
   GET  /api/reconciliation/reference-findings    — read-only secondary reference findings
   GET  /api/reconciliation/quarantine            — read-only quarantine listing
   POST /api/reconciliation/plans/propose         — propose (never apply) a reconciliation plan
+  POST /api/reconciliation/reference-apply/preview — read-only reference-artifact revalidation
   POST /api/reconciliation/apply/preview         — DB-only apply eligibility check for reviewed actions
   POST /api/reconciliation/apply                 — confirmed DB-only apply of one reviewed action
   POST /api/reconciliation/ledger/{ledger_id}/rollback — confirmed DB-only rollback of an applied action
@@ -29,13 +30,20 @@ from ...schemas.reconciliation import (
 )
 from ...schemas.reconciliation_findings import QuarantineListingResponse, ReconciliationFindingsResponse, ReferenceFindingsResponse
 from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
-from ...schemas.reference_plan import ReferencePlanProposeResponse, ReferencePlanValidateRequest, ReferencePlanValidateResponse
+from ...schemas.reference_plan import (
+    ReferenceApplyPreviewRequest,
+    ReferenceApplyPreviewResponse,
+    ReferencePlanProposeResponse,
+    ReferencePlanValidateRequest,
+    ReferencePlanValidateResponse,
+)
 from ...services import read_only as read_only_service
 from ...services import reconciliation_findings_service
 from ...services import reference_findings_service
 from ...services import reconciliation_plan_service
 from ...services import reconciliation_apply_service
 from ...services import reference_plan_service
+from ...services import reference_apply_service
 from utils import path_reconciliation
 
 router = APIRouter(tags=["reconciliation"])
@@ -124,6 +132,20 @@ async def validate_reference_plan(body: ReferencePlanValidateRequest) -> Referen
 
 def _apply_error(exc: reconciliation_apply_service.ReconciliationApplyError) -> HTTPException:
     return HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
+
+
+def _reference_preview_error(exc: reference_apply_service.ReferenceApplyPreviewError) -> HTTPException:
+    return HTTPException(status_code=422, detail={"code": exc.code, "message": str(exc)})
+
+
+@router.post("/reconciliation/reference-apply/preview", response_model=ReferenceApplyPreviewResponse)
+async def preview_reference_apply(body: ReferenceApplyPreviewRequest) -> ReferenceApplyPreviewResponse:
+    try:
+        return ReferenceApplyPreviewResponse(**reference_apply_service.preview(
+            body.plan_path, body.plan_id, body.reviewed_action_ids,
+        ))
+    except reference_apply_service.ReferenceApplyPreviewError as exc:
+        raise _reference_preview_error(exc)
 
 
 @router.post("/reconciliation/apply/preview")

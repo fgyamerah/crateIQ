@@ -32,3 +32,27 @@ class ReferencePlanValidateResponse(BaseModel):
     reasons: dict[str, int] = Field(default_factory=dict)
     validation_records: list[dict[str, Any]] = Field(default_factory=list)
     message: str
+
+
+class ReferenceApplyPreviewRequest(BaseModel):
+    plan_path: str
+    plan_id: str
+    reviewed_action_ids: list[str]
+
+
+class ReferenceApplyPreviewAction(BaseModel):
+    action_id: str
+    action_type: str | None = None
+    artifact_type: str | None = None
+    eligible: bool
+    blockers: list[str] = Field(default_factory=list)
+
+
+class ReferenceApplyPreviewResponse(BaseModel):
+    plan_artifact: str
+    plan_id: str
+    plan_sha256: str
+    previewed_at: str
+    read_only: bool
+    actions: list[ReferenceApplyPreviewAction]
+    message: str

@@ -232,12 +232,16 @@ Service map (`backend/app/services/`), current primary surfaces:
   `pipeline.py` helpers. The read-only Stage 1 reference-artifact detector
   (`GET /api/reconciliation/reference-findings`) scans bounded Categories A,
   B, C, and E surfaces from
-  `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`; it has no
-  Stage 2 adds additive `POST /api/reconciliation/reference-plan/propose`
-  and `/validate` endpoints: they persist and validate only a distinct,
-  root-contained reference-artifact plan JSON. They do not preview, apply,
-  create a reference ledger, or mutate any database, queue, cache, review
-  state, media, tag, BPM, key, or cue content. Filesystem
+  `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`. Stage 2
+  adds additive `POST /api/reconciliation/reference-plan/propose` and
+  `/validate` endpoints that persist and validate only a distinct,
+  root-contained reference-artifact plan JSON. Stage 3 adds
+  `POST /api/reconciliation/reference-apply/preview`, a one-action,
+  read-only revalidation against an exact plan byte snapshot (including its
+  SHA-256), the fresh bounded detector, artifact pre-state, canonical target,
+  and applicable collision checks. It does not apply, create a reference
+  ledger, or mutate any database, queue, cache, review state, media, tag,
+  BPM, key, or cue content. Filesystem
   move/rename/quarantine remains a separate, later, explicitly high-risk
   milestone.
 * `duplicate_review_service` / `duplicate_resolution_plan_service` — the

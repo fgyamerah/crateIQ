@@ -1,6 +1,6 @@
 # Reconciliation Reference-Artifact Design
 
-**Status:** design/architecture only — no runtime behavior, API, schema, or backend change authorized
+**Status:** Stages 1–3 implemented; Stage 4 apply/rollback remains future work
 **Date:** 2026-08-11
 **Scope:** detecting, classifying, planning, reviewing, and correcting stale queue/reference artifacts
 
@@ -762,6 +762,13 @@ action against current state at preview time, surfacing any new blockers.
 - Tests 17–18 (stale-plan protection).
 
 **Risk:** Low. Preview is read-only; no mutation.
+
+**Implemented contract (2026-08-12):** `POST
+/api/reconciliation/reference-apply/preview` accepts one action ID plus an
+exact saved plan artifact and matching plan ID. It reads the artifact once,
+returns the snapshot SHA-256, and performs only read-only structural,
+source-finding, artifact pre-state, canonical-target, and collision checks.
+It introduces no reference-artifact apply, rollback, ledger, or writer.
 
 ### Stage 4 — Single-action apply (Category B artifacts only)
 

@@ -359,13 +359,12 @@ def _action_structure_issue(action: dict[str, Any]) -> str | None:
     return None
 
 
-def validate_plan(plan_path: str | Path) -> dict[str, Any]:
-    root = selected_library_root().resolve(strict=False)
-    path = _safe_plan_path(plan_path, root)
-    try:
-        plan = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError) as exc:
-        raise ValueError("reference plan json is unreadable") from exc
+def validate_plan_contents(plan: Any, root: Path) -> dict[str, Any]:
+    """Validate one already-loaded plan object without reading its artifact.
+
+    Stage 3 preview uses this entry point so structural validation and its
+    revalidation result derive from the same immutable plan byte snapshot.
+    """
     if not isinstance(plan, dict) or plan.get("plan_kind") != _KIND or plan.get("schema_version") != _VERSION:
         raise ValueError("not a reference-artifact reconciliation plan")
     if not isinstance(plan.get("generated_at"), str) or not isinstance(plan.get("plan_id"), str):
@@ -452,7 +451,18 @@ def validate_plan(plan_path: str | Path) -> dict[str, Any]:
                 if key == group and record["status"] == "valid":
                     record.update(status="invalid", reason="ambiguous", issues=["ambiguous"])
     reasons = Counter(record["reason"] for record in records if record["reason"])
-    return {"generated_at": _now(), "plan_artifact": path.name, "plan_id": plan.get("plan_id"), "total_actions": len(actions),
+    return {"generated_at": _now(), "plan_id": plan.get("plan_id"), "total_actions": len(actions),
             "valid_actions": sum(record["status"] == "valid" for record in records), "invalid_actions": sum(record["status"] == "invalid" for record in records),
             "non_executable_actions": sum(record["status"] == "non_executable" for record in records), "reasons": dict(sorted(reasons.items())),
             "validation_records": records, "message": "Validation only; no mutation has occurred."}
+
+
+def validate_plan(plan_path: str | Path) -> dict[str, Any]:
+    root = selected_library_root().resolve(strict=False)
+    path = _safe_plan_path(plan_path, root)
+    try:
+        plan = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError) as exc:
+        raise ValueError("reference plan json is unreadable") from exc
+    result = validate_plan_contents(plan, root)
+    return {**result, "plan_artifact": path.name}
