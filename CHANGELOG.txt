@@ -2,6 +2,17 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-12] — Reconciliation reference-artifact findings (Stage 1)
+
+- Added the read-only `GET /api/reconciliation/reference-findings` endpoint
+  and bounded detection across Categories A, B, C, and E. Category D exports
+  and every plan/preview/apply action remain deferred.
+- SQLite reads use read-only connections; queue discovery is root-contained,
+  symlink-safe, size/file/entry bounded, and fails closed with warnings.
+- Files affected: reconciliation route/schema, new reference findings service,
+  focused Stage 1 tests, task/context/design documentation.
+
+
 [2026-08-11] — Design reconciliation reference-artifact phase
 
 - What changed: created `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`,

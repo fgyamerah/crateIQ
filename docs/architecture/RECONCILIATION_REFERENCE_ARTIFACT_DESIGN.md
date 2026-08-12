@@ -137,7 +137,7 @@ These are point-in-time operational records whose value is historical evidence, 
 
 ## 3. Classification of Artifact Types
 
-Every artifact falls into exactly one of these four categories for
+Every artifact falls into exactly one of these five categories for
 reconciliation purposes:
 
 ### Category A — Immutable historical provenance (never rewrite)

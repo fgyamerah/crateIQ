@@ -26,14 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Implement reconciliation reference-artifact detection (Stage 1). Create
-    `reference_findings_service.py` to scan Categories A, B, C, and E
-    artifact surfaces from the design doc, emit typed findings with
-    classifications, and wire a single read-only
-    `GET /api/reconciliation/reference-findings` endpoint. Zero mutation.
-    Export detection (Category D) is deferred to Stage 6. See Section 12
-    Stage 1 of the design doc.
-
 [ ] Implement reconciliation reference-artifact plan proposal and validation
     (Stage 2). Convert detection findings into a plan artifact with specific
     actions, blockers, and reversibility fields. See Section 12 Stage 2.

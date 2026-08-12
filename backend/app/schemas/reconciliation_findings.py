@@ -7,6 +7,18 @@ from pydantic import BaseModel, Field
 
 FindingType = Literal["indexed_missing_file", "untracked_file", "stale_path", "path_candidate"]
 
+ReferenceArtifactType = Literal[
+    "cue_point", "playlist_track", "crate_track", "repair_queue_item",
+    "enrichment_review_snapshot", "beets_review_snapshot", "duplicate_review_snapshot",
+    "quality_review_snapshot", "quality_review_finding", "track_review",
+    "genre_review_snapshot", "field_provenance", "queue_entry", "bpm_anomaly",
+    "bpm_retry_pause", "fingerprint_cache", "waveform_track_state", "waveform_job",
+    "historical_reference", "tag_write_operation",
+]
+ReferenceClassification = Literal["A", "B", "C", "E"]
+ReferenceDisposition = Literal["correct", "regenerate", "mark_unresolvable", "ignore", "manual_review"]
+ReferenceConfidence = Literal["HIGH", "MEDIUM", "LOW", "UNKNOWN"]
+
 
 class FindingPathSide(BaseModel):
     relative_path: str | None = None
@@ -39,6 +51,41 @@ class ReconciliationFindingsResponse(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     generated_at: str | None = None
     message: str | None = None
+
+
+class ReferenceArtifactFinding(BaseModel):
+    """A bounded, read-only observation of one stale secondary reference."""
+
+    finding_id: str
+    artifact_type: ReferenceArtifactType
+    artifact_owner: str
+    artifact_identifier: str
+    reference_field: str
+    stale_value: str | int
+    candidate_replacement: str | int | None = None
+    evidence_source: str
+    classification: ReferenceClassification
+    confidence: ReferenceConfidence | None = None
+    blockers: list[str] = Field(default_factory=list)
+    recommended_disposition: ReferenceDisposition
+    generated_at: str
+    revalidated_at: str | None = None
+
+
+class ReferenceFindingsSummary(BaseModel):
+    total: int = 0
+    category_a: int = 0
+    category_b: int = 0
+    category_c: int = 0
+    category_e: int = 0
+
+
+class ReferenceFindingsResponse(BaseModel):
+    summary: ReferenceFindingsSummary = Field(default_factory=ReferenceFindingsSummary)
+    findings: list[ReferenceArtifactFinding] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    generated_at: str
+    message: str
 
 
 class QuarantineItem(BaseModel):

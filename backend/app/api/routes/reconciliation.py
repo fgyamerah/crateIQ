@@ -5,6 +5,7 @@ Reconciliation ledger, findings, and plan routes.
   GET  /api/reconciliation/ledger/{ledger_id}    — get one ledger entry
   POST /api/reconciliation/validate-plan         — validate a path-reconcile plan
   GET  /api/reconciliation/findings              — read-only orphan/stale-path findings
+  GET  /api/reconciliation/reference-findings    — read-only secondary reference findings
   GET  /api/reconciliation/quarantine            — read-only quarantine listing
   POST /api/reconciliation/plans/propose         — propose (never apply) a reconciliation plan
   POST /api/reconciliation/apply/preview         — DB-only apply eligibility check for reviewed actions
@@ -26,10 +27,11 @@ from ...schemas.reconciliation import (
     ReconciliationPlanValidateRequest,
     ReconciliationPlanValidateResponse,
 )
-from ...schemas.reconciliation_findings import QuarantineListingResponse, ReconciliationFindingsResponse
+from ...schemas.reconciliation_findings import QuarantineListingResponse, ReconciliationFindingsResponse, ReferenceFindingsResponse
 from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
 from ...services import read_only as read_only_service
 from ...services import reconciliation_findings_service
+from ...services import reference_findings_service
 from ...services import reconciliation_plan_service
 from ...services import reconciliation_apply_service
 from utils import path_reconciliation
@@ -124,6 +126,14 @@ async def get_reconciliation_findings() -> ReconciliationFindingsResponse:
     try:
         return ReconciliationFindingsResponse(**reconciliation_findings_service.get_findings())
     except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.get("/reconciliation/reference-findings", response_model=ReferenceFindingsResponse)
+async def get_reference_findings() -> ReferenceFindingsResponse:
+    try:
+        return ReferenceFindingsResponse(**reference_findings_service.get_reference_findings())
+    except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
 
