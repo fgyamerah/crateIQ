@@ -233,7 +233,11 @@ Service map (`backend/app/services/`), current primary surfaces:
   (`GET /api/reconciliation/reference-findings`) scans bounded Categories A,
   B, C, and E surfaces from
   `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`; it has no
-  plan, preview, apply, cache-prune, or export parsing behavior. Filesystem
+  Stage 2 adds additive `POST /api/reconciliation/reference-plan/propose`
+  and `/validate` endpoints: they persist and validate only a distinct,
+  root-contained reference-artifact plan JSON. They do not preview, apply,
+  create a reference ledger, or mutate any database, queue, cache, review
+  state, media, tag, BPM, key, or cue content. Filesystem
   move/rename/quarantine remains a separate, later, explicitly high-risk
   milestone.
 * `duplicate_review_service` / `duplicate_resolution_plan_service` — the

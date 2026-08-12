@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-12] — Reconciliation reference-artifact plan proposal (Stage 2)
+
+- Added additive proposal and validation endpoints for persisted, distinct
+  reference-artifact plan JSON files under the selected root's reconciliation
+  log area. Plans are fail-closed and plan-only.
+- Category-B actions require explicit deterministic evidence; Category-C
+  actions are notification/regeneration semantics; Categories A/E remain
+  non-executable. Validation blocks unsafe/missing/ambiguous targets and
+  current field-provenance collisions.
+- Files affected: reconciliation route, reference-plan schema/service, focused
+  Stage 2 tests, `NEXT_TASKS.txt`, and `PROJECT_CONTEXT.md`.
+- Migration notes: no database schema migration and no reference-artifact
+  execution behavior were added.
+
 [2026-08-12] — Reconciliation reference-artifact findings (Stage 1)
 
 - Added the read-only `GET /api/reconciliation/reference-findings` endpoint

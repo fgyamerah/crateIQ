@@ -29,11 +29,13 @@ from ...schemas.reconciliation import (
 )
 from ...schemas.reconciliation_findings import QuarantineListingResponse, ReconciliationFindingsResponse, ReferenceFindingsResponse
 from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
+from ...schemas.reference_plan import ReferencePlanProposeResponse, ReferencePlanValidateRequest, ReferencePlanValidateResponse
 from ...services import read_only as read_only_service
 from ...services import reconciliation_findings_service
 from ...services import reference_findings_service
 from ...services import reconciliation_plan_service
 from ...services import reconciliation_apply_service
+from ...services import reference_plan_service
 from utils import path_reconciliation
 
 router = APIRouter(tags=["reconciliation"])
@@ -90,6 +92,33 @@ async def propose_reconciliation_plan() -> ReconciliationPlanProposeResponse:
     try:
         return ReconciliationPlanProposeResponse(**reconciliation_plan_service.propose_plan())
     except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/reconciliation/reference-plan/propose", response_model=ReferencePlanProposeResponse)
+async def propose_reference_plan() -> ReferencePlanProposeResponse:
+    try:
+        return ReferencePlanProposeResponse(**reference_plan_service.propose_plan())
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/reconciliation/reference-plan/validate", response_model=ReferencePlanValidateResponse)
+async def validate_reference_plan(body: ReferencePlanValidateRequest) -> ReferencePlanValidateResponse:
+    if not body.plan_path and not body.latest:
+        raise HTTPException(status_code=422, detail="provide plan_path or set latest=true")
+    try:
+        if body.plan_path:
+            plan_path = body.plan_path
+        else:
+            plan = reference_plan_service.latest_plan_path(read_only_service.get_library_root())
+            if plan is None:
+                raise HTTPException(status_code=404, detail="no reference-artifact plan json found")
+            plan_path = plan
+        return ReferencePlanValidateResponse(**reference_plan_service.validate_plan(plan_path))
+    except HTTPException:
+        raise
+    except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
 

@@ -26,10 +26,6 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Implement reconciliation reference-artifact plan proposal and validation
-    (Stage 2). Convert detection findings into a plan artifact with specific
-    actions, blockers, and reversibility fields. See Section 12 Stage 2.
-
 [ ] Implement reconciliation reference-artifact apply preview with
     revalidation (Stage 3). Revalidate selected actions against current state
     at preview time, surfacing any new blockers. See Section 12 Stage 3.
