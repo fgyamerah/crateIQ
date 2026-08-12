@@ -56,3 +56,42 @@ class ReferenceApplyPreviewResponse(BaseModel):
     read_only: bool
     actions: list[ReferenceApplyPreviewAction]
     message: str
+
+
+class ReferenceApplyRequest(BaseModel):
+    """Confirmed, single-action Stage 4A/B reference update request."""
+
+    plan_path: str
+    plan_id: str
+    plan_sha256: str
+    reviewed_action_ids: list[str]
+    confirm: bool = False
+
+
+class ReferenceRollbackRequest(BaseModel):
+    """Explicit confirmation gate for a reference-artifact rollback."""
+
+    confirm: bool = False
+
+
+class ReferenceLedgerEntry(BaseModel):
+    ledger_id: str
+    parent_ledger_id: str | None = None
+    created_at: str
+    root: str
+    plan_path: str | None = None
+    plan_id: str | None = None
+    plan_sha256: str | None = None
+    action_id: str | None = None
+    artifact_type: str
+    artifact_identifier: str
+    table_name: str
+    row_id: int
+    reference_field: str
+    old_path: str
+    new_path: str
+    before_values_json: str
+    after_values_json: str
+    backup_path: str
+    backup_sha256: str
+    status: str

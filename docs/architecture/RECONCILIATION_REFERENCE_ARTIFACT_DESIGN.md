@@ -1,6 +1,6 @@
 # Reconciliation Reference-Artifact Design
 
-**Status:** Stages 1–3 implemented; Stage 4 apply/rollback remains future work
+**Status:** Stages 1–3 and Stage 4A/B implemented; Stage 4C/D and queue mutation remain future work
 **Date:** 2026-08-11
 **Scope:** detecting, classifying, planning, reviewing, and correcting stale queue/reference artifacts
 
@@ -790,6 +790,37 @@ time, starting with the simplest, safest surfaces.
 
 **Risk:** Medium. Mutates authoritative reference state. Each artifact type
 requires its own backup/rollback mechanism.
+
+#### Completed Stage 4A/B (2026-08-12)
+
+`POST /api/reconciliation/reference-apply` now applies exactly one reviewed
+`cue_points.filepath` or `set_playlist_tracks.filepath` action only when
+`confirm=true` and the exact plan path, plan ID, and Stage-3 preview SHA-256
+match. It reruns the Stage-3 checks before beginning an SQLite writer
+transaction, then rechecks the complete protected row, canonical target,
+root containment, and cue collision rules in that transaction.
+
+For the legacy path-only rows, Stage 1 creates an executable candidate only
+when immutable history connects the exact missing path to one extant canonical
+track under the selected root. It does not infer identity from filenames,
+partial names, or tags; zero or multiple candidates remain manual review. The ledger retains
+the exact raw filepath pre-state while validating its canonical containment,
+so rollback restores root-relative entries exactly. If apply fails after a
+backup is created, that unledgered backup is removed.
+
+Each successful apply creates a unique root-contained logical SQLite backup
+via SQLite's backup API, verifies it with `PRAGMA quick_check`, proves it
+contains the complete pre-change row, hash-records it, changes only
+`filepath`, verifies the full post-change row, and appends a dedicated
+`reference_artifact_ledger` row. `POST
+/api/reconciliation/reference-ledger/{id}/rollback` verifies the original
+backup hash/integrity and exact current after-state, restores only
+`filepath`, and appends a child rollback ledger row. Minimal read-only list
+and detail endpoints expose this dedicated ledger.
+
+Stage 4C (`field_provenance.track_id`), Stage 4D
+(`manual_crate_tracks.track_id`), and all queue JSON/JSONL mutation remain
+explicitly deferred; no queue schema mutation is authorized.
 
 ### Stage 5 — Review state regeneration notifications (Category C)
 

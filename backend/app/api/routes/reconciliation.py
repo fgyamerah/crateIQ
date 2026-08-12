@@ -9,6 +9,10 @@ Reconciliation ledger, findings, and plan routes.
   GET  /api/reconciliation/quarantine            — read-only quarantine listing
   POST /api/reconciliation/plans/propose         — propose (never apply) a reconciliation plan
   POST /api/reconciliation/reference-apply/preview — read-only reference-artifact revalidation
+  POST /api/reconciliation/reference-apply         — confirmed single reference filepath update
+  GET  /api/reconciliation/reference-ledger        — list reference-artifact ledger entries
+  GET  /api/reconciliation/reference-ledger/{id}   — get one reference-artifact ledger entry
+  POST /api/reconciliation/reference-ledger/{id}/rollback — verified reference rollback
   POST /api/reconciliation/apply/preview         — DB-only apply eligibility check for reviewed actions
   POST /api/reconciliation/apply                 — confirmed DB-only apply of one reviewed action
   POST /api/reconciliation/ledger/{ledger_id}/rollback — confirmed DB-only rollback of an applied action
@@ -33,6 +37,9 @@ from ...schemas.reconciliation_plan import ReconciliationPlanProposeResponse
 from ...schemas.reference_plan import (
     ReferenceApplyPreviewRequest,
     ReferenceApplyPreviewResponse,
+    ReferenceApplyRequest,
+    ReferenceRollbackRequest,
+    ReferenceLedgerEntry,
     ReferencePlanProposeResponse,
     ReferencePlanValidateRequest,
     ReferencePlanValidateResponse,
@@ -144,6 +151,47 @@ async def preview_reference_apply(body: ReferenceApplyPreviewRequest) -> Referen
         return ReferenceApplyPreviewResponse(**reference_apply_service.preview(
             body.plan_path, body.plan_id, body.reviewed_action_ids,
         ))
+    except reference_apply_service.ReferenceApplyPreviewError as exc:
+        raise _reference_preview_error(exc)
+
+
+@router.post("/reconciliation/reference-apply")
+async def apply_reference_action(body: ReferenceApplyRequest) -> dict:
+    try:
+        return reference_apply_service.apply(
+            body.plan_path, body.plan_id, body.plan_sha256, body.reviewed_action_ids,
+            confirm=body.confirm,
+        )
+    except reference_apply_service.ReferenceApplyPreviewError as exc:
+        raise _reference_preview_error(exc)
+
+
+@router.get("/reconciliation/reference-ledger", response_model=List[ReferenceLedgerEntry])
+async def list_reference_ledger(
+    limit: int = Query(default=50, ge=1, le=500),
+    offset: int = Query(default=0, ge=0),
+) -> List[ReferenceLedgerEntry]:
+    try:
+        return [ReferenceLedgerEntry(**row) for row in reference_apply_service.list_ledger(limit=limit, offset=offset)]
+    except reference_apply_service.ReferenceApplyPreviewError as exc:
+        raise _reference_preview_error(exc)
+
+
+@router.get("/reconciliation/reference-ledger/{ledger_id}", response_model=ReferenceLedgerEntry)
+async def get_reference_ledger(ledger_id: str) -> ReferenceLedgerEntry:
+    try:
+        row = reference_apply_service.get_ledger(ledger_id)
+    except reference_apply_service.ReferenceApplyPreviewError as exc:
+        raise _reference_preview_error(exc)
+    if row is None:
+        raise HTTPException(status_code=404, detail=f"Reference-artifact ledger entry {ledger_id!r} not found.")
+    return ReferenceLedgerEntry(**row)
+
+
+@router.post("/reconciliation/reference-ledger/{ledger_id}/rollback")
+async def rollback_reference_ledger(ledger_id: str, body: ReferenceRollbackRequest) -> dict:
+    try:
+        return reference_apply_service.rollback(ledger_id, confirm=body.confirm)
     except reference_apply_service.ReferenceApplyPreviewError as exc:
         raise _reference_preview_error(exc)
 

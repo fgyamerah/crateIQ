@@ -2,6 +2,37 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-12] — Reference writer safety corrections
+
+- Made Stage 1 produce executable cue/playlist path candidates only when
+  immutable history links the exact stale path to one extant canonical track;
+  ambiguous or unmatched paths remain blocked for manual review.
+- Preserved the exact stored pre-state filepath in the ledger so root-relative
+  references roll back byte-for-byte, while still validating canonical root
+  containment.
+- Remove any unledgered backup when an apply fails after backup creation.
+- Files affected: reference findings/plan/apply services and focused Stage
+  4A/B tests and documentation.
+
+[2026-08-12] — Reconciliation reference filepath writers (Stage 4A/B)
+
+- Added confirmed, one-action reference-artifact apply and verified rollback
+  for `cue_points.filepath` and `set_playlist_tracks.filepath` only. Requests
+  bind an exact plan path/ID and Stage-3 plan SHA-256, re-run eligibility, and
+  recheck full row state, root containment, canonical target, and collisions
+  under a SQLite writer transaction.
+- Each action creates a unique root-contained SQLite backup through SQLite's
+  backup API, verifies `PRAGMA quick_check`, protected-row pre-state, and
+  SHA-256, updates only `filepath`, verifies the entire row, and records an
+  append-only `reference_artifact_ledger` entry. Rollback verifies the
+  original backup/hash and exact live after-state, restores only `filepath`,
+  and appends a child ledger entry; read-only list/detail endpoints are added.
+- Files affected: reference apply service, reconciliation route/schema, DB
+  schema, focused Stage 4A/B tests, and current architecture/task docs.
+- Migration notes: `reference_artifact_ledger` is additive and lazily created
+  by a confirmed writer for existing processed databases. Stage 4C/D and
+  queue JSON/JSONL mutation remain deferred.
+
 [2026-08-12] — Reconciliation reference-artifact apply preview (Stage 3)
 
 - Added read-only `POST /api/reconciliation/reference-apply/preview` for one

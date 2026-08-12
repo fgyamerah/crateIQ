@@ -239,9 +239,23 @@ Service map (`backend/app/services/`), current primary surfaces:
   `POST /api/reconciliation/reference-apply/preview`, a one-action,
   read-only revalidation against an exact plan byte snapshot (including its
   SHA-256), the fresh bounded detector, artifact pre-state, canonical target,
-  and applicable collision checks. It does not apply, create a reference
-  ledger, or mutate any database, queue, cache, review state, media, tag,
-  BPM, key, or cue content. Filesystem
+  and applicable collision checks. Completed Stage 4A/B adds only confirmed,
+  one-action `cue_points.filepath` and `set_playlist_tracks.filepath` writes.
+  Apply binds the exact plan path/ID/Stage-3 SHA-256, repeats eligibility and
+  row checks under SQLite's writer transaction, creates a hash-verified
+  root-contained SQLite backup, verifies the complete row postcondition, and
+  appends to `reference_artifact_ledger`. For these legacy path-only tables,
+  Stage 1 proposes a correction only when immutable history maps the exact
+  stale path to one extant root-contained canonical track; ambiguous
+  candidates remain in manual review. The ledger retains the exact stored filepath pre-state, so
+  a root-relative reference rolls back exactly as it was stored. Failed apply
+  attempts remove their unledgered backups. Its dedicated rollback verifies the
+  original backup/hash and exact live after-state before restoring only
+  `filepath`, then appends a child ledger row. Stage 4C field-provenance and
+  Stage 4D manual-crate writers, plus all queue JSON/JSONL mutation, remain
+  deferred. Neither reference writer mutates tracks, media, tags, BPM, key,
+  cue content, review state, caches, exports, or the DB-only reconciliation
+  ledger. Filesystem
   move/rename/quarantine remains a separate, later, explicitly high-risk
   milestone.
 * `duplicate_review_service` / `duplicate_resolution_plan_service` — the

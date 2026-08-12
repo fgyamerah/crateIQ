@@ -304,6 +304,18 @@ append-only ledger. Rollback is limited to verified current DB-only ledger
 operations and never restores an outside-root path. It never moves, renames,
 deletes, or tags music files from this screen.
 
+The separate reference-artifact workflow also supports one reviewed,
+confirmed `cue_points.filepath` or `set_playlist_tracks.filepath` correction
+at a time. It binds the exact plan ID and preview SHA-256, keeps all other
+row values unchanged, records a dedicated hash-verified SQLite backup and
+append-only reference ledger, and provides verified single-use rollback. A
+path-only proposal is eligible only when immutable history maps its exact stale
+path to one extant canonical track; ambiguous candidates stay in manual review. Rollback
+restores the exact stored filepath form (including a root-relative reference),
+and failed applies remove their unledgered backups.
+Queue JSON/JSONL, field-provenance, and manual-crate mutations remain
+deferred; this workflow never changes media, tags, BPM, key, or cue content.
+
 ## Screenshots
 
 ### Library

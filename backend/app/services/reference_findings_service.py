@@ -87,7 +87,8 @@ def _finding(*, artifact_type: str, owner: str, identifier: str, field: str,
 
 def _missing_path_finding(row: dict[str, Any], *, artifact_type: str, owner: str,
                           identifier: str, field: str, category: str,
-                          disposition: str, now: str) -> dict[str, Any] | None:
+                          disposition: str, now: str,
+                          historical_path_replacements: dict[str, list[str]] | None = None) -> dict[str, Any] | None:
     value = row.get(field)
     if not isinstance(value, str) or not value.strip():
         return None
@@ -98,9 +99,52 @@ def _missing_path_finding(row: dict[str, Any], *, artifact_type: str, owner: str
     blockers = ["reference_outside_selected_root"] if relative is None else ["no_deterministic_track_identity"]
     if category == "A":
         blockers = ["immutable_historical_provenance"] + blockers
+    # These two legacy reference tables do not carry a track_id.  A path-only
+    # correction is therefore proposed only when immutable historical lineage
+    # connects the exact stale path to one existing canonical track.  Do not
+    # infer identity from filenames, tags, or partial names.
+    if (
+        category == "B"
+        and artifact_type in {"cue_point", "playlist_track"}
+        and relative is not None
+        and historical_path_replacements is not None
+    ):
+        candidates = historical_path_replacements.get(relative, [])
+        if len(candidates) == 1:
+            return _finding(
+                artifact_type=artifact_type, owner=owner, identifier=identifier,
+                field=field, stale=relative,
+                candidate=candidates[0], confidence="HIGH",
+                evidence="historical_original_path_current_canonical_track", category=category,
+                disposition="correct", now=now, blockers=[],
+            )
+        if len(candidates) > 1:
+            blockers = ["ambiguous_historical_path_replacement"]
     return _finding(artifact_type=artifact_type, owner=owner, identifier=identifier, field=field,
                     stale=stale, evidence="root_contained_path_existence_check", category=category,
                     disposition=disposition, now=now, blockers=blockers)
+
+
+def _historical_path_replacements(rows: list[dict[str, Any]], root: Path,
+                                  canonical_track_paths: set[str]) -> dict[str, list[str]]:
+    """Map an exact historical original path to its current canonical track."""
+    replacements: dict[str, list[str]] = {}
+    for row in rows:
+        original, current = row.get("original_path"), row.get("filepath")
+        if not isinstance(original, str) or not original or not isinstance(current, str) or not current:
+            continue
+        try:
+            stale = assert_path_under_root(original, root)
+            target = assert_path_under_root(current, root)
+        except ValueError:
+            continue
+        target_relative = str(target.relative_to(root))
+        if target_relative not in canonical_track_paths or not target.is_file():
+            continue
+        candidates = replacements.setdefault(str(stale.relative_to(root)), [])
+        if target_relative not in candidates:
+            candidates.append(target_relative)
+    return replacements
 
 
 def _track_finding(row: dict[str, Any], *, artifact_type: str, owner: str,
@@ -310,6 +354,7 @@ def get_reference_findings() -> dict[str, Any]:
     db_path = library_db_path(root)
     track_ids: set[int] = set()
     current_paths: dict[int, str] = {}
+    historical_path_replacements: dict[str, list[str]] = {}
 
     processed_db_ready = False
     if db_path.is_file():
@@ -320,6 +365,14 @@ def get_reference_findings() -> dict[str, Any]:
                     tracks = list(_rows(conn, "tracks"))
                     track_ids = {int(row["id"]) for row in tracks}
                     current_paths = {int(row["id"]): str(row["filepath"]) for row in tracks if row.get("filepath")}
+                    canonical_track_paths = {
+                        relative for relative, exists in (_safe_path(row.get("filepath"), root) for row in tracks)
+                        if relative is not None and exists
+                    }
+                    if "track_history" in tables and {"filepath", "original_path"} <= _columns(conn, "track_history"):
+                        historical_path_replacements = _historical_path_replacements(
+                            list(_rows(conn, "track_history")), root, canonical_track_paths,
+                        )
                     processed_db_ready = True
                 else:
                     warnings.append("processed.db has no tracks table; database-backed reference findings are empty.")
@@ -337,7 +390,8 @@ def get_reference_findings() -> dict[str, Any]:
                         for row in _rows(conn, table):
                             finding = _missing_path_finding(row, artifact_type=typ, owner=owner,
                                 identifier=f"{table}:{row.get('id', row.get('ledger_id', '<row>'))}", field=field,
-                                category=category, disposition=disposition, now=now)
+                                category=category, disposition=disposition, now=now,
+                                historical_path_replacements=historical_path_replacements)
                             if finding:
                                 findings.append(finding)
                 id_specs = (("metadata_repair_queue", "repair_queue_item", "metadata_repair_queue_service.py", "C", "regenerate"),

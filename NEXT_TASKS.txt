@@ -26,12 +26,21 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Implement reconciliation reference-artifact single-action apply
-    (Stage 4). Confirmed apply of one reviewed correction at a time for
-    Category B artifacts (cue_points, set_playlist_tracks, field_provenance,
-    queue entries, manual_crate_tracks). Each artifact type carries its own
-    backup/rollback mechanism and an artifact-specific ledger. See Section 12
-    Stage 4.
+[x] Implement reconciliation reference-artifact Stage 4A/B filepath
+    writers for `cue_points.filepath` and `set_playlist_tracks.filepath`.
+    Confirmed single-action apply/rollback is complete with exact plan/SHA
+    binding, verified SQLite backups, and a dedicated reference ledger.
+
+[ ] Implement reconciliation reference-artifact Stage 4C field-provenance
+    track-ID rehome. It needs its own reviewed apply/rollback and collision
+    contract; do not broaden the completed Stage 4A/B filepath writer.
+
+[ ] Implement reconciliation reference-artifact Stage 4D manual-crate
+    track-ID rehome. It operates on a separate database and needs its own
+    backup/rollback design and review.
+
+[ ] Keep queue JSON/JSONL mutation deferred. No concrete queue schema
+    contract has been approved, so queue findings remain non-executable.
 
 [ ] Implement review-state regeneration notifications (Stage 5). Flag stale
     review snapshots for regeneration; mark durable findings as unresolvable.

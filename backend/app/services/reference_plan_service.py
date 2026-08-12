@@ -28,6 +28,7 @@ _PATH_EVIDENCE = {
     "same_track_id_current_canonical_path",
     "same_track_id_different_path",
     "playlist_track_resolved_by_canonical_db",
+    "historical_original_path_current_canonical_track",
 }
 _REHOME_EVIDENCE = {
     "proven_replacement",
@@ -243,7 +244,7 @@ def propose_plan() -> dict[str, Any]:
             "planned_actions": actions,
             "limitations": ["Plan only; no reference artifact, database, queue, cache, review state, media file, tag, BPM, key, or cue content was changed.",
                             "Only explicit deterministic Stage 1 candidates are eligible for future review; no replacement search was performed.",
-                            "Category D export detection and all apply/preview/rollback behavior are out of scope."],
+                            "Stage 4A/B supports only cue_points.filepath and set_playlist_tracks.filepath after preview; queue JSON/JSONL mutation and Stage 4C/D track-ID writers remain unauthorized."],
             "message": "Plan only; no mutation has occurred."}
     directory = _plan_dir(root, create=True)
     filename = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}_reference_artifact_plan_{plan_id[-8:]}.json"
