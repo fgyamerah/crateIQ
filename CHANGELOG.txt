@@ -2,6 +2,31 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-11] — Design reconciliation reference-artifact phase
+
+- What changed: created `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`,
+  a comprehensive architecture-design document that inventories every current
+  reference-bearing artifact in the codebase (41 distinct surfaces across five
+  categories: immutable provenance, mutable authoritative state, review state,
+  regenerable exports, and disposable cache), defines a finding/action
+  vocabulary, authority/conflict rules, plan/review/apply separation, stale-plan
+  protections, reversibility requirements, API/service boundaries, and a staged
+  six-stage implementation sequence starting with the smallest safe read-only
+  detection slice. Filesystem move/rename/quarantine remains explicitly out of
+  scope and deferred to a future high-risk milestone.
+- Why it changed: the NEXT_TASKS.txt P1 item and the
+  FULL_RECONCILIATION_APPLY_SPEC both marked this design as the next
+  reconciliation follow-up; a grounded inventory and precise vocabulary were
+  needed before any runtime implementation could be safely bounded.
+- Files affected: `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`
+  (new),   `NEXT_TASKS.txt` (completed P1 item removed, replaced by six
+  stage-specific implementation follow-up tasks for the reference-artifact
+  phases),
+  `PROJECT_CONTEXT.md` (reconciliation section updated with design pointer),
+  `CHANGELOG.txt` (this entry).
+- Migration notes: design/architecture only; changes no runtime behavior, API,
+  schema, database, or application source code.
+
 [2026-08-11] — Scope Library KPIs to managed Library tracks
 
 - What changed: `/api/library/overview` and the track-derived metrics in

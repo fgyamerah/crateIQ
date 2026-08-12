@@ -109,7 +109,7 @@ Current status: `PARTIAL`
 Current status: `SUBSTANTIALLY IMPLEMENTED`
 
 - Exists now: DB-only duplicate review state, the plan-only duplicate resolution view, reconciliation findings, quarantine listing, and the reviewed DB-only reconciliation APPLY/rollback surface with ledger and backup checks.
-- Remains: queue/reference artifact reconciliation follow-up, the later separately reviewed filesystem mutation phase, and the future reversible duplicate execution path.
+- Remains: reference-artifact reconciliation implementation (design complete in `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`), the later separately reviewed filesystem mutation phase, and the future reversible duplicate execution path.
 - Superseded: permanent delete workflows, silent move/rename/quarantine behavior, and any implied filesystem mutation inside the current planning surfaces.
 - Depends on: the neutral path-reconciliation engine, the ledger/backup services, and root-containment checks.
 - Safety boundaries: no delete defaults, no blind mutation, and no attempt to bundle filesystem mutation into the current duplicate or reconciliation surfaces.

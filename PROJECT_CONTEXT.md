@@ -229,7 +229,12 @@ Service map (`backend/app/services/`), current primary surfaces:
   detection/planning engine
   lives in the neutral `utils/path_reconciliation.py` module (no FastAPI or
   `pipeline.py` import); current backend services do not import private
-  `pipeline.py` helpers.
+  `pipeline.py` helpers. The next reconciliation follow-up —
+  queue/reference artifact reconciliation across 41 inventoried artifact
+  surfaces — is designed in
+  `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`; no
+  runtime implementation exists yet. Filesystem move/rename/quarantine
+  remains a separate, later, explicitly high-risk milestone.
 * `duplicate_review_service` / `duplicate_resolution_plan_service` — the
   former owns the sole authoritative DB-only human review state
   (`keep`/`ignore`/`review_later`/`unresolved`) against a saved rmlint

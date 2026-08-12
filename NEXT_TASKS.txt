@@ -26,15 +26,36 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[x] Fix the Library overview/quality KPI aggregation so `/api/library/overview`
-    and `/api/library/quality` do not blur storage zones. If the current
-    code still aggregates across all zones, treat it as a high-priority
-    correctness issue because the visible Library metrics can mislead users.
+[ ] Implement reconciliation reference-artifact detection (Stage 1). Create
+    `reference_findings_service.py` to scan Categories A, B, C, and E
+    artifact surfaces from the design doc, emit typed findings with
+    classifications, and wire a single read-only
+    `GET /api/reconciliation/reference-findings` endpoint. Zero mutation.
+    Export detection (Category D) is deferred to Stage 6. See Section 12
+    Stage 1 of the design doc.
 
-[ ] Design the next reconciliation follow-up as queue/reference artifact
-    reconciliation first. Keep filesystem move/rename/quarantine behavior
-    separate, later reviewed, and explicitly high-risk. Never imply broad
-    delete or automatic mutation is authorized.
+[ ] Implement reconciliation reference-artifact plan proposal and validation
+    (Stage 2). Convert detection findings into a plan artifact with specific
+    actions, blockers, and reversibility fields. See Section 12 Stage 2.
+
+[ ] Implement reconciliation reference-artifact apply preview with
+    revalidation (Stage 3). Revalidate selected actions against current state
+    at preview time, surfacing any new blockers. See Section 12 Stage 3.
+
+[ ] Implement reconciliation reference-artifact single-action apply
+    (Stage 4). Confirmed apply of one reviewed correction at a time for
+    Category B artifacts (cue_points, set_playlist_tracks, field_provenance,
+    queue entries, manual_crate_tracks). Each artifact type carries its own
+    backup/rollback mechanism and an artifact-specific ledger. See Section 12
+    Stage 4.
+
+[ ] Implement review-state regeneration notifications (Stage 5). Flag stale
+    review snapshots for regeneration; mark durable findings as unresolvable.
+    See Section 12 Stage 5.
+
+[ ] Implement export stale-path detection (Stage 6). Detect stale paths in
+    M3U8/XML/JSON/CSV exports and flag them for re-export. Read-only
+    detection; no export file mutation. See Section 12 Stage 6.
 
 [ ] Design the future confirmation-gated, reversible duplicate-resolution
     apply phase. Current functionality is plan-only. Any execution phase
