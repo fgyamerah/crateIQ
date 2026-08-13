@@ -14,7 +14,8 @@ P3 = low
 
 Completed work is not tracked here. See CHANGELOG.txt for the dated
 change history and docs/history/ for summarized completed-cycle
-narrative. This file is the active work queue only.
+narrative. This file is the active work queue only. The Task 27–30 P1
+closeout is complete; no newly evidenced P0/P1 blocker was found.
 
 ----------------------------------------------------------------------
 P0 / CRITICAL
@@ -26,32 +27,7 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[x] Implement reconciliation reference-artifact Stage 4A/B filepath
-    writers for `cue_points.filepath` and `set_playlist_tracks.filepath`.
-    Confirmed single-action apply/rollback is complete with exact plan/SHA
-    binding, verified SQLite backups, and a dedicated reference ledger.
-
-[x] Implement reconciliation reference-artifact Stage 4C field-provenance
-    track-ID rehome with exact current-row revalidation, canonical target
-    proof from a unique exact local fingerprint/duration/algorithm match,
-    verified processed.db backup, collision fail-closed behavior, and
-    track_id-only rollback that rejects a reclaimed old ID.
-
-[x] Implement reconciliation reference-artifact Stage 4D manual-crate
-    track-ID rehome with a verified manual_crates.db backup, prepared
-    append-only ledger recovery state for the multi-DB sequence, exact-row
-    rollback, non-track-column preservation, and no missing-processed-db
-    initialization during recovery.
-
-[ ] Keep queue JSON/JSONL mutation deferred. No concrete queue schema
-    contract has been approved, so queue findings remain non-executable.
-
-[ ] Design the future confirmation-gated, reversible duplicate-resolution
-    apply phase. Current functionality is plan-only. Any execution phase
-    must revalidate at execution time, take a hash-verified backup, use a
-    reversible hold/quarantine path instead of permanent delete, check for
-    collisions, preserve root containment, record append-only provenance,
-    provide a verified restore path, and require explicit confirmation.
+(none currently open)
 
 ----------------------------------------------------------------------
 P2 / MEDIUM
@@ -94,6 +70,13 @@ P2 / MEDIUM
     plan the current frontend build-tool upgrade path without changing the
     product contract.
 
+[ ] Before implementing duplicate-resolution execution, exercise CrateIQ's
+    managed Inbox/Library workflow with real-world local usage and review
+    whether the planned held-operation read model is understandable. The
+    design is complete in `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`,
+    but the runtime remains read-only/plan-only; do not implement execution
+    without a separately approved task and disposable-root acceptance tests.
+
 ----------------------------------------------------------------------
 P3 / LOW
 ----------------------------------------------------------------------
@@ -119,6 +102,10 @@ P3 / LOW
 ----------------------------------------------------------------------
 DEFERRED / PARKED
 ----------------------------------------------------------------------
+
+[ ] Queue JSON/JSONL mutation. No concrete queue schema contract is approved,
+    so queue findings remain non-executable; keep this separate from the
+    completed DB-only reference-artifact writers.
 
 [ ] Structured artist/title/version metadata representation. No concrete
     current consumer exists, so adding dead schema now would be premature.

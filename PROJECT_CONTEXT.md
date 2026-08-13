@@ -294,7 +294,15 @@ Service map (`backend/app/services/`), current primary surfaces:
   items carry an `execution_requirements` object (truthfully labeled
   identity evidence, current stat, backup/collision/restore/ledger
   requirements) describing what a future apply phase must prove -- no
-  apply/execute endpoint exists yet. See
+  apply/execute endpoint exists yet. The future execution design is
+  deliberately Inbox-only at first: one reviewed action binds to a persisted
+  SHA-256 preview, revalidates full hashes, root containment, non-symlink
+  paths, and Inbox zone under a per-root lock, then uses a verified backup and
+  atomic operational hold outside normal scan roots. It uses its own
+  append-only duplicate-resolution ledger and confirmed, drift-checked
+  restore/recovery; it does not use the reserved `Quarantine/` folder or
+  reference-artifact reconciliation, and Library candidates remain blocked
+  pending a separate impact design. See
   `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`.
 * `pipeline.py` compatibility — see Legacy Compatibility below
 
@@ -536,9 +544,11 @@ task-level backlog):
    supports only a read-only, plan-first `/duplicates/resolution-plan`
    surface derived from the latest saved Duplicate Review snapshot and its
    human decisions; it has no apply/execute endpoint and performs zero file,
-   tag, or track-metadata writes. A future confirmation-gated, reversible
-   apply phase with backup/collision/ledger/restore support is designed but
-   unimplemented (see `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`).
+   tag, or track-metadata writes. The reversible, confirmation-gated Inbox
+   hold/backup/ledger/restore design is complete, but implementation must be
+   separately approved and follow real managed-workspace use plus
+   disposable-root acceptance tests (see
+   `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`).
 
 Publish/Sync configuration portability (hardcoded local paths) was fixed in
 a prior cycle — see Backend Architecture below. The dangerous pre-managed-

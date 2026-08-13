@@ -2,7 +2,7 @@
 
 **Status:** Plan-first read-only surface implemented; no apply/execute phase exists
 **Scope:** GET-only duplicate resolution planning is runtime behavior; all file mutation remains design-only and prohibited by default
-**Last updated:** 2026-08-10
+**Last updated:** 2026-08-13
 
 ## 1. Purpose
 
@@ -68,21 +68,261 @@ Every `candidate_for_reversible_resolution` item carries an `execution_requireme
 | `collision_check_required` | Always `true`. A future apply phase must verify the proposed destination does not already exist before any move. |
 | `backup_required` | Always `true`. A future apply phase must take a hash-verified backup outside the scanned tree before any mutation, mirroring the existing `tag_write_service` backup-before-write pattern. |
 | `restore_preconditions` | A fixed list of preconditions a future restore path must satisfy: backup exists and is hash-verified before mutation; the original remains fully recoverable until the operator confirms the outcome; an operation ledger row records before/after identity and status before the operation is considered complete. |
-| `operation_ledger_linkage` | `"not_yet_implemented"` today, pointing back to this spec — no duplicate-resolution ledger table exists yet. A future implementation must add one, following the append-only shape of `reconciliation_ledger` (see `FULL_RECONCILIATION_APPLY_SPEC.md` Section 8) rather than inventing a new ledger model. |
+| `operation_ledger_linkage` | `"not_yet_implemented"` today, pointing back to this spec — no duplicate-resolution ledger table exists yet. A future implementation must add a purpose-specific append-only ledger using the evidence and recovery properties of `reconciliation_ledger` (see `FULL_RECONCILIATION_APPLY_SPEC.md` Section 8); it must not reuse or reinterpret reconciliation ledger rows. |
 
 ## 6. Future Controlled Apply Phase (Not Implemented)
 
 This section defines requirements for a future phase. None of it exists today; `duplicate_resolution_plan_service` has no apply/execute function, and no route accepts a POST for it.
 
-A future apply phase must:
+### 6.1 Authority and scope boundary
 
-- Require an explicit reviewed selection of `action_id`s (mirroring the reconciliation apply contract's `reviewed_action_ids` + `confirm` gate), never a bulk "apply all ready" default.
-- Re-run every actionability rule in Section 4 at execution time, not trust the plan response as authorization — a plan is a snapshot in time, and file state can drift between plan and apply.
-- Take a hash-verified backup of the candidate file outside the scanned tree before any mutation, and refuse to proceed if the backup cannot be verified.
-- Never permanently delete a file. The only mutation this spec permits is a *reversible* move/hold (e.g. into a to-be-designed quarantine-style holding location distinct from the existing reserved `Quarantine/` semantics in `AGENTS.md` Section 3), never an unrecoverable delete.
-- Record an append-only ledger row (before/after identity, backup location, verification status) before considering the operation complete, following the `reconciliation_ledger` model.
-- Support a confirmed restore path that reverses the hold using the ledger's recorded before-state, verifying current state matches the ledger's after-state before restoring (mirroring `FULL_RECONCILIATION_APPLY_SPEC.md` Section 9's rollback verification).
-- Require its own dedicated implementation, tests, and review cycle before being enabled; it must not be added as an incremental extension of the plan-only surface described in this document without that separate review.
+Duplicate resolution is a media-file hold workflow. It is **not** a
+reference-artifact reconciliation workflow and must not call, extend, or
+write `reconciliation_ledger`, reference-artifact plans, queue JSON/JSONL,
+or their apply endpoints. Its only initial file action is to move one reviewed
+duplicate candidate to a reversible operational hold. It must not rename the
+keeper, reconcile unrelated path references, edit review decisions, or
+perform an inferred cleanup.
+
+The initial executor is deliberately narrower than the planner:
+
+- It accepts exactly one ready `candidate_for_reversible_resolution` action
+  from one explicitly identified group; no `apply all`, group batch, or
+  background auto-execution mode exists.
+- It accepts files whose live source is in managed `Inbox/` only. A candidate
+  in `Library/` is plan-visible but execution-blocked with
+  `library_candidate_requires_dedicated_impact_design`; Library can have
+  crates, exports, and external-DJ implications that this executor must not
+  silently change. `Quarantine/`, the hold area, and every other zone are
+  never valid sources.
+- At preview, apply, restore, and recovery, the selected root must be
+  classified as exactly `managed_workspace`, with its valid managed-workspace
+  marker, by a new **pure duplicate-resolution workspace validator**. That
+  validator must perform only `lstat`/marker/root/zone reads and must not call
+  `workspace_service.workspace_state` or any migration-capable classifier:
+  `workspace_state` currently invokes `ensure_storage_zone_column`, which can
+  `ALTER TABLE tracks` and create an index, so it is not side-effect free. The
+  validator reimplements the minimal marker/root/zone classification itself,
+  side-effect free; this workflow must not make the migration side effect a
+  prerequisite. In particular, validation must not run schema setup, alter
+  `tracks`, create indexes, or otherwise migrate operational state. The
+  presence of an `Inbox/` directory alone is never sufficient: a
+  `legacy_direct_library` (including one that happens to contain `Inbox/`),
+  `not_configured`, missing, malformed, or changed workspace state fails
+  closed with no filesystem mutation.
+- Existing `Quarantine/` remains reserved and is never an automatic
+  destination. The hold destination is a new, implementation-owned,
+  root-contained operational area such as
+  `<root>/logs/duplicate_resolution/holds/`; it is outside the managed
+  Inbox/Library scan roots and is not a promoted Library location.
+- The executor must add an explicit held-operation state/read model before
+  enabling file moves, so normal Inbox/Library views do not report a held
+  candidate as an unexplained missing path. It must not paper over that state
+  by applying reference-artifact reconciliation. The exact UI/read-model work
+  belongs in the implementation stage below.
+
+No tag, BPM, key, beatgrid, waveform, cue, playlist, crate, `tracks`,
+`processed_state`, or queue mutation is authorized by this design. Any future
+need to update a path reference or support Library candidates is a separate
+reviewed design and must preserve the then-current authoritative owner.
+
+### 6.2 Confirmed immutable apply preview
+
+The current GET plan is recomputed and contains `generated_at`; it is useful
+for review but is not itself an apply token. A future executor must first
+create a persisted **duplicate-resolution apply preview** with a schema
+version, selected-root canonical path, review `snapshot_id`, exactly one
+`action_id`, chosen keeper/candidate IDs, and all execution evidence below.
+It is stored only in the selected root's bounded operational log area, never
+in a managed media scan root. The server serializes canonical JSON and returns
+its SHA-256.
+
+The apply request must include the preview ID, its exact SHA-256, the same one
+`action_id`, and `confirm: true`. A missing/false confirmation, more or fewer
+than one action, an unsupported schema, a root mismatch, a missing preview,
+or a digest mismatch is a hard failure with no writes. The UI must present the
+candidate source, keeper, proposed hold, backup location, and an explicit
+statement that the operation never permanently deletes media immediately
+before the confirmation control; the control cannot be preselected.
+
+Preview data must contain, at minimum:
+
+| Evidence | Required value |
+|---|---|
+| Review binding | current `snapshot_id`, `group_id`, every member ID/decision, exactly one explicit keeper, and the chosen candidate |
+| Content proof | a newly computed full SHA-256 of both keeper and candidate, plus size; the hashes must be equal. A retained rmlint prefix is only corroboration, never execution proof. |
+| Source identity | root-relative source path, canonical resolved path, `st_dev`, `st_ino` where available, size, `mtime_ns`, and SHA-256 |
+| Destination identity | root-relative hold and backup paths derived server-side from an opaque operation UUID; neither is user supplied |
+| Zone proof | current workspace state is `managed_workspace`; source zone is `Inbox`; canonical source is not a symlink and every existing ancestor from root to source is non-symlink |
+| Collision proof | hold path and backup path are absent; no existing active or prepared ledger record claims either destination |
+
+Preview preflight is read-only: it uses the pure workspace validator and may
+inspect existing ledger state only to report an unfinished-operation blocker.
+It must not run recovery, acquire a writer lock that mutates state, append a
+ledger event, create operational directories, or repair/migrate any database
+state. Ledger-changing recovery is reserved for a confirmed apply or restore,
+or an explicit, separately confirmed recovery action; preview never triggers
+or performs it. The preview may read/hash files but changes no state other
+than its explicit operational preview artifact. It expires on any revalidation
+failure; elapsed time alone is not sufficient authorization to bypass a failed
+check.
+
+### 6.3 Execution-time gates and transaction protocol
+
+Apply must re-run all Section 4 rules and recreate the full evidence in
+Section 6.2 while holding a per-root duplicate-resolution writer lock. It
+must reject a new review snapshot, changed decisions, changed group
+membership, stale/missing/non-regular files, changed stat/inode/hash,
+checksum mismatch with the keeper, a source outside Inbox, symlinks, hard-link
+ambiguity not explicitly supported by the implementation, any destination
+collision, or a conflict with an unfinished operation. A plan or preview is
+never authorization after drift.
+
+The required order is:
+
+1. Acquire the per-root lock; reclassify the root as exactly
+   `managed_workspace` using the pure duplicate-resolution workspace
+   validator; resolve root and every path with existing
+   root-containment helpers, reject symlinks with `lstat`, and revalidate the
+   immutable preview and review state.
+2. Create an append-only ledger record in `prepared` state before moving a
+   file. It includes exact before-state, planned hold/backup paths, preview
+   ID/digest, and a recovery nonce. A new operation must not overwrite this
+   record.
+3. Before creating each server-derived hold or backup parent directory,
+   validate every existing ancestor with `lstat` and root containment. Create
+   only the missing directories, then repeat `lstat` ancestor validation and
+   canonical containment after creation; any symlink, non-directory, or path
+   escape fails closed. Copy the candidate into the verified backup location
+   outside scan roots using exclusive creation; fsync the file and parent as
+   supported; compute SHA-256 of the backup; and require equality with the
+   freshly computed candidate hash. On failure, retain evidence and mark the
+   ledger failed/recoverable; never move the source.
+4. Repeat the verified destination-parent validation for the hold path, then
+   recheck source identity and destination absence immediately before the
+   move. Move only by same-filesystem atomic rename from Inbox to the unique
+   hold path. Cross-device moves are unsupported and must fail closed rather
+   than copy-and-delete. Fsync affected directories as supported.
+5. Re-hash the held file; require it to match the pre-move source and backup.
+   Append a terminal `held_verified` ledger event only after that proof and
+   make the held state visible to its dedicated read model.
+
+Every failure path records a terminal append-only failure/recovery event where
+the ledger was prepared. It must never delete a source or backup to hide a
+failed operation. The operation is idempotent only for the same preview/action:
+a retry first performs recovery and then returns the already verified terminal
+result or a safe blocker; it never creates a second hold.
+
+### 6.4 Ledger, evidence retention, and recovery
+
+Use a dedicated append-only `duplicate_resolution_ledger`, not the
+reconciliation ledger. Each event has an immutable operation UUID, parent
+event/operation linkage, UTC timestamp, event type, schema version, selected
+root identity, preview ID/SHA-256, snapshot/group/action/track IDs, keeper ID,
+source/hold/backup relative paths, complete before/after stat and SHA-256
+evidence, verification status, and a machine-readable failure/recovery reason.
+The payload must contain no tag values or unrelated private metadata.
+
+Allowed lifecycle events are `prepared`, `backup_verified`, `held_verified`,
+`restore_prepared`, `restored_verified`, `failed`, and `recovery_required`.
+Events are inserts only; corrections append a child event. An operation is
+recoverable until a verified restore is recorded. The backup is retained until
+an explicitly designed, separately authorized retention policy exists; this
+design authorizes no cleanup job.
+
+At service startup, only a read-only inspection may identify unfinished
+operations for display. Before a confirmed apply or restore, or through an
+explicit confirmed recovery action, classify the selected root as exactly
+`managed_workspace` using the pure duplicate-resolution workspace validator,
+then inspect unfinished ledger operations under the same writer lock. Preview
+performs only the read-only preflight described in Section 6.2; it never
+invokes ledger-changing recovery. Recovery must make the same
+managed-workspace and `lstat`/containment checks for every source, hold, and
+backup path before inspecting or changing state; a state/marker mismatch or
+symlink/path escape blocks recovery with a visible safe error:
+
+- source present + hold absent: retain the verified backup and append
+  `failed`/`recovery_required`; do not retry the move implicitly;
+- source absent + hold matches recorded hash: append `held_verified` if the
+  crash occurred after the move, then expose it for explicit restore;
+- source and hold both present, or either identity does not match: append
+  `recovery_required` and block further operations for that source/group;
+- source absent + hold absent: append `recovery_required` and require manual
+  operator investigation using the retained evidence.
+
+Recovery must be deterministic, bounded to the selected root, and visible in
+read-only operation list/detail endpoints. It must never infer success from a
+missing source alone.
+
+### 6.5 Confirmed restore / rollback
+
+Restore accepts exactly one `held_verified` operation ID and `confirm: true`.
+Under the same per-root lock it reclassifies the root as exactly
+`managed_workspace`, verifies the ledger chain, preview/root binding, backup
+SHA-256, held-file SHA-256, original Inbox destination absence, and that no
+later operation depends on the hold. It creates a
+`restore_prepared` event, atomically renames the held file back to its exact
+original root-relative Inbox path, re-hashes it, compares it with both backup
+and recorded source hash, fsyncs as supported, and appends `restored_verified`.
+It then updates only the dedicated held-operation read model. A changed,
+occupied, symlinked, cross-root, or hash-mismatched destination blocks restore
+without overwriting anything. Restore itself never deletes the backup.
+
+### 6.6 Required tests
+
+Use only disposable temporary managed roots and synthetic files. At minimum,
+tests must prove:
+
+- API confirmation, exact-one-action, preview ID/SHA, schema-version, and
+  selected-root binding failures cause no mutation;
+- explicit keeper/all-member/checksum grouping gates, stale snapshot/decision,
+  source drift, full-hash mismatch, missing files, Library/Quarantine source,
+  legacy-direct roots that contain an `Inbox/`, missing/changed managed
+  workspace markers, path traversal, absolute escape, symlinked
+  root/ancestor/source, and hard-link policy all fail closed at preview,
+  apply, restore, and recovery;
+- exclusive destination creation and pre-move recheck reject hold/backup and
+  ledger collisions without overwrite; symlinked or escaped existing hold and
+  backup ancestors, including a root-contained symlink created before or
+  during destination-directory creation, fail closed after each creation and
+  cannot redirect an operational destination into Inbox, Library, or outside
+  the selected root;
+- backup is outside Inbox/Library scan roots, hash-verified before move, and
+  every source/backup/hold hash postcondition is enforced;
+- successful Inbox hold changes only the candidate's location plus dedicated
+  duplicate-resolution operational records, with no permanent delete and no
+  tags, BPM, key, cue, playlist, crate, queue, or reconciliation-ledger
+  mutation;
+- restore succeeds only against exact held state and original destination,
+  rejects drift/collision/dependent operation, and produces a verified
+  append-only child event;
+- injected failures before backup, after backup, after move, and before final
+  ledger update recover deterministically after service restart; and
+- concurrent apply/restore attempts serialize per root and cannot claim the
+  same source or destination twice.
+
+### 6.7 Smallest staged implementation sequence
+
+1. Add read-only schemas and service helpers for canonical preview bytes, a
+   pure managed-workspace-marker/root/zone/symlink validator that does not
+   call migration-capable workspace classification, full streaming SHA-256,
+   and the held-state read model. Add fixture-only tests proving preview
+   preflight makes no database or ledger mutation; expose no apply route.
+2. Add the additive dedicated preview/ledger storage and read-only preview,
+   list, detail, and recovery-inspection endpoints. Prove stale-plan and
+   crash-state detection; no filesystem move.
+3. Add confirmed one-action Inbox-only apply with backup, atomic hold,
+   per-root lock, postcondition verification, and failure injection tests.
+   Keep Library, Quarantine, batches, and all reference artifacts blocked.
+4. Add confirmed restore with ledger-chain validation and recovery handling.
+   Run the full fixture matrix and conduct a manual disposable-root rehearsal.
+5. Only after real local-library use has exercised the read model should a
+   separate proposal consider Library candidates, retention policy, or any
+   reference impact. It is not part of this design or implementation sequence.
+
+Each stage requires its own focused code review and no stage may loosen the
+current read-only `/api/duplicates/resolution-plan` contract before its tests
+pass.
 
 ## 7. Needs Review Integration
 

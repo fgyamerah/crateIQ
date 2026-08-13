@@ -2,6 +2,26 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-13] — P1 closeout duplicate-resolution apply design and roadmap rebaseline
+
+- Completed the implementation-ready design for future duplicate-resolution
+  apply while preserving the current read-only plan surface. It now specifies
+  a persisted SHA-bound one-action preview, execution-time full-hash and
+  root/symlink/Inbox-zone revalidation, exclusive collision checks,
+  hash-verified backup, atomic reversible operational hold, append-only
+  dedicated provenance, restore verification, and crash recovery.
+- The design explicitly excludes the reserved managed `Quarantine/` folder,
+  Library execution, tag/MIK/cue and reference-artifact mutations, permanent
+  deletion, batches, and queue JSON/JSONL writes. It defines fixture-only
+  tests and a five-stage implementation sequence instead.
+- Rebaselined the active roadmap after Tasks 27–30: P0 and P1 are empty;
+  queue mutation is parked pending a schema contract, and duplicate
+  execution remains a P2 follow-up after real managed-workspace use.
+- Files affected: duplicate-resolution architecture specification,
+  `NEXT_TASKS.txt`, `PROJECT_CONTEXT.md`, and this changelog.
+- Migration notes: documentation/design only. No runtime/API/schema/data
+  behavior changed; duplicate resolution remains plan-only.
+
 [2026-08-13] — Review regeneration notifications and export stale detection (Stages 5/6)
 
 - Added derived-only Category-C plan notifications for stale review snapshots
