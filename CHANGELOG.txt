@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-13] — Review regeneration notifications and export stale detection (Stages 5/6)
+
+- Added derived-only Category-C plan notifications for stale review snapshots
+  and durable unresolvable findings. Regeneration actions explicitly preserve
+  surviving track decisions and never patch review JSON, queues, or decisions.
+- Added bounded, root-contained, symlink-safe Category-D inspection of the
+  current staged M3U/M3U8, JSON, CSV, and Rekordbox XML export surfaces. Stale
+  paths emit non-executable re-export actions; malformed, oversized, and
+  unsupported inputs fail closed with warnings.
+- Files affected: reference finding/plan schemas and services, focused
+  reconciliation tests, and current task/context/design documentation.
+- Migration notes: none. Export bytes and all review data remain unchanged;
+  queue JSON/JSONL mutation remains unauthorized.
+
 [2026-08-13] — Reconciliation track-ID writers (Stage 4C/D)
 
 - Added confirmed, single-action apply and verified rollback for current

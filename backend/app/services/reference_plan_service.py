@@ -23,7 +23,7 @@ _KIND = "reference_artifact_reconciliation_plan"
 _VERSION = 1
 _PLAN_DIR_PARTS = ("logs", "path_reconcile")
 _EXECUTABLE = {"update_path_reference", "rehome_track_id"}
-_NON_EXECUTABLE = {"regenerate_review_snapshot", "mark_durable_finding_unresolvable", "no_action_historical", "no_action_cache"}
+_NON_EXECUTABLE = {"regenerate_review_snapshot", "mark_durable_finding_unresolvable", "regenerate_export", "no_action_historical", "no_action_cache"}
 _PATH_EVIDENCE = {
     "same_track_id_current_canonical_path",
     "same_track_id_different_path",
@@ -158,8 +158,8 @@ def _category_c_actions(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
     for finding in findings:
         if finding.get("classification") != "C":
             continue
-        if finding.get("artifact_type") == "quality_review_finding" and finding.get("recommended_disposition") == "mark_unresolvable":
-            actions.append({"classification": "C", "action_type": "mark_durable_finding_unresolvable", "artifact_type": "quality_review_finding",
+        if finding.get("artifact_type") in {"quality_review_finding", "track_review"} and finding.get("recommended_disposition") == "mark_unresolvable":
+            actions.append({"classification": "C", "action_type": "mark_durable_finding_unresolvable", "artifact_type": finding["artifact_type"],
                             "finding_ids": [finding["finding_id"]], "artifact_identifier": finding["artifact_identifier"],
                             "orphaned_track_id": finding["stale_value"], "reason": "orphaned_track_id", "blockers": [],
                             "executable": False, "reversibility": "regenerable"})
@@ -169,7 +169,19 @@ def _category_c_actions(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
         actions.append({"classification": "C", "action_type": "regenerate_review_snapshot", "artifact_type": artifact, "artifact_owner": owner,
                         "finding_ids": sorted(item["finding_id"] for item in members), "reason": "snapshot_scoped_stale_references",
                         "stale_reference_count": len(members), "blockers": [], "executable": False,
-                        "reversibility": "regenerable"})
+                        "reversibility": "regenerable", "decision_preservation": "preserve_surviving_track_decisions"})
+    return actions
+
+
+def _category_d_actions(findings: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    actions = []
+    for finding in findings:
+        if finding.get("classification") != "D":
+            continue
+        actions.append({"classification": "D", "action_type": "regenerate_export", "artifact_type": finding["artifact_type"],
+                        "artifact_identifier": finding["artifact_identifier"], "finding_ids": [finding["finding_id"]],
+                        "reason": "stale_export_path", "blockers": list(finding.get("blockers") or []),
+                        "executable": False, "reversibility": "regenerable"})
     return actions
 
 
@@ -223,7 +235,7 @@ def propose_plan() -> dict[str, Any]:
     report = reference_findings_service.get_reference_findings()
     findings = list(report.get("findings") or [])
     actions = [_finding_action(finding) for finding in findings]
-    actions = [action for action in actions if action is not None] + _category_c_actions(findings)
+    actions = [action for action in actions if action is not None] + _category_c_actions(findings) + _category_d_actions(findings)
     for action in actions:
         if action.get("action_type") == "rehome_track_id" and action.get("artifact_type") == "field_provenance":
             field_name = _field_provenance_name(root, action.get("artifact_identifier"))
@@ -311,12 +323,13 @@ def _action_structure_issue(action: dict[str, Any]) -> str | None:
     """Return the first missing or unsafe plan-action contract field."""
     classification = action.get("classification")
     kind = action.get("action_type")
-    if classification not in {"A", "B", "C", "E"}:
+    if classification not in {"A", "B", "C", "D", "E"}:
         return "invalid_or_missing_classification"
     allowed_by_classification = {
         "A": {"no_action_historical"},
         "B": _EXECUTABLE,
         "C": {"regenerate_review_snapshot", "mark_durable_finding_unresolvable"},
+        "D": {"regenerate_export"},
         "E": {"no_action_cache"},
     }
     if kind not in allowed_by_classification[classification]:
@@ -329,7 +342,7 @@ def _action_structure_issue(action: dict[str, Any]) -> str | None:
         return "missing_executable_flag"
     if not isinstance(action.get("reversibility"), str) or not action["reversibility"]:
         return "missing_reversibility"
-    if classification in {"A", "E", "C"} and action["executable"]:
+    if classification in {"A", "C", "D", "E"} and action["executable"]:
         return "non_mutation_classification_cannot_be_executable"
     if kind in _EXECUTABLE:
         for field in ("artifact_identifier", "reference_field", "confidence", "evidence"):
@@ -357,6 +370,11 @@ def _action_structure_issue(action: dict[str, Any]) -> str | None:
     if kind == "mark_durable_finding_unresolvable":
         if not isinstance(action.get("orphaned_track_id"), int) or isinstance(action["orphaned_track_id"], bool):
             return "missing_orphaned_track_id"
+        if not isinstance(action.get("reason"), str) or not action["reason"]:
+            return "missing_reason"
+    if kind == "regenerate_export":
+        if not isinstance(action.get("artifact_identifier"), str) or not action["artifact_identifier"]:
+            return "missing_artifact_identifier"
         if not isinstance(action.get("reason"), str) or not action["reason"]:
             return "missing_reason"
     return None

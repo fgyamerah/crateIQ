@@ -864,9 +864,10 @@ mutation is authorized.
 
 ### Stage 5 — Review state regeneration notifications (Category C)
 
-**Goal:** Enable flagging stale review snapshots for regeneration and
-marking durable findings as unresolvable. No mutation of review data; just
-notification and disposition tracking.
+**Completed:** Stale review snapshots emit non-executable regeneration
+notifications, while durable orphaned findings emit non-executable
+mark-unresolvable dispositions. Snapshot regeneration retains decisions for
+surviving tracks; no snapshot JSON or decision row is surgically patched.
 
 **Scope:**
 - Implement regeneration-flag and mark-unresolvable actions.
@@ -878,8 +879,12 @@ notification and disposition tracking.
 
 ### Stage 6 — Export stale-path detection (Category D)
 
-**Goal:** Detect stale paths in export files and flag them in findings/plan.
-No mutation of export files; re-export is a separate user action.
+**Completed:** Detect stale paths in the current backend's staged
+M3U/M3U8/JSON/CSV/XML exports below the selected root's `exports/` directory and
+emit non-executable re-export notifications. Discovery is bounded,
+root-contained, and symlink-safe; malformed, oversized, and unsupported
+inputs fail closed with warnings. No export file is mutated; re-export stays
+a separate user action.
 
 **Scope:**
 - Extend reference findings to parse export files.

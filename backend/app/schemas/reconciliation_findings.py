@@ -13,9 +13,9 @@ ReferenceArtifactType = Literal[
     "quality_review_snapshot", "quality_review_finding", "track_review",
     "genre_review_snapshot", "field_provenance", "queue_entry", "bpm_anomaly",
     "bpm_retry_pause", "fingerprint_cache", "waveform_track_state", "waveform_job",
-    "historical_reference", "tag_write_operation",
+    "historical_reference", "tag_write_operation", "export_file",
 ]
-ReferenceClassification = Literal["A", "B", "C", "E"]
+ReferenceClassification = Literal["A", "B", "C", "D", "E"]
 ReferenceDisposition = Literal["correct", "regenerate", "mark_unresolvable", "ignore", "manual_review"]
 ReferenceConfidence = Literal["HIGH", "MEDIUM", "LOW", "UNKNOWN"]
 
@@ -77,6 +77,7 @@ class ReferenceFindingsSummary(BaseModel):
     category_a: int = 0
     category_b: int = 0
     category_c: int = 0
+    category_d: int = 0
     category_e: int = 0
 
 

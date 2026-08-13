@@ -46,14 +46,6 @@ P1 / HIGH
 [ ] Keep queue JSON/JSONL mutation deferred. No concrete queue schema
     contract has been approved, so queue findings remain non-executable.
 
-[ ] Implement review-state regeneration notifications (Stage 5). Flag stale
-    review snapshots for regeneration; mark durable findings as unresolvable.
-    See Section 12 Stage 5.
-
-[ ] Implement export stale-path detection (Stage 6). Detect stale paths in
-    M3U8/XML/JSON/CSV exports and flag them for re-export. Read-only
-    detection; no export file mutation. See Section 12 Stage 6.
-
 [ ] Design the future confirmation-gated, reversible duplicate-resolution
     apply phase. Current functionality is plan-only. Any execution phase
     must revalidate at execution time, take a hash-verified backup, use a

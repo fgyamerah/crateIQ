@@ -231,7 +231,7 @@ Service map (`backend/app/services/`), current primary surfaces:
   `pipeline.py` import); current backend services do not import private
   `pipeline.py` helpers. The read-only Stage 1 reference-artifact detector
   (`GET /api/reconciliation/reference-findings`) scans bounded Categories A,
-  B, C, and E surfaces from
+  B, C, D, and E surfaces from
   `docs/architecture/RECONCILIATION_REFERENCE_ARTIFACT_DESIGN.md`. Stage 2
   adds additive `POST /api/reconciliation/reference-plan/propose` and
   `/validate` endpoints that persist and validate only a distinct,
@@ -268,7 +268,12 @@ Service map (`backend/app/services/`), current primary surfaces:
   transition across regenerated plan artifacts; a different plan cannot claim
   its successful mutation. Rollback writers lazily add reference-ledger
   backup provenance columns before appending rollback history, preserving
-  legacy Stage 4A/B records. Queue JSON/JSONL mutation remains explicitly unauthorized and
+  legacy Stage 4A/B records. Completed Stages 5/6 add derived-only Category-C
+  regeneration/unresolvable notifications (with surviving review decisions
+  preserved) and bounded, root-contained, symlink-safe Category-D stale-path
+  detection for the currently emitted M3U/M3U8/JSON/CSV/XML exports. Both produce
+  non-executable regeneration actions only; malformed, oversized, unsafe, and
+  unsupported export inputs fail closed with warnings. Queue JSON/JSONL mutation remains explicitly unauthorized and
   deferred. Neither reference writer mutates tracks, media, tags, BPM, key,
   cue content, review state, caches, exports, or the DB-only reconciliation
   ledger. Filesystem

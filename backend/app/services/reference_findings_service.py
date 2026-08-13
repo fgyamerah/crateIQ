@@ -6,13 +6,16 @@ tables nor writes plans, caches, files, or reconciliation state.
 """
 from __future__ import annotations
 
+import csv
 import hashlib
+import io
 import json
 import sqlite3
-from urllib.parse import quote
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
+from urllib.parse import quote, unquote, urlparse
+from xml.etree import ElementTree as ET
 
 from ..core import db as backend_db
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
@@ -22,7 +25,11 @@ _MAX_FINDINGS = 500
 _MAX_QUEUE_FILES = 50
 _MAX_QUEUE_BYTES = 1_000_000
 _MAX_QUEUE_RECORDS = 500
+_MAX_EXPORT_FILES = 50
+_MAX_EXPORT_BYTES = 1_000_000
+_MAX_EXPORT_REFERENCES = 500
 _PATH_KEYS = {"file", "filepath", "path", "track_path", "original_path", "current_path", "target_path", "old_path", "new_path", "relative_path"}
+_EXPORT_SUFFIXES = {".m3u", ".m3u8", ".json", ".csv", ".xml"}
 
 
 def _now() -> str:
@@ -397,6 +404,188 @@ def _scan_queue_files(root: Path, now: str, warnings: list[str]) -> list[dict[st
     return findings
 
 
+def _export_path(value: str, root: Path) -> tuple[str | None, bool]:
+    """Check an export path without accepting Windows paths as local relatives."""
+    if (len(value) >= 2 and value[1] == ":" and value[0].isalpha()) or value.startswith("\\\\"):
+        return None, False
+    return _safe_path(value, root)
+
+
+def _export_files(root: Path, warnings: list[str]) -> list[Path]:
+    base = root / "exports"
+    if base.is_symlink():
+        warnings.append("Skipped unsafe exports directory.")
+        return []
+    if not base.is_dir():
+        return []
+    files: list[Path] = []
+    inspected = 0
+    for path in base.rglob("*"):
+        if path.is_symlink():
+            warnings.append(f"Skipped unsafe export path {path.name}.")
+            continue
+        if path.is_dir():
+            continue
+        inspected += 1
+        if inspected > _MAX_EXPORT_FILES:
+            warnings.append(f"Export discovery capped at {_MAX_EXPORT_FILES} files.")
+            break
+        if not path.is_file():
+            warnings.append(f"Skipped unsafe export path {path.name}.")
+            continue
+        try:
+            assert_path_under_root(path, root)
+            if path.stat().st_size > _MAX_EXPORT_BYTES:
+                warnings.append(f"Skipped oversized export file {path.name}.")
+                continue
+        except (OSError, ValueError):
+            warnings.append(f"Skipped unreadable export path {path.name}.")
+            continue
+        if path.suffix.lower() not in _EXPORT_SUFFIXES:
+            warnings.append(f"Skipped unsupported export file {path.name}.")
+            continue
+        files.append(path)
+    return sorted(files)
+
+
+def _export_finding(path: Path, *, reference: str, field: str, index: int,
+                    root: Path, canonical_filenames: set[str],
+                    now: str) -> dict[str, Any] | None:
+    if not reference.strip():
+        return None
+    normalized = reference.strip()
+    relative, exists = _export_path(normalized, root)
+    # CrateIQ's filename path mode deliberately emits bare filenames.  Those
+    # cannot be resolved under ``root`` directly, so treat any surviving
+    # canonical filename as current.  Duplicate filenames are still current;
+    # no identity inference or export rewrite is attempted here.
+    if not exists and "/" not in normalized and "\\" not in normalized and normalized in canonical_filenames:
+        exists = True
+    if exists:
+        return None
+    stale = relative if relative is not None else "<outside selected root>"
+    blockers = ["export_regeneration_required"]
+    if relative is None:
+        blockers.append("reference_outside_selected_root")
+    return _finding(artifact_type="export_file", owner="export_services",
+                    identifier=f"{path.relative_to(root)}:{index}", field=field,
+                    stale=stale, evidence="bounded_export_path_check", category="D",
+                    disposition="regenerate", now=now, blockers=blockers)
+
+
+def _crate_json_references(parsed: Any, path: Path, warnings: list[str]) -> Iterator[tuple[str, str, int]]:
+    # The staged Serato manifest is a supported current export, but its
+    # ``m3u8_file`` value names a sibling export artifact rather than media.
+    if isinstance(parsed, dict) and parsed.get("format") == "staged-serato-m3u8" and isinstance(parsed.get("m3u8_file"), str):
+        return
+    if not isinstance(parsed, dict) or parsed.get("format") != "json" or not isinstance(parsed.get("tracks"), list):
+        warnings.append(f"Skipped unsupported JSON export schema in {path.name}.")
+        return
+    for index, track in enumerate(parsed["tracks"], start=1):
+        if not isinstance(track, dict) or not isinstance(track.get("path"), str):
+            warnings.append(f"Skipped malformed JSON export track in {path.name} at {index}.")
+            return
+    # Validate the complete export before yielding references.  A malformed
+    # later entry must fail closed rather than leaving partial findings from
+    # earlier tracks available for a regeneration action.
+    for index, track in enumerate(parsed["tracks"], start=1):
+        yield track["path"], "path", index
+
+
+def _xml_location(location: str) -> str:
+    parsed = urlparse(location)
+    if parsed.scheme != "file":
+        return location
+    decoded = unquote(parsed.path)
+    # The CrateIQ Rekordbox writer encodes root-relative paths as
+    # ``file://localhost/Library/...`` and absolute paths with a doubled
+    # leading slash.  Preserve that distinction before root containment.
+    if parsed.netloc == "localhost" and decoded.startswith("/") and not decoded.startswith("//"):
+        return decoded[1:]
+    return decoded
+
+
+def _export_references(path: Path, text: str, warnings: list[str]) -> Iterator[tuple[str, str, int]]:
+    suffix = path.suffix.lower()
+    if suffix in {".m3u", ".m3u8"}:
+        lines = text.splitlines()
+        if not lines or lines[0].strip() != "#EXTM3U":
+            warnings.append(f"Skipped unsupported M3U export schema in {path.name}.")
+            return
+        for index, line in enumerate(lines, start=1):
+            if line.strip() and not line.lstrip().startswith("#"):
+                yield line, "path", index
+        return
+    if suffix == ".csv":
+        reader = csv.DictReader(io.StringIO(text))
+        if not reader.fieldnames or not {"position", "path"} <= set(reader.fieldnames):
+            warnings.append(f"Skipped unsupported CSV export schema in {path.name}.")
+            return
+        for index, row in enumerate(reader, start=2):
+            yield str(row.get("path") or ""), "path", index
+        return
+    if suffix == ".json":
+        yield from _crate_json_references(json.loads(text), path, warnings)
+        return
+    document = ET.parse(io.StringIO(text))
+    if document.getroot().tag.rsplit("}", 1)[-1] != "DJ_PLAYLISTS":
+        warnings.append(f"Skipped unsupported XML export schema in {path.name}.")
+        return
+    for index, track in enumerate(document.iter(), start=1):
+        if track.tag.rsplit("}", 1)[-1] == "TRACK" and track.get("Location"):
+            yield _xml_location(track.attrib["Location"]), "Location", index
+
+
+def _scan_export_file(path: Path, *, root: Path, canonical_filenames: set[str],
+                      now: str, warnings: list[str], max_references: int) -> tuple[list[dict[str, Any]], int, bool]:
+    try:
+        text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError):
+        warnings.append(f"Skipped unreadable export file {path.name}.")
+        return [], 0, False
+    try:
+        references = _export_references(path, text, warnings)
+    except (csv.Error, json.JSONDecodeError, ET.ParseError, ValueError):
+        warnings.append(f"Skipped malformed export file {path.name}.")
+        return [], 0, False
+    findings: list[dict[str, Any]] = []
+    seen = 0
+    try:
+        for reference, field, index in references:
+            if seen >= max_references:
+                warnings.append(f"Export references capped at {_MAX_EXPORT_REFERENCES} entries.")
+                return findings, seen, True
+            seen += 1
+            finding = _export_finding(path, reference=reference, field=field, index=index, root=root,
+                                      canonical_filenames=canonical_filenames, now=now)
+            if finding:
+                findings.append(finding)
+    except (csv.Error, json.JSONDecodeError, ET.ParseError, ValueError):
+        warnings.append(f"Skipped malformed export file {path.name}.")
+        return [], 0, False
+    return findings, seen, False
+
+
+def _scan_export_files(root: Path, canonical_filenames: set[str], now: str,
+                       warnings: list[str]) -> list[dict[str, Any]]:
+    findings: list[dict[str, Any]] = []
+    references_seen = 0
+    for path in _export_files(root, warnings):
+        remaining = _MAX_EXPORT_REFERENCES - references_seen
+        if remaining <= 0:
+            warnings.append(f"Export references capped at {_MAX_EXPORT_REFERENCES} entries.")
+            break
+        file_findings, file_references, capped = _scan_export_file(
+            path, root=root, canonical_filenames=canonical_filenames, now=now,
+            warnings=warnings, max_references=remaining,
+        )
+        findings.extend(file_findings)
+        references_seen += file_references
+        if capped:
+            break
+    return findings
+
+
 def get_reference_findings() -> dict[str, Any]:
     root = selected_library_root()
     now = _now()
@@ -406,6 +595,7 @@ def get_reference_findings() -> dict[str, Any]:
     track_ids: set[int] = set()
     canonical_track_ids: set[int] = set()
     current_paths: dict[int, str] = {}
+    canonical_filenames: set[str] = set()
     historical_path_replacements: dict[str, list[str]] = {}
     proven_track_replacements: dict[int, list[int]] = {}
 
@@ -422,6 +612,7 @@ def get_reference_findings() -> dict[str, Any]:
                         relative for relative, exists in (_safe_path(row.get("filepath"), root) for row in tracks)
                         if relative is not None and exists
                     }
+                    canonical_filenames = {Path(relative).name for relative in canonical_track_paths}
                     for row in tracks:
                         track_id = row.get("id")
                         try:
@@ -566,11 +757,12 @@ def get_reference_findings() -> dict[str, Any]:
         warnings.append("Skipped crate/jobs reference checks because processed.db is not initialized.")
 
     findings.extend(_scan_queue_files(root, now, warnings))
+    findings.extend(_scan_export_files(root, canonical_filenames, now, warnings))
     findings.sort(key=lambda item: item["finding_id"])
     if len(findings) > _MAX_FINDINGS:
         warnings.append(f"Reference findings capped at {_MAX_FINDINGS}.")
         findings = findings[:_MAX_FINDINGS]
-    summary = {"total": len(findings), "category_a": 0, "category_b": 0, "category_c": 0, "category_e": 0}
+    summary = {"total": len(findings), "category_a": 0, "category_b": 0, "category_c": 0, "category_d": 0, "category_e": 0}
     for finding in findings:
         summary[f"category_{finding['classification'].lower()}"] += 1
     return {"summary": summary, "findings": findings, "warnings": warnings, "generated_at": now,

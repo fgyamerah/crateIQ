@@ -193,7 +193,7 @@ def test_durable_finding_and_cache_are_non_actionable(reference_client):
     assert all(item["stale_value"] != 91 for item in payload["findings"])
 
 
-def test_queue_detection_fails_closed_and_does_not_scan_exports(reference_client):
+def test_queue_and_export_detection_are_bounded_and_read_only(reference_client):
     client, root, _path, _jobs = reference_client
     data = root / "data"
     data.mkdir()
@@ -202,12 +202,100 @@ def test_queue_detection_fails_closed_and_does_not_scan_exports(reference_client
     (data / "unknown_queue.json").write_text('42', encoding="utf-8")
     export = root / "exports" / "old.m3u8"
     export.parent.mkdir()
-    export.write_text(str(root / "Inbox" / "missing.mp3"), encoding="utf-8")
+    export.write_text(f"#EXTM3U\n{root / 'Inbox' / 'missing.mp3'}\n", encoding="utf-8")
     payload = client.get("/api/reconciliation/reference-findings").json()
     assert _find(payload, "queue_entry")["classification"] == "B"
     assert any("Skipped malformed queue" in warning for warning in payload["warnings"])
     assert any("unsupported queue" in warning for warning in payload["warnings"])
+    export_finding = _find(payload, "export_file")
+    assert export_finding["classification"] == "D"
+    assert export_finding["recommended_disposition"] == "regenerate"
+    assert export.read_text(encoding="utf-8") == f"#EXTM3U\n{root / 'Inbox' / 'missing.mp3'}\n"
+
+
+@pytest.mark.parametrize("name,content", [
+    ("crate.m3u8", "#EXTM3U\nLibrary/current.mp3\nInbox/missing.mp3\n"),
+    ("crate.json", '{"format": "json", "tracks": [{"path": "Library/current.mp3"}, {"path": "Inbox/missing.mp3"}]}'),
+    ("crate.csv", "position,path\n1,Library/current.mp3\n2,Inbox/missing.mp3\n"),
+    ("crate.xml", '<?xml version="1.0"?><DJ_PLAYLISTS><COLLECTION><TRACK Location="file://localhost/{root}/Library/current.mp3"/><TRACK Location="file://localhost/{root}/Inbox/missing.mp3"/></COLLECTION></DJ_PLAYLISTS>'),
+])
+def test_supported_export_stale_path_detection_preserves_bytes(reference_client, name, content):
+    client, root, path, _jobs = reference_client
+    current = root / "Library" / "current.mp3"
+    current.parent.mkdir()
+    current.write_bytes(b"audio")
+    with sqlite3.connect(path) as conn:
+        conn.execute("INSERT INTO tracks VALUES (1, ?, 'current.mp3')", (str(current),))
+    content = content.replace("{root}", str(root))
+    export = root / "exports" / name
+    export.parent.mkdir()
+    export.write_text(content, encoding="utf-8")
+    before = hashlib.sha256(export.read_bytes()).hexdigest()
+    payload = client.get("/api/reconciliation/reference-findings").json()
+    findings = [item for item in payload["findings"] if item["artifact_type"] == "export_file"]
+    assert len(findings) == 1
+    assert findings[0]["stale_value"] == "Inbox/missing.mp3"
+    assert findings[0]["blockers"] == ["export_regeneration_required"]
+    assert hashlib.sha256(export.read_bytes()).hexdigest() == before
+
+
+def test_export_failures_and_outside_paths_fail_closed(reference_client):
+    client, root, _path, _jobs = reference_client
+    exports = root / "exports"
+    exports.mkdir()
+    (exports / "broken.json").write_text("{", encoding="utf-8")
+    (exports / "unknown.bin").write_bytes(b"not an export")
+    (exports / "outside.m3u8").write_text("#EXTM3U\n/outside/song.mp3\n", encoding="utf-8")
+    payload = client.get("/api/reconciliation/reference-findings").json()
+    finding = _find(payload, "export_file")
+    assert finding["stale_value"] == "<outside selected root>"
+    assert "reference_outside_selected_root" in finding["blockers"]
+    assert any("malformed export" in warning for warning in payload["warnings"])
+    assert any("unsupported export" in warning for warning in payload["warnings"])
+
+
+def test_json_export_with_late_malformed_track_fails_closed(reference_client):
+    client, root, _path, _jobs = reference_client
+    export = root / "exports" / "late-malformed.json"
+    export.parent.mkdir()
+    export.write_text(
+        '{"format": "json", "tracks": ['
+        '{"path": "Inbox/missing.mp3"}, '
+        '{"path": null}'
+        ']}',
+        encoding="utf-8",
+    )
+    payload = client.get("/api/reconciliation/reference-findings").json()
     assert all(item["artifact_type"] != "export_file" for item in payload["findings"])
+    assert any("malformed JSON export track" in warning for warning in payload["warnings"])
+
+
+def test_filename_mode_export_current_reference_has_no_false_positive(reference_client):
+    client, root, path, _jobs = reference_client
+    current = root / "Library" / "current.mp3"
+    current.parent.mkdir()
+    current.write_bytes(b"audio")
+    with sqlite3.connect(path) as conn:
+        conn.execute("INSERT INTO tracks VALUES (1, ?, 'current.mp3')", (str(current),))
+    export = root / "exports" / "filename-mode.m3u8"
+    export.parent.mkdir()
+    export.write_text("#EXTM3U\n#EXTINF:-1,current\ncurrent.mp3\n", encoding="utf-8")
+    payload = client.get("/api/reconciliation/reference-findings").json()
+    assert all(item["artifact_type"] != "export_file" for item in payload["findings"])
+
+
+def test_unsupported_and_symlinked_exports_fail_closed(reference_client):
+    client, root, _path, _jobs = reference_client
+    exports = root / "exports"
+    exports.mkdir()
+    (exports / "unknown.json").write_text('{"path": "Inbox/missing.mp3"}', encoding="utf-8")
+    outside = root.parent / "unsafe-export.m3u8"
+    outside.write_text("#EXTM3U\nInbox/missing.mp3\n", encoding="utf-8")
+    (exports / "unsafe.m3u8").symlink_to(outside)
+    payload = client.get("/api/reconciliation/reference-findings").json()
+    assert payload["findings"] == []
+    assert any("unsupported JSON export schema" in warning for warning in payload["warnings"])
+    assert any("Skipped unsafe export path" in warning for warning in payload["warnings"])
 
 
 def test_already_current_references_have_no_false_positive(reference_client):

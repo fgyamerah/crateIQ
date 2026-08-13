@@ -105,6 +105,19 @@ def test_category_a_e_and_queue_stay_non_executable(tmp_path, monkeypatch):
     assert result["reasons"]["queue_schema_not_authorized_for_mutation"] == 1
 
 
+def test_category_d_export_action_stays_non_executable_on_validation(tmp_path, monkeypatch):
+    _client, root, _db = _setup(tmp_path, monkeypatch)
+    path = _write_plan(root, [
+        {"classification": "D", "action_type": "regenerate_export", "artifact_type": "export_file",
+         "artifact_identifier": "exports/crate.m3u8:3", "finding_ids": ["d"], "reference_field": "path",
+         "reason": "stale_export_path", "blockers": ["export_regeneration_required"],
+         "executable": False, "reversibility": "regenerable"},
+    ])
+    result = reference_plan_service.validate_plan(path)
+    assert result["invalid_actions"] == 0
+    assert result["non_executable_actions"] == 1
+
+
 def test_validation_rejects_wrong_kind_category_patch_and_unsafe_artifact_path(tmp_path, monkeypatch):
     _client, root, _db = _setup(tmp_path, monkeypatch)
     wrong_kind = _write_plan(root, [])
@@ -139,11 +152,38 @@ def test_proposal_consumes_findings_with_safe_category_semantics(tmp_path, monke
         {"finding_id": "c", "artifact_type": "enrichment_review_snapshot", "artifact_owner": "review", "artifact_identifier": "snapshot:1", "reference_field": "relative_path", "stale_value": "Inbox/old.mp3", "candidate_replacement": "Library/current.mp3", "evidence_source": "same_track_id_current_canonical_path", "classification": "C", "confidence": "HIGH", "blockers": ["snapshot_scoped_reference"], "recommended_disposition": "regenerate", "generated_at": "now"},
         {"finding_id": "a", "artifact_type": "historical_reference", "artifact_owner": "db.py", "artifact_identifier": "history:1", "reference_field": "filepath", "stale_value": "Inbox/old.mp3", "candidate_replacement": None, "evidence_source": "check", "classification": "A", "confidence": None, "blockers": ["immutable_historical_provenance"], "recommended_disposition": "ignore", "generated_at": "now"},
         {"finding_id": "e", "artifact_type": "waveform_job", "artifact_owner": "jobs", "artifact_identifier": "job:1", "reference_field": "track_id", "stale_value": 99, "candidate_replacement": None, "evidence_source": "check", "classification": "E", "confidence": None, "blockers": ["disposable_operational_state"], "recommended_disposition": "ignore", "generated_at": "now"},
+        {"finding_id": "d", "artifact_type": "export_file", "artifact_owner": "export_services", "artifact_identifier": "exports/crate.m3u8:3", "reference_field": "path", "stale_value": "Inbox/old.mp3", "candidate_replacement": None, "evidence_source": "bounded_export_path_check", "classification": "D", "confidence": None, "blockers": ["export_regeneration_required"], "recommended_disposition": "regenerate", "generated_at": "now"},
     ]
     monkeypatch.setattr(reference_plan_service.reference_findings_service, "get_reference_findings", lambda: {"summary": {}, "findings": findings})
     proposal = reference_plan_service.propose_plan()
     actions = proposal["planned_actions"]
     assert any(item["action_type"] == "update_path_reference" and item["executable"] for item in actions)
     assert any(item["action_type"] == "regenerate_review_snapshot" and not item["executable"] for item in actions)
+    review_action = next(item for item in actions if item["action_type"] == "regenerate_review_snapshot")
+    assert review_action["decision_preservation"] == "preserve_surviving_track_decisions"
+    assert any(item["action_type"] == "regenerate_export" and not item["executable"] for item in actions)
     assert all(not item["executable"] for item in actions if item["action_type"] in {"no_action_historical", "no_action_cache"})
     assert db_path.read_bytes() == before
+
+
+def test_category_c_notifications_preserve_snapshot_and_surviving_decisions(tmp_path, monkeypatch):
+    client, root, db_path = _setup(tmp_path, monkeypatch)
+    current = root / "Library" / "current.mp3"
+    current.parent.mkdir()
+    current.write_bytes(b"audio")
+    with sqlite3.connect(db_path) as conn:
+        conn.execute("INSERT INTO tracks VALUES (1, ?)", (str(current),))
+        conn.execute("CREATE TABLE enrichment_review_snapshots (id INTEGER PRIMARY KEY, items_json TEXT)")
+        conn.execute("CREATE TABLE enrichment_review_decisions (id INTEGER PRIMARY KEY, track_id INTEGER, decision TEXT)")
+        conn.execute("CREATE TABLE quality_review_findings (id INTEGER PRIMARY KEY, track_id INTEGER)")
+        conn.execute("INSERT INTO enrichment_review_snapshots VALUES (1, ?)", ('[{"track_id": 1, "path": "Inbox/old.mp3"}]',))
+        conn.execute("INSERT INTO enrichment_review_decisions VALUES (1, 1, 'keep')")
+        conn.execute("INSERT INTO quality_review_findings VALUES (1, 404)")
+    before = db_path.read_bytes()
+    proposal = client.post("/api/reconciliation/reference-plan/propose").json()
+    actions = proposal["planned_actions"]
+    assert any(action["action_type"] == "regenerate_review_snapshot" for action in actions)
+    assert any(action["action_type"] == "mark_durable_finding_unresolvable" for action in actions)
+    assert db_path.read_bytes() == before
+    with sqlite3.connect(db_path) as conn:
+        assert conn.execute("SELECT track_id, decision FROM enrichment_review_decisions").fetchall() == [(1, "keep")]
