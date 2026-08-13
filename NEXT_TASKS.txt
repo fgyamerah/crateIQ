@@ -31,13 +31,17 @@ P1 / HIGH
     Confirmed single-action apply/rollback is complete with exact plan/SHA
     binding, verified SQLite backups, and a dedicated reference ledger.
 
-[ ] Implement reconciliation reference-artifact Stage 4C field-provenance
-    track-ID rehome. It needs its own reviewed apply/rollback and collision
-    contract; do not broaden the completed Stage 4A/B filepath writer.
+[x] Implement reconciliation reference-artifact Stage 4C field-provenance
+    track-ID rehome with exact current-row revalidation, canonical target
+    proof from a unique exact local fingerprint/duration/algorithm match,
+    verified processed.db backup, collision fail-closed behavior, and
+    track_id-only rollback that rejects a reclaimed old ID.
 
-[ ] Implement reconciliation reference-artifact Stage 4D manual-crate
-    track-ID rehome. It operates on a separate database and needs its own
-    backup/rollback design and review.
+[x] Implement reconciliation reference-artifact Stage 4D manual-crate
+    track-ID rehome with a verified manual_crates.db backup, prepared
+    append-only ledger recovery state for the multi-DB sequence, exact-row
+    rollback, non-track-column preservation, and no missing-processed-db
+    initialization during recovery.
 
 [ ] Keep queue JSON/JSONL mutation deferred. No concrete queue schema
     contract has been approved, so queue findings remain non-executable.

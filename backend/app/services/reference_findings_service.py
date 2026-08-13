@@ -149,10 +149,22 @@ def _historical_path_replacements(rows: list[dict[str, Any]], root: Path,
 
 def _track_finding(row: dict[str, Any], *, artifact_type: str, owner: str,
                    identifier: str, field: str, category: str, disposition: str,
-                   track_ids: set[int], now: str) -> dict[str, Any] | None:
+                   track_ids: set[int], now: str,
+                   proven_replacements: dict[int, list[int]] | None = None) -> dict[str, Any] | None:
     value = row.get(field)
     if not isinstance(value, int) or value in track_ids:
         return None
+    # A stale numeric reference is not enough to infer a replacement.  The
+    # only automatic Stage 4C/D candidate is a unique current track with the
+    # same stored local fingerprint, duration, and algorithm as the orphaned
+    # ID.  This is a bounded, local proof; ambiguous and absent matches stay
+    # blocked for manual review.
+    candidates = (proven_replacements or {}).get(value, [])
+    if category == "B" and artifact_type in {"field_provenance", "crate_track"} and len(candidates) == 1:
+        return _finding(artifact_type=artifact_type, owner=owner, identifier=identifier, field=field,
+                        stale=value, candidate=candidates[0], confidence="HIGH",
+                        evidence="proven_replacement", category=category,
+                        disposition=disposition, now=now, blockers=[])
     blockers = ["orphaned_track_id"]
     if category == "A":
         blockers.insert(0, "immutable_historical_provenance")
@@ -161,6 +173,45 @@ def _track_finding(row: dict[str, Any], *, artifact_type: str, owner: str,
     return _finding(artifact_type=artifact_type, owner=owner, identifier=identifier, field=field,
                     stale=value, evidence="canonical_tracks_id_lookup", category=category,
                     disposition=disposition, now=now, blockers=blockers)
+
+
+def _proven_track_replacements(rows: list[dict[str, Any]], *, current_track_ids: set[int],
+                               canonical_track_ids: set[int]) -> dict[int, list[int]]:
+    """Return unique current IDs with an exact stored local identity match.
+
+    ``track_fingerprints`` is not a replacement primary-key system.  It can,
+    however, preserve the only local evidence linking an orphaned numeric ID
+    to a recreated canonical row.  Require every identity component and a
+    single safe canonical target; anything less remains unresolved.
+    """
+    by_identity: dict[tuple[str, float, str], list[int]] = {}
+    for row in rows:
+        track_id = row.get("track_id")
+        fingerprint = row.get("fingerprint")
+        duration = row.get("duration_sec")
+        algorithm = row.get("algorithm")
+        if (
+            not isinstance(track_id, int)
+            or isinstance(track_id, bool)
+            or not isinstance(fingerprint, str)
+            or not fingerprint
+            or not isinstance(duration, (int, float))
+            or isinstance(duration, bool)
+            or not isinstance(algorithm, str)
+            or not algorithm
+        ):
+            continue
+        by_identity.setdefault((fingerprint, float(duration), algorithm), []).append(track_id)
+
+    replacements: dict[int, list[int]] = {}
+    for ids in by_identity.values():
+        current = sorted({track_id for track_id in ids if track_id in current_track_ids and track_id in canonical_track_ids})
+        if len(current) != 1:
+            continue
+        for orphan_id in ids:
+            if orphan_id not in current_track_ids:
+                replacements[orphan_id] = current
+    return replacements
 
 
 def _cached_path_finding(row: dict[str, Any], *, artifact_type: str, owner: str,
@@ -353,8 +404,10 @@ def get_reference_findings() -> dict[str, Any]:
     findings: list[dict[str, Any]] = []
     db_path = library_db_path(root)
     track_ids: set[int] = set()
+    canonical_track_ids: set[int] = set()
     current_paths: dict[int, str] = {}
     historical_path_replacements: dict[str, list[str]] = {}
+    proven_track_replacements: dict[int, list[int]] = {}
 
     processed_db_ready = False
     if db_path.is_file():
@@ -369,9 +422,22 @@ def get_reference_findings() -> dict[str, Any]:
                         relative for relative, exists in (_safe_path(row.get("filepath"), root) for row in tracks)
                         if relative is not None and exists
                     }
+                    for row in tracks:
+                        track_id = row.get("id")
+                        try:
+                            canonical_path = assert_path_under_root(str(row.get("filepath") or ""), root)
+                        except ValueError:
+                            continue
+                        if isinstance(track_id, int) and not isinstance(track_id, bool) and canonical_path.is_file():
+                            canonical_track_ids.add(track_id)
                     if "track_history" in tables and {"filepath", "original_path"} <= _columns(conn, "track_history"):
                         historical_path_replacements = _historical_path_replacements(
                             list(_rows(conn, "track_history")), root, canonical_track_paths,
+                        )
+                    if "track_fingerprints" in tables and {"track_id", "fingerprint", "duration_sec", "algorithm"} <= _columns(conn, "track_fingerprints"):
+                        proven_track_replacements = _proven_track_replacements(
+                            list(_rows(conn, "track_fingerprints")), current_track_ids=track_ids,
+                            canonical_track_ids=canonical_track_ids,
                         )
                     processed_db_ready = True
                 else:
@@ -422,7 +488,8 @@ def get_reference_findings() -> dict[str, Any]:
                         category = "B" if row.get("is_current") else "A"
                         finding = _track_finding(row, artifact_type="field_provenance", owner="field_provenance_service.py",
                             identifier=f"field_provenance:{row.get('id', '<row>')}", field="track_id", category=category,
-                            disposition="manual_review" if category == "B" else "ignore", track_ids=track_ids, now=now)
+                            disposition="manual_review" if category == "B" else "ignore", track_ids=track_ids, now=now,
+                            proven_replacements=proven_track_replacements)
                         if finding:
                             findings.append(finding)
                 blob_specs = (("enrichment_review_snapshots", "enrichment_review_snapshot", "enrichment_review_service.py", "items_json"),
@@ -449,7 +516,8 @@ def get_reference_findings() -> dict[str, Any]:
                     for row in _rows(conn, "manual_crate_tracks"):
                         finding = _track_finding(row, artifact_type="crate_track", owner="crate_db.py",
                             identifier=f"manual_crate_tracks:{row.get('crate_id')}:{row.get('track_id')}", field="track_id",
-                            category="B", disposition="manual_review", track_ids=track_ids, now=now)
+                            category="B", disposition="manual_review", track_ids=track_ids, now=now,
+                            proven_replacements=proven_track_replacements)
                         if finding:
                             findings.append(finding)
         except sqlite3.Error as exc:

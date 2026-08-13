@@ -2,6 +2,35 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-13] — Reconciliation track-ID writers (Stage 4C/D)
+
+- Added confirmed, single-action apply and verified rollback for current
+  `field_provenance.track_id` and `manual_crate_tracks.track_id` rehomes.
+  Both revalidate exact row identity, orphaned old ID, canonical replacement
+  track/path, and complete non-reference row state; only `track_id` changes.
+- Field provenance fails closed on current-row unique-index collisions.
+  Manual crates use a separately verified `manual_crates.db` backup and a
+  prepared append-only ledger record so a multi-database finalization failure
+  is explicit and recoverable. Reacquired writer locking revalidates the
+  replacement before the crate write, and writer-locked recovery proves
+  whether the crate transaction committed before finalizing or closing the
+  prepared record.
+- A regenerated plan cannot bypass an unresolved manual-crate prepare for
+  the same root, crate row, old track ID, and new track ID: recovery closes
+  that transition first, while only the originating plan may report its
+  recovered success. Legacy Stage 4A/B rollback writers now apply the
+  additive ledger-column migration before appending their rollback record.
+- Stage 1 now proposes these rehomes only for one safe canonical track with
+  an exact stored local fingerprint, duration, and algorithm match to the
+  orphaned ID. Apply rejects a missing `processed.db` before recovery can
+  open it, and rollback refuses an old ID that a canonical track has since
+  reclaimed.
+- Files affected: reference apply/plan services, focused reconciliation
+  writer tests, task/context design documentation.
+- Migration notes: additive lazy ledger columns distinguish processed.db from
+  manual_crates.db backup provenance. Queue JSON/JSONL mutation remains
+  unauthorized and deferred.
+
 [2026-08-12] — Reference writer safety corrections
 
 - Made Stage 1 produce executable cue/playlist path candidates only when

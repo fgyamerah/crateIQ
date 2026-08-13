@@ -239,7 +239,7 @@ Service map (`backend/app/services/`), current primary surfaces:
   `POST /api/reconciliation/reference-apply/preview`, a one-action,
   read-only revalidation against an exact plan byte snapshot (including its
   SHA-256), the fresh bounded detector, artifact pre-state, canonical target,
-  and applicable collision checks. Completed Stage 4A/B adds only confirmed,
+  and applicable collision checks. Completed Stage 4A/B adds confirmed,
   one-action `cue_points.filepath` and `set_playlist_tracks.filepath` writes.
   Apply binds the exact plan path/ID/Stage-3 SHA-256, repeats eligibility and
   row checks under SQLite's writer transaction, creates a hash-verified
@@ -251,8 +251,24 @@ Service map (`backend/app/services/`), current primary surfaces:
   a root-relative reference rolls back exactly as it was stored. Failed apply
   attempts remove their unledgered backups. Its dedicated rollback verifies the
   original backup/hash and exact live after-state before restoring only
-  `filepath`, then appends a child ledger row. Stage 4C field-provenance and
-  Stage 4D manual-crate writers, plus all queue JSON/JSONL mutation, remain
+  `filepath`, then appends a child ledger row. Completed Stage 4C/D extends
+  that reviewed surface to current `field_provenance.track_id` and
+  `manual_crate_tracks.track_id`: exact row/non-track-column pre-state,
+  orphaned old-ID and canonical replacement checks are required; provenance
+  collisions and crate membership collisions fail closed. Stage 1 creates a
+  candidate only for a unique safe canonical track with an exact stored local
+  fingerprint, duration, and algorithm match to the orphaned ID; rollback
+  also refuses an old ID reclaimed by a canonical track. Manual-crate actions
+  reject a missing processed DB before recovery opens a writer connection and
+  use a verified `manual_crates.db`
+  backup and durable prepared ledger state before its separate-DB write, so a
+  writer-locked retry can prove and finalize the committed state, or record
+  that the crate transaction never committed, rather than silently reporting
+  a partial success. Recovery is also bound to the physical crate-row
+  transition across regenerated plan artifacts; a different plan cannot claim
+  its successful mutation. Rollback writers lazily add reference-ledger
+  backup provenance columns before appending rollback history, preserving
+  legacy Stage 4A/B records. Queue JSON/JSONL mutation remains explicitly unauthorized and
   deferred. Neither reference writer mutates tracks, media, tags, BPM, key,
   cue content, review state, caches, exports, or the DB-only reconciliation
   ledger. Filesystem

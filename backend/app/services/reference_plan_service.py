@@ -244,7 +244,7 @@ def propose_plan() -> dict[str, Any]:
             "planned_actions": actions,
             "limitations": ["Plan only; no reference artifact, database, queue, cache, review state, media file, tag, BPM, key, or cue content was changed.",
                             "Only explicit deterministic Stage 1 candidates are eligible for future review; no replacement search was performed.",
-                            "Stage 4A/B supports only cue_points.filepath and set_playlist_tracks.filepath after preview; queue JSON/JSONL mutation and Stage 4C/D track-ID writers remain unauthorized."],
+                            "Confirmed Stage 4 supports only cue_points.filepath, set_playlist_tracks.filepath, current field_provenance.track_id, and manual_crate_tracks.track_id after preview; queue JSON/JSONL mutation remains unauthorized."],
             "message": "Plan only; no mutation has occurred."}
     directory = _plan_dir(root, create=True)
     filename = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S%fZ}_reference_artifact_plan_{plan_id[-8:]}.json"
@@ -345,6 +345,8 @@ def _action_structure_issue(action: dict[str, Any]) -> str | None:
             return "missing_old_track_id"
         if not isinstance(action.get("new_track_id"), int) or isinstance(action["new_track_id"], bool):
             return "missing_new_track_id"
+        if action["old_track_id"] == action["new_track_id"]:
+            return "track_rehome_requires_distinct_ids"
         if not isinstance(action.get("identity_evidence"), str) or action["identity_evidence"] not in _REHOME_EVIDENCE:
             return "missing_or_unproven_identity_evidence"
     if kind == "regenerate_review_snapshot":

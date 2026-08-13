@@ -1,6 +1,6 @@
 # Reconciliation Reference-Artifact Design
 
-**Status:** Stages 1–3 and Stage 4A/B implemented; Stage 4C/D and queue mutation remain future work
+**Status:** Stages 1–4D implemented; queue JSON/JSONL mutation remains explicitly unauthorized/deferred
 **Date:** 2026-08-11
 **Scope:** detecting, classifying, planning, reviewing, and correcting stale queue/reference artifacts
 
@@ -818,9 +818,49 @@ backup hash/integrity and exact current after-state, restores only
 `filepath`, and appends a child rollback ledger row. Minimal read-only list
 and detail endpoints expose this dedicated ledger.
 
-Stage 4C (`field_provenance.track_id`), Stage 4D
-(`manual_crate_tracks.track_id`), and all queue JSON/JSONL mutation remain
-explicitly deferred; no queue schema mutation is authorized.
+#### Completed Stage 4C/D (2026-08-12)
+
+The same confirmed one-action endpoint now also supports current
+`field_provenance.track_id` and `manual_crate_tracks.track_id` rehomes. Each
+apply revalidates the exact planned row identity, orphaned old ID, canonical
+replacement track/path, and the complete non-reference pre-state. Provenance
+rehomes additionally fail closed on the partial-current-index conflict
+(`target_current_provenance_collision`); manual crates fail closed when the
+replacement is already present in the same crate.
+
+Stage 1 proposes a track-ID rehome only when the orphaned ID has a stored
+local fingerprint, duration, and algorithm that exactly match one safe
+current canonical track. This is bounded local evidence for a reviewed
+`proven_replacement`; absent or ambiguous matches remain blocked for manual
+review. Rollback also refuses to restore the old ID if a canonical `tracks`
+row has since reclaimed it.
+
+Only `track_id` changes. Full row before/after values are ledgered and
+rollback verifies the exact live after-state before restoring just that
+column. `processed.db` actions use a verified processed-db backup; manual
+crate actions use a separately verified `manual_crates.db` backup, with the
+backup database and prepared ledger ownership recorded in the append-only
+reference ledger. Because these are separate SQLite files, a durable prepared
+ledger record is committed before the crate write. On retry, recovery proves
+whether the crate commit occurred: it finalizes the exact applied state, or
+records that the crate transaction never committed. The crate and ledger
+writer locks are held across recovery proof and terminal ledger append, so
+the proven state cannot drift before recovery is finalized. Apply reacquires
+the ledger writer lock and revalidates while the crate writer lock remains
+held before changing the crate row. An interruption is thus never silently
+reported as success. A missing `processed.db` is rejected before manual-crate
+recovery opens any SQLite writer connection, so a blocked request cannot
+initialize an empty database.
+
+Prepared manual-crate recovery is also keyed by the selected root and exact
+physical crate transition (crate row, old track ID, and new track ID), not
+only its plan artifact. A regenerated plan must close that unresolved state
+first and cannot report another plan's applied result. The ledger's additive
+backup-provenance columns are migrated on rollback writer paths before a
+rollback child is appended, preserving pre-Stage-4C/D ledger history.
+
+All queue JSON/JSONL mutation remains explicitly deferred; no queue schema
+mutation is authorized.
 
 ### Stage 5 — Review state regeneration notifications (Category C)
 

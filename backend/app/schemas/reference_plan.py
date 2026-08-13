@@ -94,4 +94,6 @@ class ReferenceLedgerEntry(BaseModel):
     after_values_json: str
     backup_path: str
     backup_sha256: str
+    backup_database: str = "processed.db"
+    backup_owner_ledger_id: str | None = None
     status: str

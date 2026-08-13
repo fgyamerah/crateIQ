@@ -9,7 +9,7 @@ Reconciliation ledger, findings, and plan routes.
   GET  /api/reconciliation/quarantine            — read-only quarantine listing
   POST /api/reconciliation/plans/propose         — propose (never apply) a reconciliation plan
   POST /api/reconciliation/reference-apply/preview — read-only reference-artifact revalidation
-  POST /api/reconciliation/reference-apply         — confirmed single reference filepath update
+  POST /api/reconciliation/reference-apply         — confirmed single reference filepath or track-ID update
   GET  /api/reconciliation/reference-ledger        — list reference-artifact ledger entries
   GET  /api/reconciliation/reference-ledger/{id}   — get one reference-artifact ledger entry
   POST /api/reconciliation/reference-ledger/{id}/rollback — verified reference rollback
