@@ -401,7 +401,12 @@ users see.
 scripts/crateiq-local-services.sh start-library-local
 ```
 
-The configured root is stored locally in ignored `.run/local/crateiq.env`.
+The configured root is stored locally in ignored `.run/local/crateiq.env` and
+is authoritative for every normal configured-library start, including
+sourced-shell aliases and restart. This makes the Settings restart command
+apply the saved workspace even when the launching shell still has an older
+`CRATEIQ_LIBRARY_ROOT` export. If no Settings-managed root has been saved,
+`CRATEIQ_LIBRARY_ROOT` remains the startup fallback.
 
 Pointing crateIQ directly at an existing library (no managed
 Inbox/Library/Quarantine folders) remains supported, but the managed

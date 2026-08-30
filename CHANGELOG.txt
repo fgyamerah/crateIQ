@@ -2,6 +2,23 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-13] — Settings workspace restart precedence
+
+- Made the Settings-managed `CRATEIQ_LIBRARY_ROOT` in
+  `.run/local/crateiq.env` authoritative for every normal configured-library
+  selection, including sourced-shell aliases and restart, so a stale
+  inherited shell value cannot keep the previous workspace active.
+- Preserved demo-profile behavior and environment-root fallback when no
+  Settings-managed root exists; no library initialization, migration, or
+  file operation occurs while resolving startup configuration.
+- Added dry-run regression coverage for stale/no inherited roots, Settings
+  changes after sourcing, literal-only configuration parsing, demo startup,
+  and configured local/LAN/restart paths.
+- Files affected: local service helper, focused startup tests, README,
+  project context, and this changelog.
+- Migration notes: none. Restart using the Settings-provided command now
+  reliably activates the workspace saved in Settings.
+
 [2026-08-13] — P1 closeout duplicate-resolution apply design and roadmap rebaseline
 
 - Completed the implementation-ready design for future duplicate-resolution

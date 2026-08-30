@@ -35,19 +35,32 @@ CRATEIQ_HEALTH_URL="${CRATEIQ_BACKEND_URL}/api/health"
 CRATEIQ_READINESS_URL="${CRATEIQ_BACKEND_URL}/api/runtime/readiness"
 CRATEIQ_LOCAL_ENV_FILE="$CRATEIQ_RUN_DIR/local/crateiq.env"
 
-# Read only the managed, non-secret root setting.  Do not source this file:
+# Read only the managed, non-secret root setting. Do not source this file:
 # Settings must never turn a local configuration file into executable shell.
+# A Settings-managed root is authoritative for normal configured-library
+# startup, so a stale inherited CRATEIQ_LIBRARY_ROOT cannot preserve a
+# restart-required state. Environment roots remain a fallback when Settings
+# has not saved a root yet. Keep the inherited value separate: configured
+# starts replace CRATEIQ_LIBRARY_ROOT with their active root.
+if [[ -z "${_CRATEIQ_INHERITED_LIBRARY_ROOT+x}" ]]; then
+    _CRATEIQ_INHERITED_LIBRARY_ROOT="${CRATEIQ_LIBRARY_ROOT:-}"
+fi
+
 _crateiq_load_local_library_root() {
     local line configured_root=""
-    [[ -z "${CRATEIQ_LIBRARY_ROOT:-}" && -f "$CRATEIQ_LOCAL_ENV_FILE" ]] || return 0
+    [[ -f "$CRATEIQ_LOCAL_ENV_FILE" ]] || return 0
     while IFS= read -r line || [[ -n "$line" ]]; do
         [[ "$line" == CRATEIQ_LIBRARY_ROOT=* ]] || continue
         configured_root="${line#CRATEIQ_LIBRARY_ROOT=}"
     done < "$CRATEIQ_LOCAL_ENV_FILE"
-    [[ -n "$configured_root" ]] && CRATEIQ_LIBRARY_ROOT="$configured_root"
+    [[ -n "$configured_root" ]] && printf '%s' "$configured_root"
 }
 
-_crateiq_load_local_library_root
+_crateiq_refresh_library_root() {
+    local configured_root
+    configured_root="$(_crateiq_load_local_library_root)"
+    CRATEIQ_LIBRARY_ROOT="${configured_root:-$_CRATEIQ_INHERITED_LIBRARY_ROOT}"
+}
 
 _crateiq_pid_from_file() {
     local pid_file="$1" pid
@@ -282,6 +295,7 @@ _crateiq_profile() {
         demo) CRATEIQ_DB_LABEL="Demo library"; CRATEIQ_LIBRARY_ROOT="$CRATEIQ_ROOT/.run/demo-library" ;;
         library)
             CRATEIQ_DB_LABEL="Configured library"
+            _crateiq_refresh_library_root
             CRATEIQ_LIBRARY_ROOT="${CRATEIQ_LIBRARY_ROOT:-${DJ_MUSIC_ROOT:-}}"
             [[ -n "$CRATEIQ_LIBRARY_ROOT" ]] || { echo "CrateIQ: set CRATEIQ_LIBRARY_ROOT for the library profile." >&2; return 1; }
             ;;

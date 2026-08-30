@@ -72,7 +72,11 @@ supported under Settings -> Advanced as a secondary compatibility mode.
 * Frontend: port 5175
 * Launch/status: `scripts/crateiq-local-services.sh {start|stop|restart|status|logs}`
   (also `start-demo-local`, `start-library-local` variants); PID files/logs
-  under `.run/` (gitignored)
+  under `.run/` (gitignored). For configured-library starts, the
+  Settings-managed `.run/local/crateiq.env` root is authoritative at every
+  configured-library selection (including sourced aliases and restart); an
+  inherited `CRATEIQ_LIBRARY_ROOT` is only a fallback when that file has no
+  saved root.
 * Frontend: <http://127.0.0.1:5175>; backend health:
   <http://127.0.0.1:8020/api/health>; runtime readiness:
   <http://127.0.0.1:8020/api/runtime/readiness>
