@@ -268,13 +268,15 @@ _crateiq_tail_one() {
 
 _crateiq_usage() {
     cat <<EOF
-Usage: crateiq-local-services.sh {start|start-demo-local|start-demo-lan|start-library-local|start-library-lan|stop|restart|status|logs|back-logs|front-logs}
+Usage: crateiq-local-services.sh {start|start-demo-local|start-demo-lan|start-library-local|start-library-lan|start-launcher-local|start-launcher-lan|stop|restart|status|logs|back-logs|front-logs}
 
   start       interactively select the demo/configured library and LAN/local access
   start-demo-local / start-demo-lan
               start the safe demo library with local-only or LAN access
   start-library-local / start-library-lan
               start CRATEIQ_LIBRARY_ROOT with local-only or LAN access
+  start-launcher-local / start-launcher-lan
+              start the rootless launcher bootstrap (no library is selected)
   stop        stop CrateIQ services only (never LedgerIQ on 5173/8000)
   restart     stop then interactively select/start a profile
   status [--short]
@@ -299,6 +301,12 @@ _crateiq_profile() {
             CRATEIQ_LIBRARY_ROOT="${CRATEIQ_LIBRARY_ROOT:-${DJ_MUSIC_ROOT:-}}"
             [[ -n "$CRATEIQ_LIBRARY_ROOT" ]] || { echo "CrateIQ: set CRATEIQ_LIBRARY_ROOT for the library profile." >&2; return 1; }
             ;;
+        launcher)
+            CRATEIQ_DB_LABEL="Rootless launcher bootstrap"
+            CRATEIQ_LIBRARY_ROOT=""
+            CRATEIQ_DB_PATH=""
+            return 0
+            ;;
         *) echo "CrateIQ: unknown database profile: $1" >&2; return 1 ;;
     esac
     CRATEIQ_LIBRARY_ROOT="$(realpath -m "$CRATEIQ_LIBRARY_ROOT")"
@@ -317,7 +325,7 @@ _crateiq_detect_lan_ip() {
 _crateiq_start_profile() {
     local profile="$1" mode="$2" host
     _crateiq_profile "$profile" || return 1
-    [[ -f "$CRATEIQ_DB_PATH" ]] || {
+    [[ "$profile" == "launcher" || -f "$CRATEIQ_DB_PATH" ]] || {
         echo "CrateIQ: configured library is not initialized." >&2
         echo "Open Settings and click Initialize Library, then restart CrateIQ." >&2
         echo "Expected local index: $CRATEIQ_DB_PATH" >&2
@@ -331,14 +339,22 @@ _crateiq_start_profile() {
     CRATEIQ_BACKEND_URL="http://${host:-0.0.0.0}:$CRATEIQ_BACKEND_PORT"
     CRATEIQ_FRONTEND_URL="http://${host:-0.0.0.0}:$CRATEIQ_FRONTEND_PORT"
     _crateiq_check_start_requirements || return 1
-    echo "CrateIQ: database $CRATEIQ_DB_LABEL ($CRATEIQ_DB_PATH)"
+    if [[ "$profile" == "launcher" ]]; then
+        echo "CrateIQ: $CRATEIQ_DB_LABEL (no library selected)"
+    else
+        echo "CrateIQ: database $CRATEIQ_DB_LABEL ($CRATEIQ_DB_PATH)"
+    fi
     echo "Access: $CRATEIQ_ACCESS_LABEL"
     [[ -n "$host" || "$mode" != lan ]] || echo "LAN address not detected; listening on all interfaces. Run: ip -4 addr show scope global"
     [[ "${CRATEIQ_DRY_RUN:-0}" == 1 ]] && { echo "Dry run: backend $CRATEIQ_BIND:8020; frontend $CRATEIQ_BIND:5175"; return 0; }
     mkdir -p "$CRATEIQ_RUN_DIR"
     (
         cd "$CRATEIQ_ROOT" || exit 1
-        nohup env CRATEIQ_LIBRARY_ROOT="$CRATEIQ_LIBRARY_ROOT" DJ_MUSIC_ROOT="$CRATEIQ_LIBRARY_ROOT" CORS_ORIGINS="http://127.0.0.1:5175,http://localhost:5175${host:+,http://$host:5175}" .venv/bin/python -m uvicorn backend.app.main:app --host "$CRATEIQ_BIND" --port "$CRATEIQ_BACKEND_PORT" --reload --app-dir . > "$CRATEIQ_BACKEND_LOG" 2>&1 &
+        if [[ "$profile" == "launcher" ]]; then
+            nohup env -u CRATEIQ_LIBRARY_ROOT -u CRATEMINDAI_LIBRARY_ROOT -u DJ_MUSIC_ROOT CRATEIQ_LAUNCH_ACCESS_MODE="$mode" CORS_ORIGINS="http://127.0.0.1:5175,http://localhost:5175${host:+,http://$host:5175}" .venv/bin/python -m uvicorn backend.app.main:app --host "$CRATEIQ_BIND" --port "$CRATEIQ_BACKEND_PORT" --reload --app-dir . > "$CRATEIQ_BACKEND_LOG" 2>&1 &
+        else
+            nohup env CRATEIQ_LIBRARY_ROOT="$CRATEIQ_LIBRARY_ROOT" DJ_MUSIC_ROOT="$CRATEIQ_LIBRARY_ROOT" CRATEIQ_LAUNCH_ACCESS_MODE="$mode" CORS_ORIGINS="http://127.0.0.1:5175,http://localhost:5175${host:+,http://$host:5175}" .venv/bin/python -m uvicorn backend.app.main:app --host "$CRATEIQ_BIND" --port "$CRATEIQ_BACKEND_PORT" --reload --app-dir . > "$CRATEIQ_BACKEND_LOG" 2>&1 &
+        fi
         echo $! > "$CRATEIQ_BACKEND_PID_FILE"
     )
     (
@@ -378,6 +394,8 @@ _crateiq_dispatch() {
         start-demo-lan) _crateiq_start_profile demo lan ;;
         start-library-local) _crateiq_start_profile library local ;;
         start-library-lan) _crateiq_start_profile library lan ;;
+        start-launcher-local) _crateiq_start_profile launcher local ;;
+        start-launcher-lan) _crateiq_start_profile launcher lan ;;
         stop)       _crateiq_stop ;;
         restart)    _crateiq_stop; _crateiq_interactive_start && _crateiq_status ;;
         status)     _crateiq_status "${2:-}" ;;
@@ -396,6 +414,8 @@ if [[ "${BASH_SOURCE[0]:-}" != "$0" ]]; then
     crateiq_start_demo_lan() { _crateiq_dispatch start-demo-lan; }
     crateiq_start_library_local() { _crateiq_dispatch start-library-local; }
     crateiq_start_library_lan() { _crateiq_dispatch start-library-lan; }
+    crateiq_start_launcher_local() { _crateiq_dispatch start-launcher-local; }
+    crateiq_start_launcher_lan() { _crateiq_dispatch start-launcher-lan; }
     crateiq_stop() { _crateiq_dispatch stop; }
     crateiq_stop_backend() { _crateiq_stop_service backend "$CRATEIQ_BACKEND_PID_FILE" "$CRATEIQ_BACKEND_PORT" _crateiq_pid_is_backend; }
     crateiq_stop_frontend() { _crateiq_stop_service frontend "$CRATEIQ_FRONTEND_PID_FILE" "$CRATEIQ_FRONTEND_PORT" _crateiq_pid_is_frontend; }
@@ -411,7 +431,7 @@ if [[ "${BASH_SOURCE[0]:-}" != "$0" ]]; then
     crate_back_logs()  { _crateiq_dispatch back-logs "$@"; }
     crate_front_logs() { _crateiq_dispatch front-logs "$@"; }
     if [[ "${1:-}" == "--aliases" ]]; then
-        echo "CrateIQ shell functions installed: crateiq_start crateiq_start_demo_local crateiq_start_demo_lan crateiq_start_library_local crateiq_start_library_lan crateiq_stop crateiq_status crateiq_logs crateiq_logs_backend crateiq_logs_frontend crate_start crate_stop crate_restart crate_status crate_logs crate_back_logs crate_front_logs"
+        echo "CrateIQ shell functions installed: crateiq_start crateiq_start_demo_local crateiq_start_demo_lan crateiq_start_library_local crateiq_start_library_lan crateiq_start_launcher_local crateiq_start_launcher_lan crateiq_stop crateiq_status crateiq_logs crateiq_logs_backend crateiq_logs_frontend crate_start crate_stop crate_restart crate_status crate_logs crate_back_logs crate_front_logs"
     fi
 else
     _crateiq_dispatch "$@"

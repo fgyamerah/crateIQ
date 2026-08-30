@@ -33,9 +33,9 @@ def _toolkit_version() -> str:
 
 class HealthResponse(BaseModel):
     ok: bool
-    library_root: str
-    db_path: str
-    db_exists: bool
+    library_root: Optional[str] = None
+    db_path: Optional[str] = None
+    db_exists: bool = False
 
 
 class StatsResponse(BaseModel):
@@ -54,12 +54,17 @@ class VersionResponse(BaseModel):
     pipeline_py: str
 
 
-@router.get("/health", response_model=HealthResponse)
+@router.get("/health", response_model=HealthResponse, response_model_exclude_none=True)
 async def health() -> HealthResponse:
+    try:
+        root = read_only_service.get_library_root()
+        db_path = read_only_service.get_db_path()
+    except RuntimeError:
+        return HealthResponse(ok=True)
     return HealthResponse(
         ok=True,
-        library_root=str(read_only_service.get_library_root()),
-        db_path=str(read_only_service.get_db_path()),
+        library_root=str(root),
+        db_path=str(db_path),
         db_exists=read_only_service.db_exists(),
     )
 

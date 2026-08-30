@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-08-11
+**Updated:** 2026-08-30
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -71,12 +71,32 @@ supported under Settings -> Advanced as a secondary compatibility mode.
 * Backend: port 8020
 * Frontend: port 5175
 * Launch/status: `scripts/crateiq-local-services.sh {start|stop|restart|status|logs}`
-  (also `start-demo-local`, `start-library-local` variants); PID files/logs
+  (also `start-demo-local`, `start-library-local`, and rootless
+  `start-launcher-local` variants); PID files/logs
   under `.run/` (gitignored). For configured-library starts, the
   Settings-managed `.run/local/crateiq.env` root is authoritative at every
   configured-library selection (including sourced aliases and restart); an
   inherited `CRATEIQ_LIBRARY_ROOT` is only a fallback when that file has no
   saved root.
+* Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
+  `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
+  launcher returns the latest four). Its classifier is strictly read-only and
+  distinguishes `managed_workspace`, `legacy_direct_library`, `empty_folder`,
+  `external_music_folder`, `malformed_or_unsafe`, and `missing`. Legacy
+  detection uses immutable SQLite inspection and requires the supported
+  historical CrateIQ schema core (`tracks`, `track_history`, `pipeline_runs`,
+  and `duplicate_groups` with their characteristic pipeline columns), not a
+  generic `tracks` table. Rootless
+  startup exposes only launcher/health/version/readiness endpoints and does
+  not open library indexes or run library recovery. There is no active-library
+  switching, supervisor handoff, jobs namespacing, or launcher UI yet.
+  Rootless compatibility seeding uses only the Settings-managed saved root;
+  the launcher clears inherited root state before booting rootless, while
+  inherited `CRATEIQ_LIBRARY_ROOT` remains a configured-library startup
+  fallback. Candidate host-path inspection is enabled only by local-only
+  server startup state and is disabled for all LAN-mode requests (including
+  loopback Vite proxy traffic); unauthenticated LAN clients must not browse
+  server filesystem paths.
 * Frontend: <http://127.0.0.1:5175>; backend health:
   <http://127.0.0.1:8020/api/health>; runtime readiness:
   <http://127.0.0.1:8020/api/runtime/readiness>

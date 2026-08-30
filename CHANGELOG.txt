@@ -2,6 +2,48 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-30] — Harden launcher foundation review corrections
+
+- Disabled arbitrary host-path classification for every LAN-mode backend
+  process using explicit server startup state, so Vite's loopback API proxy
+  cannot bypass the local-only boundary; forwarded headers are not trusted.
+- Changed Legacy Direct Library inspection to immutable SQLite reads, which
+  cannot create WAL shared-memory files, checkpoint, recover, migrate, or
+  otherwise alter a candidate. WAL-only evidence that immutable SQLite cannot
+  see is conservatively rejected.
+- Limited rootless compatibility seeding to the Settings-managed saved root.
+  The launcher clears inherited root variables before rootless startup;
+  inherited `CRATEIQ_LIBRARY_ROOT` remains a configured-library fallback.
+- Strengthened legacy recognition to require the stable historical CrateIQ
+  schema core (`tracks`, `track_history`, `pipeline_runs`, and
+  `duplicate_groups` plus characteristic columns), rejecting generic
+  tracks-only databases.
+- Files affected: launcher route/service, local service helper, focused
+  launcher/startup tests, README, project context, task list, and changelog.
+- Migration notes: no library contents, markers, `processed.db`, WAL, or SHM
+  files are modified; switching, supervisor handoff, jobs namespacing,
+  create-library UI, visual changes, and authentication remain out of scope.
+
+[2026-08-30] — Multi-library launcher foundation (Checkpoint 1B.1)
+
+- Added the installation-scoped, atomic `.run/local/library_registry.json`
+  schema-v1 registry (maximum 16 canonical roots; launcher returns four),
+  compatibility seeding from the Settings-managed root, and a read-only,
+  fail-closed library classifier.
+- Added rootless launcher bootstrap startup plus read-only launcher registry,
+  classification, and current-library APIs. Rootless processes do not open
+  library indexes, run recovery, initialize a default library, or expose
+  library-scoped routes.
+- Preserved `.run/local/crateiq.env` as the Settings precedence and future
+  supervisor handoff file. Candidate host-path classification is restricted
+  to the local operator because unauthenticated LAN clients cannot safely
+  administer arbitrary server filesystem paths.
+- Files affected: launcher registry/classifier service and routes, backend
+  startup guard, local service helper, focused tests, and current docs.
+- Migration notes: no library contents, markers, or `processed.db` files are
+  modified. Active-library switching, supervisor handoff, jobs namespacing,
+  and launcher UI remain future work.
+
 [2026-08-13] — Settings workspace restart precedence
 
 - Made the Settings-managed `CRATEIQ_LIBRARY_ROOT` in

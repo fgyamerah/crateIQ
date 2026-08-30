@@ -27,7 +27,11 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-(none currently open)
+[ ] Checkpoint 1B.2 — add the controlled fresh-backend supervisor handoff
+    and library/operation isolation needed to activate a selected recent
+    library. Do not implement in-process root switching; retain the rootless
+    launcher foundation and the LAN-disabled/local-start-only host-path
+    administration boundary.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM
@@ -65,6 +69,23 @@ P2 / MEDIUM
 [ ] Credential-backed provider coverage still needs a deliberate review for
     the currently active credential-gated providers once real credentials
     are configured. Keep legacy provider names out of the active set.
+
+----------------------------------------------------------------------
+P3 / LOW
+----------------------------------------------------------------------
+
+[ ] Launcher registry writes remain an unlocked read-modify-replace sequence;
+    concurrent explicit writers could lose recency history. Do not broaden
+    the current launcher checkpoint without a defined cross-process locking
+    contract.
+
+[ ] The bounded launcher audio scan returns once it finds audio, so a later
+    unsafe symlink may not be reported as malformed. Keep this conservative
+    scan-order edge case separate from the classification safety contract.
+
+[ ] `tests/test_workspace_service.py` has a pre-existing import-order
+    circular-import failure when run standalone (also present on origin/main
+    commit 171c2ca); it is not a Checkpoint 1B.1 regression.
 
 [ ] Resolve the FastAPI/Starlette `TestClient` HTTP-client deprecation and
     plan the current frontend build-tool upgrade path without changing the

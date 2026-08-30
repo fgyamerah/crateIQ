@@ -378,6 +378,28 @@ For a non-interactive demo launch:
 scripts/crateiq-local-services.sh start-demo-local
 ```
 
+For the rootless launcher bootstrap (no library selected, with only the
+installation-scoped launcher API available), use:
+
+```bash
+scripts/crateiq-local-services.sh start-launcher-local
+```
+
+The launcher registry is local to this installation at
+`.run/local/library_registry.json`. It records at most 16 canonical recent
+roots and shows the latest four; it stores no music, indexes, or credentials.
+It can safely identify a valid managed workspace, a real indexed Legacy Direct
+Library, an empty folder, an external music folder, a missing path, or a
+malformed/unsafe candidate without changing the candidate. Legacy evidence is
+conservative: immutable SQLite inspection must find the historical CrateIQ
+`tracks`, `track_history`, `pipeline_runs`, and `duplicate_groups` schema core,
+including their characteristic pipeline columns; a generic `tracks` table is
+not enough. Library activation and in-process switching are not implemented
+yet. Candidate host-path classification is available only when the service was
+started in **Local only** mode. LAN startup disables it for every request,
+including requests proxied by Vite over loopback, because CrateIQ has no auth
+and LAN clients must not be given arbitrary server filesystem administration.
+
 **First-run flow for your own music:**
 
 1. Start crateIQ.
@@ -407,6 +429,12 @@ sourced-shell aliases and restart. This makes the Settings restart command
 apply the saved workspace even when the launching shell still has an older
 `CRATEIQ_LIBRARY_ROOT` export. If no Settings-managed root has been saved,
 `CRATEIQ_LIBRARY_ROOT` remains the startup fallback.
+During rootless launcher startup, only that Settings-managed saved root may be
+added to recents, without moving, initializing, scanning, or altering the
+library. The launcher intentionally clears inherited root variables before it
+boots rootless; inherited `CRATEIQ_LIBRARY_ROOT` remains only a
+configured-library startup fallback. The compatibility file remains the future
+supervisor's active-root handoff input.
 
 Pointing crateIQ directly at an existing library (no managed
 Inbox/Library/Quarantine folders) remains supported, but the managed

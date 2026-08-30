@@ -221,6 +221,35 @@ def test_sourced_function_uses_inherited_root_when_settings_file_is_missing(
     assert f"Configured library ({inherited_root / 'logs' / 'processed.db'})" in result.stdout
 
 
+def test_rootless_launcher_start_does_not_require_configured_library(
+    tmp_path, free_tcp_port, free_tcp_port_factory,
+):
+    service_root = _service_root(tmp_path, None)
+
+    result = _dry_run(
+        service_root, "start-launcher-local", free_tcp_port, free_tcp_port_factory(),
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Rootless launcher bootstrap (no library selected)" in result.stdout
+    assert "expected local index" not in result.stdout.lower()
+
+
+def test_rootless_launcher_start_ignores_inherited_library_root(
+    tmp_path, free_tcp_port, free_tcp_port_factory,
+):
+    inherited_root = _library_root(tmp_path, "inherited-library")
+    service_root = _service_root(tmp_path, None)
+
+    result = _dry_run(
+        service_root, "start-launcher-local", free_tcp_port, free_tcp_port_factory(), inherited_root,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert "Rootless launcher bootstrap (no library selected)" in result.stdout
+    assert str(inherited_root) not in result.stdout
+
+
 @pytest.mark.parametrize(
     "saved_env",
     ["CRATEIQ_LIBRARY_ROOT=", "UNRELATED=value\n# CRATEIQ_LIBRARY_ROOT=ignored"],
