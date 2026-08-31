@@ -32,7 +32,10 @@ P1 / HIGH
     parent-death protection, socket ownership, phase validation, candidate
     port exclusion, and private identity verification) is complete.
 
-[ ] Checkpoint 1B.2B — add the controlled fresh-backend handoff and
+[~] Checkpoint 1B.2B — 1B.2B-1 data isolation is implemented pending
+    targeted re-review after correcting waveform shutdown/startup/cache,
+    reference-findings, switch-blocker, and background ownership gaps; 1B.2B-2
+    must add the controlled fresh-backend handoff and
     library/operation isolation needed to activate a selected recent library.
     Keep the rootless launcher foundation and the LAN-disabled/local-start-only
     host-path administration boundary. Specifically required: `jobs.db` `library_key` migration,

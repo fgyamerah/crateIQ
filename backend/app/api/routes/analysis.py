@@ -366,9 +366,13 @@ async def reanalyze(body: ReanalyzeRequest) -> JobResponse:
     job = job_service.create_job("analyze-missing", args)
 
     try:
-        toolkit_runner.create_and_start_job(job.id, "analyze-missing", args)
+        toolkit_runner.create_and_start_job(
+            job.id, "analyze-missing", args, library_key=job.library_key
+        )
     except Exception as exc:
-        job_service.mark_finished(job.id, status="failed", exit_code=-1)
+        job_service.mark_finished(
+            job.id, status="failed", exit_code=-1, library_key=job.library_key
+        )
         log.exception("Failed to start reanalyze job %s: %s", job.id, exc)
         raise HTTPException(status_code=500, detail=f"Failed to start job: {exc}")
 

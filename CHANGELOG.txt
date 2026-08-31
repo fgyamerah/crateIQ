@@ -2,6 +2,33 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-31] — Correct Checkpoint 1B.2B-1 waveform/background isolation
+
+- Bound waveform scheduler shutdown, startup reconciliation, retention, cache
+  eviction, worker source resolution, and operation polling to the immutable
+  originating library key/root; foreign and legacy NULL state is not adopted.
+- Scoped BPM/tag-write reference findings and added active
+  `waveform_track_state` rows to conservative persisted switch blockers.
+- Added immutable `library_key` ownership to generic jobs and threaded it
+  through toolkit/rsync background status, PID, progress, and failure updates.
+- Added two-library regression coverage. No handoff, promotion, activation API,
+  registry recency update, frontend launcher, LAN change, or live-service action.
+
+[2026-08-31] — Add library-key operation isolation (Checkpoint 1B.2B-1)
+
+- Centralized the established canonical waveform-root digest as `library_key`;
+  rootless instances have no key and legacy waveform `library_id` remains a
+  compatibility column for that same value.
+- Migrated jobs, BPM anomalies, and persisted operation histories with scoped
+  indexes; current-library reads/recovery no longer adopt NULL legacy rows.
+  Active NULL and foreign-key rows are reported fail-closed by the persisted
+  switch-blocker inspection.
+- Namespaced global tag backups/job logs by key and changed publish destination
+  settings to conservative per-library v2 records; legacy global data is
+  preserved but is not automatically attributed.
+- No handoff, candidate promotion, activation API, registry update, frontend
+  launcher, or in-process root switch was implemented.
+
 [2026-08-31] — Close final Checkpoint 1B.2A safety blockers
 
 - Rejected multiply-linked activation and supervisor lock files before any

@@ -49,10 +49,14 @@ async def submit_job(body: JobCreate) -> JobResponse:
     job = job_service.create_job(body.command, body.args)
 
     try:
-        toolkit_runner.create_and_start_job(job.id, job.command, job.args)
+        toolkit_runner.create_and_start_job(
+            job.id, job.command, job.args, library_key=job.library_key
+        )
     except Exception as exc:
         # The job record exists in the DB; mark it failed so it's visible.
-        job_service.mark_finished(job.id, status="failed", exit_code=-1)
+        job_service.mark_finished(
+            job.id, status="failed", exit_code=-1, library_key=job.library_key
+        )
         log.exception("Failed to start job %s: %s", job.id, exc)
         raise HTTPException(status_code=500, detail=f"Failed to start job: {exc}")
 
@@ -184,7 +188,12 @@ async def cancel_job(job_id: str) -> CancelResponse:
     else:
         # Process not in registry: may have just finished, or was pending
         # and hadn't spawned yet.  Mark it cancelled in the DB directly.
-        job_service.mark_finished(job_id, status="cancelled", exit_code=-15)
+        job_service.mark_finished(
+            job_id,
+            status="cancelled",
+            exit_code=-15,
+            library_key=job.library_key,
+        )
         return CancelResponse(
             job_id  = job_id,
             success = True,

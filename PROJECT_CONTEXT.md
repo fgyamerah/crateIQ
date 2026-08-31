@@ -107,9 +107,23 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   fails closed. This checkpoint does not perform a handoff or library switch.
   The central process-local operation-admission gate atomically drains the
   bounded durable-create sections for Process All, single/bulk waveform,
-  BPM/key analysis, and exact BPM retry only; 1B.2B must complete the
-  remaining operation adapters and all storage isolation before switching is
-  safe.
+  BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the
+  data-side prerequisite: one canonical SHA-256 library key (the established
+  waveform identity; `waveform_*.library_id` is a compatibility column name),
+  keyed jobs/operation history and recovery, conservative legacy NULL-row
+  handling, and persisted switch-blocker inspection. Waveform scheduler
+  shutdown, startup/cache maintenance, worker source resolution, generic
+  background job updates, and bulk waveform polling retain their immutable
+  originating key (and root where source resolution requires it). Reference
+  findings filter BPM/tag-write operational rows by that exact key, and active
+  queued/processing `waveform_track_state` rows participate in switch blockers.
+  Terminal NULL rows are
+  excluded from ordinary views; active NULL and known active rows for another
+  key fail closed. Global tag backups/job logs are namespaced by key and
+  publish destinations are v2 per-key records; a legacy global destination is
+  preserved but never inferred. There is still no handoff, activation endpoint,
+  registry recency update, frontend launcher, or in-process root switching;
+  1B.2B-2 may consume this persisted blocker only with the drained gate.
 * Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
   `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
   launcher returns the latest four). Its classifier is strictly read-only and
@@ -121,7 +135,7 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   generic `tracks` table. Rootless
   startup exposes only launcher/health/version/readiness endpoints and does
   not open library indexes or run library recovery. There is no active-library
-  switching, jobs namespacing, or launcher UI yet. Checkpoint 1B.2A adds only
+  switching or launcher UI yet. Checkpoint 1B.2A adds only
   the supervisor/candidate-verification foundation; it does not expose
   activation or change the running root.
   Rootless compatibility seeding uses only the Settings-managed saved root;

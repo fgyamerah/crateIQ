@@ -33,7 +33,7 @@ import time
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from ..core.config import JOBS_LOG_DIR, RSYNC_BIN
+from ..core.config import RSYNC_BIN
 from ..schemas.sync import (
     SyncConfigResponse,
     SyncFileChange,
@@ -336,9 +336,11 @@ def start_sync_job(
     cmd = _build_rsync_cmd(src, dst, allow_delete=allow_delete)
     job = job_service.create_job("ssd-sync", _cmd_args(src, allow_delete))
 
-    log_path = JOBS_LOG_DIR / f"{job.id}.log"
+    if not job.log_path:
+        raise RuntimeError("Scoped job record is unavailable for rsync execution.")
+    log_path = Path(job.log_path)
     task = asyncio.create_task(
-        _run_rsync_job(job.id, cmd, log_path)
+        _run_rsync_job(job.id, cmd, log_path, job.library_key)
     )
     _running_tasks.add(task)
     task.add_done_callback(_running_tasks.discard)
@@ -371,14 +373,16 @@ def _build_rsync_cmd(src: Path, dst: Path, allow_delete: bool) -> List[str]:
 # Background runner (parses progress, writes to log file and DB)
 # ---------------------------------------------------------------------------
 
-async def _run_rsync_job(job_id: str, cmd: List[str], log_path: Path) -> None:
+async def _run_rsync_job(
+    job_id: str, cmd: List[str], log_path: Path, library_key: str
+) -> None:
     """
     Run rsync in the background.
     Reads stdout line by line, writes to the log file, and parses rsync
     --info=progress2 lines to update the job's progress fields in the DB.
     """
     log_path.parent.mkdir(parents=True, exist_ok=True)
-    job_service.mark_running(job_id)
+    job_service.mark_running(job_id, library_key=library_key)
     log.info("rsync job=%s  starting: %s", job_id, " ".join(cmd))
 
     exit_code: int = -1
@@ -392,7 +396,7 @@ async def _run_rsync_job(job_id: str, cmd: List[str], log_path: Path) -> None:
         )
 
         process_registry.register(job_id, proc)
-        job_service.mark_pid(job_id, proc.pid)
+        job_service.mark_pid(job_id, proc.pid, library_key=library_key)
 
         with open(log_path, "wb") as log_fh:
             assert proc.stdout is not None
@@ -411,7 +415,9 @@ async def _run_rsync_job(job_id: str, cmd: List[str], log_path: Path) -> None:
                     now = time.monotonic()
                     if now - last_progress_write >= _PROGRESS_THROTTLE_S:
                         current, total, pct, msg = parsed
-                        job_service.mark_progress(job_id, current, total, pct, msg)
+                        job_service.mark_progress(
+                            job_id, current, total, pct, msg, library_key=library_key
+                        )
                         last_progress_write = now
 
         exit_code = await proc.wait()
@@ -436,9 +442,11 @@ async def _run_rsync_job(job_id: str, cmd: List[str], log_path: Path) -> None:
             pass
     finally:
         process_registry.unregister(job_id)
-        job_service.clear_pid(job_id)
+        job_service.clear_pid(job_id, library_key=library_key)
 
-    job_service.mark_finished(job_id, status=status, exit_code=exit_code)
+    job_service.mark_finished(
+        job_id, status=status, exit_code=exit_code, library_key=library_key
+    )
 
 
 def _parse_progress_line(

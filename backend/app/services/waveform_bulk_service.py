@@ -236,6 +236,7 @@ async def _submit_and_await(track_id: int, scheduler, *, durable_scope: Operatio
 
     job = result.job
     assert job is not None  # queued/deduplicated always carry a job
+    library_id = job.library_id
 
     if result.outcome == "queued" and not scheduler.enqueue(job.id):
         waveform_job_service.finish_job_unsuccessfully(
@@ -243,15 +244,16 @@ async def _submit_and_await(track_id: int, scheduler, *, durable_scope: Operatio
             job_status=waveform_job_service.WaveformJobStatus.FAILED,
             track_status=WaveformArtifactStatus.FAILED,
             error_code="WAVEFORM_QUEUE_FULL",
+            library_key=library_id,
         )
         return "failed"
     # 'deduplicated' means an active job for this exact generation already
     # exists (started by this feeder or another caller); just observe it.
 
-    current = waveform_job_service.get_job(job.id)
+    current = waveform_job_service.get_job(job.id, library_key=library_id)
     while current is not None and current.status not in _TERMINAL_JOB_STATUSES:
         await asyncio.sleep(_JOB_POLL_INTERVAL_SECONDS)
-        current = waveform_job_service.get_job(job.id)
+        current = waveform_job_service.get_job(job.id, library_key=library_id)
 
     if current is None:
         return "failed"
@@ -278,11 +280,14 @@ async def _run_generate_missing(
             waveform_operations_service.finish_operation(
                 operation_id, status="failed", processed=0, generated=0, skipped=0, failed=0,
                 remaining_missing=len(candidates), error_reason=blocker.code,
+                library_key=library_id,
             )
             return
         scheduler = get_scheduler()
         for track_id in candidates:
-            if waveform_operations_service.is_cancel_requested(operation_id):
+            if waveform_operations_service.is_cancel_requested(
+                operation_id, library_key=library_id
+            ):
                 cancelled = True
                 break
 
@@ -303,17 +308,20 @@ async def _run_generate_missing(
             processed += 1
             waveform_operations_service.update_progress(
                 operation_id, processed=processed, generated=generated, skipped=skipped, failed=failed,
+                library_key=library_id,
             )
     except WaveformRuntimeError as exc:
         waveform_operations_service.finish_operation(
             operation_id, status="failed", processed=0, generated=0, skipped=0, failed=0,
             remaining_missing=len(candidates), error_reason=exc.code,
+            library_key=library_id,
         )
         return
     except asyncio.CancelledError:
         waveform_operations_service.finish_operation(
             operation_id, status="cancelled", processed=processed, generated=generated,
             skipped=skipped, failed=failed, remaining_missing=None, error_reason="task_cancelled",
+            library_key=library_id,
         )
         raise
     except Exception as exc:  # pragma: no cover - a bulk run must never crash the process
@@ -321,6 +329,7 @@ async def _run_generate_missing(
         waveform_operations_service.finish_operation(
             operation_id, status="failed", processed=processed, generated=generated,
             skipped=skipped, failed=failed, remaining_missing=None, error_reason=str(exc),
+            library_key=library_id,
         )
         return
     finally:
@@ -333,6 +342,7 @@ async def _run_generate_missing(
         status="cancelled" if cancelled else "completed",
         processed=processed, generated=generated, skipped=skipped, failed=failed,
         remaining_missing=remaining,
+        library_key=library_id,
     )
     log.info(
         "bulk waveform generation finished operation_id=%s status=%s processed=%d generated=%d skipped=%d failed=%d",

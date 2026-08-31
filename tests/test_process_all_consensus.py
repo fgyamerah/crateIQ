@@ -615,3 +615,153 @@ async def test_process_all_real_analysis_descendant_finishes_before_concurrent_d
         ).fetchone()[0]
     assert bpm_before >= 1
     assert after == before and bpm_after == bpm_before
+
+
+# ---------------------------------------------------------------------------
+# 1B.2B-1: Process All cancellation after execution starts with A→B context switch
+# ---------------------------------------------------------------------------
+
+@async_test
+async def test_process_all_cancelled_after_start_with_library_switch_releases_scope_and_terminalizes_origin(
+    tmp_path, monkeypatch
+):
+    """
+    Real A→B regression test for 1B.2B-1 cancellation defect.
+
+    1. Create/select Library A.
+    2. Start real Process All through its actual service entrypoint.
+    3. Wait until the Process All coroutine has definitely begun execution.
+    4. Change surrounding/current selected-library context to Library B.
+    5. Cancel the running Process All task via explicit asyncio.Task.cancel().
+    6. Await the task and assert asyncio.CancelledError is propagated.
+    7. Assert:
+       - A parent operation is terminal/cancelled;
+       - A parent is NOT RUNNING;
+       - B has not been modified;
+       - operation scope is released;
+       - begin_draining() can complete afterward.
+    """
+    import sqlite3
+    from backend.app.services import operation_admission_gate as gate_module
+    from backend.app.core import db as backend_db
+    from backend.app.core.library_key import current_library_key
+
+    # --- Setup Library A ---
+    root_a = tmp_path / "A"
+    root_a.mkdir(parents=True)
+    from backend.app.services import workspace_service as svc
+    svc.configure_workspace(root_a)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root_a))
+    monkeypatch.delenv("CRATEIQ_BACKEND_LIBRARY_KEY", raising=False)
+    key_a = current_library_key()
+
+    # Seed Inbox tracks in Library A so Process All has work to do
+    def _seed_inbox_track(root: Path, filename: str) -> int:
+        inbox_file = root / "Inbox" / filename
+        inbox_file.parent.mkdir(parents=True, exist_ok=True)
+        inbox_file.write_bytes(b"fake-audio")
+        with sqlite3.connect(root / "logs" / "processed.db") as conn:
+            conn.execute(
+                """INSERT INTO tracks (filepath, filename, artist, title, genre, status,
+                                        processed_at, pipeline_ver, storage_zone)
+                       VALUES (?, ?, '', '', '', 'pending', '2026-01-01T00:00:00Z', 'test', 'INBOX')""",
+                (str(inbox_file), filename),
+            )
+            return conn.execute("SELECT last_insert_rowid()").fetchone()[0]
+
+    _seed_inbox_track(root_a, "track1.mp3")
+    _seed_inbox_track(root_a, "track2.mp3")
+
+    # Use a fresh admission gate for this test
+    gate = gate_module.OperationAdmissionGate()
+    monkeypatch.setattr(gate_module, "operation_admission_gate", gate)
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+
+    # Initialize jobs DB
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
+
+    # Track when the coroutine actually starts executing
+    execution_started = asyncio.Event()
+    # Capture the actual asyncio.Task created for the running Process All coroutine
+    captured_task: list[asyncio.Task] = []
+    real_create_task = asyncio.create_task
+    original_run_process_all = preparation_service.run_process_all
+
+    def capture_create_task(coro):
+        task = real_create_task(coro)
+        captured_task.append(task)
+        return task
+
+    monkeypatch.setattr(preparation_service.asyncio, "create_task", capture_create_task)
+
+    async def tracking_run_process_all(operation_id, root, track_ids, *, durable_scope, on_started):
+        if on_started:
+            on_started()
+        execution_started.set()
+        await original_run_process_all(operation_id, root, track_ids, durable_scope=durable_scope, on_started=None)
+
+    monkeypatch.setattr(preparation_service, "run_process_all", tracking_run_process_all)
+
+    # --- Start Process All on Library A ---
+    started = preparation_service.start_process_all(root_a, confirm=True)
+    operation_id = started["operation_id"]
+
+    # Wait until the coroutine has definitely begun execution
+    await asyncio.wait_for(execution_started.wait(), timeout=2.0)
+
+    # Verify parent operation exists and is RUNNING under Library A
+    parent_a = preparation_service.preparation_operations_service.get_operation(operation_id)
+    assert parent_a is not None, "Parent operation must exist"
+    assert parent_a["status"] == "running", "Parent must be RUNNING before cancellation"
+
+    # Verify scope is active
+    assert gate.status()["active_operation_scopes"] == 1, "Scope must be active during execution"
+
+    # --- Switch context to Library B ---
+    root_b = tmp_path / "B"
+    root_b.mkdir(parents=True)
+    svc.configure_workspace(root_b)
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root_b))
+    monkeypatch.delenv("CRATEIQ_BACKEND_LIBRARY_KEY", raising=False)
+    key_b = current_library_key()
+    assert key_b != key_a, "Library keys must be distinct"
+
+    # Verify Library B has no preparation operations yet
+    ops_b = preparation_service.preparation_operations_service.list_recent()
+    assert ops_b == [], "Library B must have no operations initially"
+
+    # --- Cancel the running Process All task via explicit asyncio.Task.cancel() ---
+    assert captured_task, "Task must have been captured"
+    task = captured_task[0]
+    task.cancel()
+
+    # Await the task and assert asyncio.CancelledError is propagated
+    try:
+        await task
+        raise AssertionError("Expected asyncio.CancelledError to be raised")
+    except asyncio.CancelledError:
+        pass  # Expected
+
+    # --- Assertions ---
+    # 1. A parent operation is terminal/cancelled (query with Library A's key)
+    with backend_db.get_conn() as conn:
+        row = conn.execute(
+            "SELECT * FROM preparation_operations WHERE id = ? AND library_key = ?",
+            (operation_id, key_a)
+        ).fetchone()
+    assert row is not None, "Parent operation must still be retrievable under its originating library_key"
+    assert row["status"] == "cancelled", f"Parent must be cancelled, got {row['status']}"
+
+    # 2. A parent is NOT RUNNING
+    assert row["status"] != "running", "Parent must not remain RUNNING"
+
+    # 3. B has not been modified (no operations created in B)
+    ops_b = preparation_service.preparation_operations_service.list_recent()
+    assert ops_b == [], "Library B must remain untouched"
+
+    # 4. Operation scope is released
+    assert gate.status()["active_operation_scopes"] == 0, "Scope must be released after cancellation"
+
+    # 5. begin_draining() can complete afterward
+    await gate.begin_draining_async()

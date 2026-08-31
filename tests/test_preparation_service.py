@@ -47,7 +47,19 @@ def managed_root(tmp_path, monkeypatch):
     root = tmp_path / "managed"
     svc.configure_workspace(root)
     monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
     return root
+
+
+@pytest.fixture()
+def operation_jobs_db(tmp_path, monkeypatch):
+    """Keep direct operation-lifecycle tests on a migrated bound DB."""
+    root = tmp_path / "operation-library"
+    root.mkdir()
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
 
 
 # ---------------------------------------------------------------------------
@@ -342,7 +354,7 @@ async def test_run_process_all_analysis_stage_accepts_a_batch_larger_than_2000(m
 # preparation_operations_service lifecycle
 # ---------------------------------------------------------------------------
 
-def test_operation_lifecycle():
+def test_operation_lifecycle(operation_jobs_db):
     operation = preparation_operations_service.start_operation("clean_selected", track_count=5)
     assert preparation_operations_service.get_operation(operation["id"])["status"] == "running"
 
@@ -363,11 +375,11 @@ def test_operation_lifecycle():
     assert done["ready_count"] == 4
 
 
-def test_request_cancel_on_missing_operation_returns_none():
+def test_request_cancel_on_missing_operation_returns_none(operation_jobs_db):
     assert preparation_operations_service.request_cancel("does-not-exist") is None
 
 
-def test_recover_interrupted_operations_closes_running_rows():
+def test_recover_interrupted_operations_closes_running_rows(operation_jobs_db):
     operation = preparation_operations_service.start_operation("process_all", track_count=3)
     recovered = preparation_operations_service.recover_interrupted_operations()
     assert recovered == 1
@@ -376,7 +388,7 @@ def test_recover_interrupted_operations_closes_running_rows():
     assert saved["error_reason"] == "backend_restarted"
 
 
-def test_finish_operation_rejects_non_terminal_status():
+def test_finish_operation_rejects_non_terminal_status(operation_jobs_db):
     operation = preparation_operations_service.start_operation("process_all", track_count=1)
     with pytest.raises(ValueError):
         preparation_operations_service.finish_operation(

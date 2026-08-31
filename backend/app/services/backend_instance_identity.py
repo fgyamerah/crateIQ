@@ -1,18 +1,11 @@
 """Supervisor-provided backend identity used by local candidate verification."""
 from __future__ import annotations
 
-import hashlib
 import os
 import secrets
 from pathlib import Path
 
-
-def library_key_for_root(root: Path | None) -> str | None:
-    if root is None:
-        return None
-    # A stable non-secret installation-local identifier.  It is intentionally
-    # not a content fingerprint and never reads the music library.
-    return hashlib.sha256(str(root.resolve(strict=False)).encode("utf-8")).hexdigest()[:24]
+from ..core.library_key import library_key_for_root
 
 
 def current_backend_identity() -> dict[str, object] | None:

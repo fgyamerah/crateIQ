@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..core.db import get_conn
+from ..core.library_key import current_library_key
 
 _TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 _RESTART_ERROR_REASON = "backend_restarted"
@@ -41,12 +42,13 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
 def start_operation(operation_type: str, *, track_count: int) -> dict[str, Any]:
     operation_id = uuid.uuid4().hex
     now = _now()
+    library_key = current_library_key()
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO preparation_operations
-               (id, operation_type, status, track_count, created_at, started_at)
-               VALUES (?, ?, 'running', ?, ?, ?)""",
-            (operation_id, operation_type, track_count, now, now),
+               (id, operation_type, status, track_count, created_at, started_at, library_key)
+               VALUES (?, ?, 'running', ?, ?, ?, ?)""",
+            (operation_id, operation_type, track_count, now, now, library_key),
         )
     return {"id": operation_id}
 
@@ -61,15 +63,19 @@ def update_progress(
     ready_count: int,
     failed_count: int,
 ) -> None:
-    """Scoped to status='running' so a late update can never resurrect a closed row."""
+    """Scoped to status='running' so a late update can never resurrect a closed row.
+    Uses the originating library_key from the row, not the current context."""
     with get_conn() as conn:
+        row = conn.execute("SELECT library_key FROM preparation_operations WHERE id = ? AND status = 'running'", (operation_id,)).fetchone()
+        if row is None:
+            return
         conn.execute(
             """UPDATE preparation_operations
                SET cleaned_count = ?, enriched_count = ?, written_count = ?,
                    needs_review_count = ?, ready_count = ?, failed_count = ?
-               WHERE id = ? AND status = 'running'""",
+               WHERE id = ? AND status = 'running' AND library_key = ?""",
             (cleaned_count, enriched_count, written_count, needs_review_count,
-             ready_count, failed_count, operation_id),
+             ready_count, failed_count, operation_id, row["library_key"]),
         )
 
 
@@ -91,23 +97,31 @@ def finish_operation(
     payload = json.dumps(warnings[:_MAX_WARNINGS])
     reason = error_reason[:_MAX_ERROR_REASON_LEN] if error_reason else None
     with get_conn() as conn:
+        row = conn.execute("SELECT library_key FROM preparation_operations WHERE id = ?", (operation_id,)).fetchone()
+        if row is None:
+            return
         conn.execute(
             """UPDATE preparation_operations
                SET status = ?, cleaned_count = ?, enriched_count = ?, written_count = ?,
                    needs_review_count = ?, ready_count = ?, failed_count = ?,
                    warnings_json = ?, error_reason = ?, finished_at = ?
-               WHERE id = ?""",
+               WHERE id = ? AND library_key = ?""",
             (status, cleaned_count, enriched_count, written_count, needs_review_count,
-             ready_count, failed_count, payload, reason, _now(), operation_id),
+              ready_count, failed_count, payload, reason, _now(), operation_id, row["library_key"]),
         )
 
 
 def is_cancel_requested(operation_id: str) -> bool:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT cancel_requested FROM preparation_operations WHERE id = ?", (operation_id,)
+            "SELECT cancel_requested, library_key FROM preparation_operations WHERE id = ?", (operation_id,)
         ).fetchone()
-    return bool(row and row["cancel_requested"])
+        if row is None:
+            return False
+        row2 = conn.execute(
+            "SELECT cancel_requested FROM preparation_operations WHERE id = ? AND library_key = ?", (operation_id, row["library_key"])
+        ).fetchone()
+    return bool(row2 and row2["cancel_requested"])
 
 
 def request_cancel(operation_id: str) -> Optional[dict[str, Any]]:
@@ -115,38 +129,41 @@ def request_cancel(operation_id: str) -> Optional[dict[str, Any]]:
         row = conn.execute("SELECT * FROM preparation_operations WHERE id = ?", (operation_id,)).fetchone()
         if row is None:
             return None
+        library_key = row["library_key"]
         if row["status"] == "running":
             conn.execute(
-                "UPDATE preparation_operations SET cancel_requested = 1 WHERE id = ?", (operation_id,)
+                "UPDATE preparation_operations SET cancel_requested = 1 WHERE id = ? AND library_key = ?", (operation_id, library_key)
             )
-            row = conn.execute("SELECT * FROM preparation_operations WHERE id = ?", (operation_id,)).fetchone()
+            row = conn.execute("SELECT * FROM preparation_operations WHERE id = ? AND library_key = ?", (operation_id, library_key)).fetchone()
     return _row_to_dict(row)
 
 
 def get_operation(operation_id: str) -> Optional[dict[str, Any]]:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM preparation_operations WHERE id = ?", (operation_id,)).fetchone()
+        row = conn.execute("SELECT * FROM preparation_operations WHERE id = ? AND library_key = ?", (operation_id, current_library_key())).fetchone()
     return _row_to_dict(row) if row else None
 
 
 def list_recent(limit: int = 20) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM preparation_operations ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM preparation_operations WHERE library_key = ? ORDER BY created_at DESC, id DESC LIMIT ?", (current_library_key(), limit)
         ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
 
 def recover_interrupted_operations() -> int:
-    """Close out operations left 'running' by a previous backend process."""
+    """Close out operations left 'running' by a previous backend process.
+    Only recovers operations for the current library context."""
     now = _now()
     with get_conn() as conn:
-        rows = conn.execute("SELECT id FROM preparation_operations WHERE status = 'running'").fetchall()
+        key = current_library_key()
+        rows = conn.execute("SELECT id FROM preparation_operations WHERE status = 'running' AND library_key = ?", (key,)).fetchall()
         for row in rows:
             conn.execute(
                 """UPDATE preparation_operations
                    SET status = 'failed', error_reason = ?, finished_at = ?
-                   WHERE id = ?""",
-                (_RESTART_ERROR_REASON, now, row["id"]),
+                   WHERE id = ? AND library_key = ?""",
+                (_RESTART_ERROR_REASON, now, row["id"], key),
             )
     return len(rows)

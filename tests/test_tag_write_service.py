@@ -184,7 +184,10 @@ def test_apply_writes_only_approved_fields_preserves_unrelated_tags_and_audio(en
     operation = svc.get_operation(result["operation_id"])
     assert operation["status"] == "completed"
     manifest = operation["backup_manifest"][0]
-    backup_path = svc.TAG_WRITE_BACKUP_DIR / result["operation_id"] / manifest["backup_filename"]
+    backup_path = (
+        svc.TAG_WRITE_BACKUP_DIR / svc.current_library_key() /
+        result["operation_id"] / manifest["backup_filename"]
+    )
     assert backup_path.is_file()
     assert backup_path.read_bytes() == original_backup_source_bytes, "backup must be byte-for-byte the pre-write file"
     assert svc._sha256(backup_path) == manifest["original_sha256"]
@@ -266,7 +269,8 @@ def test_recover_interrupted_operations_marks_running_as_failed(env):
     from backend.app.core.db import get_conn
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO tag_write_operations (id, status, track_count, created_at, started_at) VALUES ('stuck-op', 'running', 1, '2026-01-01', '2026-01-01')"
+                "INSERT INTO tag_write_operations (id, status, track_count, created_at, started_at, library_key) VALUES ('stuck-op', 'running', 1, '2026-01-01', '2026-01-01', ?)",
+                (svc.current_library_key(),),
         )
 
     recovered = svc.recover_interrupted_operations()

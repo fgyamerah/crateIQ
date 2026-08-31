@@ -13,8 +13,11 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from pathlib import Path
 from typing import Awaitable, Callable
 
+from ..core.library_key import current_library_key
+from ..core.library_root import selected_library_root
 from ..core.waveform_config import load_waveform_config
 from ..core.waveform_process import ProcessSupervisor
 from ..models.waveform import WaveformArtifactStatus, WaveformJobStatus
@@ -57,10 +60,14 @@ class WaveformScheduler:
         max_concurrency: int = 1,
         max_queue_size: int = 32,
         runner: JobRunner | None = None,
+        library_key: str | None = None,
+        library_root: Path | None = None,
     ) -> None:
         self.max_concurrency = max(1, min(max_concurrency, 2))
         self.max_queue_size = max_queue_size
-        self._runner: JobRunner = runner or run_generation_job
+        self.library_key = library_key or current_library_key()
+        self.library_root = (library_root or selected_library_root()).resolve(strict=False)
+        self._runner: JobRunner = runner or self._run_generation_job
         self._queue: asyncio.Queue[str] = asyncio.Queue(maxsize=max_queue_size)
         self._workers: list[asyncio.Task] = []
         self._tokens: dict[str, CancellationToken] = {}
@@ -121,7 +128,7 @@ class WaveformScheduler:
         self._tokens.clear()
 
         try:
-            closed = waveform_job_service.fail_active_jobs_for_shutdown()
+            closed = waveform_job_service.fail_active_jobs_for_shutdown(self.library_key)
         except Exception:  # pragma: no cover - shutdown must never raise
             log.exception("waveform shutdown job reconciliation failed")
             closed = 0
@@ -171,7 +178,7 @@ class WaveformScheduler:
 
     async def _execute(self, job_id: str) -> None:
         # A job cancelled while queued is never started.
-        claimed = waveform_job_service.claim_job(job_id)
+        claimed = waveform_job_service.claim_job(job_id, library_key=self.library_key)
         if claimed is None:
             log.info("waveform job skipped job_id=%s reason=not_claimable", job_id)
             return
@@ -195,6 +202,7 @@ class WaveformScheduler:
                     job_status=WaveformJobStatus.FAILED,
                     track_status=WaveformArtifactStatus.FAILED,
                     error_code=waveform_job_service.ERROR_WORKER_FAILED,
+                    library_key=self.library_key,
                 )
             except Exception:  # pragma: no cover - never mask the original fault
                 log.exception("waveform job failure bookkeeping failed job_id=%s", job_id)
@@ -205,13 +213,26 @@ class WaveformScheduler:
                 job_id, claimed.track_id, (time.monotonic() - started) * 1000,
             )
 
+    async def _run_generation_job(
+        self, job_id: str, token: CancellationToken
+    ) -> None:
+        await run_generation_job(
+            job_id, token, self.library_key, library_root=self.library_root
+        )
+
 
 # ---------------------------------------------------------------------------
 # Production runner
 # ---------------------------------------------------------------------------
 
 
-async def run_generation_job(job_id: str, token: CancellationToken) -> None:
+async def run_generation_job(
+    job_id: str,
+    token: CancellationToken,
+    library_key: str | None = None,
+    *,
+    library_root: Path | None = None,
+) -> None:
     """Execute one claimed job: extract, publish atomically, then persist ready.
 
     Cancellation cutoff: the last cancellation check happens immediately
@@ -219,21 +240,23 @@ async def run_generation_job(job_id: str, token: CancellationToken) -> None:
     publishes nothing; one arriving after finds a succeeded job and is a
     deterministic no-op. No DB transaction is held across extraction.
     """
-    job = waveform_job_service.get_job(job_id)
+    key = library_key or current_library_key()
+    job = waveform_job_service.get_job(job_id, library_key=key)
     if job is None:  # pragma: no cover - claimed rows exist
         return
-    generation_key = waveform_job_service.get_job_generation_key(job_id)
+    generation_key = waveform_job_service.get_job_generation_key(job_id, library_key=key)
     if not generation_key:
         waveform_job_service.finish_job_unsuccessfully(
             job_id,
             job_status=WaveformJobStatus.FAILED,
             track_status=WaveformArtifactStatus.FAILED,
             error_code="WAVEFORM_MISSING_GENERATION_KEY",
+            library_key=key,
         )
         return
 
     try:
-        _config, validated_cache = resolve_cache_runtime()
+        _config, validated_cache = resolve_cache_runtime(library_root=library_root)
         ffmpeg_bin, ffprobe_bin = resolve_extractor_binaries(validated_cache)
     except WaveformRuntimeError as exc:
         waveform_job_service.finish_job_unsuccessfully(
@@ -241,18 +264,24 @@ async def run_generation_job(job_id: str, token: CancellationToken) -> None:
             job_status=WaveformJobStatus.FAILED,
             track_status=WaveformArtifactStatus.FAILED,
             error_code=exc.code,
+            library_key=key,
         )
         return
 
     try:
-        source = track_source_service.validated_track_source(job.track_id)
-        snapshot = track_source_service.source_stat_snapshot(job.track_id)
+        source = track_source_service.validated_track_source(
+            job.track_id, library_root=library_root
+        )
+        snapshot = track_source_service.source_stat_snapshot(
+            job.track_id, library_root=library_root
+        )
     except (LookupError, ValueError, OSError):
         waveform_job_service.finish_job_unsuccessfully(
             job_id,
             job_status=WaveformJobStatus.FAILED,
             track_status=WaveformArtifactStatus.FAILED,
             error_code="WAVEFORM_SOURCE_UNAVAILABLE",
+            library_key=key,
         )
         return
 
@@ -266,16 +295,19 @@ async def run_generation_job(job_id: str, token: CancellationToken) -> None:
             cancellation=token,
         )
     except WaveformExtractionError as exc:
-        _finish_extraction_failure(job_id, exc)
+        _finish_extraction_failure(job_id, exc, key)
         return
 
     # Final cancellation cutoff before anything becomes visible.
-    if token.is_cancelled or waveform_job_service.is_cancel_requested(job_id):
+    if token.is_cancelled or waveform_job_service.is_cancel_requested(
+        job_id, library_key=key
+    ):
         waveform_job_service.finish_job_unsuccessfully(
             job_id,
             job_status=WaveformJobStatus.CANCELLED,
             track_status=WaveformArtifactStatus.CANCELLED,
             error_code=None,
+            library_key=key,
         )
         return
 
@@ -295,6 +327,7 @@ async def run_generation_job(job_id: str, token: CancellationToken) -> None:
             job_status=WaveformJobStatus.FAILED,
             track_status=WaveformArtifactStatus.FAILED,
             error_code="WAVEFORM_CACHE_WRITE_FAILED",
+            library_key=key,
         )
         return
 
@@ -314,18 +347,22 @@ async def run_generation_job(job_id: str, token: CancellationToken) -> None:
             validated_cache,
             max_cache_bytes=_config.max_cache_bytes,
             protect_generation_key=generation_key,
+            library_key=key,
         )
     except Exception:  # pragma: no cover - cleanup is best-effort
         log.exception("waveform cache cleanup after publication failed job_id=%s", job_id)
 
 
-def _finish_extraction_failure(job_id: str, exc: WaveformExtractionError) -> None:
+def _finish_extraction_failure(
+    job_id: str, exc: WaveformExtractionError, library_key: str
+) -> None:
     cancelled = exc.code is WaveformExtractionErrorCode.CANCELLED
     waveform_job_service.finish_job_unsuccessfully(
         job_id,
         job_status=WaveformJobStatus.CANCELLED if cancelled else WaveformJobStatus.FAILED,
         track_status=_FAILURE_TRACK_STATUS.get(exc.code, WaveformArtifactStatus.FAILED),
         error_code=None if cancelled else exc.code.value,
+        library_key=library_key,
     )
     log.info("waveform job unsuccessful job_id=%s code=%s", job_id, exc.code.value)
 
@@ -346,9 +383,13 @@ def get_scheduler() -> WaveformScheduler:
             _scheduler = WaveformScheduler(
                 max_concurrency=config.max_concurrent_jobs,
                 max_queue_size=config.max_queue_size,
+                library_key=current_library_key(),
+                library_root=selected_library_root(),
             )
         except Exception:
-            _scheduler = WaveformScheduler()
+            _scheduler = WaveformScheduler(
+                library_key=current_library_key(), library_root=selected_library_root()
+            )
     return _scheduler
 
 

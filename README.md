@@ -467,9 +467,19 @@ scripts/crateiq-local-services.sh logs
 
 The helper manages only crateIQ's ports (`8020` and `5175`). It does not stop
 or alter LedgerIQ or opsIQ. The frontend remains separate from supervisor
-ownership. Checkpoint 1B.2B is still required for `jobs.db` library keys,
-operation/history isolation, complete active-work blockers, backup/log and
-publish isolation, a real handoff/rollback API, and the frontend launcher.
+ownership. Checkpoint 1B.2B-1 now gives every root-bound operational write a
+canonical privacy-safe `library_key` (the established waveform identity digest
+of the canonical root). `jobs.db` history/recovery reads are limited to that
+key; terminal legacy NULL rows remain diagnostic-only while active NULL rows
+and known foreign active rows fail closed through persisted blocker inspection.
+Waveform's existing `library_id` column is a compatibility name for the same
+key. Scheduler shutdown, startup/cache maintenance, worker source resolution,
+and generic/background job updates retain that immutable origin; reference
+findings and active waveform track-state blockers use the same exact-key rule.
+Global tag backups and job logs are key-namespaced, and publish
+destinations are per-key; a legacy global destination is retained but is not
+silently assigned. Actual handoff/rollback, activation API, registry-recency
+update, and frontend launcher remain for 1B.2B-2.
 The helper-managed backend is intentionally non-reload: after Python backend
 code changes, restart the helper-managed service. Any separately run manual
 development server is outside supervisor ownership and is not a library-switch

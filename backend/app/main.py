@@ -52,6 +52,7 @@ from .api.routes import workspace as workspace_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
 from .core.library_root import selected_library_root
+from .core.library_key import current_library_key
 from .services import analysis_operations_service, library_registry_service, publish_operations_service, read_only as read_only_service
 from .services import library_setup_service
 from .services import preparation_operations_service
@@ -135,7 +136,7 @@ async def lifespan(app: FastAPI):
     # is marked terminal and requires a renewed explicit request. This only
     # rewrites operational rows in jobs.db; no audio is read.
     try:
-        waveform_job_service.recover_interrupted_jobs()
+        waveform_job_service.recover_interrupted_jobs(current_library_key())
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("waveform job recovery skipped")
 
@@ -190,7 +191,9 @@ async def lifespan(app: FastAPI):
     try:
         _config, _validated = resolve_cache_runtime()
         waveform_cache_service.startup_reconcile(
-            _validated, max_cache_bytes=_config.max_cache_bytes
+            _validated,
+            max_cache_bytes=_config.max_cache_bytes,
+            library_key=current_library_key(),
         )
     except WaveformRuntimeError:
         pass  # feature disabled or cache unsafe: nothing to reconcile

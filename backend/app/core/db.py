@@ -33,7 +33,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     progress_current INTEGER,
     progress_total   INTEGER,
     progress_percent REAL,
-    progress_message TEXT
+    progress_message TEXT,
+    library_key      TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_jobs_status  ON jobs(status);
@@ -58,7 +59,8 @@ CREATE TABLE IF NOT EXISTS bpm_anomalies (
     reviewed_at         TEXT,
     review_note         TEXT,
     reanalysis_job_id   TEXT,
-    UNIQUE(track_id)
+    library_key         TEXT,
+    UNIQUE(library_key, track_id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_bpm_anomalies_status ON bpm_anomalies(review_status);
@@ -153,7 +155,8 @@ CREATE TABLE IF NOT EXISTS analysis_operations (
     warnings_json     TEXT,
     created_at        TEXT    NOT NULL,
     started_at        TEXT,
-    finished_at       TEXT
+    finished_at       TEXT,
+    library_key       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_analysis_operations_created
@@ -194,7 +197,8 @@ CREATE TABLE IF NOT EXISTS publish_operations (
     error_reason           TEXT,
     created_at            TEXT   NOT NULL,
     started_at            TEXT,
-    finished_at            TEXT
+    finished_at            TEXT,
+    library_key            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_publish_operations_created
@@ -231,7 +235,8 @@ CREATE TABLE IF NOT EXISTS waveform_operations (
     error_reason      TEXT,
     created_at        TEXT    NOT NULL,
     started_at        TEXT,
-    finished_at       TEXT
+    finished_at       TEXT,
+    library_key       TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_waveform_operations_created
@@ -267,7 +272,8 @@ CREATE TABLE IF NOT EXISTS tag_write_operations (
     created_at            TEXT   NOT NULL,
     started_at            TEXT,
     finished_at            TEXT,
-    restored_at            TEXT
+    restored_at            TEXT,
+    library_key            TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_tag_write_operations_created
@@ -307,7 +313,8 @@ CREATE TABLE IF NOT EXISTS preparation_operations (
     error_reason       TEXT,
     created_at         TEXT    NOT NULL,
     started_at         TEXT,
-    finished_at        TEXT
+    finished_at        TEXT,
+    library_key        TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_preparation_operations_created
@@ -367,6 +374,45 @@ def _add_column_safe(
             raise
 
 
+def _migrate_bpm_anomaly_uniqueness(conn: sqlite3.Connection) -> None:
+    """Allow identical pipeline track IDs to exist under distinct libraries.
+
+    SQLite cannot alter a UNIQUE constraint. This conservative copy migration
+    preserves every historical NULL-owned row and primary key verbatim.
+    """
+    indexes = conn.execute("PRAGMA index_list(bpm_anomalies)").fetchall()
+    legacy_unique = False
+    for index in indexes:
+        if not index[2]:
+            continue
+        columns = [row[2] for row in conn.execute(f"PRAGMA index_info({index[1]})")]
+        if columns == ["track_id"]:
+            legacy_unique = True
+            break
+    if not legacy_unique:
+        return
+    conn.execute("ALTER TABLE bpm_anomalies RENAME TO bpm_anomalies_legacy")
+    conn.execute("""
+        CREATE TABLE bpm_anomalies (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, track_id INTEGER NOT NULL,
+            filepath TEXT NOT NULL, artist TEXT, title TEXT, genre TEXT,
+            current_bpm REAL, suggested_bpm REAL, reason TEXT NOT NULL,
+            review_status TEXT NOT NULL DEFAULT 'pending', detected_at TEXT NOT NULL,
+            reviewed_at TEXT, review_note TEXT, reanalysis_job_id TEXT,
+            library_key TEXT, UNIQUE(library_key, track_id)
+        )
+    """)
+    legacy_columns = {row[1] for row in conn.execute("PRAGMA table_info(bpm_anomalies_legacy)")}
+    key_expr = "library_key" if "library_key" in legacy_columns else "NULL"
+    conn.execute(
+        "INSERT INTO bpm_anomalies (id, track_id, filepath, artist, title, genre, current_bpm, "
+        "suggested_bpm, reason, review_status, detected_at, reviewed_at, review_note, reanalysis_job_id, library_key) "
+        "SELECT id, track_id, filepath, artist, title, genre, current_bpm, suggested_bpm, reason, "
+        "review_status, detected_at, reviewed_at, review_note, reanalysis_job_id, " + key_expr + " FROM bpm_anomalies_legacy"
+    )
+    conn.execute("DROP TABLE bpm_anomalies_legacy")
+
+
 def init_db() -> None:
     """
     Create tables if they don't exist and apply any pending column migrations.
@@ -403,5 +449,42 @@ def init_db() -> None:
         # recoverable via the FFmpeg decode fallback. Rows created before this
         # change default to 0, which is truthful (fallback did not exist yet).
         _add_column_safe(conn, "analysis_operations", "recovered", "INTEGER NOT NULL DEFAULT 0")
+
+        _add_column_safe(conn, "bpm_anomalies", "library_key", "TEXT")
+        _migrate_bpm_anomaly_uniqueness(conn)
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bpm_anomalies_status ON bpm_anomalies(review_status)")
+        conn.execute("CREATE INDEX IF NOT EXISTS idx_bpm_anomalies_reason ON bpm_anomalies(reason)")
+
+        # 1B.2B-1: NULL preserves unknown ownership of legacy rows. New
+        # root-bound writes are always scoped; ordinary reads/recovery never
+        # adopt NULL rows.
+        scoped_tables = (
+            "jobs", "analysis_operations", "publish_operations",
+            "waveform_operations", "tag_write_operations", "preparation_operations",
+        )
+        for table in scoped_tables:
+            _add_column_safe(conn, table, "library_key", "TEXT")
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_library_key_status "
+                f"ON {table}(library_key, status)"
+            )
+        for table in (
+            "jobs", "analysis_operations", "publish_operations", "waveform_operations",
+            "tag_write_operations", "preparation_operations",
+        ):
+            conn.execute(
+                f"CREATE INDEX IF NOT EXISTS idx_{table}_library_key_created "
+                f"ON {table}(library_key, created_at DESC)"
+            )
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_bpm_anomalies_library_key_review "
+            "ON bpm_anomalies(library_key, review_status)"
+        )
+        # These two waveform tables already use `library_id`; its value is
+        # now explicitly the canonical library_key compatibility alias.
+        conn.execute(
+            "CREATE INDEX IF NOT EXISTS idx_waveform_jobs_library_status "
+            "ON waveform_jobs(library_id, status)"
+        )
 
     log.info("Backend operational DB ready")

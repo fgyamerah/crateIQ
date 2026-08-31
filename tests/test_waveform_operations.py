@@ -12,11 +12,13 @@ import asyncio
 import logging
 import signal
 import sqlite3
+import sys
 from pathlib import Path
 
 import pytest
 
 from backend.app.core import db as backend_db
+from backend.app.core.library_key import library_key_for_root
 from backend.app.core import waveform_process
 from backend.app.core.waveform_process import ProcessSupervisor
 from backend.app.models.waveform import (
@@ -41,6 +43,10 @@ LIBRARY = "e" * 64
 def jobs_db(tmp_path, monkeypatch):
     path = tmp_path / "operational" / "jobs.db"
     monkeypatch.setattr(backend_db, "JOBS_DB_PATH", path)
+    root = tmp_path / "library"
+    root.mkdir()
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setattr(sys.modules[__name__], "LIBRARY", library_key_for_root(root))
     backend_db.init_db()
     return path
 

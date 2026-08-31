@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..core.db import get_conn
+from ..core.library_key import current_library_key
 
 _TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 _RESTART_ERROR_REASON = "backend_restarted"
@@ -74,13 +75,14 @@ def start_operation(
     """
     operation_id = uuid.uuid4().hex
     now = _now()
+    library_key = current_library_key()
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO analysis_operations
                (id, job_type, mode, status, scope_limit, eligible_total, considered,
-                created_at, started_at)
-               VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?)""",
-            (operation_id, job_type, mode, scope_limit, eligible_total, considered, now, now),
+                created_at, started_at, library_key)
+               VALUES (?, ?, ?, 'running', ?, ?, ?, ?, ?, ?)""",
+            (operation_id, job_type, mode, scope_limit, eligible_total, considered, now, now, library_key),
         )
     return {"id": operation_id}
 
@@ -98,8 +100,8 @@ def update_progress(
         conn.execute(
             """UPDATE analysis_operations
                SET processed = ?, succeeded = ?, skipped = ?, failed = ?, recovered = ?
-               WHERE id = ? AND status = 'running'""",
-            (processed, succeeded, skipped, failed, recovered, operation_id),
+               WHERE id = ? AND status = 'running' AND library_key = ?""",
+            (processed, succeeded, skipped, failed, recovered, operation_id, current_library_key()),
         )
 
 
@@ -126,10 +128,10 @@ def finish_operation(
                SET status = ?, processed = ?, succeeded = ?, skipped = ?, failed = ?,
                    recovered = ?, remaining_missing = ?, warnings_json = ?,
                    error_reason = ?, finished_at = ?
-               WHERE id = ?""",
+               WHERE id = ? AND library_key = ?""",
             (
                 status, processed, succeeded, skipped, failed, recovered,
-                remaining_missing, payload, reason, _now(), operation_id,
+                remaining_missing, payload, reason, _now(), operation_id, current_library_key(),
             ),
         )
 
@@ -137,7 +139,7 @@ def finish_operation(
 def is_cancel_requested(operation_id: str) -> bool:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT cancel_requested FROM analysis_operations WHERE id = ?", (operation_id,)
+            "SELECT cancel_requested FROM analysis_operations WHERE id = ? AND library_key = ?", (operation_id, current_library_key())
         ).fetchone()
     return bool(row and row["cancel_requested"])
 
@@ -150,27 +152,28 @@ def request_cancel(operation_id: str) -> Optional[dict[str, Any]]:
     error, since asking a finished operation to stop is not a failure.
     """
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM analysis_operations WHERE id = ?", (operation_id,)).fetchone()
+        key = current_library_key()
+        row = conn.execute("SELECT * FROM analysis_operations WHERE id = ? AND library_key = ?", (operation_id, key)).fetchone()
         if row is None:
             return None
         if row["status"] == "running":
             conn.execute(
-                "UPDATE analysis_operations SET cancel_requested = 1 WHERE id = ?", (operation_id,)
+                "UPDATE analysis_operations SET cancel_requested = 1 WHERE id = ? AND library_key = ?", (operation_id, key)
             )
-            row = conn.execute("SELECT * FROM analysis_operations WHERE id = ?", (operation_id,)).fetchone()
+            row = conn.execute("SELECT * FROM analysis_operations WHERE id = ? AND library_key = ?", (operation_id, key)).fetchone()
     return _row_to_dict(row)
 
 
 def get_operation(operation_id: str) -> Optional[dict[str, Any]]:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM analysis_operations WHERE id = ?", (operation_id,)).fetchone()
+        row = conn.execute("SELECT * FROM analysis_operations WHERE id = ? AND library_key = ?", (operation_id, current_library_key())).fetchone()
     return _row_to_dict(row) if row else None
 
 
 def list_recent(limit: int = 50) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM analysis_operations ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM analysis_operations WHERE library_key = ? ORDER BY created_at DESC, id DESC LIMIT ?", (current_library_key(), limit)
         ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
@@ -184,12 +187,13 @@ def recover_interrupted_operations() -> int:
     """
     now = _now()
     with get_conn() as conn:
-        rows = conn.execute("SELECT id FROM analysis_operations WHERE status = 'running'").fetchall()
+        key = current_library_key()
+        rows = conn.execute("SELECT id FROM analysis_operations WHERE status = 'running' AND library_key = ?", (key,)).fetchall()
         for row in rows:
             conn.execute(
                 """UPDATE analysis_operations
                    SET status = 'failed', error_reason = ?, finished_at = ?
-                   WHERE id = ?""",
-                (_RESTART_ERROR_REASON, now, row["id"]),
+                   WHERE id = ? AND library_key = ?""",
+                (_RESTART_ERROR_REASON, now, row["id"], key),
             )
     return len(rows)

@@ -25,6 +25,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
+from ...core.library_key import current_library_key
 from ...models.waveform import (
     WAVEFORM_ALGORITHM_VERSION,
     WAVEFORM_SCHEMA_VERSION,
@@ -359,7 +360,9 @@ async def get_waveform_cache_status() -> WaveformCacheStatusResponse:
     status = waveform_cache_service.cache_status(
         validated_cache, max_cache_bytes=config.max_cache_bytes
     )
-    preview = waveform_cache_service.preview_clear_cache(validated_cache)
+    preview = waveform_cache_service.preview_clear_cache(
+        validated_cache, library_key=current_library_key()
+    )
     return WaveformCacheStatusResponse(
         **status, ready_track_count=preview.ready_track_count  # type: ignore[arg-type]
     )
@@ -390,7 +393,9 @@ async def clear_waveform_cache(
     except WaveformRuntimeError as exc:
         raise HTTPException(status_code=503, detail=exc.code) from exc
 
-    outcome = await waveform_cache_service.clear_cache_locked(validated_cache)
+    outcome = await waveform_cache_service.clear_cache_locked(
+        validated_cache, library_key=current_library_key()
+    )
     status = waveform_cache_service.cache_status(
         validated_cache, max_cache_bytes=config.max_cache_bytes
     )

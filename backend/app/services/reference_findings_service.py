@@ -56,6 +56,16 @@ def _rows(conn: sqlite3.Connection, table: str) -> Iterator[dict[str, Any]]:
         yield dict(row)
 
 
+def _rows_for_library(
+    conn: sqlite3.Connection, table: str, key_column: str, library_key: str
+) -> Iterator[dict[str, Any]]:
+    conn.row_factory = sqlite3.Row
+    for row in conn.execute(
+        f'SELECT * FROM "{table}" WHERE "{key_column}" = ?', (library_key,)
+    ):
+        yield dict(row)
+
+
 def _stable_id(*parts: object) -> str:
     raw = "|".join(str(part) for part in parts)
     return f"ref-stale-{hashlib.sha256(raw.encode('utf-8')).hexdigest()[:12]}"
@@ -725,12 +735,13 @@ def get_reference_findings() -> dict[str, Any]:
                     ("waveform_jobs", "waveform_job", "waveform_job_service.py", "E", "ignore")):
                     if table in tables:
                         columns = _columns(conn, table)
-                        if table in {"waveform_track_state", "waveform_jobs"} and "library_id" not in columns:
-                            warnings.append(f"Skipped {table} without library_id isolation.")
+                        key_column = "library_id" if table.startswith("waveform_") else "library_key"
+                        if key_column not in columns:
+                            warnings.append(f"Skipped {table} without {key_column} isolation.")
                             continue
-                        for row in _rows(conn, table):
-                            if table in {"waveform_track_state", "waveform_jobs"} and row.get("library_id") != selected_library_id:
-                                continue
+                        for row in _rows_for_library(
+                            conn, table, key_column, selected_library_id
+                        ):
                             if table == "waveform_jobs" and row.get("status") in {"queued", "processing"}:
                                 continue
                             finding = _track_finding(row, artifact_type=typ, owner=owner,
@@ -745,7 +756,20 @@ def get_reference_findings() -> dict[str, Any]:
                                 if path_finding:
                                     findings.append(path_finding)
                 if "tag_write_operations" in tables:
-                    for row in _rows(conn, "tag_write_operations"):
+                    columns = _columns(conn, "tag_write_operations")
+                    if "library_key" not in columns:
+                        warnings.append("Skipped tag_write_operations without library_key isolation.")
+                        columns = set()
+                    for row in (
+                        _rows_for_library(
+                            conn,
+                            "tag_write_operations",
+                            "library_key",
+                            selected_library_id,
+                        )
+                        if columns
+                        else ()
+                    ):
                         for field in ("plan_json", "backup_manifest_json", "result_json"):
                             findings.extend(_scan_json_blob(row, table="tag_write_operations", artifact_type="tag_write_operation",
                                 owner="tag_write_service.py", blob_field=field, category="A", disposition="ignore",

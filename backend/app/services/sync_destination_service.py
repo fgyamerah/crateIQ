@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, List, Literal, Optional, Tuple
 
 from ..core.library_root import assert_safe_new_root_path, selected_library_root
+from ..core.library_key import current_library_key
 from . import workspace_service
 from .publish_safety import describe_sync_destination_safety
 
@@ -72,8 +73,14 @@ def _load_destination_settings() -> dict[str, Any]:
     try:
         raw = json.loads(DESTINATION_SETTINGS_PATH.read_text(encoding="utf-8"))
     except (FileNotFoundError, OSError, json.JSONDecodeError):
-        return {"destination": None}
-    return raw if isinstance(raw, dict) else {"destination": None}
+        return {"version": 2, "libraries": {}}
+    if not isinstance(raw, dict):
+        return {"version": 2, "libraries": {}}
+    if raw.get("version") == 2 and isinstance(raw.get("libraries"), dict):
+        return raw
+    # A v1 global destination is deliberately not attributed to any library.
+    # Preserve it for operator migration/audit, but fail closed for reads.
+    return {"version": 2, "libraries": {}, "legacy_global": raw}
 
 
 def _save_destination_settings(settings: dict[str, Any]) -> None:
@@ -87,8 +94,9 @@ def _save_destination_settings(settings: dict[str, Any]) -> None:
 
 
 def get_configured_destination() -> Optional[Path]:
-    """Read-only. Returns None if no destination has ever been configured."""
-    raw = _load_destination_settings().get("destination")
+    """Read the selected library's destination, never a legacy global value."""
+    record = _load_destination_settings().get("libraries", {}).get(current_library_key(), {})
+    raw = record.get("destination") if isinstance(record, dict) else None
     if not raw:
         return None
     return Path(raw)
@@ -124,7 +132,11 @@ def validate_destination_path(value: str) -> Path:
 def set_destination(value: str) -> Path:
     """Validate and persist a new destination. Never creates the directory."""
     resolved = validate_destination_path(value)
-    _save_destination_settings({"destination": str(resolved)})
+    settings = _load_destination_settings()
+    libraries = settings.setdefault("libraries", {})
+    libraries[current_library_key()] = {"destination": str(resolved)}
+    settings["version"] = 2
+    _save_destination_settings(settings)
     return resolved
 
 

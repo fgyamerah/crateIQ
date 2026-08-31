@@ -443,6 +443,15 @@ async def run_process_all(
 
         status = "cancelled" if preparation_operations_service.is_cancel_requested(operation_id) else "completed"
         _finish(operation_id, root, track_ids, status, cleaned, enriched, written, failed, warnings)
+    except asyncio.CancelledError:
+        # Terminalize the originating parent operation using its captured
+        # library_key (via finish_operation's row lookup), not the current
+        # context. Release scope exactly once (idempotent), then re-raise to
+        # preserve normal asyncio cancellation semantics.
+        _finish(operation_id, root, track_ids, "cancelled", cleaned, enriched, written, failed, warnings)
+        if durable_scope is not None:
+            durable_scope.release()
+        raise
     except Exception as exc:  # noqa: BLE001 - must always reach a terminal state
         log.exception("Process All operation %s failed", operation_id)
         preparation_operations_service.finish_operation(

@@ -12,6 +12,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.core import db as backend_db
+from backend.app.core.library_key import library_key_for_root
 from backend.app.models.waveform import (
     SourceStatSnapshot,
     WaveformArtifactStatus,
@@ -22,11 +23,17 @@ from backend.app.services import waveform_identity, waveform_job_service, wavefo
 from backend.app.services.waveform_scheduler import WaveformScheduler
 from tests.conftest import async_test
 
-LIBRARY = "d" * 64
+LIBRARY = ""
 
 
 @pytest.fixture()
 def jobs_db(tmp_path, monkeypatch):
+    global LIBRARY
+    library = tmp_path / "library-root"
+    library.mkdir()
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(library))
+    monkeypatch.delenv("CRATEIQ_BACKEND_LIBRARY_KEY", raising=False)
+    LIBRARY = library_key_for_root(library) or ""
     path = tmp_path / "operational" / "jobs.db"
     monkeypatch.setattr(backend_db, "JOBS_DB_PATH", path)
     backend_db.init_db()
@@ -347,7 +354,7 @@ def test_recovery_closes_interrupted_processing_and_queued_jobs(jobs_db):
     processing = _submit(_snapshot(2)).job
     waveform_job_service.claim_job(processing.id)
 
-    assert waveform_job_service.recover_interrupted_jobs() == 2
+    assert waveform_job_service.recover_interrupted_jobs(LIBRARY) == 2
 
     assert waveform_job_service.get_job(processing.id).status is WaveformJobStatus.FAILED
     assert waveform_job_service.get_job(processing.id).error_code == waveform_job_service.ERROR_BACKEND_RESTARTED
@@ -358,7 +365,7 @@ def test_recovery_closes_interrupted_processing_and_queued_jobs(jobs_db):
 
 def test_recovery_frees_the_active_index_for_a_new_request(jobs_db):
     first = _submit(_snapshot()).job
-    waveform_job_service.recover_interrupted_jobs()
+    waveform_job_service.recover_interrupted_jobs(LIBRARY)
     again = _submit(_snapshot())
     assert again.outcome == "queued"
     assert again.job.id != first.id
@@ -371,7 +378,7 @@ def test_recovery_preserves_a_ready_artifact(jobs_db):
     waveform_job_service.claim_job(job.id)
     waveform_job_service.complete_job_ready(job.id, generation_key=key, snapshot=snapshot)
 
-    assert waveform_job_service.recover_interrupted_jobs() == 0
+    assert waveform_job_service.recover_interrupted_jobs(LIBRARY) == 0
     state = waveform_state_service.get_track_state(7, library_id=LIBRARY)
     assert state.status is WaveformArtifactStatus.READY
     assert state.cache_key == key
@@ -389,7 +396,7 @@ async def test_restart_does_not_resume_extraction_for_persisted_jobs(jobs_db):
     async def _runner(job_id, token):  # pragma: no cover - must never be called
         ran.append(job_id)
 
-    waveform_job_service.recover_interrupted_jobs()
+    waveform_job_service.recover_interrupted_jobs(LIBRARY)
     scheduler = WaveformScheduler(runner=_runner)
     await scheduler.start()
     await asyncio.sleep(0.02)
