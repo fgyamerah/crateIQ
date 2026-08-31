@@ -27,11 +27,19 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-[ ] Checkpoint 1B.2 — add the controlled fresh-backend supervisor handoff
-    and library/operation isolation needed to activate a selected recent
-    library. Do not implement in-process root switching; retain the rootless
-    launcher foundation and the LAN-disabled/local-start-only host-path
-    administration boundary.
+[x] Checkpoint 1B.2A — supervisor foundation (including atomic admission,
+    supported child runtime propagation, child reaping, Linux fail-closed
+    parent-death protection, socket ownership, phase validation, candidate
+    port exclusion, and private identity verification) is complete.
+
+[ ] Checkpoint 1B.2B — add the controlled fresh-backend handoff and
+    library/operation isolation needed to activate a selected recent library.
+    Keep the rootless launcher foundation and the LAN-disabled/local-start-only
+    host-path administration boundary. Specifically required: `jobs.db` `library_key` migration,
+    operation read/write isolation and complete active-operation blocker
+    adapters, tag-backup/global-log isolation, publish-destination migration,
+    final handoff/rollback and activation API, registry recency update, and
+    frontend launcher. Do not implement in-process root switching.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM
@@ -73,6 +81,12 @@ P2 / MEDIUM
 ----------------------------------------------------------------------
 P3 / LOW
 ----------------------------------------------------------------------
+
+[ ] Service-control orphan recovery has a narrow fallback mismatch: when the
+    supervisor PID file is absent/stale, port inspection recognizes the
+    supervised backend module but the PID classifier currently accepts only
+    the supervisor module. Revisit only as an explicitly scoped recovery
+    correction; it is not a 1B.2A activation/switching blocker.
 
 [ ] Launcher registry writes remain an unlocked read-modify-replace sequence;
     concurrent explicit writers could lose recency history. Do not broaden
