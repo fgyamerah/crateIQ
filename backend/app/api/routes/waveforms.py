@@ -55,6 +55,7 @@ from ...services.waveform_readiness_service import (
     resolve_cache_runtime,
 )
 from ...services.waveform_scheduler import get_scheduler
+from ...services.operation_admission_gate import LibraryOperationDrainingError, operation_admission_gate
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["waveforms"])
@@ -232,12 +233,29 @@ async def generate_waveform(
 
     generation_key = waveform_identity.compute_generation_key(snapshot)
     scheduler = get_scheduler()
-    result = waveform_job_service.submit_generation_job(
-        snapshot=snapshot,
-        generation_key=generation_key,
-        force=request_body.force,
-        max_queue_size=scheduler.max_queue_size,
-    )
+    try:
+        with operation_admission_gate.admit():
+            result = waveform_job_service.submit_generation_job(
+                snapshot=snapshot,
+                generation_key=generation_key,
+                force=request_body.force,
+                max_queue_size=scheduler.max_queue_size,
+            )
+            job = result.job
+            if result.outcome == "queued":
+                assert job is not None
+                if not scheduler.enqueue(job.id):
+                    waveform_job_service.finish_job_unsuccessfully(
+                        job.id,
+                        job_status=waveform_job_service.WaveformJobStatus.FAILED,
+                        track_status=WaveformArtifactStatus.FAILED,
+                        error_code="WAVEFORM_QUEUE_FULL",
+                    )
+                    raise HTTPException(
+                        status_code=429, detail="WAVEFORM_QUEUE_FULL", headers={"Retry-After": "5"}
+                    )
+    except LibraryOperationDrainingError as exc:
+        raise HTTPException(status_code=409, detail="LIBRARY_SWITCH_DRAINING") from exc
 
     if result.outcome == "queue_full":
         raise HTTPException(
@@ -257,16 +275,6 @@ async def generate_waveform(
     job = result.job
     assert job is not None  # queued/deduplicated always carry a job
     if result.outcome == "queued":
-        if not scheduler.enqueue(job.id):
-            waveform_job_service.finish_job_unsuccessfully(
-                job.id,
-                job_status=waveform_job_service.WaveformJobStatus.FAILED,
-                track_status=WaveformArtifactStatus.FAILED,
-                error_code="WAVEFORM_QUEUE_FULL",
-            )
-            raise HTTPException(
-                status_code=429, detail="WAVEFORM_QUEUE_FULL", headers={"Retry-After": "5"}
-            )
         log.info("waveform generation queued job_id=%s track_id=%s", job.id, track_id)
     else:
         log.info("waveform generation deduplicated job_id=%s track_id=%s", job.id, track_id)

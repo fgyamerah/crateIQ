@@ -1,16 +1,17 @@
 """
 Health and version routes.
 
-  GET /api/health   — liveness + selected root details
+  GET /api/health   — public liveness/readiness without host paths
   GET /api/stats    — read-only counts and latest path-audit summary
   GET /api/version  — backend and toolkit version strings
 """
-from fastapi import APIRouter
+from fastapi import APIRouter, Header, HTTPException, Request
 from typing import Any, Optional
 from pydantic import BaseModel
 
 from ...core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from ...services import read_only as read_only_service
+from ...services.backend_instance_identity import verify_supervisor_token
 
 # Import toolkit version without running the full pipeline module
 import importlib.util, sys
@@ -33,8 +34,6 @@ def _toolkit_version() -> str:
 
 class HealthResponse(BaseModel):
     ok: bool
-    library_root: Optional[str] = None
-    db_path: Optional[str] = None
     db_exists: bool = False
 
 
@@ -57,16 +56,25 @@ class VersionResponse(BaseModel):
 @router.get("/health", response_model=HealthResponse, response_model_exclude_none=True)
 async def health() -> HealthResponse:
     try:
-        root = read_only_service.get_library_root()
-        db_path = read_only_service.get_db_path()
+        db_exists = read_only_service.db_exists()
     except RuntimeError:
-        return HealthResponse(ok=True)
-    return HealthResponse(
-        ok=True,
-        library_root=str(root),
-        db_path=str(db_path),
-        db_exists=read_only_service.db_exists(),
-    )
+        db_exists = False
+    return HealthResponse(ok=True, db_exists=db_exists)
+
+
+@router.get("/internal/supervisor-identity")
+async def supervisor_identity(
+    request: Request,
+    supervisor_token: str | None = Header(default=None, alias="X-CrateIQ-Supervisor-Token"),
+) -> dict[str, object]:
+    """Loopback-only verification channel; never trust forwarded headers."""
+    client = request.client
+    if client is None or client.host not in {"127.0.0.1", "::1"}:
+        raise HTTPException(status_code=404, detail="Not found")
+    identity = verify_supervisor_token(supervisor_token)
+    if identity is None:
+        raise HTTPException(status_code=404, detail="Not found")
+    return {"identity": identity}
 
 
 @router.get("/stats", response_model=StatsResponse)

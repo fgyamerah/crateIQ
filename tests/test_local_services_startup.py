@@ -11,6 +11,16 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 SERVICE_SCRIPT = REPO_ROOT / "scripts" / "crateiq-local-services.sh"
 
 
+def test_supervisor_managed_backend_script_contract_is_non_reload_and_keeps_ports():
+    text = SERVICE_SCRIPT.read_text(encoding="utf-8")
+    assert "backend.app.supervisor" in text
+    assert "--active-role rootless" in text
+    assert "--active-role active" in text
+    assert "--reload" not in text
+    assert 'CRATEIQ_BACKEND_PORT="${CRATEIQ_BACKEND_PORT:-8020}"' in text
+    assert 'CRATEIQ_FRONTEND_PORT="${CRATEIQ_FRONTEND_PORT:-5175}"' in text
+
+
 def _service_root(tmp_path: Path, saved_root: Path | None) -> Path:
     root = tmp_path / "service-root"
     (root / ".run" / "local").mkdir(parents=True)

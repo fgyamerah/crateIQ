@@ -395,7 +395,23 @@ conservative: immutable SQLite inspection must find the historical CrateIQ
 `tracks`, `track_history`, `pipeline_runs`, and `duplicate_groups` schema core,
 including their characteristic pipeline columns; a generic `tracks` table is
 not enough. Library activation and in-process switching are not implemented
-yet. Candidate host-path classification is available only when the service was
+yet. The local service helper now uses a dedicated non-reload backend
+supervisor, whose process-lifetime-flock-protected owner-only Unix socket is limited to local fixed IPC
+operations. It can verify a temporary loopback-only candidate by generated
+instance token and canonical root, but it never stops or replaces the active
+backend in this release. Its activation lock and runtime directory reject
+symlink, non-regular, and multiply-linked paths before mutating a lock inode;
+accepted control requests have bounded reads and
+quiesce before ownership release, and Process All/bulk waveform reserve their
+descendant scopes before durable parent rows so a future drain waits for
+deferred durable work. Normal socket cleanup atomically withdraws its owned
+public and private paths; replacements survive untouched, while ambiguous
+stale recovery fails closed rather than unlink an entry whose ownership cannot
+be atomically proven. Its
+activation state file and
+OS-level lock are local-only, restrictive, and fail closed on malformed/
+incomplete state.
+Candidate host-path classification is available only when the service was
 started in **Local only** mode. LAN startup disables it for every request,
 including requests proxied by Vite over loopback, because CrateIQ has no auth
 and LAN clients must not be given arbitrary server filesystem administration.
@@ -450,7 +466,15 @@ scripts/crateiq-local-services.sh logs
 ```
 
 The helper manages only crateIQ's ports (`8020` and `5175`). It does not stop
-or alter LedgerIQ or opsIQ.
+or alter LedgerIQ or opsIQ. The frontend remains separate from supervisor
+ownership. Checkpoint 1B.2B is still required for `jobs.db` library keys,
+operation/history isolation, complete active-work blockers, backup/log and
+publish isolation, a real handoff/rollback API, and the frontend launcher.
+The helper-managed backend is intentionally non-reload: after Python backend
+code changes, restart the helper-managed service. Any separately run manual
+development server is outside supervisor ownership and is not a library-switch
+path. The local supervisor and its parent-death guard are Linux-only and fail
+closed on unsupported platforms.
 
 ## Provider setup
 

@@ -16,12 +16,16 @@ provider quota used.
 """
 from __future__ import annotations
 
+import asyncio
 import sqlite3
+import threading
+import time
 from pathlib import Path
 
 import pytest
 
 from backend.app.services import (
+    analysis_jobs_service,
     enrichment_review_service,
     needs_review_service,
     preparation_service,
@@ -29,7 +33,13 @@ from backend.app.services import (
     settings_service,
     workspace_service as svc,
 )
+from backend.app.core import db as backend_db
 from backend.app.services.providers.base import ProviderCandidate
+from backend.app.services.operation_admission_gate import (
+    LibraryOperationDrainingError,
+    OperationAdmissionGate,
+)
+from tests.conftest import async_test
 
 _HIGH_ARTIST_TITLE = {
     "beets": [ProviderCandidate(provider="beets", artist="DJ Koze", title="Pick Up")],
@@ -376,3 +386,232 @@ def test_enrich_tracks_is_idempotent_on_repeated_runs(managed_root, monkeypatch)
     second = preparation_service.enrich_tracks(managed_root, [track_id])
     assert second["considered"] == 0, "a fully-enriched track must no longer be eligible on the next run"
     assert calls == [track_id], "gather_evidence must not be called again once the track needs no more enrichment"
+
+
+# ---------------------------------------------------------------------------
+# 15: Process All's real entrypoint owns a reserved scope from admission.
+# ---------------------------------------------------------------------------
+
+@async_test
+async def test_process_all_cancelled_before_coroutine_starts_releases_reserved_scope(monkeypatch, tmp_path):
+    gate = OperationAdmissionGate()
+    scheduled: list[asyncio.Task] = []
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(preparation_service, "_inbox_track_ids", lambda *_: [1])
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
+
+    async def should_not_start(*_args, **_kwargs):
+        raise AssertionError("cancelled Process All coroutine must not start")
+
+    monkeypatch.setattr(preparation_service, "run_process_all", should_not_start)
+    real_create_task = asyncio.create_task
+
+    def capture(coro):
+        task = real_create_task(coro)
+        scheduled.append(task)
+        return task
+
+    monkeypatch.setattr(preparation_service.asyncio, "create_task", capture)
+    started = preparation_service.start_process_all(tmp_path, confirm=True)
+    scheduled[0].cancel()
+    await asyncio.gather(scheduled[0], return_exceptions=True)
+    parent = preparation_service.preparation_operations_service.get_operation(started["operation_id"])
+    assert parent is not None and parent["status"] == "cancelled"
+    assert gate.status()["active_operation_scopes"] == 0
+    await gate.begin_draining_async()
+
+
+def test_process_all_row_or_task_creation_failure_releases_reserved_scope(monkeypatch, tmp_path):
+    gate = OperationAdmissionGate()
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(preparation_service, "_inbox_track_ids", lambda *_: [1])
+    with pytest.raises(RuntimeError, match="row failed"):
+        monkeypatch.setattr(
+            preparation_service.preparation_operations_service, "start_operation",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("row failed")),
+        )
+        preparation_service.start_process_all(tmp_path, confirm=True)
+    assert gate.status()["active_operation_scopes"] == 0
+
+    finished: list[str] = []
+    monkeypatch.setattr(preparation_service.preparation_operations_service, "start_operation", lambda *_args, **_kwargs: {"id": "op"})
+    monkeypatch.setattr(
+        preparation_service.preparation_operations_service, "finish_operation",
+        lambda operation_id, **_kwargs: finished.append(operation_id),
+    )
+
+    def fail_schedule(coro):
+        coro.close()
+        raise RuntimeError("schedule failed")
+
+    monkeypatch.setattr(preparation_service.asyncio, "create_task", fail_schedule)
+    with pytest.raises(RuntimeError, match="schedule failed"):
+        preparation_service.start_process_all(tmp_path, confirm=True)
+    assert finished == ["op"]
+    assert gate.status()["active_operation_scopes"] == 0
+
+    monkeypatch.setattr(
+        preparation_service.preparation_operations_service, "finish_operation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("terminal failed")),
+    )
+    with pytest.raises(RuntimeError, match="terminal failed"):
+        preparation_service.start_process_all(tmp_path, confirm=True)
+    assert gate.status()["active_operation_scopes"] == 0
+    gate.begin_draining()
+
+
+def test_process_all_scheduling_failure_terminalizes_durable_parent(monkeypatch, tmp_path):
+    gate = OperationAdmissionGate()
+    created: list[str] = []
+    original_start = preparation_service.preparation_operations_service.start_operation
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(preparation_service, "_inbox_track_ids", lambda *_: [1])
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
+
+    def record_start(*args, **kwargs):
+        operation = original_start(*args, **kwargs)
+        created.append(operation["id"])
+        return operation
+
+    def fail_schedule(coro):
+        coro.close()
+        raise RuntimeError("schedule failed")
+
+    monkeypatch.setattr(preparation_service.preparation_operations_service, "start_operation", record_start)
+    monkeypatch.setattr(preparation_service.asyncio, "create_task", fail_schedule)
+    with pytest.raises(RuntimeError, match="schedule failed"):
+        preparation_service.start_process_all(tmp_path, confirm=True)
+    parent = preparation_service.preparation_operations_service.get_operation(created[0])
+    assert parent is not None and parent["status"] == "failed"
+    assert gate.status()["active_operation_scopes"] == 0
+
+
+def test_process_all_reservation_rejects_before_parent_row_when_already_draining(monkeypatch, tmp_path):
+    gate = OperationAdmissionGate()
+    rows: list[object] = []
+    gate.begin_draining()
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(preparation_service, "_inbox_track_ids", lambda *_: [1])
+    monkeypatch.setattr(
+        preparation_service.preparation_operations_service, "start_operation",
+        lambda *_args, **_kwargs: rows.append(object()) or {"id": "never"},
+    )
+    with pytest.raises(LibraryOperationDrainingError):
+        preparation_service.start_process_all(tmp_path, confirm=True)
+    assert rows == []
+
+
+@async_test
+async def test_process_all_execution_exception_releases_reserved_scope(monkeypatch, tmp_path):
+    gate = OperationAdmissionGate()
+    scope = gate.reserve_operation_scope()
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(
+        preparation_service, "clean_tracks",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("clean failed")),
+    )
+    monkeypatch.setattr(preparation_service.preparation_operations_service, "finish_operation", lambda *_args, **_kwargs: None)
+    await preparation_service.run_process_all("op", tmp_path, [1], durable_scope=scope)
+    assert gate.status()["active_operation_scopes"] == 0
+    await gate.begin_draining_async()
+
+
+@async_test
+async def test_process_all_real_analysis_descendant_finishes_before_concurrent_drain(monkeypatch, managed_root, tmp_path):
+    """The real Process All adapter retains scope through a real BPM row create."""
+    _seed_inbox_track(managed_root, filename="drain-boundary.mp3")
+    gate = OperationAdmissionGate()
+    monkeypatch.setattr(preparation_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(analysis_jobs_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
+    backend_db.init_db()
+    monkeypatch.setattr(preparation_service, "clean_tracks", lambda *_args: {"cleaned_count": 0})
+    monkeypatch.setattr(
+        preparation_service, "enrich_tracks", lambda *_args: {"enriched_count": 0, "warnings": []},
+    )
+    monkeypatch.setattr(
+        preparation_service, "write_tracks", lambda *_args: {"written_count": 0, "failed_count": 0, "warnings": []},
+    )
+    from backend.app.services import metadata_repair_queue_service
+    monkeypatch.setattr(metadata_repair_queue_service, "refresh", lambda: None)
+    monkeypatch.setattr(analysis_jobs_service, "_resolve_aubio_binary", lambda: "/safe/aubio")
+    monkeypatch.setattr(analysis_jobs_service, "_bpm_candidates", lambda *_args, **_kwargs: [])
+    monkeypatch.setattr(analysis_jobs_service, "_raw_missing_bpm_count", lambda *_args, **_kwargs: 0)
+
+    child_create_entered = threading.Event()
+    allow_child_create = threading.Event()
+    drain_started = threading.Event()
+    drain_returned = threading.Event()
+    controller_errors: list[BaseException] = []
+    original_start = analysis_jobs_service.analysis_operations_service.start_operation
+    captured_scope = []
+    original_run = analysis_jobs_service.run
+
+    def capture_scope(job_type, **kwargs):
+        if job_type == "bpm_analysis":
+            captured_scope.append(kwargs["durable_scope"])
+        return original_run(job_type, **kwargs)
+
+    def pause_before_real_child_row(*args, **kwargs):
+        child_create_entered.set()
+        if not allow_child_create.wait(2):
+            raise RuntimeError("test did not release BPM child creation")
+        return original_start(*args, **kwargs)
+
+    def drain_controller() -> None:
+        try:
+            assert child_create_entered.wait(2)
+            drainer = threading.Thread(target=lambda: (gate.begin_draining(), drain_returned.set()))
+            drainer.start()
+            deadline = time.monotonic() + 2
+            while gate.state.value != "DRAINING_FOR_LIBRARY_SWITCH" and time.monotonic() < deadline:
+                time.sleep(0.001)
+            assert gate.state.value == "DRAINING_FOR_LIBRARY_SWITCH"
+            drain_started.set()
+            # The real Process All scope remains active while the real BPM
+            # operation-row helper is paused, so this concurrent drain cannot
+            # return until the child create is allowed and the adapter exits.
+            assert gate.status()["active_operation_scopes"] == 1
+            assert not drain_returned.is_set()
+            allow_child_create.set()
+            drainer.join(2)
+            assert drain_returned.is_set()
+        except BaseException as exc:  # surfaced on the test task below
+            controller_errors.append(exc)
+
+    monkeypatch.setattr(analysis_jobs_service, "run", capture_scope)
+    monkeypatch.setattr(analysis_jobs_service.analysis_operations_service, "start_operation", pause_before_real_child_row)
+    controller = threading.Thread(target=drain_controller)
+    controller.start()
+
+    started = preparation_service.start_process_all(managed_root, confirm=True)
+    assert started["operation_id"]
+    assert await asyncio.to_thread(drain_started.wait, 2)
+
+    # The real adapter task is the only Process All task in this test loop.
+    while gate.status()["active_operation_scopes"]:
+        await asyncio.sleep(0)
+    controller.join(2)
+    assert not controller_errors
+    assert drain_returned.is_set()
+    assert len(captured_scope) == 1
+
+    with backend_db.get_conn() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM analysis_operations").fetchone()[0]
+        bpm_before = conn.execute(
+            "SELECT COUNT(*) FROM analysis_operations WHERE job_type = 'bpm_analysis'"
+        ).fetchone()[0]
+    with pytest.raises(LibraryOperationDrainingError):
+        analysis_jobs_service.run(
+            "bpm_analysis", confirm=True, limit=25, track_ids=[1], max_track_ids=None,
+            durable_scope=captured_scope[0],
+        )
+    with backend_db.get_conn() as conn:
+        after = conn.execute("SELECT COUNT(*) FROM analysis_operations").fetchone()[0]
+        bpm_after = conn.execute(
+            "SELECT COUNT(*) FROM analysis_operations WHERE job_type = 'bpm_analysis'"
+        ).fetchone()[0]
+    assert bpm_before >= 1
+    assert after == before and bpm_after == bpm_before

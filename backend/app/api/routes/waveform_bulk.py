@@ -25,6 +25,7 @@ from ...schemas.waveform import (
     WaveformBulkStartResponse,
 )
 from ...services import waveform_bulk_service
+from ...services.operation_admission_gate import LibraryOperationDrainingError
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["waveforms"])
@@ -48,7 +49,10 @@ async def start_bulk_waveform_generation() -> WaveformBulkStartResponse:
     """Start an explicit bulk run over every track that currently lacks a
     valid waveform. Returns immediately; poll the operation id for progress.
     """
-    return WaveformBulkStartResponse(**waveform_bulk_service.start_generate_missing())
+    try:
+        return WaveformBulkStartResponse(**waveform_bulk_service.start_generate_missing())
+    except LibraryOperationDrainingError as exc:
+        raise HTTPException(status_code=409, detail="LIBRARY_SWITCH_DRAINING") from exc
 
 
 @router.get("/waveform-bulk/operations", response_model=WaveformBulkHistoryResponse)

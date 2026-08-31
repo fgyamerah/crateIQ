@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import sqlite3
-from typing import Any
+from typing import Any, Callable
 
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 from ..models.waveform import WaveformArtifactStatus, WaveformJobStatus
@@ -33,6 +33,7 @@ from . import (
 )
 from .waveform_readiness_service import WaveformRuntimeError, generation_blocker, resolve_cache_runtime
 from .waveform_scheduler import get_scheduler
+from .operation_admission_gate import OperationScope, operation_admission_gate
 
 log = logging.getLogger(__name__)
 
@@ -139,17 +140,66 @@ def start_generate_missing() -> dict[str, Any]:
     states = _states_by_track(library_id)
     eligible = _eligible_track_ids(track_ids, states)
 
-    operation = waveform_operations_service.start_operation(
-        total_tracks=len(track_ids), eligible_total=len(eligible),
-    )
-    operation_id = operation["id"]
-    task = asyncio.create_task(_run_generate_missing(operation_id, eligible, library_id))
-    _running_tasks.add(task)
-    task.add_done_callback(_running_tasks.discard)
+    durable_scope = operation_admission_gate.reserve_operation_scope()
+    operation: dict[str, Any] | None = None
+    execution_started = False
+
+    async def _run_owned_operation(operation_id: str) -> None:
+        def _mark_execution_started() -> None:
+            nonlocal execution_started
+            execution_started = True
+
+        # A cancellation before _run_generate_missing reaches its first
+        # instruction is reconciled by the task callback. Once it starts,
+        # its own terminal paths own the durable parent row.
+        await _run_generate_missing(
+            operation_id, eligible, library_id, durable_scope=durable_scope,
+            on_started=_mark_execution_started,
+        )
+
+    try:
+        operation = waveform_operations_service.start_operation(
+            total_tracks=len(track_ids), eligible_total=len(eligible),
+        )
+        operation_id = operation["id"]
+        coroutine = _run_owned_operation(operation_id)
+        try:
+            task = asyncio.create_task(coroutine)
+        except Exception:
+            coroutine.close()
+            raise
+
+        def _reconcile_unstarted_task(completed: asyncio.Task) -> None:
+            try:
+                if completed.cancelled() and not execution_started:
+                    waveform_operations_service.finish_operation(
+                        operation_id, status="cancelled", processed=0, generated=0,
+                        skipped=0, failed=0, remaining_missing=len(eligible),
+                        error_reason="task_cancelled_before_start",
+                    )
+            finally:
+                # _run_generate_missing releases after it begins; this
+                # idempotent release closes the cancellation-before-start gap.
+                durable_scope.release()
+
+        task.add_done_callback(_reconcile_unstarted_task)
+        _running_tasks.add(task)
+        task.add_done_callback(_running_tasks.discard)
+    except Exception as exc:
+        try:
+            if operation is not None:
+                waveform_operations_service.finish_operation(
+                    operation["id"], status="failed", processed=0, generated=0,
+                    skipped=0, failed=0, remaining_missing=len(eligible),
+                    error_reason=f"Bulk waveform generation could not be scheduled: {exc}",
+                )
+        finally:
+            durable_scope.release()
+        raise
     return {"id": operation_id, "total_tracks": len(track_ids), "eligible_total": len(eligible)}
 
 
-async def _submit_and_await(track_id: int, scheduler) -> str:
+async def _submit_and_await(track_id: int, scheduler, *, durable_scope: OperationScope | None = None) -> str:
     """Submit one track through the same path a single explicit POST uses,
     then wait for its job to reach a terminal state.
 
@@ -164,12 +214,19 @@ async def _submit_and_await(track_id: int, scheduler) -> str:
         return "failed"
 
     generation_key = waveform_identity.compute_generation_key(snapshot)
-    result = waveform_job_service.submit_generation_job(
-        snapshot=snapshot,
-        generation_key=generation_key,
-        force=False,
-        max_queue_size=scheduler.max_queue_size,
-    )
+    if durable_scope is None:
+        # Direct service calls retain the existing short-admission behavior.
+        with operation_admission_gate.admit():
+            result = waveform_job_service.submit_generation_job(
+                snapshot=snapshot, generation_key=generation_key, force=False,
+                max_queue_size=scheduler.max_queue_size,
+            )
+    else:
+        with operation_admission_gate.admit_descendant(durable_scope):
+            result = waveform_job_service.submit_generation_job(
+                snapshot=snapshot, generation_key=generation_key, force=False,
+                max_queue_size=scheduler.max_queue_size,
+            )
     if result.outcome == "already_ready":
         # Another explicit action (e.g. a manual single-track request)
         # finished this track between our preview read and reaching it here.
@@ -205,27 +262,24 @@ async def _submit_and_await(track_id: int, scheduler) -> str:
     return "failed"
 
 
-async def _run_generate_missing(operation_id: str, candidates: list[int], library_id: str) -> None:
+async def _run_generate_missing(
+    operation_id: str, candidates: list[int], library_id: str, *, durable_scope: OperationScope | None = None,
+    on_started: Callable[[], None] | None = None,
+) -> None:
+    if on_started is not None:
+        on_started()
     processed = generated = skipped = failed = 0
     cancelled = False
 
     try:
         _config, validated_cache = resolve_cache_runtime()
-    except WaveformRuntimeError as exc:
-        waveform_operations_service.finish_operation(
-            operation_id, status="failed", processed=0, generated=0, skipped=0, failed=0,
-            remaining_missing=len(candidates), error_reason=exc.code,
-        )
-        return
-    blocker = generation_blocker(validated_cache)
-    if blocker is not None:
-        waveform_operations_service.finish_operation(
-            operation_id, status="failed", processed=0, generated=0, skipped=0, failed=0,
-            remaining_missing=len(candidates), error_reason=blocker.code,
-        )
-        return
-
-    try:
+        blocker = generation_blocker(validated_cache)
+        if blocker is not None:
+            waveform_operations_service.finish_operation(
+                operation_id, status="failed", processed=0, generated=0, skipped=0, failed=0,
+                remaining_missing=len(candidates), error_reason=blocker.code,
+            )
+            return
         scheduler = get_scheduler()
         for track_id in candidates:
             if waveform_operations_service.is_cancel_requested(operation_id):
@@ -239,7 +293,7 @@ async def _run_generate_missing(operation_id: str, candidates: list[int], librar
             if not _is_eligible(state.status.value):
                 skipped += 1
             else:
-                outcome = await _submit_and_await(track_id, scheduler)
+                outcome = await _submit_and_await(track_id, scheduler, durable_scope=durable_scope)
                 if outcome == "generated":
                     generated += 1
                 elif outcome == "skipped":
@@ -250,6 +304,18 @@ async def _run_generate_missing(operation_id: str, candidates: list[int], librar
             waveform_operations_service.update_progress(
                 operation_id, processed=processed, generated=generated, skipped=skipped, failed=failed,
             )
+    except WaveformRuntimeError as exc:
+        waveform_operations_service.finish_operation(
+            operation_id, status="failed", processed=0, generated=0, skipped=0, failed=0,
+            remaining_missing=len(candidates), error_reason=exc.code,
+        )
+        return
+    except asyncio.CancelledError:
+        waveform_operations_service.finish_operation(
+            operation_id, status="cancelled", processed=processed, generated=generated,
+            skipped=skipped, failed=failed, remaining_missing=None, error_reason="task_cancelled",
+        )
+        raise
     except Exception as exc:  # pragma: no cover - a bulk run must never crash the process
         log.exception("bulk waveform generation failed operation_id=%s", operation_id)
         waveform_operations_service.finish_operation(
@@ -257,6 +323,9 @@ async def _run_generate_missing(operation_id: str, candidates: list[int], librar
             skipped=skipped, failed=failed, remaining_missing=None, error_reason=str(exc),
         )
         return
+    finally:
+        if durable_scope is not None:
+            durable_scope.release()
 
     remaining = _remaining_missing_count(library_id)
     waveform_operations_service.finish_operation(

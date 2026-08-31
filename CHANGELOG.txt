@@ -2,6 +2,102 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-31] — Close final Checkpoint 1B.2A safety blockers
+
+- Rejected multiply-linked activation and supervisor lock files before any
+  chmod, truncate, metadata write, or flock mutation, preserving an aliased
+  target's bytes and mode.
+- Made normal cooperative supervisor shutdown restartable: atomically
+  withdraws the public socket through instance-private entries, removes its
+  owned public and bound paths, and leaves replacement regular files or
+  symlinks untouched; ambiguous stale artifacts still fail closed.
+- Added real Process All/BPM and bulk-waveform/job drain-boundary tests that
+  prove a successful child durable row is created before drain returns and an
+  expired operation scope cannot create another one afterward.
+- Files affected: `backend/app/supervisor.py`, focused supervisor/Process
+  All/bulk waveform tests, and current-state docs. No handoff, jobs
+  namespacing, activation API, or frontend launcher was added.
+
+[2026-08-31] — Finalize Checkpoint 1B.2A P2 safety corrections
+
+- Removed the final socket pathname check→unlink path: stale recovery and
+  cooperative shutdown now fail closed and retain an existing socket pathname
+  when Linux/Python cannot atomically prove ownership at deletion time.
+- Bounded accepted supervisor IPC reads and actively closes tracked accepted
+  sockets during shutdown before child cleanup and lifetime-flock release.
+- Reserved Process All and bulk waveform descendant scopes atomically before
+  parent-row creation, and made row/scheduling/cancellation/preflight and
+  terminal-recording paths release those scopes exactly once.
+- Added deterministic supervisor and real-adapter regression coverage for
+  post-verification replacements, incomplete frames, cancellation-before-run,
+  scheduling failures, draining rejection, and bulk preflight/terminal errors.
+- Files affected: supervisor/gate/Process All/bulk waveform services, focused
+  tests, and current-state docs. No handoff, jobs namespacing, activation API,
+  or frontend launcher was added.
+
+[2026-08-31] — Close Checkpoint 1B.2A supervisor safety findings
+
+- Hardened activation locking with descriptor-validated regular files and
+  no-follow, descriptor-anchored runtime directories; symlink and non-regular
+  lock paths fail closed without touching a target.
+- Quiesced accepted Unix IPC handlers before child finalization and lifetime
+  flock release, and closed IPC admission before shutdown state mutation.
+- Anchored supervisor socket recovery/binding/cleanup to the verified runtime
+  directory, installed the bound socket without replacing a newly appeared
+  pathname, and preserve observed replacements rather than unlinking them.
+- Added long-lived internal descendant scopes so Process All and bulk waveform
+  drains wait for their deferred durable BPM/key or waveform-job creation.
+- Files affected: supervisor, admission, Process All/analysis/waveform
+  services, focused tests, and current-state documentation. No library
+  handoff, activation API, jobs schema migration, or frontend launcher added.
+
+[2026-08-30] — Make local supervisor socket ownership process-safe
+
+- Replaced the check-and-owner-record socket claim with a process-lifetime,
+  non-blocking flock at `.run/local/crateiq-supervisor.lock`.
+- The supervisor now binds its Unix IPC socket before it spawns the active
+  child, recovers stale sockets only while holding that lock, and only unlinks
+  the exact socket inode it bound.
+- Files affected: `backend/app/supervisor.py`, focused supervisor tests, and
+  supervisor contract documentation. No activation or handoff behavior changed.
+
+[2026-08-30] — Correct supervisor admission and containment foundation
+
+- Replaced check-only operation admission with an atomic lease/drain contract
+  and covered Process All, single/bulk waveform, BPM/key, and exact BPM retry
+  durable-create paths; existing Process All stages retain their parent
+  authorization after admission.
+- Preserved explicit supported runtime/tool configuration in supervised
+  children, added continuous child reaping, fail-closed Linux parent-death
+  setup, serialized supervisor state mutation, safe socket ownership, strict
+  activation phase invariants, and candidate-port exclusion.
+- Separated public health from loopback/token-protected internal candidate
+  verification. No handoff, jobs schema migration, or launcher surface was
+  added.
+- Files affected: supervisor/admission/identity/health services and routes,
+  targeted operation adapters, service helper, focused tests, and docs.
+- Migration notes: no library contents, indexes, jobs schema, backups, logs,
+  publish destination, saved root, or exports are changed.
+
+[2026-08-30] — Safe local supervisor foundation (Checkpoint 1B.2A)
+
+- Added a dedicated local supervisor that owns fixed, non-reload backend
+  children. The service helper now starts that supervisor for rootless and
+  configured-library profiles; frontend lifetime remains separate.
+- Added owner-only Unix-socket IPC, token/root-bound backend health identity,
+  temporary loopback candidate startup and verification, restrictive atomic
+  activation state/lock primitives, and a central process-local operation
+  admission gate with initial waveform, Process All, and analysis adapters.
+- This is infrastructure only: no active backend is stopped, no candidate is
+  promoted, no root/config is switched, and no activation HTTP API or launcher
+  UI exists. Library/operation storage isolation remains future work.
+- Files affected: supervisor/identity/IPC/admission services, health and
+  selected operation adapters, local service helper, focused tests, README,
+  project context, task list, and changelog.
+- Migration notes: no music contents, indexes, jobs schema, registry recency,
+  saved root, exports, or sync destination is changed. An incomplete or
+  malformed activation record fails closed at supervisor startup.
+
 [2026-08-30] — Harden launcher foundation review corrections
 
 - Disabled arbitrary host-path classification for every LAN-mode backend

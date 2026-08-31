@@ -255,7 +255,7 @@ app.add_middleware(
 
 
 _ROOTLESS_ALLOWED_API_PREFIXES = (
-    "/api/health", "/api/version", "/api/runtime/readiness", "/api/launcher",
+    "/api/health", "/api/version", "/api/runtime/readiness", "/api/launcher", "/api/internal/supervisor-identity",
 )
 
 

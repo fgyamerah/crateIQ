@@ -26,6 +26,9 @@ CRATEIQ_FRONTEND_PORT="${CRATEIQ_FRONTEND_PORT:-5175}"
 CRATEIQ_BIND="127.0.0.1"
 CRATEIQ_RUN_DIR="$CRATEIQ_ROOT/.run"
 CRATEIQ_BACKEND_PID_FILE="$CRATEIQ_RUN_DIR/backend.pid"
+CRATEIQ_SUPERVISOR_SOCKET="$CRATEIQ_RUN_DIR/local/crateiq-supervisor.sock"
+CRATEIQ_ACTIVATION_STATE="$CRATEIQ_RUN_DIR/local/library_activation_state.json"
+CRATEIQ_ACTIVATION_LOCK="$CRATEIQ_RUN_DIR/local/library_activation.lock"
 CRATEIQ_FRONTEND_PID_FILE="$CRATEIQ_RUN_DIR/frontend.pid"
 CRATEIQ_BACKEND_LOG="$CRATEIQ_RUN_DIR/backend.log"
 CRATEIQ_FRONTEND_LOG="$CRATEIQ_RUN_DIR/frontend.log"
@@ -93,7 +96,7 @@ _crateiq_pid_in_repo() {
 _crateiq_pid_is_backend() {
     local cmd
     cmd="$(_crateiq_pid_command "$1")"
-    [[ "$cmd" == *"uvicorn"* && "$cmd" == *"backend.app.main:app"* ]] \
+    [[ "$cmd" == *"backend.app.supervisor"* ]] \
         && _crateiq_pid_in_repo "$1"
 }
 
@@ -224,14 +227,14 @@ _crateiq_status() {
     fi
 
     if [[ "$status_mode" == "--short" ]]; then
-        echo "CrateIQ backend=$backend_short frontend=$frontend_short ports=8020:$(_crateiq_port_listening "$CRATEIQ_BACKEND_PORT") 5175:$(_crateiq_port_listening "$CRATEIQ_FRONTEND_PORT")"
+    echo "CrateIQ supervisor=$backend_short frontend=$frontend_short ports=8020:$(_crateiq_port_listening "$CRATEIQ_BACKEND_PORT") 5175:$(_crateiq_port_listening "$CRATEIQ_FRONTEND_PORT")"
         return 0
     fi
     echo "CrateIQ status"
     echo "--------------"
     echo "Repository: $CRATEIQ_ROOT"
     echo
-    echo "Backend"
+    echo "Supervisor (owns backend child)"
     echo "  Process:  $backend_proc"
     echo "  Port ${CRATEIQ_BACKEND_PORT}: $(_crateiq_port_listening "$CRATEIQ_BACKEND_PORT")"
     echo "  URL:      $CRATEIQ_BACKEND_URL"
@@ -350,10 +353,20 @@ _crateiq_start_profile() {
     mkdir -p "$CRATEIQ_RUN_DIR"
     (
         cd "$CRATEIQ_ROOT" || exit 1
+        local supervisor_args=(
+            -m backend.app.supervisor
+            --socket "$CRATEIQ_SUPERVISOR_SOCKET"
+            --state "$CRATEIQ_ACTIVATION_STATE"
+            --lock "$CRATEIQ_ACTIVATION_LOCK"
+            --port "$CRATEIQ_BACKEND_PORT"
+            --bind-host "$CRATEIQ_BIND"
+            --access-mode "$mode"
+            --cors-origins "http://127.0.0.1:5175,http://localhost:5175${host:+,http://$host:5175}"
+        )
         if [[ "$profile" == "launcher" ]]; then
-            nohup env -u CRATEIQ_LIBRARY_ROOT -u CRATEMINDAI_LIBRARY_ROOT -u DJ_MUSIC_ROOT CRATEIQ_LAUNCH_ACCESS_MODE="$mode" CORS_ORIGINS="http://127.0.0.1:5175,http://localhost:5175${host:+,http://$host:5175}" .venv/bin/python -m uvicorn backend.app.main:app --host "$CRATEIQ_BIND" --port "$CRATEIQ_BACKEND_PORT" --reload --app-dir . > "$CRATEIQ_BACKEND_LOG" 2>&1 &
+            nohup env -u CRATEIQ_LIBRARY_ROOT -u CRATEMINDAI_LIBRARY_ROOT -u DJ_MUSIC_ROOT .venv/bin/python "${supervisor_args[@]}" --active-role rootless > "$CRATEIQ_BACKEND_LOG" 2>&1 &
         else
-            nohup env CRATEIQ_LIBRARY_ROOT="$CRATEIQ_LIBRARY_ROOT" DJ_MUSIC_ROOT="$CRATEIQ_LIBRARY_ROOT" CRATEIQ_LAUNCH_ACCESS_MODE="$mode" CORS_ORIGINS="http://127.0.0.1:5175,http://localhost:5175${host:+,http://$host:5175}" .venv/bin/python -m uvicorn backend.app.main:app --host "$CRATEIQ_BIND" --port "$CRATEIQ_BACKEND_PORT" --reload --app-dir . > "$CRATEIQ_BACKEND_LOG" 2>&1 &
+            nohup env -u CRATEMINDAI_LIBRARY_ROOT .venv/bin/python "${supervisor_args[@]}" --active-role active --library-root "$CRATEIQ_LIBRARY_ROOT" > "$CRATEIQ_BACKEND_LOG" 2>&1 &
         fi
         echo $! > "$CRATEIQ_BACKEND_PID_FILE"
     )

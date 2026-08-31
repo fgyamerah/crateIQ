@@ -40,6 +40,7 @@ from ...services import (
     track_service,
     workspace_service,
 )
+from ...services.operation_admission_gate import LibraryOperationDrainingError
 
 router = APIRouter(tags=["workspace"])
 
@@ -281,6 +282,8 @@ async def start_prepare(body: ProcessAllRequest):
         raise HTTPException(status_code=422, detail="Process All requires confirm=true after reviewing the preflight preview.")
     try:
         return preparation_service.start_process_all(_root(), confirm=True)
+    except LibraryOperationDrainingError as exc:
+        raise HTTPException(status_code=409, detail="LIBRARY_SWITCH_DRAINING") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

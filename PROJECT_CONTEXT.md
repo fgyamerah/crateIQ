@@ -78,6 +78,38 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   configured-library selection (including sourced aliases and restart); an
   inherited `CRATEIQ_LIBRARY_ROOT` is only a fallback when that file has no
   saved root.
+* Safe local supervisor foundation (Checkpoint 1B.2A): the helper starts a
+  dedicated, non-reload `backend.app.supervisor` process which owns its
+  backend child; the Vite frontend remains independently owned. Supervisor
+  IPC is only `.run/local/crateiq-supervisor.sock` (owner-only Unix socket,
+  no TCP control listener). A process-lifetime flock at
+  `.run/local/crateiq-supervisor.lock` is acquired and the IPC socket is bound
+  before an active child is spawned. Runtime directories and lock files are
+  descriptor-validated and reject symlinks, non-regular paths, and
+  multiply-linked aliases before lock metadata can mutate an inode; accepted
+  IPC handlers have byte/time-bounded reads, are actively interrupted during
+  shutdown, and quiesce before children or lifetime ownership are released.
+  Normal cooperative socket cleanup atomically withdraws the published public
+  link through unique instance-private entries, leaving replacement files or
+  symlinks untouched; ambiguous crash/stale artifacts fail closed rather than
+  unlink a pathname whose ownership cannot be proven. Process All and bulk waveform reserve
+  gate-owned descendant scopes before their durable parent rows, so a future
+  drain waits for their deferred durable work. It uses
+  fixed allowlisted operations and no shell command input. A candidate is
+  always started on a supervisor-reserved
+  loopback-only temporary port (never 8020 or the active port). Public health
+  is generic; private candidate identity is available only through a
+  loopback-only, supervisor-token-protected endpoint and must match the
+  generated instance, canonical root, role, port, and deterministic root key.
+  The supervisor and its fail-closed parent-death protection are Linux-only.
+  `.run/local/library_activation_state.json` and the adjacent
+  OS-level lock are restrictive and atomic; malformed or incomplete state
+  fails closed. This checkpoint does not perform a handoff or library switch.
+  The central process-local operation-admission gate atomically drains the
+  bounded durable-create sections for Process All, single/bulk waveform,
+  BPM/key analysis, and exact BPM retry only; 1B.2B must complete the
+  remaining operation adapters and all storage isolation before switching is
+  safe.
 * Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
   `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
   launcher returns the latest four). Its classifier is strictly read-only and
@@ -89,7 +121,9 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   generic `tracks` table. Rootless
   startup exposes only launcher/health/version/readiness endpoints and does
   not open library indexes or run library recovery. There is no active-library
-  switching, supervisor handoff, jobs namespacing, or launcher UI yet.
+  switching, jobs namespacing, or launcher UI yet. Checkpoint 1B.2A adds only
+  the supervisor/candidate-verification foundation; it does not expose
+  activation or change the running root.
   Rootless compatibility seeding uses only the Settings-managed saved root;
   the launcher clears inherited root state before booting rootless, while
   inherited `CRATEIQ_LIBRARY_ROOT` remains a configured-library startup

@@ -29,6 +29,7 @@ from . import (
     quality_findings_service,
     settings_service,
 )
+from .operation_admission_gate import OperationScope, operation_admission_gate
 
 log = logging.getLogger(__name__)
 
@@ -958,7 +959,7 @@ def preview(
 
 def run(
     job_type: str, *, confirm: bool = False, limit: int = 10, track_ids: list[int] | None = None,
-    max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+    max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS, durable_scope: OperationScope | None = None,
 ) -> dict[str, Any]:
     """`max_track_ids` bounds an external, user-supplied `track_ids` scope.
 
@@ -975,11 +976,11 @@ def run(
     if job_type == "bpm_analysis":
         if not confirm:
             raise ValueError("BPM analysis requires confirm=true after previewing candidates.")
-        return _run_bpm_analysis(limit, track_ids, max_track_ids=max_track_ids)
+        return _run_bpm_analysis(limit, track_ids, max_track_ids=max_track_ids, durable_scope=durable_scope)
     if job_type == "key_analysis":
         if not confirm:
             raise ValueError("Key/Camelot analysis requires confirm=true after previewing candidates.")
-        return _run_key_analysis(limit, track_ids, max_track_ids=max_track_ids)
+        return _run_key_analysis(limit, track_ids, max_track_ids=max_track_ids, durable_scope=durable_scope)
     if job_type == "duplicate_detection":
         raise RuntimeError("Duplicate detection is preview-only. Resolution actions are not implemented; no files, tags, or database decisions were changed.")
     if job_type == "audio_quality_probe":
@@ -1111,7 +1112,7 @@ def _attempt_ffmpeg_fallback(aubio_binary: str, source_path: Path, filename: str
 
 def _run_bpm_analysis(
     limit: int, track_ids: list[int] | None = None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
-    bypass_pause_track_id: int | None = None,
+    bypass_pause_track_id: int | None = None, durable_scope: OperationScope | None = None,
 ) -> dict[str, Any]:
     """`bypass_pause_track_id` is set only by `retry_track`'s narrow exact-track
     contract -- it lets exactly that one track's own retry pause be ignored
@@ -1144,10 +1145,18 @@ def _run_bpm_analysis(
             total_missing = _raw_missing_bpm_count(conn, scope)
             suppressed_count = max(total_missing - eligible_total, 0)
             candidates = _bpm_candidates(conn, root, limit, scope, bypass_pause_track_id=bypass_pause_track_id)
-            operation_id = analysis_operations_service.start_operation(
-                "bpm_analysis", scope_limit=limit, eligible_total=eligible_total,
-                considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
-            )["id"]
+            if durable_scope is not None:
+                with operation_admission_gate.admit_descendant(durable_scope):
+                    operation_id = analysis_operations_service.start_operation(
+                        "bpm_analysis", scope_limit=limit, eligible_total=eligible_total,
+                        considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
+                    )["id"]
+            else:
+                with operation_admission_gate.admit():
+                    operation_id = analysis_operations_service.start_operation(
+                        "bpm_analysis", scope_limit=limit, eligible_total=eligible_total,
+                        considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
+                    )["id"]
             if suppressed_count:
                 warnings.append(
                     f"{suppressed_count} missing-BPM track(s) skipped: automatic retries are paused after a "
@@ -1334,6 +1343,7 @@ def _run_bpm_analysis(
 
 def _run_key_analysis(
     limit: int, track_ids: list[int] | None = None, *, max_track_ids: int | None = _MAX_SCOPED_TRACK_IDS,
+    durable_scope: OperationScope | None = None,
 ) -> dict[str, Any]:
     binary = _resolve_keyfinder_binary()
     if not binary:
@@ -1359,10 +1369,18 @@ def _run_key_analysis(
             else:
                 eligible_total = len(_key_candidates(conn, None, scope))
             candidates = _key_candidates(conn, limit, scope)
-            operation_id = analysis_operations_service.start_operation(
-                "key_analysis", scope_limit=limit, eligible_total=eligible_total,
-                considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
-            )["id"]
+            if durable_scope is not None:
+                with operation_admission_gate.admit_descendant(durable_scope):
+                    operation_id = analysis_operations_service.start_operation(
+                        "key_analysis", scope_limit=limit, eligible_total=eligible_total,
+                        considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
+                    )["id"]
+            else:
+                with operation_admission_gate.admit():
+                    operation_id = analysis_operations_service.start_operation(
+                        "key_analysis", scope_limit=limit, eligible_total=eligible_total,
+                        considered=len(candidates), mode="apply_scoped" if scope is not None else "apply",
+                    )["id"]
             for row in candidates:
                 if analysis_operations_service.is_cancel_requested(operation_id):
                     cancelled = True

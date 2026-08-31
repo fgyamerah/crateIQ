@@ -10,6 +10,8 @@ from __future__ import annotations
 
 import asyncio
 import sqlite3
+import threading
+import time
 
 import pytest
 from fastapi.testclient import TestClient
@@ -28,6 +30,10 @@ from backend.app.services import (
     waveform_state_service,
 )
 from tests.conftest import async_test
+from backend.app.services.operation_admission_gate import (
+    LibraryOperationDrainingError,
+    OperationAdmissionGate,
+)
 
 LIBRARY_TRACK_IDS = list(range(1, 7))
 
@@ -768,3 +774,218 @@ def test_http_generation_never_writes_to_processed_db(env, client):
     response = test_client.post("/api/waveform-bulk/generate-missing")
     assert response.status_code == 202
     assert processed.read_bytes() == before
+
+
+# ---------------------------------------------------------------------------
+# Admission/scope lifetime at the real bulk adapter boundary.
+# ---------------------------------------------------------------------------
+
+@async_test
+async def test_bulk_task_cancelled_before_coroutine_starts_releases_reserved_scope(env, monkeypatch):
+    gate = OperationAdmissionGate()
+    scheduled: list[asyncio.Task] = []
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+    real_create_task = asyncio.create_task
+
+    def capture(coro):
+        task = real_create_task(coro)
+        scheduled.append(task)
+        return task
+
+    monkeypatch.setattr(waveform_bulk_service.asyncio, "create_task", capture)
+    started = waveform_bulk_service.start_generate_missing()
+    scheduled[0].cancel()
+    await asyncio.gather(scheduled[0], return_exceptions=True)
+    parent = ops.get_operation(started["id"])
+    assert parent is not None and parent["status"] == "cancelled"
+    assert gate.status()["active_operation_scopes"] == 0
+    await gate.begin_draining_async()
+
+
+def test_bulk_reservation_rejects_before_parent_row_when_already_draining(env, monkeypatch):
+    gate = OperationAdmissionGate()
+    rows: list[object] = []
+    gate.begin_draining()
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(
+        waveform_bulk_service.waveform_operations_service, "start_operation",
+        lambda **_kwargs: rows.append(object()) or {"id": "never"},
+    )
+    with pytest.raises(LibraryOperationDrainingError):
+        waveform_bulk_service.start_generate_missing()
+    assert rows == []
+
+
+def test_bulk_task_creation_terminal_failure_still_releases_reserved_scope(env, monkeypatch):
+    gate = OperationAdmissionGate()
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+
+    def fail_schedule(coro):
+        coro.close()
+        raise RuntimeError("schedule failed")
+
+    monkeypatch.setattr(waveform_bulk_service.asyncio, "create_task", fail_schedule)
+    monkeypatch.setattr(
+        waveform_bulk_service.waveform_operations_service, "finish_operation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("terminal failed")),
+    )
+    with pytest.raises(RuntimeError, match="terminal failed"):
+        waveform_bulk_service.start_generate_missing()
+    assert gate.status()["active_operation_scopes"] == 0
+    gate.begin_draining()
+
+
+def test_bulk_scheduling_failure_terminalizes_durable_parent(env, monkeypatch):
+    gate = OperationAdmissionGate()
+    created: list[str] = []
+    original_start = waveform_bulk_service.waveform_operations_service.start_operation
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+
+    def record_start(**kwargs):
+        operation = original_start(**kwargs)
+        created.append(operation["id"])
+        return operation
+
+    def fail_schedule(coro):
+        coro.close()
+        raise RuntimeError("schedule failed")
+
+    monkeypatch.setattr(waveform_bulk_service.waveform_operations_service, "start_operation", record_start)
+    monkeypatch.setattr(waveform_bulk_service.asyncio, "create_task", fail_schedule)
+    with pytest.raises(RuntimeError, match="schedule failed"):
+        waveform_bulk_service.start_generate_missing()
+    parent = ops.get_operation(created[0])
+    assert parent is not None and parent["status"] == "failed"
+    assert gate.status()["active_operation_scopes"] == 0
+
+
+@async_test
+async def test_bulk_preflight_and_terminal_recording_failures_release_scope(env, monkeypatch):
+    gate = OperationAdmissionGate()
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+    scope = gate.reserve_operation_scope()
+    operation = ops.start_operation(total_tracks=1, eligible_total=1)
+    from backend.app.services.waveform_readiness_service import WaveformRuntimeError
+
+    monkeypatch.setattr(
+        waveform_bulk_service, "resolve_cache_runtime",
+        lambda: (_ for _ in ()).throw(WaveformRuntimeError("TEST_PREFLIGHT")),
+    )
+    monkeypatch.setattr(
+        waveform_bulk_service.waveform_operations_service, "finish_operation",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("terminal write failed")),
+    )
+    with pytest.raises(RuntimeError, match="terminal write failed"):
+        await waveform_bulk_service._run_generate_missing(
+            operation["id"], [1], _library_id(env), durable_scope=scope,
+        )
+    assert gate.status()["active_operation_scopes"] == 0
+    await gate.begin_draining_async()
+
+
+@async_test
+async def test_bulk_cancellation_releases_reserved_scope(env, monkeypatch):
+    gate = OperationAdmissionGate()
+    scope = gate.reserve_operation_scope()
+    operation = ops.start_operation(total_tracks=1, eligible_total=1)
+    entered = asyncio.Event()
+    never = asyncio.Event()
+
+    async def block_submission(*_args, **_kwargs):
+        entered.set()
+        await never.wait()
+        return "generated"
+
+    class State:
+        status = WaveformArtifactStatus.NOT_GENERATED
+
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(waveform_bulk_service, "resolve_cache_runtime", lambda: (None, object()))
+    monkeypatch.setattr(waveform_bulk_service, "generation_blocker", lambda _cache: None)
+    monkeypatch.setattr(waveform_bulk_service, "get_scheduler", lambda: object())
+    monkeypatch.setattr(waveform_bulk_service.waveform_state_service, "get_track_state", lambda *_args, **_kwargs: State())
+    monkeypatch.setattr(waveform_bulk_service, "_submit_and_await", block_submission)
+    task = asyncio.create_task(
+        waveform_bulk_service._run_generate_missing(operation["id"], [1], _library_id(env), durable_scope=scope)
+    )
+    await entered.wait()
+    task.cancel()
+    await asyncio.gather(task, return_exceptions=True)
+    assert gate.status()["active_operation_scopes"] == 0
+    assert ops.get_operation(operation["id"])["status"] == "cancelled"
+    await gate.begin_draining_async()
+
+
+@async_test
+async def test_bulk_real_waveform_child_creation_finishes_before_concurrent_drain(env, monkeypatch):
+    """The real bulk adapter retains scope through a real waveform-job row create."""
+    gate = OperationAdmissionGate()
+    monkeypatch.setattr(waveform_bulk_service, "operation_admission_gate", gate)
+    monkeypatch.setattr(waveform_bulk_service, "_all_track_ids", lambda: [1])
+    monkeypatch.setattr(waveform_bulk_service, "resolve_cache_runtime", lambda: (None, object()))
+    monkeypatch.setattr(waveform_bulk_service, "generation_blocker", lambda _cache: None)
+    immediate = _ImmediateScheduler()
+    monkeypatch.setattr(waveform_bulk_service, "get_scheduler", lambda: immediate)
+
+    child_create_entered = threading.Event()
+    allow_child_create = threading.Event()
+    drain_started = threading.Event()
+    drain_returned = threading.Event()
+    controller_errors: list[BaseException] = []
+    original_submit = waveform_job_service.submit_generation_job
+    captured_scope = []
+    original_submit_and_await = waveform_bulk_service._submit_and_await
+
+    async def capture_scope(track_id, scheduler, *, durable_scope=None):
+        captured_scope.append(durable_scope)
+        return await original_submit_and_await(track_id, scheduler, durable_scope=durable_scope)
+
+    def pause_before_real_child_job(**kwargs):
+        child_create_entered.set()
+        if not allow_child_create.wait(2):
+            raise RuntimeError("test did not release waveform child creation")
+        return original_submit(**kwargs)
+
+    def drain_controller() -> None:
+        try:
+            assert child_create_entered.wait(2)
+            drainer = threading.Thread(target=lambda: (gate.begin_draining(), drain_returned.set()))
+            drainer.start()
+            deadline = time.monotonic() + 2
+            while gate.state.value != "DRAINING_FOR_LIBRARY_SWITCH" and time.monotonic() < deadline:
+                time.sleep(0.001)
+            assert gate.state.value == "DRAINING_FOR_LIBRARY_SWITCH"
+            drain_started.set()
+            # The actual bulk scope remains active while the real waveform
+            # job-row helper is paused, excluding a drain return here.
+            assert gate.status()["active_operation_scopes"] == 1
+            assert not drain_returned.is_set()
+            allow_child_create.set()
+            drainer.join(2)
+            assert drain_returned.is_set()
+        except BaseException as exc:  # surfaced on the test task below
+            controller_errors.append(exc)
+
+    monkeypatch.setattr(waveform_bulk_service, "_submit_and_await", capture_scope)
+    monkeypatch.setattr(waveform_job_service, "submit_generation_job", pause_before_real_child_job)
+    controller = threading.Thread(target=drain_controller)
+    controller.start()
+
+    started = waveform_bulk_service.start_generate_missing()
+    assert started["id"]
+    assert await asyncio.to_thread(drain_started.wait, 2)
+
+    while gate.status()["active_operation_scopes"]:
+        await asyncio.sleep(0)
+    controller.join(2)
+    assert not controller_errors
+    assert drain_returned.is_set()
+    assert len(captured_scope) == 1
+
+    with backend_db.get_conn() as conn:
+        before = conn.execute("SELECT COUNT(*) FROM waveform_jobs").fetchone()[0]
+    with pytest.raises(LibraryOperationDrainingError):
+        await waveform_bulk_service._submit_and_await(1, immediate, durable_scope=captured_scope[0])
+    with backend_db.get_conn() as conn:
+        after = conn.execute("SELECT COUNT(*) FROM waveform_jobs").fetchone()[0]
+    assert before == after == 1
