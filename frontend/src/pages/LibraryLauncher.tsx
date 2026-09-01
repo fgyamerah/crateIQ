@@ -300,7 +300,6 @@ export default function LibraryLauncher() {
         <div className="launcher-brand"><Disc3 size={17} aria-hidden="true" /> <span>crateIQ</span></div>
         <div className="launcher-hero-copy">
           <h1 id="launcher-hero-title">Prepare every track. Own every set.</h1>
-          <p>Your libraries stay local, deliberate, and ready for the next room.</p>
         </div>
       </section>
 
@@ -310,7 +309,7 @@ export default function LibraryLauncher() {
             <span className="launcher-heading-icon" aria-hidden="true"><LibraryBig size={19} /></span>
             <div>
               <h2 id="launcher-title">Choose your library</h2>
-              <p>Open a recent CrateIQ workspace on this installation.</p>
+              <p>Open a recent library or create a new one.</p>
             </div>
           </header>
 
@@ -412,7 +411,7 @@ export default function LibraryLauncher() {
               ) : (
                 <div className="launcher-empty">
                   <LibraryBig size={24} aria-hidden="true" />
-                  <div><strong>No recent libraries</strong><p>This installation does not have a registered library to open yet.</p></div>
+                  <div><strong>No recent libraries</strong><p>You haven’t opened any libraries yet.</p></div>
                 </div>
               )}
 
@@ -424,8 +423,6 @@ export default function LibraryLauncher() {
                   <Plus size={17} /> Create New Library
                 </button>
               </div>
-
-              <p className="launcher-safety-note">Only registered library IDs can be opened. CrateIQ never sends a typed filesystem path from this screen.</p>
             </>
           )}
         </div>
