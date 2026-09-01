@@ -70,10 +70,14 @@ supported under Settings -> Advanced as a secondary compatibility mode.
 * Repo path: this repository root
 * Backend: port 8020
 * Frontend: port 5175
-* Launch/status: `scripts/crateiq-local-services.sh {start|stop|restart|status|logs}`
-  (also `start-demo-local`, `start-library-local`, and rootless
-  `start-launcher-local` variants); PID files/logs
-  under `.run/` (gitignored). For configured-library starts, the
+* Launch/status: `scripts/crateiq-local-services.sh {start|stop|restart|status|logs}`.
+  Normal interactive `start` now defaults to the rootless Library Launcher,
+  followed by the existing LAN/local-only access choice; it starts the
+  long-lived supervisor, rootless backend on 8020, and frontend on 5175 without
+  requiring a configured root or `logs/processed.db`. Explicit
+  `start-demo-local`, `start-library-local`, and `start-launcher-local`
+  variants remain available. PID files/logs live under `.run/` (gitignored).
+  For configured-library starts, the
   Settings-managed `.run/local/crateiq.env` root is authoritative at every
   configured-library selection (including sourced aliases and restart); an
   inherited `CRATEIQ_LIBRARY_ROOT` is only a fallback when that file has no
@@ -153,8 +157,8 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   blocker only after the drained gate and preserves key/root-bound startup,
   shutdown, recovery, artifacts, and publish settings. The launcher API now
   exposes activation start/status, active registry identity, and four recent
-  classified entries for a future frontend. There is still no frontend
-  launcher, Create Library UI, or in-process root switching.
+  classified entries to the `/libraries` frontend launcher. Browse/register
+  and Create Library mutations remain deferred.
 * Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
   `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
   launcher returns the latest four). Its classifier is strictly read-only and
@@ -164,11 +168,11 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   historical CrateIQ schema core (`tracks`, `track_history`, `pipeline_runs`,
   and `duplicate_groups` with their characteristic pipeline columns), not a
   generic `tracks` table. Rootless
-  startup exposes only launcher/health/version/readiness endpoints and does
-  not open library indexes or run library recovery. There is no active-library
-  switching or launcher UI yet. Checkpoint 1B.2A adds only
-  the supervisor/candidate-verification foundation; it does not expose
-  activation or change the running root.
+  startup exposes only launcher/health/version/readiness endpoints, does not
+  open library indexes or the jobs database, and does not run library recovery
+  or schedulers. The frontend gate redirects rootless workspace requests to
+  `/libraries`; verified registry-ID activation performs the existing
+  supervisor-owned switch into the normal workspace.
   Rootless compatibility seeding uses only the Settings-managed saved root;
   the launcher clears inherited root state before booting rootless, while
   inherited `CRATEIQ_LIBRARY_ROOT` remains a configured-library startup

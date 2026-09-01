@@ -2,6 +2,21 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-01] — Make the Library Launcher the normal local startup path
+
+- Changed interactive `crateiq_start`/`start` to offer Library Launcher first
+  and by default, followed by Demo and explicit Legacy Configured Library
+  compatibility modes; the existing LAN/local-only choice remains unchanged.
+- Rootless startup now reaches the long-lived supervisor, rootless backend, and
+  frontend without selecting a library or requiring `logs/processed.db`.
+  Inherited root variables remain cleared for this explicit rootless profile.
+- Added deterministic dry-run coverage for rootless local/LAN startup, stale
+  inherited roots, legacy initialization enforcement, demo/cancel behavior,
+  status reporting, and stop target routing. Tests start no real services.
+- Files affected: local service helper, focused startup tests, README, and
+  PROJECT_CONTEXT. No handoff, LAN security policy, PID ownership, dependency,
+  backend route, frontend launcher, or library-data behavior changed.
+
 [2026-09-01] — Add the Library Launcher frontend
 
 - Added `/libraries` as a responsive installation-level launcher with the

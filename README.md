@@ -367,9 +367,12 @@ npm --prefix frontend install
 scripts/crateiq-local-services.sh start
 ```
 
-The `start` command asks you to choose a library profile and access mode. For
-the safest first run, choose **Demo library** and **Local only**. Then open
-<http://127.0.0.1:5175>.
+The normal `start` flow now defaults to **Library Launcher**, then asks for the
+existing LAN or local-only access mode. Choose **Library Launcher** and
+**Local only**, then open <http://127.0.0.1:5175>. The long-lived supervisor
+starts a rootless backend without requiring `CRATEIQ_LIBRARY_ROOT` or
+`logs/processed.db`; `/` redirects to `/libraries`, where a registered library
+can be selected.
 
 For a non-interactive demo launch:
 
@@ -378,8 +381,8 @@ For a non-interactive demo launch:
 scripts/crateiq-local-services.sh start-demo-local
 ```
 
-For the rootless launcher bootstrap (no library selected, with only the
-installation-scoped launcher API available), use:
+For the same rootless launcher bootstrap without the interactive startup-mode
+menu, use:
 
 ```bash
 scripts/crateiq-local-services.sh start-launcher-local
@@ -441,24 +444,26 @@ Opening an already-known, revalidated registry ID remains available in LAN
 mode; it accepts no path override and cannot browse, register, or create a
 host directory.
 
-**First-run flow for your own music:**
+**Normal registered-library flow:**
 
-1. Start crateIQ.
-2. Open **Settings** — Workspace is the first tab. Enter a new folder path
-   (e.g. `~/Music/crateIQ`); Settings validates it and, once you confirm,
-   creates it and saves it as the pending workspace. Restart crateIQ
-   (Settings shows the exact restart command and clearly separates the
-   *current* workspace you're still running on from the *new* one pending
-   restart), then reload Settings and click **Create Managed Workspace**.
-3. Open **Inbox** and **Import Music** — this copies files in from an
+1. Run `crateiq_start`, choose **Library Launcher** (the default), and choose
+   the desired access mode.
+2. Open the frontend; `/` redirects to `/libraries` while rootless.
+3. Select a registered library. The verified activation enters the normal
+   workspace.
+4. Open **Inbox** and **Import Music** — this copies files in from an
    external Import Source; your originals are untouched.
-4. Run **Process All**, resolve anything in **Needs Review**, then
+5. Run **Process All**, resolve anything in **Needs Review**, then
    **Move Ready to Library**.
 
-Direct/legacy library setup (scan an existing folder in place, no managed
-Inbox/Library/Quarantine) has moved to **Settings → Advanced → Legacy
-Direct Library** — it still works, but it's no longer the default path new
-users see.
+Browse/register and Create Library mutations are still deferred, so a new
+unregistered root cannot be entered or created from the launcher yet.
+
+Explicit configured/Direct Library startup (scan an existing folder in place,
+with no managed Inbox/Library/Quarantine separation) remains available through
+**Settings → Advanced → Legacy Direct Library**. It is an advanced compatibility
+path and still requires an initialized `<root>/logs/processed.db`; it is no
+longer the normal terminal startup selection.
 
 ```bash
 scripts/crateiq-local-services.sh start-library-local

@@ -273,7 +273,8 @@ _crateiq_usage() {
     cat <<EOF
 Usage: crateiq-local-services.sh {start|start-demo-local|start-demo-lan|start-library-local|start-library-lan|start-launcher-local|start-launcher-lan|stop|restart|status|logs|back-logs|front-logs}
 
-  start       interactively select the demo/configured library and LAN/local access
+  start       interactively select the Library Launcher (default), demo, or
+              legacy configured-library mode, then LAN/local access
   start-demo-local / start-demo-lan
               start the safe demo library with local-only or LAN access
   start-library-local / start-library-lan
@@ -386,18 +387,29 @@ _crateiq_start_profile() {
 }
 
 _crateiq_interactive_start() {
-    local d a
+    local profile access
     while :; do
-        printf 'Select CrateIQ database:\n  1) Demo library\n  2) Configured library (CRATEIQ_LIBRARY_ROOT)\n  3) Cancel\n'
-        read -r -p 'Choice [1]: ' d
-        case "${d:-1}" in 1) d=demo; break;; 2) d=library; break;; 3) echo Cancelled.; return 0;; *) echo 'Invalid selection.';; esac
+        printf 'Select startup mode:\n  1) Library Launcher (recommended)\n  2) Demo library\n  3) Legacy configured library (CRATEIQ_LIBRARY_ROOT)\n  4) Cancel\n'
+        read -r -p 'Choice [1]: ' profile
+        case "${profile:-1}" in
+            1) profile=launcher; break ;;
+            2) profile=demo; break ;;
+            3) profile=library; break ;;
+            4) echo Cancelled.; return 0 ;;
+            *) echo 'Invalid selection.' ;;
+        esac
     done
     while :; do
         printf 'Select access mode:\n  1) LAN - accessible from other devices on this network\n  2) Local only - accessible only on this computer\n  3) Cancel\n'
-        read -r -p 'Choice [1]: ' a
-        case "${a:-1}" in 1) a=lan; break;; 2) a=local; break;; 3) echo Cancelled.; return 0;; *) echo 'Invalid selection.';; esac
+        read -r -p 'Choice [1]: ' access
+        case "${access:-1}" in
+            1) access=lan; break ;;
+            2) access=local; break ;;
+            3) echo Cancelled.; return 0 ;;
+            *) echo 'Invalid selection.' ;;
+        esac
     done
-    _crateiq_start_profile "$d" "$a"
+    _crateiq_start_profile "$profile" "$access"
 }
 
 _crateiq_dispatch() {
