@@ -2,6 +2,23 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-01] — Add registry-bound launcher activation API (Checkpoint 1B.2B-2B)
+
+- Added registry-ID-only launcher activation start/status/current-library
+  endpoints; they revalidate saved entries and submit only canonical
+  root/key/classification data through the owner-only supervisor IPC.
+- Successful handoff is asynchronous because it replaces the backend handling
+  the request. The supervisor retains a bounded safe outcome, maps busy,
+  blocker, fail-closed, and unavailable states for the future launcher UI, and
+  updates `last_opened_at` only after verified activation or same-library no-op.
+- Registry recency failure is reported as a warning without rolling back the
+  verified active backend. Known safe registry IDs remain openable over LAN;
+  arbitrary host-path inspection remains local-operator-only.
+- Files affected: launcher route/registry service, supervisor IPC/activation
+  status, focused API/supervisor tests, and current-state documentation. No
+  frontend launcher, Create Library UI, live-service action, or in-process
+  root switch was added.
+
 [2026-08-31] — Fail closed ambiguous library-handoff rollback
 
 - Retained every supervisor-owned candidate, promoted, or original child

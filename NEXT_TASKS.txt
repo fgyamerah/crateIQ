@@ -39,11 +39,17 @@ P1 / HIGH
     durable fail-closed ambiguity reporting, and same-library no-op. It has no
     HTTP activation endpoint or registry recency mutation.
 
-[~] Checkpoint 1B.2B-2B — connect the reviewed internal handoff success result
-    to a local/operator-restricted activation API and only then update launcher
-    registry `last_opened`; add launcher activation UX. Preserve LAN behavior,
-    the local-start-only host-path administration boundary, and no in-process
-    root switching.
+[x] Checkpoint 1B.2B-2B — launcher/operator activation API and registry
+    recency integration: registry-ID-only activation revalidates saved roots,
+    invokes the supervisor-owned handoff over owner-only IPC, reports safe
+    start/status/current-library state, and updates `last_opened` only after
+    verified success or same-library no-op. LAN activation of known safe IDs is
+    supported; arbitrary host-path administration remains local-only.
+
+[ ] Implement the launcher frontend activation UX (recent-library cards,
+    progress/status reconnect handling, and safe blocked/fail-closed messages).
+[ ] Implement Create Library UI and any remaining explicit local-only
+    browse/create/register workflow; do not broaden LAN host-path access.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM

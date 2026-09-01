@@ -1,15 +1,15 @@
-"""Installation-scoped, read-only launcher bootstrap endpoints."""
+"""Installation-scoped launcher endpoints with registry-bound activation."""
 from __future__ import annotations
 
 import os
-from typing import Literal
+from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request
-from pydantic import BaseModel, Field
+from fastapi import APIRouter, HTTPException, Request, status
+from pydantic import BaseModel, ConfigDict, Field
 
 from ...core.library_root import selected_library_root
 from ...core.preflight import redact_path
-from ...services import library_registry_service
+from ...services import library_registry_service, supervisor_ipc
 
 router = APIRouter(tags=["launcher"])
 
@@ -29,11 +29,13 @@ class LibraryClassificationResponse(BaseModel):
 
 
 class RecentLibraryResponse(BaseModel):
+    library_id: str
     path: str
     display_name: str
     last_opened_at: str
     availability: bool
     classification: str
+    active: bool
 
 
 class RegistryResponse(BaseModel):
@@ -42,33 +44,95 @@ class RegistryResponse(BaseModel):
     message: str | None = None
 
 
+class ActivateLibraryRequest(BaseModel):
+    """Only an opaque registry ID is accepted from LAN callers."""
+    model_config = ConfigDict(extra="forbid")
+    library_id: str = Field(min_length=9, max_length=128, pattern=r"^library_[0-9a-f]{64}$")
+
+
+class ActivationStartResponse(BaseModel):
+    activation_id: str
+    activation_status: Literal["activating"]
+
+
+class ActivationBlockerResponse(BaseModel):
+    category: Literal["active_work", "foreign_active_work", "legacy_ambiguous_work"]
+    count: int = Field(ge=0)
+    message: str
+
+
+class ActivationStatusResponse(BaseModel):
+    activation_status: Literal["idle", "activating", "succeeded", "blocked", "failed", "fail_closed"]
+    activation_id: str | None = None
+    library_id: str | None = None
+    result: Literal["activated", "already_active"] | None = None
+    error_code: str | None = None
+    message: str | None = None
+    blocker: ActivationBlockerResponse | None = None
+    registry_recency_updated: bool | None = None
+    warning_code: Literal["registry_recency_update_failed"] | None = None
+
+
 class CurrentLibraryResponse(BaseModel):
     rootless: bool
     library_root: str | None = None
+    library_id: str | None = None
+    display_name: str | None = None
+    launcher_status: Literal["ready", "supervisor_unavailable"]
+    activation_status: Literal["idle", "activating", "succeeded", "blocked", "failed", "fail_closed"]
+
+
+def _detail(code: str, message: str) -> dict[str, str]:
+    return {"code": code, "message": message}
 
 
 def _require_local_operator(request: Request) -> None:
     """Allow host-path inspection only for an explicitly local server startup."""
-    # Vite proxies /api traffic over loopback, so request.client alone cannot
-    # distinguish a local browser from a LAN browser using the supported
-    # frontend. The service helper sets this process-scoped value from its
-    # selected bind mode; it is deliberately not derived from request headers.
     if os.environ.get("CRATEIQ_LAUNCH_ACCESS_MODE") != "local":
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate library path inspection is disabled when CrateIQ is not started in local-only mode.",
-        )
+        raise HTTPException(status_code=403, detail="Candidate library path inspection is disabled when CrateIQ is not started in local-only mode.")
     host = request.client.host if request.client else ""
     if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
-        raise HTTPException(
-            status_code=403,
-            detail="Candidate library path inspection is available only to the local CrateIQ operator.",
-        )
+        raise HTTPException(status_code=403, detail="Candidate library path inspection is available only to the local CrateIQ operator.")
+
+
+def _active_registry_metadata() -> tuple[bool, str | None, str | None, str | None]:
+    try:
+        root = selected_library_root()
+    except RuntimeError:
+        return True, None, None, None
+    try:
+        registered = library_registry_service.registered_library_for_root(root)
+    except (library_registry_service.MalformedRegistryError, ValueError):
+        registered = None
+    return False, redact_path(root), (registered or {}).get("library_id"), (registered or {}).get("display_name")
+
+
+def _activation_status_from_supervisor() -> tuple[dict[str, Any], bool]:
+    try:
+        payload = supervisor_ipc.request("status")
+    except supervisor_ipc.SupervisorIPCError:
+        return {"status": "idle"}, False
+    activation = payload.get("activation")
+    valid = {"idle", "activating", "succeeded", "blocked", "failed", "fail_closed"}
+    if not isinstance(activation, dict) or activation.get("status") not in valid:
+        return {"status": "failed", "error_code": "invalid_supervisor_status", "message": "Supervisor status is unavailable."}, False
+    return activation, True
+
+
+def _activation_response(payload: dict[str, Any]) -> ActivationStatusResponse:
+    return ActivationStatusResponse(
+        activation_status=payload["status"], activation_id=payload.get("activation_id"),
+        library_id=payload.get("library_id"), result=payload.get("result"),
+        error_code=payload.get("error_code"), message=payload.get("message"),
+        blocker=payload.get("blocker"), registry_recency_updated=payload.get("registry_recency_updated"),
+        warning_code=payload.get("warning_code"),
+    )
 
 
 @router.get("/launcher/library-registry", response_model=RegistryResponse)
 async def library_registry() -> RegistryResponse:
-    return RegistryResponse(**library_registry_service.get_launcher_registry())
+    _, _, active_library_id, _ = _active_registry_metadata()
+    return RegistryResponse(**library_registry_service.get_launcher_registry(active_library_id=active_library_id))
 
 
 @router.post("/launcher/library-classification", response_model=LibraryClassificationResponse)
@@ -80,10 +144,52 @@ async def classify_library(body: LibraryCandidateRequest, request: Request) -> L
         raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
+@router.post("/launcher/activate-library", response_model=ActivationStartResponse, status_code=status.HTTP_202_ACCEPTED)
+async def activate_library(body: ActivateLibraryRequest) -> ActivationStartResponse:
+    """Start a registry-ID-only supervisor handoff.
+
+    Success replaces this backend process, so final completion is read from
+    the surviving supervisor after the client reconnects to the stable port.
+    """
+    try:
+        target = library_registry_service.resolve_registered_library(body.library_id)
+    except library_registry_service.UnknownRegistryLibraryError as exc:
+        raise HTTPException(status_code=404, detail=_detail("unknown_library", "The selected library is not in this installation registry.")) from exc
+    except library_registry_service.UnsafeRegistryLibraryError as exc:
+        raise HTTPException(status_code=422, detail=_detail("unsafe_library", "The selected library is unavailable or no longer safe to open.")) from exc
+    except library_registry_service.MalformedRegistryError as exc:
+        raise HTTPException(status_code=503, detail=_detail("registry_unavailable", "The library registry is unavailable.")) from exc
+    try:
+        result = supervisor_ipc.request("activate_registered_library", {
+            "library_id": target["library_id"], "library_root": target["library_root"],
+            "library_key": target["library_key"], "classification": target["classification"],
+        })
+    except supervisor_ipc.SupervisorIPCError as exc:
+        code = str(exc)
+        if code == "activation_in_progress":
+            raise HTTPException(status_code=409, detail=_detail(code, "Another library activation is already in progress.")) from exc
+        if code == "supervisor_fail_closed":
+            raise HTTPException(status_code=409, detail=_detail(code, "Library activation requires supervisor restart or operator intervention.")) from exc
+        raise HTTPException(status_code=503, detail=_detail("supervisor_unavailable", "The local supervisor is unavailable.")) from exc
+    if result.get("result") != "activation_started" or not isinstance(result.get("activation_id"), str):
+        raise HTTPException(status_code=503, detail=_detail("supervisor_invalid_response", "The local supervisor returned an invalid activation response."))
+    return ActivationStartResponse(activation_id=result["activation_id"], activation_status="activating")
+
+
+@router.get("/launcher/activation-status", response_model=ActivationStatusResponse)
+async def activation_status() -> ActivationStatusResponse:
+    payload, available = _activation_status_from_supervisor()
+    if not available:
+        raise HTTPException(status_code=503, detail=_detail("supervisor_unavailable", "The local supervisor is unavailable."))
+    return _activation_response(payload)
+
+
 @router.get("/launcher/current-library", response_model=CurrentLibraryResponse)
 async def current_library() -> CurrentLibraryResponse:
-    try:
-        root = selected_library_root()
-    except RuntimeError:
-        return CurrentLibraryResponse(rootless=True)
-    return CurrentLibraryResponse(rootless=False, library_root=redact_path(root))
+    rootless, library_root, library_id, display_name = _active_registry_metadata()
+    activation, available = _activation_status_from_supervisor()
+    return CurrentLibraryResponse(
+        rootless=rootless, library_root=library_root, library_id=library_id, display_name=display_name,
+        launcher_status="ready" if available else "supervisor_unavailable",
+        activation_status=activation["status"] if available else "idle",
+    )

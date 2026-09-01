@@ -11,6 +11,7 @@ import ctypes
 import errno
 import fcntl
 import json
+import logging
 import os
 import secrets
 import signal
@@ -40,7 +41,7 @@ DEFAULT_SOCKET_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "
 DEFAULT_SUPERVISOR_LOCK_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "crateiq-supervisor.lock"
 DEFAULT_STATE_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "library_activation_state.json"
 DEFAULT_LOCK_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "library_activation.lock"
-_ALLOWED_OPERATIONS = frozenset({"ping", "status", "start_candidate", "stop_candidate", "inspect_child", "restore_previous", "handoff_library"})
+_ALLOWED_OPERATIONS = frozenset({"ping", "status", "start_candidate", "stop_candidate", "inspect_child", "restore_previous", "handoff_library", "activate_registered_library"})
 _ALLOWED_ROLES = frozenset({"rootless", "active", "candidate"})
 _ALLOWED_CANDIDATE_CLASSIFICATIONS = frozenset({"managed_workspace", "legacy_direct_library"})
 SUPPORTED_CHILD_ENVIRONMENT = frozenset({
@@ -70,6 +71,8 @@ _LEGACY_IDLE_STATE_FIELDS = frozenset({
     "schema_version", "activation_id", "phase", "old_verified_root",
     "requested_root", "old_instance_id", "candidate_instance_id", "updated_at",
 })
+
+log = logging.getLogger(__name__)
 
 
 class SupervisorError(RuntimeError):
@@ -489,6 +492,14 @@ class LocalSupervisor:
         self._before_socket_cleanup_unlink: Callable[[], None] | None = None
         self._after_socket_withdrawal_exchange: Callable[[str], None] | None = None
         self._on_ipc_handler_accepted: Callable[[], None] | None = None
+        # The supervisor, rather than the outgoing backend request handler,
+        # retains activation progress because a successful handoff replaces
+        # that handler's process before it could reliably return a final HTTP
+        # response. This is one supervisor-owned activation at a time; the
+        # durable handoff lock/state remains the authority for the handoff.
+        self._activation_thread: threading.Thread | None = None
+        self._activation_record: dict[str, object] = {"status": "idle"}
+        self._last_blocker_summary: dict[str, object] | None = None
 
     def child_command(self, spec: ChildSpec, inherited_fd: int | None = None) -> list[str]:
         if spec.role not in _ALLOWED_ROLES:
@@ -627,6 +638,139 @@ class LocalSupervisor:
             failure_reason=None,
         )
 
+    @staticmethod
+    def _safe_blocker_summary(blockers: dict[str, object]) -> dict[str, object]:
+        """Keep only frontend-safe switch-blocker information."""
+        active = blockers.get("blockers")
+        ambiguous = blockers.get("ambiguous_legacy_active")
+        active_items = active if isinstance(active, list) else []
+        ambiguous_items = ambiguous if isinstance(ambiguous, list) else []
+        reasons = {
+            str(item.get("reason"))
+            for item in [*active_items, *ambiguous_items]
+            if isinstance(item, dict)
+        }
+        if "active_current_library" in reasons:
+            category, message = "active_work", "The active library has work in progress."
+        elif "foreign_active_installation_inconsistency" in reasons:
+            category, message = "foreign_active_work", "CrateIQ has unresolved active work for another library."
+        else:
+            category, message = "legacy_ambiguous_work", "CrateIQ found unresolved legacy active work."
+        return {"category": category, "count": len(active_items) + len(ambiguous_items), "message": message}
+
+    def start_registered_library_activation(self, payload: dict[str, object]) -> dict[str, object]:
+        """Start one registry-bound handoff without trusting a raw path.
+
+        The caller supplies the server-validated canonical tuple, but the
+        supervisor resolves the registry ID again before it starts a child.
+        This preserves the Unix supervisor as the sole handoff owner and
+        makes a direct IPC caller unable to substitute a host path.
+        """
+        if set(payload) != {"library_id", "library_root", "library_key", "classification"}:
+            raise SupervisorError("malformed_request")
+        if not all(isinstance(payload[name], str) for name in payload):
+            raise SupervisorError("malformed_request")
+        try:
+            target = library_registry_service.resolve_registered_library(str(payload["library_id"]))
+        except library_registry_service.UnknownRegistryLibraryError as exc:
+            raise SupervisorError("unknown_registry_library") from exc
+        except (library_registry_service.UnsafeRegistryLibraryError, library_registry_service.MalformedRegistryError, ValueError) as exc:
+            raise SupervisorError("unsafe_registry_library") from exc
+        if any(target[name] != payload[name] for name in ("library_root", "library_key", "classification")):
+            raise SupervisorError("invalid_activation_target")
+
+        with self._state_lock:
+            self._require_ipc_admission_locked()
+            if self._activation_thread is not None and self._activation_thread.is_alive():
+                raise SupervisorError("activation_in_progress")
+            try:
+                phase = str(self.state_store.read()["phase"])
+            except MalformedActivationState as exc:
+                raise SupervisorError("supervisor_fail_closed") from exc
+            if phase == "fail_closed":
+                raise SupervisorError("supervisor_fail_closed")
+            if phase != "idle":
+                raise SupervisorError("activation_in_progress")
+            activation_id = _new_id()
+            self._last_blocker_summary = None
+            self._activation_record = {
+                "status": "activating",
+                "activation_id": activation_id,
+                "library_id": target["library_id"],
+            }
+            worker = threading.Thread(
+                target=self._run_registered_library_activation,
+                args=(activation_id, target),
+                name="crateiq-library-activation",
+                daemon=True,
+            )
+            self._activation_thread = worker
+            worker.start()
+        return {"result": "activation_started", "activation_id": activation_id, "activation_status": "activating"}
+
+    def _run_registered_library_activation(self, activation_id: str, target: dict[str, object]) -> None:
+        """Run handoff and recency bookkeeping after verified completion."""
+        try:
+            # Repeat the registry lookup immediately before the handoff so a
+            # stale entry cannot become a process target while queued.
+            verified = library_registry_service.resolve_registered_library(str(target["library_id"]))
+            if any(verified[name] != target[name] for name in ("library_root", "library_key", "classification")):
+                raise SupervisorError("invalid_activation_target")
+            result = self.handoff_library(str(verified["library_root"]))
+            recency_updated = False
+            warning_code: str | None = None
+            try:
+                library_registry_service.mark_registered_library_opened(str(verified["library_id"]))
+                recency_updated = True
+            except Exception:
+                # Recency is convenience metadata: B is already the verified,
+                # saved active backend and must never be rolled back for it.
+                warning_code = "registry_recency_update_failed"
+                log.exception("library activation completed but registry recency update failed")
+            with self._state_lock:
+                self._activation_record = {
+                    "status": "succeeded",
+                    "activation_id": activation_id,
+                    "library_id": verified["library_id"],
+                    "result": result["result"],
+                    "registry_recency_updated": recency_updated,
+                    "warning_code": warning_code,
+                }
+        except SupervisorError as exc:
+            message = str(exc)
+            if "persisted operation state blocks" in message:
+                code = "switch_blocked"
+                record: dict[str, object] = {
+                    "status": "blocked", "activation_id": activation_id,
+                    "library_id": target["library_id"], "error_code": code,
+                    "blocker": self._last_blocker_summary or {
+                        "category": "active_work", "count": 0,
+                        "message": "The active library has work in progress.",
+                    },
+                }
+            elif "failed closed" in message or message == "supervisor_fail_closed":
+                record = {
+                    "status": "fail_closed", "activation_id": activation_id,
+                    "library_id": target["library_id"], "error_code": "supervisor_fail_closed",
+                    "message": "Activation requires supervisor restart or operator intervention.",
+                }
+            else:
+                record = {
+                    "status": "failed", "activation_id": activation_id,
+                    "library_id": target["library_id"], "error_code": "handoff_failed",
+                    "message": "The library switch did not complete.",
+                }
+            with self._state_lock:
+                self._activation_record = record
+        except Exception:
+            log.exception("library activation worker failed unexpectedly")
+            with self._state_lock:
+                self._activation_record = {
+                    "status": "failed", "activation_id": activation_id,
+                    "library_id": target["library_id"], "error_code": "internal_failure",
+                    "message": "The library switch did not complete.",
+                }
+
     def handoff_library(self, requested_root: str) -> dict[str, object]:
         """Perform one local, supervisor-owned root-bound backend handoff.
 
@@ -683,6 +827,7 @@ class LocalSupervisor:
                         raise SupervisorError("active backend admission drain did not complete")
                     blockers = inspect_switch_blockers(library_key_for_root(old_child.spec.library_root))
                     if not blockers["can_switch"]:
+                        self._last_blocker_summary = self._safe_blocker_summary(blockers)
                         raise SupervisorError("persisted operation state blocks a safe library switch")
 
                 state = self.state_store.transition(state, "promoting")
@@ -1035,6 +1180,7 @@ class LocalSupervisor:
                 "activation_phase": phase,
                 "activation_incomplete": incomplete,
                 "operation_admission_draining": phase == "active_draining",
+                "activation": dict(self._activation_record),
             }
 
     def handle_message(self, message: object) -> dict[str, object]:
@@ -1077,6 +1223,8 @@ class LocalSupervisor:
             if set(payload) != {"library_root"} or not isinstance(payload["library_root"], str):
                 raise SupervisorError("malformed_request")
             return self.handoff_library(payload["library_root"])
+        if operation == "activate_registered_library":
+            return self.start_registered_library_activation(payload)
         raise SupervisorError("handoff_not_implemented")
 
     def _require_ipc_admission_locked(self) -> None:

@@ -15,6 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.library_root import assert_path_under_root, assert_safe_new_root_path
+from ..core.library_key import library_key_for_root
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
 REGISTRY_PATH = _REPO_ROOT / ".run" / "local" / "library_registry.json"
@@ -22,6 +23,7 @@ LOCAL_ENV_PATH = _REPO_ROOT / ".run" / "local" / "crateiq.env"
 REGISTRY_SCHEMA_VERSION = 1
 RECENT_LIBRARY_LIMIT = 16
 LAUNCHER_RECENT_LIMIT = 4
+_ALLOWED_ACTIVATION_CLASSIFICATIONS = frozenset({"managed_workspace", "legacy_direct_library"})
 WORKSPACE_MARKER_NAME = ".crateiq-workspace.json"
 WORKSPACE_MARKER_VERSION = 1
 ZONE_NAMES = ("Inbox", "Library", "Quarantine")
@@ -55,6 +57,14 @@ class MalformedRegistryError(ValueError):
     """The registry cannot be trusted and must not be rewritten implicitly."""
 
 
+class UnknownRegistryLibraryError(LookupError):
+    """A launcher request did not name an existing registry entry."""
+
+
+class UnsafeRegistryLibraryError(ValueError):
+    """An existing registry entry no longer names an activatable library."""
+
+
 def _utc_now() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -67,6 +77,19 @@ def _timestamp(value: object) -> datetime:
 
 def _canonical_path(value: str) -> Path:
     return assert_safe_new_root_path(value)
+
+
+def library_id_for_root(root: Path | str) -> str:
+    """Return the stable opaque launcher identity for one canonical root.
+
+    The registry intentionally retains its v1 on-disk shape.  The ID is
+    deterministically derived from the existing canonical library key rather
+    than storing a second path-derived identifier or performing a migration.
+    """
+    key = library_key_for_root(_canonical_path(str(root)))
+    if key is None:  # pragma: no cover - root is always non-null here
+        raise ValueError("library identity is unavailable")
+    return f"library_{key}"
 
 
 def _validated_entry(raw: object) -> dict[str, str | None]:
@@ -271,6 +294,64 @@ def record_recent_library(value: str, *, display_name: str | None = None, opened
     return entry
 
 
+def resolve_registered_library(library_id: str) -> dict[str, Any]:
+    """Resolve and revalidate one existing registry entry for activation.
+
+    This never accepts a caller-controlled path.  Classification is repeated
+    at activation time, so a stale, missing, or unsafe registry entry cannot
+    be sent to the supervisor handoff engine.
+    """
+    if not isinstance(library_id, str) or not library_id.startswith("library_"):
+        raise UnknownRegistryLibraryError("Unknown library.")
+    for entry in _read_registry():
+        root = str(entry["path"])
+        if library_id_for_root(root) != library_id:
+            continue
+        classified = classify_library_candidate(root)
+        if (
+            classified["canonical_path"] != root
+            or not classified["available"]
+            or classified["classification"] not in _ALLOWED_ACTIVATION_CLASSIFICATIONS
+        ):
+            raise UnsafeRegistryLibraryError("This saved library is unavailable or no longer safe to open.")
+        return {
+            "library_id": library_id,
+            "library_root": root,
+            "library_key": library_key_for_root(root),
+            "classification": classified["classification"],
+            "display_name": entry["display_name"] or Path(root).name,
+        }
+    raise UnknownRegistryLibraryError("Unknown library.")
+
+
+def mark_registered_library_opened(library_id: str, *, opened_at: str | None = None) -> dict[str, str | None]:
+    """Update recency for one existing entry without creating a new entry."""
+    entries = _read_registry()
+    timestamp = opened_at or _utc_now()
+    _timestamp(timestamp)
+    for position, entry in enumerate(entries):
+        if library_id_for_root(str(entry["path"])) != library_id:
+            continue
+        updated = {**entry, "last_opened_at": timestamp}
+        entries.pop(position)
+        entries.insert(0, updated)
+        _atomic_write_registry(entries)
+        return updated
+    raise UnknownRegistryLibraryError("Unknown library.")
+
+
+def registered_library_for_root(root: Path | str) -> dict[str, Any] | None:
+    """Return display-safe registry metadata for an already-active root."""
+    canonical = str(_canonical_path(str(root)))
+    for entry in _read_registry():
+        if entry["path"] == canonical:
+            return {
+                "library_id": library_id_for_root(canonical),
+                "display_name": entry["display_name"] or Path(canonical).name,
+            }
+    return None
+
+
 def _legacy_db_is_crateiq(db_path: Path, root: Path) -> bool:
     """Inspect stable historical CrateIQ schema evidence without SQLite writes."""
     try:
@@ -422,7 +503,7 @@ def bootstrap_compatibility_registry() -> None:
     record_recent_library(str(root))
 
 
-def get_launcher_registry() -> dict[str, Any]:
+def get_launcher_registry(*, active_library_id: str | None = None) -> dict[str, Any]:
     """Return only the four newest recent entries plus cheap local status."""
     try:
         entries = _read_registry()
@@ -433,8 +514,10 @@ def get_launcher_registry() -> dict[str, Any]:
         classified = classify_library_candidate(str(entry["path"]))
         recent.append({
             **entry,
+            "library_id": library_id_for_root(str(entry["path"])),
             "display_name": entry["display_name"] or Path(str(entry["path"])).name,
             "availability": classified["available"],
             "classification": classified["classification"],
+            "active": library_id_for_root(str(entry["path"])) == active_library_id,
         })
     return {"recent_libraries": recent, "registry_status": "ready", "message": None}

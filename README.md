@@ -388,6 +388,16 @@ scripts/crateiq-local-services.sh start-launcher-local
 The launcher registry is local to this installation at
 `.run/local/library_registry.json`. It records at most 16 canonical recent
 roots and shows the latest four; it stores no music, indexes, or credentials.
+Each result has a deterministic opaque `library_id`; future launcher clients
+use that ID, never a host filesystem path, to request an open. `POST
+/api/launcher/activate-library` accepts the request and returns an activation
+ID, while `GET /api/launcher/activation-status` reports the safe final result
+after reconnecting to the stable backend endpoint. This is asynchronous because
+a successful handoff replaces the backend process that accepted the request.
+The supervisor re-resolves and reclassifies the saved registry entry before
+handoff, then updates `last_opened_at` only after verified success (including
+an explicit same-library no-op). A recency-write failure is a bounded warning
+and never rolls back a verified activation.
 It can safely identify a valid managed workspace, a real indexed Legacy Direct
 Library, an empty folder, an external music folder, a missing path, or a
 malformed/unsafe candidate without changing the candidate. Legacy evidence is
@@ -421,6 +431,9 @@ Candidate host-path classification is available only when the service was
 started in **Local only** mode. LAN startup disables it for every request,
 including requests proxied by Vite over loopback, because CrateIQ has no auth
 and LAN clients must not be given arbitrary server filesystem administration.
+Opening an already-known, revalidated registry ID remains available in LAN
+mode; it accepts no path override and cannot browse, register, or create a
+host directory.
 
 **First-run flow for your own music:**
 
@@ -485,10 +498,10 @@ and generic/background job updates retain that immutable origin; reference
 findings and active waveform track-state blockers use the same exact-key rule.
 Global tag backups and job logs are key-namespaced, and publish
 destinations are per-key; a legacy global destination is retained but is not
-silently assigned. The internal supervisor handoff/rollback engine is
-implemented, but the HTTP activation API, registry-recency update, and
-frontend launcher remain for the next 1B.2B-2B checkpoint. No in-process root
-switching is supported.
+silently assigned. The supervisor handoff/rollback engine and registry-ID
+activation API are implemented. The frontend launcher, Create Library UI, and
+explicit browse/create workflow remain deferred. No in-process root switching
+is supported.
 The helper-managed backend is intentionally non-reload: after Python backend
 code changes, restart the helper-managed service. Any separately run manual
 development server is outside supervisor ownership and is not a library-switch

@@ -116,8 +116,16 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   reported. A child reference is cleared only after confirmed reaping; any
   ambiguous candidate, promoted backend, original-child retirement, or config
   restoration retains ownership and a diagnosable durable `fail_closed` state.
-  The engine returns a success
-  result only; it does not update launcher registry recency.
+  The engine is exposed only through a registry-ID launcher activation
+  contract. The API accepts an opaque ID rather than a path, revalidates the
+  saved entry, and submits canonical root/key/classification data through the
+  owner-only supervisor IPC. Because successful handoff replaces the serving
+  backend, activation uses start-and-status semantics; the supervisor retains
+  the safe outcome for the replacement backend to report. It updates registry
+  `last_opened_at` only after a verified activation or same-library no-op.
+  Recency failure is a bounded warning and never rolls back a verified active
+  backend. LAN clients may open a known safe registry ID, but arbitrary path
+  inspection, browse, register, and create administration remain local-only.
   The central process-local operation-admission gate atomically drains the
   bounded durable-create sections for Process All, single/bulk waveform,
   BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the
@@ -136,10 +144,10 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   publish destinations are v2 per-key records; a legacy global destination is
   preserved but never inferred. The internal handoff uses this persisted
   blocker only after the drained gate and preserves key/root-bound startup,
-  shutdown, recovery, artifacts, and publish settings. There is still no HTTP
-  activation endpoint, registry recency update, frontend launcher, or
-  in-process root switching; 1B.2B-2B may connect the successful handoff
-  result to the local/operator API boundary.
+  shutdown, recovery, artifacts, and publish settings. The launcher API now
+  exposes activation start/status, active registry identity, and four recent
+  classified entries for a future frontend. There is still no frontend
+  launcher, Create Library UI, or in-process root switching.
 * Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
   `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
   launcher returns the latest four). Its classifier is strictly read-only and

@@ -379,7 +379,14 @@ def test_rootless_api_isolated_from_library_routes_and_startup_recovery(monkeypa
         readiness_response = client.get("/api/runtime/readiness")
 
     assert registry_response.status_code == 200
-    assert current_response.json() == {"rootless": True, "library_root": None}
+    assert current_response.json() == {
+        "rootless": True,
+        "library_root": None,
+        "library_id": None,
+        "display_name": None,
+        "launcher_status": "supervisor_unavailable",
+        "activation_status": "idle",
+    }
     assert classification_response.status_code == 200
     assert library_response.status_code == 409
     assert health_response.json() == {"ok": True, "db_exists": False}
