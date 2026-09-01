@@ -394,12 +394,18 @@ malformed/unsafe candidate without changing the candidate. Legacy evidence is
 conservative: immutable SQLite inspection must find the historical CrateIQ
 `tracks`, `track_history`, `pipeline_runs`, and `duplicate_groups` schema core,
 including their characteristic pipeline columns; a generic `tracks` table is
-not enough. Library activation and in-process switching are not implemented
-yet. The local service helper now uses a dedicated non-reload backend
+not enough. The local service helper now uses a dedicated non-reload backend
 supervisor, whose process-lifetime-flock-protected owner-only Unix socket is limited to local fixed IPC
-operations. It can verify a temporary loopback-only candidate by generated
-instance token and canonical root, but it never stops or replaces the active
-backend in this release. Its activation lock and runtime directory reject
+operations. Its internal-only handoff engine verifies a temporary loopback-only
+candidate by generated instance token and canonical root, then uses the active
+backend's admission drain and persisted exact-key switch blockers before it
+can replace the active backend. The candidate is stopped, the old child is
+boundedly reaped, and a fresh root-bound backend is launched on the stable
+endpoint and independently verified before compatibility state is updated.
+Failure returns idle only after one verified rollback backend (or rootless
+backend), no B child, and the exact prior compatibility-root state are proven;
+otherwise it retains owned child references in explicit fail-closed activation
+state. Its activation lock and runtime directory reject
 symlink, non-regular, and multiply-linked paths before mutating a lock inode;
 accepted control requests have bounded reads and
 quiesce before ownership release, and Process All/bulk waveform reserve their
@@ -449,8 +455,9 @@ During rootless launcher startup, only that Settings-managed saved root may be
 added to recents, without moving, initializing, scanning, or altering the
 library. The launcher intentionally clears inherited root variables before it
 boots rootless; inherited `CRATEIQ_LIBRARY_ROOT` remains only a
-configured-library startup fallback. The compatibility file remains the future
-supervisor's active-root handoff input.
+configured-library startup fallback. The compatibility file is updated
+atomically only after an internally promoted backend independently verifies on
+the active endpoint; it remains literal data and is never sourced as shell.
 
 Pointing crateIQ directly at an existing library (no managed
 Inbox/Library/Quarantine folders) remains supported, but the managed
@@ -478,8 +485,10 @@ and generic/background job updates retain that immutable origin; reference
 findings and active waveform track-state blockers use the same exact-key rule.
 Global tag backups and job logs are key-namespaced, and publish
 destinations are per-key; a legacy global destination is retained but is not
-silently assigned. Actual handoff/rollback, activation API, registry-recency
-update, and frontend launcher remain for 1B.2B-2.
+silently assigned. The internal supervisor handoff/rollback engine is
+implemented, but the HTTP activation API, registry-recency update, and
+frontend launcher remain for the next 1B.2B-2B checkpoint. No in-process root
+switching is supported.
 The helper-managed backend is intentionally non-reload: after Python backend
 code changes, restart the helper-managed service. Any separately run manual
 development server is outside supervisor ownership and is not a library-switch

@@ -2,6 +2,41 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-08-31] — Fail closed ambiguous library-handoff rollback
+
+- Retained every supervisor-owned candidate, promoted, or original child
+  reference until termination and reaping are confirmed; ambiguous retirement
+  never starts a replacement child or reports idle.
+- Added a durable `fail_closed` activation phase with activation, root/key,
+  child-identity, and failure-stage diagnostics.
+- Snapshotted exact compatibility-root state before promotion and reconciled
+  post-replace failures against disk; rollback now restores and verifies the
+  prior configured or rootless state before returning idle.
+- Added deterministic rollback tests for candidate/promoted/old-child
+  retirement failures, late saved-root fsync, restoration failure,
+  post-promotion state-write failure, rootless recovery, and no-dual-active
+  ownership assertions.
+- Files affected: supervisor, compatibility-root helper, focused handoff
+  tests, and current-state documentation. No activation API, registry recency,
+  launcher UI, LAN behavior, or live services changed.
+
+[2026-08-31] — Add internal supervisor library handoff (Checkpoint 1B.2B-2A)
+
+- Added a supervisor-owned, Unix-socket-only A→B/rootless→B handoff engine:
+  strict activation state, verified loopback candidate, active admission drain,
+  persisted exact-key switch blockers, fresh stable-port promotion, bounded
+  child reaping, and deterministic rollback/fail-closed reporting.
+- Promoted backends are independently verified before the literal,
+  atomic/restrictive compatibility saved-root write. Registry recency remains
+  untouched; no HTTP activation API or launcher UI was added.
+- A completed exact v1 idle activation record upgrades in memory to v2;
+  malformed or non-idle v1 records remain fail-closed.
+- Added focused fake-process handoff tests, including blocker, identity,
+  promoted-backend, saved-root-write, old-termination, rootless, and no-op
+  outcomes. LAN startup behavior is unchanged.
+- Files affected: supervisor/runtime identity bridge, compatibility-root
+  writer, focused tests, and current-state documentation.
+
 [2026-08-31] — Correct Checkpoint 1B.2B-1 waveform/background isolation
 
 - Bound waveform scheduler shutdown, startup reconciliation, retention, cache

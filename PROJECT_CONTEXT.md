@@ -102,9 +102,22 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   loopback-only, supervisor-token-protected endpoint and must match the
   generated instance, canonical root, role, port, and deterministic root key.
   The supervisor and its fail-closed parent-death protection are Linux-only.
-  `.run/local/library_activation_state.json` and the adjacent
-  OS-level lock are restrictive and atomic; malformed or incomplete state
-  fails closed. This checkpoint does not perform a handoff or library switch.
+  `.run/local/library_activation_state.json` and the adjacent OS-level lock
+  are restrictive and atomic; malformed or impossible state fails closed.
+  Checkpoint 1B.2B-2A adds the internal-only handoff engine: it classifies a
+  canonical requested root, starts/verifies a fresh loopback candidate, drains
+  the active backend through its token-protected loopback admission bridge,
+  inspects persisted exact-key blockers, then retires/reaps the old child and
+  launches/verifies a fresh root-bound active child on the original stable
+  port. Candidate and promoted identities are verified independently. Saved
+  root compatibility data is atomically written only after active verification;
+  the exact prior file (including rootless absence) is held in memory and a
+  post-replace/fsync error is reconciled against disk before any rollback is
+  reported. A child reference is cleared only after confirmed reaping; any
+  ambiguous candidate, promoted backend, original-child retirement, or config
+  restoration retains ownership and a diagnosable durable `fail_closed` state.
+  The engine returns a success
+  result only; it does not update launcher registry recency.
   The central process-local operation-admission gate atomically drains the
   bounded durable-create sections for Process All, single/bulk waveform,
   BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the
@@ -121,9 +134,12 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   excluded from ordinary views; active NULL and known active rows for another
   key fail closed. Global tag backups/job logs are namespaced by key and
   publish destinations are v2 per-key records; a legacy global destination is
-  preserved but never inferred. There is still no handoff, activation endpoint,
-  registry recency update, frontend launcher, or in-process root switching;
-  1B.2B-2 may consume this persisted blocker only with the drained gate.
+  preserved but never inferred. The internal handoff uses this persisted
+  blocker only after the drained gate and preserves key/root-bound startup,
+  shutdown, recovery, artifacts, and publish settings. There is still no HTTP
+  activation endpoint, registry recency update, frontend launcher, or
+  in-process root switching; 1B.2B-2B may connect the successful handoff
+  result to the local/operator API boundary.
 * Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
   `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
   launcher returns the latest four). Its classifier is strictly read-only and

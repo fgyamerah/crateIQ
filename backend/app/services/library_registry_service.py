@@ -138,6 +138,121 @@ def _atomic_write_registry(entries: list[dict[str, str | None]]) -> None:
         raise
 
 
+def write_compatibility_root(root: Path | str) -> None:
+    """Atomically save the next startup root without touching registry recency.
+
+    The service launcher reads this as literal data; it is deliberately never
+    sourced as shell.  The supervisor calls this only after a newly promoted
+    backend has independently verified on the stable active endpoint.
+    """
+    canonical = _canonical_path(str(root))
+    if not canonical.is_dir():
+        raise ValueError("compatibility root must be an existing directory")
+    LOCAL_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(LOCAL_ENV_PATH.parent, 0o700)
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".crateiq.env.", suffix=".tmp", dir=LOCAL_ENV_PATH.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "w", encoding="utf-8") as handle:
+            handle.write("# Managed by CrateIQ. This file is local-only and contains no secrets.\n")
+            handle.write(f"CRATEIQ_LIBRARY_ROOT={canonical}\n")
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, LOCAL_ENV_PATH)
+        directory_fd = os.open(LOCAL_ENV_PATH.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
+def capture_compatibility_root_state() -> bytes | None:
+    """Return the exact local compatibility-root file state for a rollback.
+
+    This deliberately does not parse or normalize the file: the handoff
+    supervisor must be able to restore the precise pre-promotion state,
+    including the rootless no-file state.  The snapshot is kept in memory by
+    the supervisor and is never written into activation state.
+    """
+    try:
+        return LOCAL_ENV_PATH.read_bytes()
+    except FileNotFoundError:
+        return None
+
+
+def compatibility_root_state_matches(previous: bytes | None) -> bool:
+    """Whether the compatibility-root file exactly matches a prior snapshot."""
+    try:
+        return capture_compatibility_root_state() == previous
+    except OSError:
+        return False
+
+
+def compatibility_root_matches(root: Path | str) -> bool:
+    """Whether the on-disk compatibility root currently names ``root``."""
+    try:
+        expected = _canonical_path(str(root))
+        actual = _compatibility_root()
+    except (OSError, ValueError):
+        return False
+    return actual == expected
+
+
+def restore_compatibility_root_state(previous: bytes | None) -> None:
+    """Restore an exact pre-promotion compatibility-root state and fsync it.
+
+    A late directory-fsync error may occur after ``os.replace``/``unlink``.
+    Callers must therefore always follow this with
+    :func:`compatibility_root_state_matches` before treating restoration as
+    complete.
+    """
+    LOCAL_ENV_PATH.parent.mkdir(parents=True, exist_ok=True)
+    os.chmod(LOCAL_ENV_PATH.parent, 0o700)
+    if previous is None:
+        try:
+            LOCAL_ENV_PATH.unlink()
+        except FileNotFoundError:
+            return
+        directory_fd = os.open(LOCAL_ENV_PATH.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+        return
+
+    descriptor, temporary_name = tempfile.mkstemp(
+        prefix=".crateiq.env.restore.", suffix=".tmp", dir=LOCAL_ENV_PATH.parent
+    )
+    temporary = Path(temporary_name)
+    try:
+        os.fchmod(descriptor, 0o600)
+        with os.fdopen(descriptor, "wb") as handle:
+            handle.write(previous)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary, LOCAL_ENV_PATH)
+        directory_fd = os.open(LOCAL_ENV_PATH.parent, os.O_RDONLY)
+        try:
+            os.fsync(directory_fd)
+        finally:
+            os.close(directory_fd)
+    except Exception:
+        try:
+            temporary.unlink(missing_ok=True)
+        except OSError:
+            pass
+        raise
+
+
 def record_recent_library(value: str, *, display_name: str | None = None, opened_at: str | None = None) -> dict[str, str | None]:
     """Record an explicit open/compatibility root, newest-first and deduplicated."""
     canonical = _canonical_path(value)

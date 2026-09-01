@@ -251,6 +251,25 @@ def test_public_health_omits_paths_and_internal_identity(monkeypatch, tmp_path):
         asyncio.run(health_route.supervisor_identity(Request(lan_scope), "private-token"))
 
 
+def test_private_admission_bridge_is_token_and_loopback_only(monkeypatch, tmp_path):
+    root = _managed_root(tmp_path / "library").resolve()
+    monkeypatch.setenv("CRATEIQ_BACKEND_INSTANCE_ID", "child")
+    monkeypatch.setenv("CRATEIQ_SUPERVISOR_INSTANCE_ID", "supervisor")
+    monkeypatch.setenv("CRATEIQ_BACKEND_START_ROLE", "active")
+    monkeypatch.setenv("CRATEIQ_BACKEND_BOUND_PORT", "49002")
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+    monkeypatch.setenv("CRATEIQ_BACKEND_VERIFY_TOKEN", "private-token")
+    scope = {"type": "http", "method": "POST", "path": "/api/internal/supervisor-admission", "headers": [], "client": ("127.0.0.1", 1000)}
+    request = Request(scope)
+    assert asyncio.run(health_route.supervisor_admission(request, "status", "private-token"))["admission"]["draining"] is False
+    assert asyncio.run(health_route.supervisor_admission(request, "begin_draining", "private-token"))["admission"]["draining"] is True
+    assert asyncio.run(health_route.supervisor_admission(request, "abort_draining", "private-token"))["admission"]["draining"] is False
+    with pytest.raises(Exception):
+        asyncio.run(health_route.supervisor_admission(Request({**scope, "client": ("192.168.1.20", 1000)}), "status", "private-token"))
+    with pytest.raises(Exception):
+        asyncio.run(health_route.supervisor_admission(request, "status", "wrong"))
+
+
 def test_activation_state_rejects_malformed_data_and_invalid_transition(tmp_path):
     store = supervisor.ActivationStateStore(tmp_path / "state.json")
     store.path.write_text("{bad", encoding="utf-8")
@@ -259,6 +278,21 @@ def test_activation_state_rejects_malformed_data_and_invalid_transition(tmp_path
     state = store.empty()
     with pytest.raises(supervisor.SupervisorError):
         store.transition(state, "candidate_verified")
+
+
+def test_exact_legacy_idle_activation_state_is_migrated_but_partial_v1_fails_closed(tmp_path):
+    store = supervisor.ActivationStateStore(tmp_path / "state.json")
+    legacy_idle = {
+        "schema_version": 1, "activation_id": None, "phase": "idle",
+        "old_verified_root": None, "requested_root": None, "old_instance_id": None,
+        "candidate_instance_id": None, "updated_at": "2026-08-31T00:00:00Z",
+    }
+    store.path.write_text(json.dumps(legacy_idle), encoding="utf-8")
+    assert store.read()["schema_version"] == 2
+    legacy_idle["phase"] = "candidate_verified"
+    store.path.write_text(json.dumps(legacy_idle), encoding="utf-8")
+    with pytest.raises(supervisor.MalformedActivationState):
+        store.read()
 
 
 def test_activation_state_incomplete_is_detectable_and_stop_candidate_cleans_it(monkeypatch, tmp_path):
@@ -802,7 +836,11 @@ def test_operation_scope_exceptional_release_prevents_draining_leak():
 
 def test_activation_state_phase_invariants_reject_incomplete_combinations(tmp_path):
     store = supervisor.ActivationStateStore(tmp_path / "state.json")
-    valid_preparing = {**store.empty(), "phase": "preparing", "activation_id": "a", "requested_root": str(tmp_path.resolve())}
+    valid_preparing = {
+        **store.empty(), "phase": "preparing", "activation_id": "a",
+        "requested_root": str(tmp_path.resolve()),
+        "requested_library_key": supervisor.library_key_for_root(tmp_path),
+    }
     store.write(valid_preparing)
     assert store.read()["phase"] == "preparing"
     invalid_cases = [

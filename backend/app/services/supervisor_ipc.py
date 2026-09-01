@@ -14,7 +14,7 @@ from typing import Any
 
 from ..supervisor import DEFAULT_SOCKET_PATH, IPC_SCHEMA_VERSION, MAX_IPC_MESSAGE_BYTES
 
-_ALLOWED = frozenset({"ping", "status", "start_candidate", "stop_candidate", "inspect_child", "restore_previous"})
+_ALLOWED = frozenset({"ping", "status", "start_candidate", "stop_candidate", "inspect_child", "restore_previous", "handoff_library"})
 
 
 class SupervisorIPCError(RuntimeError):

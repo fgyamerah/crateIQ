@@ -23,6 +23,7 @@ import tempfile
 import threading
 import time
 import urllib.request
+import urllib.parse
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,7 @@ from typing import Any, Callable
 
 from .services.backend_instance_identity import library_key_for_root
 from .services import library_registry_service
+from .services.switch_blocker_service import inspect_switch_blockers
 
 IPC_SCHEMA_VERSION = 1
 MAX_IPC_MESSAGE_BYTES = 16 * 1024
@@ -38,7 +40,7 @@ DEFAULT_SOCKET_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "
 DEFAULT_SUPERVISOR_LOCK_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "crateiq-supervisor.lock"
 DEFAULT_STATE_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "library_activation_state.json"
 DEFAULT_LOCK_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "library_activation.lock"
-_ALLOWED_OPERATIONS = frozenset({"ping", "status", "start_candidate", "stop_candidate", "inspect_child", "restore_previous"})
+_ALLOWED_OPERATIONS = frozenset({"ping", "status", "start_candidate", "stop_candidate", "inspect_child", "restore_previous", "handoff_library"})
 _ALLOWED_ROLES = frozenset({"rootless", "active", "candidate"})
 _ALLOWED_CANDIDATE_CLASSIFICATIONS = frozenset({"managed_workspace", "legacy_direct_library"})
 SUPPORTED_CHILD_ENVIRONMENT = frozenset({
@@ -55,12 +57,19 @@ _ROOT_ENVIRONMENT = frozenset({"CRATEIQ_LIBRARY_ROOT", "CRATEMINDAI_LIBRARY_ROOT
 _CANDIDATE_PORT_ATTEMPTS = 8
 _PHASE_TRANSITIONS = {
     "idle": {"preparing"},
-    "preparing": {"candidate_started", "rollback"},
-    "candidate_started": {"candidate_verified", "rollback"},
-    "candidate_verified": {"rollback"},
-    "handoff": {"rollback"},
-    "rollback": {"idle"},
+    "preparing": {"candidate_started", "rollback", "fail_closed"},
+    "candidate_started": {"candidate_verified", "rollback", "fail_closed"},
+    "candidate_verified": {"active_draining", "promoting", "rollback", "fail_closed"},
+    "active_draining": {"promoting", "rollback", "fail_closed"},
+    "promoting": {"activated", "rollback", "fail_closed"},
+    "activated": {"idle", "rollback", "fail_closed"},
+    "rollback": {"idle", "fail_closed"},
+    "fail_closed": set(),
 }
+_LEGACY_IDLE_STATE_FIELDS = frozenset({
+    "schema_version", "activation_id", "phase", "old_verified_root",
+    "requested_root", "old_instance_id", "candidate_instance_id", "updated_at",
+})
 
 
 class SupervisorError(RuntimeError):
@@ -197,13 +206,19 @@ class ActivationStateStore:
     @staticmethod
     def empty() -> dict[str, object]:
         return {
-            "schema_version": 1,
+            "schema_version": 2,
             "activation_id": None,
             "phase": "idle",
             "old_verified_root": None,
+            "old_library_key": None,
             "requested_root": None,
+            "requested_library_key": None,
             "old_instance_id": None,
             "candidate_instance_id": None,
+            "candidate_port": None,
+            "active_instance_id": None,
+            "failure_reason": None,
+            "failure_stage": None,
             "updated_at": _utc_now(),
         }
 
@@ -214,8 +229,28 @@ class ActivationStateStore:
             return self.empty()
         except (OSError, UnicodeError, json.JSONDecodeError) as exc:
             raise MalformedActivationState("activation state is malformed; it was left unchanged") from exc
+        # A completed 1B.2A installation can have only this exact v1 idle
+        # shape. It carries no active handoff intent, so it is safe to expand
+        # in memory and persist as v2 on the next transition. Any v1 partial
+        # handoff remains an explicit fail-closed operator condition.
+        if self._is_legacy_idle(raw):
+            migrated = self.empty()
+            migrated["updated_at"] = raw["updated_at"]
+            return migrated
         self._validate(raw, writing=False)
         return raw
+
+    @staticmethod
+    def _is_legacy_idle(state: object) -> bool:
+        if not isinstance(state, dict) or set(state) != _LEGACY_IDLE_STATE_FIELDS:
+            return False
+        if state.get("schema_version") != 1 or state.get("phase") != "idle":
+            return False
+        if not isinstance(state.get("updated_at"), str) or not state["updated_at"].endswith("Z"):
+            return False
+        return all(state.get(key) is None for key in (
+            "activation_id", "old_verified_root", "requested_root", "old_instance_id", "candidate_instance_id",
+        ))
 
     def write(self, state: dict[str, object]) -> None:
         # Validate before modifying anything, including a valid but incomplete state.
@@ -258,35 +293,65 @@ class ActivationStateStore:
 
     def _validate(self, state: object, *, writing: bool) -> None:
         action = "write" if writing else "state"
-        if not isinstance(state, dict) or set(state) != set(self.empty()) or state.get("schema_version") != 1:
+        if not isinstance(state, dict) or set(state) != set(self.empty()) or state.get("schema_version") != 2:
             raise MalformedActivationState(f"activation {action} has an unsupported schema")
         phase = state.get("phase")
         if phase not in _PHASE_TRANSITIONS:
             raise MalformedActivationState(f"activation {action} has an invalid phase")
-        for key in ("activation_id", "old_verified_root", "requested_root", "old_instance_id", "candidate_instance_id"):
+        for key in (
+            "activation_id", "old_verified_root", "old_library_key", "requested_root",
+            "requested_library_key", "old_instance_id", "candidate_instance_id",
+            "active_instance_id", "failure_reason", "failure_stage",
+        ):
             if state[key] is not None and not isinstance(state[key], str):
                 raise MalformedActivationState(f"activation {action} contains an invalid value")
+        if state["candidate_port"] is not None and (
+            not isinstance(state["candidate_port"], int) or not 1 <= state["candidate_port"] <= 65535
+        ):
+            raise MalformedActivationState(f"activation {action} contains an invalid candidate port")
         if not isinstance(state["updated_at"], str) or not state["updated_at"].endswith("Z"):
             raise MalformedActivationState("activation state timestamp is invalid")
         for key in ("old_verified_root", "requested_root"):
             value = state.get(key)
             if value is not None and (not isinstance(value, str) or str(Path(value).resolve(strict=False)) != value):
                 raise MalformedActivationState(f"activation {action} has a non-canonical path")
+        requested = ("activation_id", "requested_root", "requested_library_key")
         required = {
             "idle": (),
-            "preparing": ("activation_id", "requested_root"),
-            "candidate_started": ("activation_id", "requested_root", "candidate_instance_id"),
-            "candidate_verified": ("activation_id", "requested_root", "candidate_instance_id"),
-            "handoff": ("activation_id", "requested_root", "candidate_instance_id"),
-            "rollback": ("activation_id", "requested_root"),
+            "preparing": requested,
+            "candidate_started": requested + ("candidate_instance_id", "candidate_port"),
+            "candidate_verified": requested + ("candidate_instance_id", "candidate_port"),
+            "active_draining": requested + ("candidate_instance_id", "candidate_port"),
+            "promoting": requested + ("candidate_instance_id", "candidate_port"),
+            "activated": requested + ("active_instance_id",),
+            "rollback": requested,
+            "fail_closed": requested + ("failure_reason",),
         }[str(phase)]
         forbidden = {
-            "idle": ("activation_id", "old_verified_root", "requested_root", "old_instance_id", "candidate_instance_id"),
-            "preparing": ("candidate_instance_id",),
-            "candidate_started": (), "candidate_verified": (), "handoff": (), "rollback": (),
+            "idle": (
+                "activation_id", "old_verified_root", "old_library_key", "requested_root",
+                "requested_library_key", "old_instance_id", "candidate_instance_id",
+                "candidate_port", "active_instance_id",
+            ),
+            "preparing": ("candidate_instance_id", "candidate_port", "active_instance_id"),
+            "candidate_started": ("active_instance_id",),
+            "candidate_verified": ("active_instance_id",),
+            "active_draining": ("active_instance_id",),
+            "promoting": (),
+            "activated": ("candidate_instance_id", "candidate_port"),
+            "rollback": ("active_instance_id",),
+            "fail_closed": (),
         }[str(phase)]
         if any(state[key] is None for key in required) or any(state[key] is not None for key in forbidden):
             raise MalformedActivationState(f"activation {action} is inconsistent for phase {phase}")
+        old_root, old_key = state["old_verified_root"], state["old_library_key"]
+        if (old_root is None) != (old_key is None):
+            raise MalformedActivationState(f"activation {action} has incomplete old library identity")
+        if old_root is not None and old_key != library_key_for_root(str(old_root)):
+            raise MalformedActivationState(f"activation {action} has invalid old library key")
+        requested_root, requested_key = state["requested_root"], state["requested_library_key"]
+        if requested_root is not None and requested_key != library_key_for_root(str(requested_root)):
+            raise MalformedActivationState(f"activation {action} has invalid requested library key")
 
 
 class ActivationLock:
@@ -494,41 +559,324 @@ class LocalSupervisor:
             if not classification["available"] or classification["classification"] not in _ALLOWED_CANDIDATE_CLASSIFICATIONS:
                 raise SupervisorError("candidate root is not an allowed, classified CrateIQ library")
             root = Path(str(classification["canonical_path"]))
-            state = self.state_store.transition(
-                state, "preparing", activation_id=_new_id(), requested_root=str(root),
-                old_verified_root=str(self.active.spec.library_root) if self.active and self.active.spec.library_root else None,
-                old_instance_id=self.active.instance_id if self.active else None,
-            )
+            state = self._begin_activation_state(state, root)
             try:
                 # Port zero is bound by _start_child and the resulting socket
                 # descriptor is inherited by Uvicorn. There is no bind/close
                 # race between choosing a temporary port and starting it.
                 candidate = self._start_child(ChildSpec("candidate", 0, "127.0.0.1", root, "local"))
                 self.candidate = candidate
-                state = self.state_store.transition(state, "candidate_started", candidate_instance_id=candidate.instance_id)
+                state = self.state_store.transition(
+                    state, "candidate_started", candidate_instance_id=candidate.instance_id,
+                    candidate_port=candidate.spec.port,
+                )
                 if not self._wait_for_verified_identity(candidate):
                     raise SupervisorError("candidate readiness or identity verification timed out")
                 self.state_store.transition(state, "candidate_verified")
                 return candidate
             except Exception:
                 if self.candidate is not None:
-                    self._terminate(self.candidate)
+                    if not self._terminate_owned_child(self.candidate):
+                        self._mark_fail_closed(state, "candidate_start_cleanup_unconfirmed", "candidate_termination")
+                        raise SupervisorError("candidate cleanup could not be confirmed")
                     self.candidate = None
                 # State documents the bounded rollback before returning to a
                 # runnable idle state. The old active child is never touched.
                 rollback = self.state_store.transition(state, "rollback") if state["phase"] != "rollback" else state
-                self.state_store.transition(
-                    rollback, "idle", activation_id=None, requested_root=None,
-                    old_verified_root=None, old_instance_id=None, candidate_instance_id=None,
-                )
+                self.state_store.transition(rollback, "idle", **self._idle_updates("candidate_start_failed"))
                 raise
 
     def stop_candidate(self) -> None:
         with self._state_lock:
             if self.candidate is not None:
-                self._terminate(self.candidate)
+                if not self._terminate_owned_child(self.candidate):
+                    state = self.state_store.read()
+                    self._mark_fail_closed(state, "candidate_stop_cleanup_unconfirmed", "candidate_termination")
+                    raise SupervisorError("candidate cleanup could not be confirmed")
                 self.candidate = None
             self._return_candidate_state_to_idle()
+
+    @staticmethod
+    def _idle_updates(failure_reason: str | None = None) -> dict[str, object]:
+        return {
+            "activation_id": None,
+            "old_verified_root": None,
+            "old_library_key": None,
+            "requested_root": None,
+            "requested_library_key": None,
+            "old_instance_id": None,
+            "candidate_instance_id": None,
+            "candidate_port": None,
+            "active_instance_id": None,
+            "failure_reason": failure_reason,
+            "failure_stage": None,
+        }
+
+    def _begin_activation_state(self, state: dict[str, object], root: Path) -> dict[str, object]:
+        active = self.active
+        old_root = active.spec.library_root if active else None
+        return self.state_store.transition(
+            state,
+            "preparing",
+            activation_id=_new_id(),
+            requested_root=str(root),
+            requested_library_key=library_key_for_root(root),
+            old_verified_root=str(old_root) if old_root else None,
+            old_library_key=library_key_for_root(old_root),
+            old_instance_id=active.instance_id if active else None,
+            failure_reason=None,
+        )
+
+    def handoff_library(self, requested_root: str) -> dict[str, object]:
+        """Perform one local, supervisor-owned root-bound backend handoff.
+
+        This is intentionally not an HTTP-facing operation.  The Unix control
+        socket is the local host administration boundary; callers still get
+        the same read-only launcher classification before a child is started.
+        """
+        with self._state_lock, ActivationLock(self.lock_path):
+            self._require_ipc_admission_locked()
+            self._refresh_children_locked()
+            if self.active is None:
+                raise SupervisorError("supervisor has no active child to hand off")
+            state = self.state_store.read()
+            if state["phase"] != "idle":
+                raise SupervisorError("incomplete activation state requires explicit recovery before handoff")
+            classification = library_registry_service.classify_library_candidate(requested_root)
+            if not classification["available"] or classification["classification"] not in _ALLOWED_CANDIDATE_CLASSIFICATIONS:
+                raise SupervisorError("requested root is not an allowed, classified CrateIQ library")
+            root = Path(str(classification["canonical_path"]))
+            requested_key = library_key_for_root(root)
+            old_child = self.active
+            if old_child.spec.library_root is not None and library_key_for_root(old_child.spec.library_root) == requested_key:
+                return {
+                    "result": "already_active",
+                    "activated": True,
+                    "library_key": requested_key,
+                    "active_backend_instance_id": old_child.instance_id,
+                    "active_port": old_child.spec.port,
+                }
+
+            state = self._begin_activation_state(state, root)
+            gate_draining = False
+            promoted: ChildProcess | None = None
+            saved_root_before: bytes | None = None
+            saved_root_snapshot_captured = False
+            saved_root_write_attempted = False
+            try:
+                candidate = self._start_child(ChildSpec("candidate", 0, "127.0.0.1", root, "local"))
+                self.candidate = candidate
+                state = self.state_store.transition(
+                    state, "candidate_started", candidate_instance_id=candidate.instance_id,
+                    candidate_port=candidate.spec.port,
+                )
+                if not self._wait_for_verified_identity(candidate):
+                    raise SupervisorError("candidate readiness or identity verification timed out")
+                state = self.state_store.transition(state, "candidate_verified")
+
+                if old_child.spec.library_root is not None:
+                    state = self.state_store.transition(state, "active_draining")
+                    # The request can time out after the child has accepted
+                    # it, so rollback must always try to reopen A's gate.
+                    gate_draining = True
+                    if not self._set_admission_state(old_child, "begin_draining"):
+                        raise SupervisorError("active backend admission drain did not complete")
+                    blockers = inspect_switch_blockers(library_key_for_root(old_child.spec.library_root))
+                    if not blockers["can_switch"]:
+                        raise SupervisorError("persisted operation state blocks a safe library switch")
+
+                state = self.state_store.transition(state, "promoting")
+                if not self._terminate_owned_child(candidate):
+                    raise SupervisorError("candidate termination could not be confirmed")
+                self.candidate = None
+                if not self._terminate_owned_child(old_child):
+                    raise SupervisorError("old active termination could not be confirmed")
+                self.active = None
+                promoted_spec = ChildSpec(
+                    "active", old_child.spec.port, old_child.spec.bind_host, root, old_child.spec.access_mode,
+                )
+                promoted = self._start_child(promoted_spec)
+                self.active = promoted
+                state = {**state, "active_instance_id": promoted.instance_id, "updated_at": _utc_now()}
+                self.state_store.write(state)
+                if not self._wait_for_verified_identity(promoted):
+                    raise SupervisorError("promoted backend readiness or identity verification timed out")
+                # Deliberately after B owns and verifies the stable endpoint.
+                saved_root_before = library_registry_service.capture_compatibility_root_state()
+                saved_root_snapshot_captured = True
+                saved_root_write_attempted = True
+                try:
+                    library_registry_service.write_compatibility_root(root)
+                finally:
+                    # Directory fsync can fail after os.replace.  Inspect the
+                    # file rather than interpreting an exception as no write.
+                    if not library_registry_service.compatibility_root_matches(root):
+                        raise SupervisorError("saved compatibility root was not verified after promotion")
+                state = self.state_store.transition(
+                    state, "activated", candidate_instance_id=None, candidate_port=None,
+                )
+                self.state_store.transition(state, "idle", **self._idle_updates())
+                return {
+                    "result": "activated",
+                    "activated": True,
+                    "library_key": requested_key,
+                    "active_backend_instance_id": promoted.instance_id,
+                    "active_port": promoted.spec.port,
+                }
+            except Exception as exc:
+                reason = str(exc) or exc.__class__.__name__
+                if self._rollback_handoff(
+                    state,
+                    old_child,
+                    promoted,
+                    gate_draining,
+                    reason,
+                    saved_root_before=saved_root_before,
+                    saved_root_snapshot_captured=saved_root_snapshot_captured,
+                    saved_root_write_attempted=saved_root_write_attempted,
+                ):
+                    raise SupervisorError(f"handoff rolled back: {reason}") from exc
+                raise SupervisorError(f"handoff failed closed: {reason}") from exc
+
+    def _rollback_handoff(
+        self,
+        state: dict[str, object],
+        old_child: ChildProcess,
+        promoted: ChildProcess | None,
+        gate_draining: bool,
+        reason: str,
+        *,
+        saved_root_before: bytes | None,
+        saved_root_snapshot_captured: bool,
+        saved_root_write_attempted: bool,
+    ) -> bool:
+        """Restore a verified A/rootless child, or leave durable fail-closed state."""
+        if self.candidate is not None:
+            if not self._terminate_owned_child(self.candidate):
+                self._mark_fail_closed(state, f"{reason}; candidate termination unconfirmed", "candidate_termination")
+                return False
+            self.candidate = None
+        if promoted is not None and self.active is promoted:
+            if not self._terminate_owned_child(promoted):
+                self._mark_fail_closed(state, f"{reason}; promoted backend termination unconfirmed", "promoted_backend_termination")
+                return False
+            self.active = None
+
+        if saved_root_write_attempted:
+            if not saved_root_snapshot_captured:
+                self._mark_fail_closed(state, f"{reason}; prior saved-root state was unavailable", "compatibility_root_restore")
+                return False
+            if not library_registry_service.compatibility_root_state_matches(saved_root_before):
+                try:
+                    library_registry_service.restore_compatibility_root_state(saved_root_before)
+                except Exception:
+                    pass
+            if not library_registry_service.compatibility_root_state_matches(saved_root_before):
+                self._mark_fail_closed(state, f"{reason}; saved-root rollback was not verified", "compatibility_root_restore")
+                return False
+
+        restored: ChildProcess | None = None
+        # A termination failure can leave the original process intact.  It is
+        # usable only after its private identity and post-abort gate state are
+        # both independently confirmed.
+        if old_child.process.poll() is None and self._wait_for_verified_identity(old_child):
+            if not gate_draining or self._set_admission_state(old_child, "abort_draining"):
+                restored = old_child
+                self.active = old_child
+            else:
+                self._mark_fail_closed(state, f"{reason}; original backend admission reopen was not verified", "old_backend_retirement")
+                return False
+        elif old_child.process.poll() is None:
+            # It might still be serving A, but is no longer a verified backend
+            # we can safely reuse. Never spawn a replacement beside it.
+            self._mark_fail_closed(state, f"{reason}; original backend remains live but unverified", "old_backend_retirement")
+            return False
+        elif not self._reap_terminated_child(old_child):
+            self._mark_fail_closed(state, f"{reason}; original backend termination was not reaped", "old_backend_retirement")
+            return False
+
+        if restored is None:
+            try:
+                replacement = self._start_child(old_child.spec)
+                if not self._wait_for_verified_identity(replacement):
+                    if not self._terminate_owned_child(replacement):
+                        self.active = replacement
+                        self._mark_fail_closed(state, f"{reason}; rollback replacement termination unconfirmed", "rollback_backend_verification")
+                        return False
+                    raise SupervisorError("rollback backend identity verification timed out")
+                self.active = replacement
+                restored = replacement
+            except Exception as exc:
+                if self.active is not None and self.active is not old_child:
+                    # A failed spawn has no process reference. A started but
+                    # failed replacement keeps ownership until it is reaped.
+                    if self.active.process.poll() is None:
+                        self._mark_fail_closed(state, f"{reason}; rollback replacement status is ambiguous", "rollback_backend_verification")
+                        return False
+                    if not self._reap_terminated_child(self.active):
+                        self._mark_fail_closed(state, f"{reason}; rollback replacement was not reaped", "rollback_backend_termination")
+                        return False
+                    self.active = None
+                self._mark_fail_closed(state, f"{reason}; rollback replacement failed: {exc}", "rollback_backend_start")
+                return False
+
+        rollback = state
+        try:
+            if rollback["phase"] != "rollback":
+                rollback = self.state_store.transition(rollback, "rollback", active_instance_id=None)
+            if restored is not None:
+                self.state_store.transition(rollback, "idle", **self._idle_updates(reason))
+                return True
+        except (MalformedActivationState, SupervisorError, OSError):
+            # The runtime is already unavailable; do not overwrite uncertain
+            # durable state just to make it cosmetically idle.
+            pass
+        return False
+
+    def _mark_fail_closed(self, state: dict[str, object], reason: str, stage: str) -> None:
+        """Persist ambiguity without discarding references to owned children."""
+        candidate = self.candidate
+        active = self.active
+        updates: dict[str, object] = {
+            "failure_reason": reason,
+            "failure_stage": stage,
+            "candidate_instance_id": candidate.instance_id if candidate else None,
+            "candidate_port": candidate.spec.port if candidate else None,
+            # Persist the actual current active child identity if it exists.
+            # This covers rollback replacement A which has the original library root,
+            # not the requested root. The durable old_instance_id remains the original
+            # pre-handoff A identity for diagnostic correlation.
+            "active_instance_id": active.instance_id if active is not None else None,
+        }
+        try:
+            if state["phase"] == "fail_closed":
+                self.state_store.write({**state, **updates, "updated_at": _utc_now()})
+            else:
+                self.state_store.transition(state, "fail_closed", **updates)
+        except (MalformedActivationState, SupervisorError, OSError):
+            # The existing non-idle durable state remains the fail-closed
+            # record if storage itself is unavailable.
+            pass
+
+    def _set_admission_state(self, child: ChildProcess, action: str) -> bool:
+        if action not in {"begin_draining", "abort_draining"}:
+            raise SupervisorError("invalid admission action")
+        try:
+            query = urllib.parse.urlencode({"action": action})
+            request = urllib.request.Request(
+                f"http://127.0.0.1:{child.spec.port}/api/internal/supervisor-admission?{query}",
+                data=b"",
+                method="POST",
+                headers={"X-CrateIQ-Supervisor-Token": child.verification_token},
+            )
+            with urllib.request.urlopen(request, timeout=self.readiness_timeout_seconds) as response:
+                payload = json.loads(response.read(MAX_IPC_MESSAGE_BYTES + 1))
+            admission = payload.get("admission") if isinstance(payload, dict) else None
+            if not isinstance(admission, dict):
+                return False
+            return bool(admission.get("draining")) if action == "begin_draining" else not bool(admission.get("draining"))
+        except Exception:
+            return False
 
     def _start_child(self, spec: ChildSpec) -> ChildProcess:
         instance_id = _new_id()
@@ -595,10 +943,8 @@ class LocalSupervisor:
 
     def _terminate(self, child: ChildProcess) -> None:
         if child.process.poll() is not None:
-            try:
-                child.process.wait(timeout=0)
-            except Exception:
-                pass
+            if not self._reap_terminated_child(child):
+                raise SupervisorError("terminated child could not be reaped")
             return
         try:
             os.killpg(int(child.process.pid), signal.SIGTERM)
@@ -617,21 +963,44 @@ class LocalSupervisor:
                 child.process.wait(timeout=5)
             except Exception as exc:
                 raise SupervisorError("child did not exit after SIGKILL") from exc
+        if child.process.poll() is None:
+            raise SupervisorError("terminated child could not be reaped")
+
+    @staticmethod
+    def _reap_terminated_child(child: ChildProcess) -> bool:
+        """Confirm an already-exited owned child has been reaped."""
+        if child.process.poll() is None:
+            return False
+        try:
+            child.process.wait(timeout=0)
+        except Exception:
+            return False
+        return child.process.poll() is not None
+
+    def _terminate_owned_child(self, child: ChildProcess) -> bool:
+        """Terminate and reap an owned child without ever losing ownership.
+
+        Callers must clear ``active``/``candidate`` only after this returns
+        ``True``. Any failure leaves the original ``ChildProcess`` reference
+        in place for fail-closed status and explicit operator recovery.
+        """
+        try:
+            self._terminate(child)
+        except Exception:
+            return False
+        # _terminate() has waited/reaped before returning. The explicit poll
+        # check also protects this invariant when a deterministic test seam
+        # replaces _terminate().
+        return child.process.poll() is not None
 
     def _refresh_children_locked(self) -> None:
         if self.candidate is not None and self.candidate.process.poll() is not None:
-            try:
-                self.candidate.process.wait(timeout=0)
-            except Exception:
-                pass
-            self.candidate = None
-            self._return_candidate_state_to_idle()
+            if self._reap_terminated_child(self.candidate):
+                self.candidate = None
+                self._return_candidate_state_to_idle()
         if self.active is not None and self.active.process.poll() is not None:
-            try:
-                self.active.process.wait(timeout=0)
-            except Exception:
-                pass
-            self.active = None
+            if self._reap_terminated_child(self.active):
+                self.active = None
 
     def monitor_children(self) -> None:
         """Reap exited owned children even when no IPC request is received."""
@@ -644,10 +1013,7 @@ class LocalSupervisor:
             state = self.state_store.read()
             if state["phase"] != "idle":
                 rollback = self.state_store.transition(state, "rollback") if state["phase"] != "rollback" else state
-                self.state_store.transition(
-                    rollback, "idle", activation_id=None, requested_root=None,
-                    old_verified_root=None, old_instance_id=None, candidate_instance_id=None,
-                )
+                self.state_store.transition(rollback, "idle", **self._idle_updates("candidate_stopped"))
         except MalformedActivationState:
             # Never overwrite malformed durable state during cleanup.
             pass
@@ -668,9 +1034,7 @@ class LocalSupervisor:
                 "candidate_child": self.candidate.safe_status() if self.candidate else None,
                 "activation_phase": phase,
                 "activation_incomplete": incomplete,
-                # This supervisor foundation does not yet drive the active
-                # backend gate. Its per-process contract is exposed separately.
-                "operation_admission_draining": False,
+                "operation_admission_draining": phase == "active_draining",
             }
 
     def handle_message(self, message: object) -> dict[str, object]:
@@ -709,8 +1073,10 @@ class LocalSupervisor:
                 raise SupervisorError("malformed_request")
             self.stop_candidate()
             return {"stopped": True}
-        # Deliberately present only as a future-safe protocol name. It cannot
-        # stop, promote, or restart an active child in 1B.2A.
+        if operation == "handoff_library":
+            if set(payload) != {"library_root"} or not isinstance(payload["library_root"], str):
+                raise SupervisorError("malformed_request")
+            return self.handoff_library(payload["library_root"])
         raise SupervisorError("handoff_not_implemented")
 
     def _require_ipc_admission_locked(self) -> None:

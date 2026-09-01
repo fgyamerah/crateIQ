@@ -32,17 +32,18 @@ P1 / HIGH
     parent-death protection, socket ownership, phase validation, candidate
     port exclusion, and private identity verification) is complete.
 
-[~] Checkpoint 1B.2B — 1B.2B-1 data isolation is implemented pending
-    targeted re-review after correcting waveform shutdown/startup/cache,
-    reference-findings, switch-blocker, and background ownership gaps; 1B.2B-2
-    must add the controlled fresh-backend handoff and
-    library/operation isolation needed to activate a selected recent library.
-    Keep the rootless launcher foundation and the LAN-disabled/local-start-only
-    host-path administration boundary. Specifically required: `jobs.db` `library_key` migration,
-    operation read/write isolation and complete active-operation blocker
-    adapters, tag-backup/global-log isolation, publish-destination migration,
-    final handoff/rollback and activation API, registry recency update, and
-    frontend launcher. Do not implement in-process root switching.
+[x] Checkpoint 1B.2B-2A — internal supervisor handoff/rollback is implemented:
+    verified loopback candidate, active runtime drain, persisted exact-key
+    blocker check, fresh stable-port promotion, confirmed child reaping,
+    saved-root write ordering, transactional rollback/rootless restoration,
+    durable fail-closed ambiguity reporting, and same-library no-op. It has no
+    HTTP activation endpoint or registry recency mutation.
+
+[~] Checkpoint 1B.2B-2B — connect the reviewed internal handoff success result
+    to a local/operator-restricted activation API and only then update launcher
+    registry `last_opened`; add launcher activation UX. Preserve LAN behavior,
+    the local-start-only host-path administration boundary, and no in-process
+    root switching.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM
