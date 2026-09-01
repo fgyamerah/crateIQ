@@ -388,8 +388,10 @@ scripts/crateiq-local-services.sh start-launcher-local
 The launcher registry is local to this installation at
 `.run/local/library_registry.json`. It records at most 16 canonical recent
 roots and shows the latest four; it stores no music, indexes, or credentials.
-Each result has a deterministic opaque `library_id`; future launcher clients
-use that ID, never a host filesystem path, to request an open. `POST
+The `/libraries` launcher shows up to four recent libraries and uses each
+result's deterministic opaque `library_id`, never a host filesystem path, to
+request an open. Rootless frontend startup redirects to this route; active
+users can reopen it from the sidebar or Settings to switch libraries. `POST
 /api/launcher/activate-library` accepts the request and returns an activation
 ID, while `GET /api/launcher/activation-status` reports the safe final result
 after reconnecting to the stable backend endpoint. This is asynchronous because
@@ -398,6 +400,10 @@ The supervisor re-resolves and reclassifies the saved registry entry before
 handoff, then updates `last_opened_at` only after verified success (including
 an explicit same-library no-op). A recency-write failure is a bounded warning
 and never rolls back a verified activation.
+Browse Libraries and Create New Library are honest informational entry points
+only: safe registration and creation mutations are not available from the
+launcher yet, so the frontend does not accept arbitrary paths or simulate a
+successful setup.
 It can safely identify a valid managed workspace, a real indexed Legacy Direct
 Library, an empty folder, an external music folder, a missing path, or a
 malformed/unsafe candidate without changing the candidate. Legacy evidence is

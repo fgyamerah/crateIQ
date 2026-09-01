@@ -126,6 +126,13 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   Recency failure is a bounded warning and never rolls back a verified active
   backend. LAN clients may open a known safe registry ID, but arbitrary path
   inspection, browse, register, and create administration remain local-only.
+  The frontend `/libraries` route is an installation-level chooser outside the
+  workspace shell. Rootless workspace routes redirect there; active users can
+  reopen it from the sidebar or Settings. It renders at most four recent
+  registered libraries, submits only `library_id`, and uses bounded status and
+  current-library polling that tolerates the backend replacement gap without
+  inferring success from elapsed time. Browse/Create remain truthful dialogs
+  until safe backend registration and creation mutations exist.
   The central process-local operation-admission gate atomically drains the
   bounded durable-create sections for Process All, single/bulk waveform,
   BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the

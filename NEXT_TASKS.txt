@@ -46,10 +46,12 @@ P1 / HIGH
     verified success or same-library no-op. LAN activation of known safe IDs is
     supported; arbitrary host-path administration remains local-only.
 
-[ ] Implement the launcher frontend activation UX (recent-library cards,
+[x] Implement the launcher frontend activation UX (recent-library cards,
     progress/status reconnect handling, and safe blocked/fail-closed messages).
-[ ] Implement Create Library UI and any remaining explicit local-only
-    browse/create/register workflow; do not broaden LAN host-path access.
+[ ] Implement safe backend mutations for Create Library and explicit local-only
+    browse/register workflows. The launcher now has honest entry-point dialogs,
+    but performs no filesystem or registration action; do not broaden LAN
+    host-path access.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM

@@ -2,6 +2,22 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-01] — Add the Library Launcher frontend
+
+- Added `/libraries` as a responsive installation-level launcher with the
+  approved hero, current/recent library state, accessible library cards, and
+  deliberate Switch Library entries in the sidebar and Settings.
+- Added typed registry/current/activation API integration. Activation submits
+  only `library_id`, retains the activation ID, polls to a fixed bound, tolerates
+  temporary reconnect failures during backend replacement, and enters the
+  workspace only after current-library verification.
+- Added safe busy, blocker, unavailable, failure, fail-closed, empty, loading,
+  and same-library success handling. Browse/Create are polished informational
+  dialogs only; they accept no path and perform no fake or filesystem action.
+- Files affected: frontend launcher API/page/routing/navigation/styles and
+  current-state documentation. No backend handoff, LAN behavior, dependency,
+  authentication, or service-control change.
+
 [2026-09-01] — Add registry-bound launcher activation API (Checkpoint 1B.2B-2B)
 
 - Added registry-ID-only launcher activation start/status/current-library
