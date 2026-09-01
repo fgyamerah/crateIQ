@@ -2,6 +2,31 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-01] — Add safe Library Launcher browse, register, and create backend
+
+- Added local-operator-only, one-level bounded directory browsing with safe
+  starting roots, deterministic directory ordering, hidden-entry filtering,
+  explicit blocked symlinks, strict launcher classification, and pagination.
+- Added existing-library registration that canonicalizes and reclassifies at
+  write time, accepts only managed workspaces or strict Legacy Direct
+  fingerprints, deduplicates stable library IDs/keys, and leaves
+  `last_opened_at` unset until successful activation.
+- Added rollback-safe new managed-library creation from a validated parent and
+  safe single-segment name. It reuses the existing workspace initializer,
+  validates before registry insertion, never creates rootless runtime jobs
+  state, and leaves a valid new workspace intact if registry persistence fails.
+- Serialized registry read/modify/replace writers with a restrictive local
+  lock while preserving schema-v1 compatibility, the 16-entry bound, atomic
+  writes, and success-only recency. LAN registered-ID activation is unchanged;
+  LAN browse/register/create is denied.
+- Added focused browse/register/create/LAN/rollback/failure tests and made one
+  rootless foundation test explicitly isolate supervisor IPC from live state.
+- Files affected: launcher route/admin/registry services, focused launcher
+  tests, README, project context, task list, and changelog. No frontend wiring,
+  activation-by-path, supervisor handoff redesign, service action, dependency,
+  or music-file mutation was added. Migration notes: none; schema v1 now
+  permits `last_opened_at: null` for registered-but-never-opened entries.
+
 [2026-09-01] — Make the Library Launcher the normal local startup path
 
 - Changed interactive `crateiq_start`/`start` to offer Library Launcher first

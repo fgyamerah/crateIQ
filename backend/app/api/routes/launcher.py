@@ -1,15 +1,16 @@
 """Installation-scoped launcher endpoints with registry-bound activation."""
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Query, Request, status
 from pydantic import BaseModel, ConfigDict, Field
 
 from ...core.library_root import selected_library_root
 from ...core.preflight import redact_path
-from ...services import library_registry_service, supervisor_ipc
+from ...services import library_launcher_admin_service, library_registry_service, supervisor_ipc
 
 router = APIRouter(tags=["launcher"])
 
@@ -42,6 +43,51 @@ class RegistryResponse(BaseModel):
     recent_libraries: list[RecentLibraryResponse]
     registry_status: Literal["ready", "malformed"]
     message: str | None = None
+
+
+class BrowseRootResponse(BaseModel):
+    display_name: str
+    path: str
+
+
+class BrowseEntryResponse(BaseModel):
+    display_name: str
+    path: str
+    entry_type: Literal["directory", "symlink"]
+    selectable: bool
+    classification: str
+    reason: str
+
+
+class BrowseResponse(BaseModel):
+    current_path: str
+    parent_path: str | None
+    roots: list[BrowseRootResponse]
+    entries: list[BrowseEntryResponse]
+    offset: int
+    limit: int
+    truncated: bool
+
+
+class RegisterLibraryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    path: str = Field(min_length=1, max_length=4096)
+
+
+class CreateLibraryRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    parent_directory: str = Field(min_length=1, max_length=4096)
+    name: str = Field(min_length=1, max_length=120)
+
+
+class RegisteredLibraryResponse(BaseModel):
+    library_id: str
+    library_root: str
+    library_key: str
+    display_name: str
+    classification: Literal["managed_workspace", "legacy_direct_library"]
+    availability: bool
+    last_opened_at: str | None
 
 
 class ActivateLibraryRequest(BaseModel):
@@ -87,12 +133,12 @@ def _detail(code: str, message: str) -> dict[str, str]:
 
 
 def _require_local_operator(request: Request) -> None:
-    """Allow host-path inspection only for an explicitly local server startup."""
+    """Allow host-path administration only for an explicitly local startup."""
     if os.environ.get("CRATEIQ_LAUNCH_ACCESS_MODE") != "local":
-        raise HTTPException(status_code=403, detail="Candidate library path inspection is disabled when CrateIQ is not started in local-only mode.")
+        raise HTTPException(status_code=403, detail="Launcher filesystem administration is disabled when CrateIQ is not started in local-only mode.")
     host = request.client.host if request.client else ""
     if host not in {"127.0.0.1", "::1", "localhost", "testclient"}:
-        raise HTTPException(status_code=403, detail="Candidate library path inspection is available only to the local CrateIQ operator.")
+        raise HTTPException(status_code=403, detail="Launcher filesystem administration is available only to the local CrateIQ operator.")
 
 
 def _active_registry_metadata() -> tuple[bool, str | None, str | None, str | None]:
@@ -142,6 +188,83 @@ async def classify_library(body: LibraryCandidateRequest, request: Request) -> L
         return LibraryClassificationResponse(**library_registry_service.classify_library_candidate(body.library_root))
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.get("/launcher/browse", response_model=BrowseResponse)
+async def browse_libraries(
+    request: Request,
+    path: str | None = Query(default=None, min_length=1, max_length=4096),
+    offset: int = Query(default=0, ge=0),
+    limit: int = Query(
+        default=library_launcher_admin_service.BROWSE_DEFAULT_LIMIT,
+        ge=1,
+        le=library_launcher_admin_service.BROWSE_MAX_LIMIT,
+    ),
+) -> BrowseResponse:
+    _require_local_operator(request)
+    try:
+        result = await asyncio.to_thread(
+            library_launcher_admin_service.browse_directories,
+            path,
+            offset=offset,
+            limit=limit,
+        )
+        return BrowseResponse(**result)
+    except library_launcher_admin_service.BrowseLocationError as exc:
+        raise HTTPException(status_code=422, detail=_detail("invalid_browse_location", str(exc))) from exc
+
+
+@router.post("/launcher/register-library", response_model=RegisteredLibraryResponse)
+async def register_library(body: RegisterLibraryRequest, request: Request) -> RegisteredLibraryResponse:
+    _require_local_operator(request)
+    try:
+        result = await asyncio.to_thread(
+            library_launcher_admin_service.register_existing_library,
+            body.path,
+        )
+        return RegisteredLibraryResponse(**result)
+    except library_launcher_admin_service.BrowseLocationError as exc:
+        raise HTTPException(status_code=422, detail=_detail("unsafe_path", str(exc))) from exc
+    except library_registry_service.UnsafeRegistryLibraryError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=_detail("not_a_valid_library", "The selected directory is not a valid activatable CrateIQ library."),
+        ) from exc
+    except library_registry_service.MalformedRegistryError as exc:
+        raise HTTPException(status_code=503, detail=_detail("registry_unavailable", "The library registry is unavailable.")) from exc
+    except (OSError, RuntimeError) as exc:
+        raise HTTPException(status_code=503, detail=_detail("registry_write_failed", "The library registry could not be updated.")) from exc
+
+
+@router.post("/launcher/create-library", response_model=RegisteredLibraryResponse, status_code=status.HTTP_201_CREATED)
+async def create_library(body: CreateLibraryRequest, request: Request) -> RegisteredLibraryResponse:
+    _require_local_operator(request)
+    try:
+        result = await asyncio.to_thread(
+            library_launcher_admin_service.create_managed_library,
+            body.parent_directory,
+            body.name,
+        )
+        return RegisteredLibraryResponse(**result)
+    except library_launcher_admin_service.LibraryNameError as exc:
+        raise HTTPException(status_code=422, detail=_detail("invalid_library_name", str(exc))) from exc
+    except library_launcher_admin_service.LibraryCollisionError as exc:
+        raise HTTPException(status_code=409, detail=_detail("library_name_collision", str(exc))) from exc
+    except library_launcher_admin_service.BrowseLocationError as exc:
+        raise HTTPException(status_code=422, detail=_detail("unsafe_parent", str(exc))) from exc
+    except library_launcher_admin_service.LibraryInitializationError as exc:
+        raise HTTPException(
+            status_code=500,
+            detail={
+                **_detail("initialization_failed", str(exc)),
+                "partial_directory_left": exc.partial_left,
+            },
+        ) from exc
+    except library_launcher_admin_service.RegistryAfterCreateError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=_detail("registry_write_failed_after_create", str(exc)),
+        ) from exc
 
 
 @router.post("/launcher/activate-library", response_model=ActivationStartResponse, status_code=status.HTTP_202_ACCEPTED)

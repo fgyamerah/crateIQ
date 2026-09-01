@@ -130,13 +130,28 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   Recency failure is a bounded warning and never rolls back a verified active
   backend. LAN clients may open a known safe registry ID, but arbitrary path
   inspection, browse, register, and create administration remain local-only.
+  Local-operator launcher administration is now implemented through a bounded,
+  one-level directory browser plus explicit register/create endpoints. Browse
+  is rooted in environment-derived home/Music and standard mount locations,
+  plus registered-library parents; it filters hidden entries, never follows
+  symlinks, scans at most 512 entries, and returns at most 100 per request.
+  Registration canonicalizes, reclassifies, deduplicates by the existing
+  library key, writes under a restrictive cross-process registry lock, and
+  leaves `last_opened_at` null until verified activation. Create accepts a
+  validated parent and one safe name segment, exclusively creates the target,
+  reuses `workspace_service.configure_workspace()`, validates the result with
+  the normal launcher classifier, then registers it. Provably operation-owned
+  partial initialization is rolled back; ambiguous content is left in place
+  and reported. A registry failure after valid initialization leaves the valid
+  workspace intact for deterministic registration retry. Create never starts
+  recovery/schedulers or creates the rootless runtime jobs database.
   The frontend `/libraries` route is an installation-level chooser outside the
   workspace shell. Rootless workspace routes redirect there; active users can
   reopen it from the sidebar or Settings. It renders at most four recent
   registered libraries, submits only `library_id`, and uses bounded status and
   current-library polling that tolerates the backend replacement gap without
-  inferring success from elapsed time. Browse/Create remain truthful dialogs
-  until safe backend registration and creation mutations exist.
+  inferring success from elapsed time. Browse/Create remain truthful,
+  informational dialogs until the next targeted frontend wiring checkpoint.
   The central process-local operation-admission gate atomically drains the
   bounded durable-create sections for Process All, single/bulk waveform,
   BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the
@@ -156,9 +171,10 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   preserved but never inferred. The internal handoff uses this persisted
   blocker only after the drained gate and preserves key/root-bound startup,
   shutdown, recovery, artifacts, and publish settings. The launcher API now
-  exposes activation start/status, active registry identity, and four recent
-  classified entries to the `/libraries` frontend launcher. Browse/register
-  and Create Library mutations remain deferred.
+  exposes activation start/status, active registry identity, four recent
+  successfully opened entries, and the local-only browse/register/create
+  contracts to the `/libraries` frontend launcher. Registered-but-never-opened
+  entries remain activation-resolvable but do not masquerade as recents.
 * Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
   `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
   launcher returns the latest four). Its classifier is strictly read-only and

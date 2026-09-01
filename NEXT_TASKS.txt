@@ -48,10 +48,15 @@ P1 / HIGH
 
 [x] Implement the launcher frontend activation UX (recent-library cards,
     progress/status reconnect handling, and safe blocked/fail-closed messages).
-[ ] Implement safe backend mutations for Create Library and explicit local-only
-    browse/register workflows. The launcher now has honest entry-point dialogs,
-    but performs no filesystem or registration action; do not broaden LAN
-    host-path access.
+[x] Implement safe backend mutations for Create Library and explicit local-only
+    browse/register workflows. LAN registered-ID activation remains supported,
+    while arbitrary host-path browse/register/create remains local-operator-only.
+[ ] Wire the accepted Browse Libraries and Create New Library frontend dialogs
+    to the new launcher browse/register/create APIs. Keep activation as the
+    existing separate registry-ID request.
+[ ] Complete final live E2E verification of browse, existing-library
+    registration, create/register, and subsequent supervisor-owned activation.
+    Use disposable roots and do not expose filesystem administration over LAN.
 
 ----------------------------------------------------------------------
 P2 / MEDIUM
@@ -99,11 +104,6 @@ P3 / LOW
     supervised backend module but the PID classifier currently accepts only
     the supervisor module. Revisit only as an explicitly scoped recovery
     correction; it is not a 1B.2A activation/switching blocker.
-
-[ ] Launcher registry writes remain an unlocked read-modify-replace sequence;
-    concurrent explicit writers could lose recency history. Do not broaden
-    the current launcher checkpoint without a defined cross-process locking
-    contract.
 
 [ ] The bounded launcher audio scan returns once it finds audio, so a later
     unsafe symlink may not be reported as malformed. Keep this conservative

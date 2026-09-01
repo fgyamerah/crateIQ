@@ -12,6 +12,7 @@ from fastapi.testclient import TestClient
 import backend.app.core.db as backend_core_db
 import backend.app.main as backend_main
 from backend.app.services import library_registry_service as registry
+from backend.app.services import supervisor_ipc
 
 
 def _configure_registry(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> tuple[Path, Path]:
@@ -368,6 +369,11 @@ def test_rootless_api_isolated_from_library_routes_and_startup_recovery(monkeypa
     monkeypatch.setattr(backend_main.tag_write_service, "recover_interrupted_operations", lambda: (_ for _ in ()).throw(AssertionError("no recovery")))
     monkeypatch.setattr(backend_main.preparation_operations_service, "recover_interrupted_operations", lambda: (_ for _ in ()).throw(AssertionError("no recovery")))
     monkeypatch.setattr(backend_main, "get_scheduler", lambda: (_ for _ in ()).throw(AssertionError("no scheduler")))
+    monkeypatch.setattr(
+        supervisor_ipc,
+        "request",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(supervisor_ipc.SupervisorIPCError("supervisor_unavailable")),
+    )
     candidate = tmp_path / "uninitialized"; candidate.mkdir()
 
     with TestClient(backend_main.app) as client:

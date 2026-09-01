@@ -6,10 +6,13 @@ schema, scan audio, or otherwise change a candidate library.
 """
 from __future__ import annotations
 
+import fcntl
 import json
 import os
 import sqlite3
+import stat
 import tempfile
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -107,8 +110,12 @@ def _validated_entry(raw: object) -> dict[str, str | None]:
         display_name = raw.get("display_name")
         if display_name is not None and (not isinstance(display_name, str) or not display_name.strip()):
             raise ValueError("recent library display_name is invalid")
-        _timestamp(raw.get("last_opened_at"))
-        return {"path": str(canonical), "display_name": display_name, "last_opened_at": raw["last_opened_at"]}
+        if "last_opened_at" not in raw:
+            raise ValueError("recent library last_opened_at is missing")
+        last_opened_at = raw["last_opened_at"]
+        if last_opened_at is not None:
+            _timestamp(last_opened_at)
+        return {"path": str(canonical), "display_name": display_name, "last_opened_at": last_opened_at}
     except ValueError as exc:
         raise MalformedRegistryError("recent library entry is invalid") from exc
 
@@ -130,7 +137,31 @@ def _read_registry() -> list[dict[str, str | None]]:
         raise MalformedRegistryError("library registry exceeds its history limit")
     if len({entry["path"] for entry in parsed}) != len(parsed):
         raise MalformedRegistryError("library registry has duplicate paths")
-    return sorted(parsed, key=lambda entry: _timestamp(entry["last_opened_at"]), reverse=True)
+    return sorted(
+        parsed,
+        key=lambda entry: (
+            entry["last_opened_at"] is not None,
+            _timestamp(entry["last_opened_at"])
+            if entry["last_opened_at"] is not None
+            else datetime.min.replace(tzinfo=timezone.utc),
+        ),
+        reverse=True,
+    )
+
+
+@contextmanager
+def _registry_write_lock():
+    """Serialize cross-process registry read/modify/write operations."""
+    REGISTRY_PATH.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = REGISTRY_PATH.parent / ".library_registry.lock"
+    descriptor = os.open(lock_path, os.O_RDWR | os.O_CREAT, 0o600)
+    try:
+        os.fchmod(descriptor, 0o600)
+        fcntl.flock(descriptor, fcntl.LOCK_EX)
+        yield
+    finally:
+        fcntl.flock(descriptor, fcntl.LOCK_UN)
+        os.close(descriptor)
 
 
 def _atomic_write_registry(entries: list[dict[str, str | None]]) -> None:
@@ -279,7 +310,6 @@ def restore_compatibility_root_state(previous: bytes | None) -> None:
 def record_recent_library(value: str, *, display_name: str | None = None, opened_at: str | None = None) -> dict[str, str | None]:
     """Record an explicit open/compatibility root, newest-first and deduplicated."""
     canonical = _canonical_path(value)
-    entries = _read_registry()  # Must happen before any write.
     timestamp = opened_at or _utc_now()
     _timestamp(timestamp)
     name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else None
@@ -288,10 +318,69 @@ def record_recent_library(value: str, *, display_name: str | None = None, opened
         "display_name": name,
         "last_opened_at": timestamp,
     }
-    updated = [item for item in entries if item["path"] != entry["path"]]
-    updated.insert(0, entry)
-    _atomic_write_registry(updated[:RECENT_LIBRARY_LIMIT])
+    with _registry_write_lock():
+        entries = _read_registry()  # Must happen before any write.
+        updated = [item for item in entries if item["path"] != entry["path"]]
+        updated.insert(0, entry)
+        _atomic_write_registry(updated[:RECENT_LIBRARY_LIMIT])
     return entry
+
+
+def register_library(value: str, *, display_name: str | None = None) -> dict[str, Any]:
+    """Revalidate and register an activatable library without opening it.
+
+    Registration is canonical-key unique and deliberately leaves
+    ``last_opened_at`` unset. Only the supervisor's successful activation
+    path may update recency.
+    """
+    canonical = _canonical_path(value)
+    name = display_name.strip() if isinstance(display_name, str) and display_name.strip() else None
+
+    with _registry_write_lock():
+        try:
+            before = canonical.lstat()
+            if stat.S_ISLNK(before.st_mode) or not stat.S_ISDIR(before.st_mode):
+                raise ValueError("candidate is not a regular directory")
+            classified = classify_library_candidate(str(canonical))
+            after = canonical.lstat()
+        except (OSError, ValueError) as exc:
+            raise UnsafeRegistryLibraryError("This path is not a valid activatable CrateIQ library.") from exc
+        if (
+            (before.st_dev, before.st_ino) != (after.st_dev, after.st_ino)
+            or classified["canonical_path"] != str(canonical)
+            or not classified["available"]
+            or classified["classification"] not in _ALLOWED_ACTIVATION_CLASSIFICATIONS
+        ):
+            raise UnsafeRegistryLibraryError("This path is not a valid activatable CrateIQ library.")
+        entries = _read_registry()
+        for position, existing in enumerate(entries):
+            if existing["path"] != str(canonical):
+                continue
+            if name is not None and existing["display_name"] != name:
+                existing = {**existing, "display_name": name}
+                entries[position] = existing
+                _atomic_write_registry(entries)
+            entry = existing
+            break
+        else:
+            entry = {
+                "path": str(canonical),
+                "display_name": name,
+                "last_opened_at": None,
+            }
+            retained = entries[: max(0, RECENT_LIBRARY_LIMIT - 1)]
+            retained.append(entry)
+            _atomic_write_registry(retained)
+
+    return {
+        "library_id": library_id_for_root(canonical),
+        "library_root": str(canonical),
+        "library_key": library_key_for_root(canonical),
+        "display_name": entry["display_name"] or canonical.name,
+        "classification": classified["classification"],
+        "availability": True,
+        "last_opened_at": entry["last_opened_at"],
+    }
 
 
 def resolve_registered_library(library_id: str) -> dict[str, Any]:
@@ -326,17 +415,18 @@ def resolve_registered_library(library_id: str) -> dict[str, Any]:
 
 def mark_registered_library_opened(library_id: str, *, opened_at: str | None = None) -> dict[str, str | None]:
     """Update recency for one existing entry without creating a new entry."""
-    entries = _read_registry()
     timestamp = opened_at or _utc_now()
     _timestamp(timestamp)
-    for position, entry in enumerate(entries):
-        if library_id_for_root(str(entry["path"])) != library_id:
-            continue
-        updated = {**entry, "last_opened_at": timestamp}
-        entries.pop(position)
-        entries.insert(0, updated)
-        _atomic_write_registry(entries)
-        return updated
+    with _registry_write_lock():
+        entries = _read_registry()
+        for position, entry in enumerate(entries):
+            if library_id_for_root(str(entry["path"])) != library_id:
+                continue
+            updated = {**entry, "last_opened_at": timestamp}
+            entries.pop(position)
+            entries.insert(0, updated)
+            _atomic_write_registry(entries)
+            return updated
     raise UnknownRegistryLibraryError("Unknown library.")
 
 
@@ -510,7 +600,8 @@ def get_launcher_registry(*, active_library_id: str | None = None) -> dict[str, 
     except MalformedRegistryError as exc:
         return {"recent_libraries": [], "registry_status": "malformed", "message": str(exc)}
     recent: list[dict[str, Any]] = []
-    for entry in entries[:LAUNCHER_RECENT_LIMIT]:
+    opened_entries = [entry for entry in entries if entry["last_opened_at"] is not None]
+    for entry in opened_entries[:LAUNCHER_RECENT_LIMIT]:
         classified = classify_library_candidate(str(entry["path"]))
         recent.append({
             **entry,

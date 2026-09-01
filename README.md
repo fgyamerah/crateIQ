@@ -403,10 +403,23 @@ The supervisor re-resolves and reclassifies the saved registry entry before
 handoff, then updates `last_opened_at` only after verified success (including
 an explicit same-library no-op). A recency-write failure is a bounded warning
 and never rolls back a verified activation.
-Browse Libraries and Create New Library are honest informational entry points
-only: safe registration and creation mutations are not available from the
-launcher yet, so the frontend does not accept arbitrary paths or simulate a
-successful setup.
+The backend now provides local-operator-only launcher administration:
+`GET /api/launcher/browse` lists one bounded directory level from safe starting
+roots, `POST /api/launcher/register-library` reclassifies and registers an
+existing managed or strict Legacy Direct library, and `POST
+/api/launcher/create-library` creates and registers a new managed workspace
+from a validated parent plus single-segment name. Browse excludes hidden files,
+does not follow symlinks, returns directories only (plus blocked symlink entries),
+scans at most 512 entries, and returns at most 100 per request. Default starting
+locations are derived from the service user's home/Music locations, standard
+mount parents when present, and parents of already registered libraries; no
+personal home path is hardcoded. Registration is canonical-key unique and does
+not set `last_opened_at`. Create reuses the established managed-workspace
+initializer for `Inbox/`, `Library/`, `Quarantine/`, the workspace marker, and
+the local `logs/processed.db` index; it does not activate, start recovery or
+schedulers, or create rootless runtime `jobs.db` state. The existing Browse
+Libraries and Create New Library frontend dialogs remain informational until
+their targeted API wiring checkpoint.
 It can safely identify a valid managed workspace, a real indexed Legacy Direct
 Library, an empty folder, an external music folder, a missing path, or a
 malformed/unsafe candidate without changing the candidate. Legacy evidence is
@@ -447,17 +460,21 @@ host directory.
 **Normal registered-library flow:**
 
 1. Run `crateiq_start`, choose **Library Launcher** (the default), and choose
-   the desired access mode.
+   the desired access mode. Choose **Local only** when filesystem browse,
+   registration, or creation is needed.
 2. Open the frontend; `/` redirects to `/libraries` while rootless.
-3. Select a registered library. The verified activation enters the normal
-   workspace.
+3. Select a registered library. After the pending frontend wiring checkpoint,
+   local operators may also browse/register an existing library or create a
+   managed library, then submit its returned `library_id` to the same activation
+   endpoint. The verified activation enters the normal workspace.
 4. Open **Inbox** and **Import Music** — this copies files in from an
    external Import Source; your originals are untouched.
 5. Run **Process All**, resolve anything in **Needs Review**, then
    **Move Ready to Library**.
 
-Browse/register and Create Library mutations are still deferred, so a new
-unregistered root cannot be entered or created from the launcher yet.
+Browse/register and Create Library backend mutations are implemented; wiring
+the existing launcher dialogs and completing final live E2E verification remain
+deferred. No create/register operation activates or switches a library itself.
 
 Explicit configured/Direct Library startup (scan an existing folder in place,
 with no managed Inbox/Library/Quarantine separation) remains available through
@@ -509,10 +526,10 @@ and generic/background job updates retain that immutable origin; reference
 findings and active waveform track-state blockers use the same exact-key rule.
 Global tag backups and job logs are key-namespaced, and publish
 destinations are per-key; a legacy global destination is retained but is not
-silently assigned. The supervisor handoff/rollback engine and registry-ID
-activation API are implemented. The frontend launcher, Create Library UI, and
-explicit browse/create workflow remain deferred. No in-process root switching
-is supported.
+silently assigned. The supervisor handoff/rollback engine, registry-ID
+activation API, and local-only browse/register/create backend contracts are
+implemented. The frontend launcher dialogs still need targeted wiring to those
+new contracts. No in-process root switching is supported.
 The helper-managed backend is intentionally non-reload: after Python backend
 code changes, restart the helper-managed service. Any separately run manual
 development server is outside supervisor ownership and is not a library-switch
