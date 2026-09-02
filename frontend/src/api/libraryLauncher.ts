@@ -64,11 +64,84 @@ export interface ActivationStatusResponse {
   warning_code: 'registry_recency_update_failed' | null
 }
 
+export interface BrowseRoot {
+  display_name: string
+  path: string
+}
+
+export interface BrowseEntry {
+  display_name: string
+  path: string
+  entry_type: 'directory' | 'symlink'
+  selectable: boolean
+  classification: string
+  reason: string
+}
+
+export interface BrowseResponse {
+  current_path: string
+  parent_path: string | null
+  roots: BrowseRoot[]
+  entries: BrowseEntry[]
+  offset: number
+  limit: number
+  truncated: boolean
+}
+
+export interface BrowseRequest {
+  path?: string
+  offset?: number
+  limit?: number
+}
+
+export interface RegisterLibraryRequest {
+  path: string
+}
+
+export interface CreateLibraryRequest {
+  parent_directory: string
+  name: string
+}
+
+export interface RegisteredLibraryResponse {
+  library_id: string
+  library_root: string
+  library_key: string
+  display_name: string
+  classification: 'managed_workspace' | 'legacy_direct_library'
+  availability: boolean
+  last_opened_at: string | null
+}
+
 export const fetchLibraryRegistry = (signal?: AbortSignal): Promise<LibraryRegistryResponse> =>
   apiFetch.get<LibraryRegistryResponse>('/launcher/library-registry', signal)
 
 export const fetchCurrentLibrary = (signal?: AbortSignal): Promise<CurrentLibraryResponse> =>
   apiFetch.get<CurrentLibraryResponse>('/launcher/current-library', signal)
+
+export const fetchBrowseDirectories = (
+  request: BrowseRequest = {},
+  signal?: AbortSignal,
+): Promise<BrowseResponse> => {
+  const params = new URLSearchParams()
+  if (request.path !== undefined) params.set('path', request.path)
+  if (request.offset !== undefined) params.set('offset', String(request.offset))
+  if (request.limit !== undefined) params.set('limit', String(request.limit))
+  const query = params.toString()
+  return apiFetch.get<BrowseResponse>(`/launcher/browse${query ? `?${query}` : ''}`, signal)
+}
+
+export const registerExistingLibrary = (
+  request: RegisterLibraryRequest,
+  signal?: AbortSignal,
+): Promise<RegisteredLibraryResponse> =>
+  apiFetch.post<RegisteredLibraryResponse>('/launcher/register-library', request, signal)
+
+export const createLibrary = (
+  request: CreateLibraryRequest,
+  signal?: AbortSignal,
+): Promise<RegisteredLibraryResponse> =>
+  apiFetch.post<RegisteredLibraryResponse>('/launcher/create-library', request, signal)
 
 export const activateRegisteredLibrary = (
   libraryId: string,

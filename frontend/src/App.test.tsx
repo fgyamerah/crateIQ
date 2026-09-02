@@ -9,6 +9,10 @@ vi.mock('./components/Layout', async () => {
 vi.mock('./components/player/PersistentPlayerProvider', () => ({
   default: ({ children }: { children: unknown }) => children,
 }))
+vi.mock('./components/LibraryRequirement', async () => {
+  const { Outlet } = await import('react-router-dom')
+  return { default: Outlet }
+})
 vi.mock('./components/library/LibraryView', () => ({ default: () => 'Library destination' }))
 vi.mock('./pages/Inbox', () => ({ default: () => 'Inbox destination' }))
 vi.mock('./pages/Listening', async () => {
