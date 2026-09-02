@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-08-30
+**Updated:** 2026-09-01
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -93,6 +93,13 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   multiply-linked aliases before lock metadata can mutate an inode; accepted
   IPC handlers have byte/time-bounded reads, are actively interrupted during
   shutdown, and quiesce before children or lifetime ownership are released.
+  Backend subprocess creation is pinned to long-lived supervisor ownership:
+  main startup uses the supervisor main thread, while worker/IPC requests use
+  one supervisor-lifetime launch-owner thread. This preserves Linux
+  `PR_SET_PDEATHSIG` protection without tying a promoted backend to the
+  short-lived registered-activation worker thread; successful worker return
+  therefore cannot terminate the committed active child while an uncommitted
+  child remains subject to rollback cleanup.
   Normal cooperative socket cleanup atomically withdraws the published public
   link through unique instance-private entries, leaving replacement files or
   symlinks untouched; ambiguous crash/stale artifacts fail closed rather than
@@ -104,7 +111,11 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   loopback-only temporary port (never 8020 or the active port). Public health
   is generic; private candidate identity is available only through a
   loopback-only, supervisor-token-protected endpoint and must match the
-  generated instance, canonical root, role, port, and deterministic root key.
+  generated instance, supervisor instance, canonical root, role, port,
+  deterministic root key, verification token, and explicit post-lifespan
+  readiness. Candidate startup has a bounded 15-second verification window;
+  promoted/rootless startup has a bounded 30-second window for normal DB/cache,
+  tool-readiness, and scheduler initialization. Both use repeated short probes.
   The supervisor and its fail-closed parent-death protection are Linux-only.
   `.run/local/library_activation_state.json` and the adjacent OS-level lock
   are restrictive and atomic; malformed or impossible state fails closed.
@@ -130,6 +141,14 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   Recency failure is a bounded warning and never rolls back a verified active
   backend. LAN clients may open a known safe registry ID, but arbitrary path
   inspection, browse, register, and create administration remain local-only.
+  Status IPC is handled independently of the handoff-wide ownership lock and
+  backend status calls run outside the FastAPI event loop, so polling reports
+  `activating` without starving the promoted backend's identity response. A
+  clean terminal `idle` transition requires a still-live verified promoted or
+  rollback child; promoted B is transferred into the sole in-memory `active`
+  slot before success and removed from disposable handoff ownership only after
+  the durable idle write. Otherwise the activation rolls back or remains
+  `fail_closed`.
   Local-operator launcher administration is now implemented through a bounded,
   one-level directory browser plus explicit register/create endpoints. Browse
   is rooted in environment-derived home/Music and standard mount locations,
@@ -150,8 +169,15 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   reopen it from the sidebar or Settings. It renders at most four recent
   registered libraries, submits only `library_id`, and uses bounded status and
   current-library polling that tolerates the backend replacement gap without
-  inferring success from elapsed time. Browse/Create remain truthful,
-  informational dialogs until the next targeted frontend wiring checkpoint.
+  inferring success from elapsed time. In local mode, Browse Libraries now uses
+  the bounded backend directory contract to register only selectable managed or
+  strict Legacy Direct libraries, while Create New Library chooses a returned
+  parent directory and submits the validated parent plus one name segment. Both
+  immediately reuse the same opaque-registry-ID activation flow. A create that
+  succeeds on disk but fails registry persistence is reported as partial
+  success and routes the operator back to Browse for registration. In LAN mode,
+  registered-ID activation remains available while Browse/Create and host paths
+  remain unavailable.
   The central process-local operation-admission gate atomically drains the
   bounded durable-create sections for Process All, single/bulk waveform,
   BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the
@@ -196,6 +222,13 @@ supported under Settings -> Advanced as a secondary compatibility mode.
   server startup state and is disabled for all LAN-mode requests (including
   loopback Vite proxy traffic); unauthenticated LAN clients must not browse
   server filesystem paths.
+  Persisted `fail_closed` activation state is never cleared on startup. The
+  explicit `recover-launcher` operator command can reset it to rootless idle
+  only while holding both installation locks and after proving no owned
+  supervisor/backend survives, atomically withdrawing any proven-stale socket,
+  validating registry/saved-root consistency, and archiving the failed state.
+  Recovery preserves registry recency and compatibility-root bytes and never
+  activates the requested library.
 * Frontend: <http://127.0.0.1:5175>; backend health:
   <http://127.0.0.1:8020/api/health>; runtime readiness:
   <http://127.0.0.1:8020/api/runtime/readiness>
@@ -457,6 +490,16 @@ verification value; without credentials they are truthfully reported as
 basic search. **Beets Python API is allowed; the `beet` CLI binary is
 forbidden** — this is enforced by a static AST regression guard
 (`tests/test_no_beet_cli_invocation.py`).
+
+Provider adapters remain synchronous and preserve their existing timeout,
+matching, cache, and fallback semantics, but every FastAPI/Process All entry
+point that can reach them dispatches the complete synchronous provider
+workflow to a worker thread. No external provider network wait runs on the
+uvloop event-loop thread. Process All joins a bounded in-flight provider
+worker before propagating cancellation so its durable library scope is not
+released while that worker can still update review/cache state. The shared
+beets MusicBrainz client serializes access to its singleton rate limiter and
+closes its pooled session after every lookup attempt, including errors.
 
 Traxsource is legacy: it exists only in old `pipeline.py`-era code and is
 not part of the current provider set — do not treat it as active.

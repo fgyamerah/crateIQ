@@ -51,13 +51,11 @@ P1 / HIGH
 [x] Implement safe backend mutations for Create Library and explicit local-only
     browse/register workflows. LAN registered-ID activation remains supported,
     while arbitrary host-path browse/register/create remains local-operator-only.
-[ ] Wire the accepted Browse Libraries and Create New Library frontend dialogs
+[x] Wire the accepted Browse Libraries and Create New Library frontend dialogs
     to the new launcher browse/register/create APIs. Keep activation as the
-    existing separate registry-ID request.
-[ ] Complete final live E2E verification of browse, existing-library
-    registration, create/register, and subsequent supervisor-owned activation.
-    Use disposable roots and do not expose filesystem administration over LAN.
-
+    existing separate registry-ID request. Local mode now supports bounded
+    browse/register/create; LAN keeps registered-ID activation while filesystem
+    administration remains unavailable.
 ----------------------------------------------------------------------
 P2 / MEDIUM
 ----------------------------------------------------------------------

@@ -104,6 +104,13 @@ is already HIGH. Only providers whose credentials are configured and who
 report themselves ready are queried; an unconfigured provider is silently
 skipped, never an error.
 
+The provider adapters use bounded synchronous clients, but CrateIQ dispatches
+provider work to backend worker threads. A slow, timed-out, or failed metadata
+source therefore cannot occupy the FastAPI event loop or prevent unrelated
+routes such as `/api/health` from responding. Provider results, priority, and
+fallback behavior are unchanged; MusicBrainz connections are closed after
+each lookup attempt.
+
 Existing non-empty metadata is never silently overwritten. The one
 exception: a field whose *current* value is already a known junk/placeholder
 (e.g. an "Unknown Artist" stand-in) is cleared before a HIGH-confidence
@@ -388,6 +395,21 @@ menu, use:
 scripts/crateiq-local-services.sh start-launcher-local
 ```
 
+An interrupted library handoff deliberately leaves the launcher in
+`fail_closed` and blocks later starts. After the services are fully stopped,
+the operator can request a safety-checked recovery and then start rootless:
+
+```bash
+scripts/crateiq-local-services.sh recover-launcher
+scripts/crateiq-local-services.sh start-launcher-local
+```
+
+Recovery is not automatic. It refuses unless the supervisor/activation locks,
+supervisor socket, supervised-backend process metadata, relevant backend ports,
+registry, and saved compatibility root are unambiguous. A successful recovery
+archives the failed activation record, preserves the registry and saved root,
+does not update library recency, and does not activate a library.
+
 The launcher registry is local to this installation at
 `.run/local/library_registry.json`. It records at most 16 canonical recent
 roots and shows the latest four; it stores no music, indexes, or credentials.
@@ -402,7 +424,18 @@ a successful handoff replaces the backend process that accepted the request.
 The supervisor re-resolves and reclassifies the saved registry entry before
 handoff, then updates `last_opened_at` only after verified success (including
 an explicit same-library no-op). A recency-write failure is a bounded warning
-and never rolls back a verified activation.
+and never rolls back a verified activation. Candidate verification is bounded
+to 15 seconds, while the promoted/rootless backend has a bounded 30-second
+startup window for normal database, cache, tool-readiness, and scheduler work.
+Short authenticated probes require the exact supervisor/backend identity,
+active role, stable port, canonical root/key, verification token, and completed
+application startup. Activation-status IPC remains responsive during handoff
+and does not block the promoted backend's event loop. Worker-requested backend
+processes are created by a supervisor-lifetime launch-owner thread, so Linux
+parent-death protection does not mistake activation-worker completion for
+supervisor exit. If neither the promoted backend nor a verified rollback
+replacement survives, activation remains durably `fail_closed` rather than
+reporting clean idle.
 The backend now provides local-operator-only launcher administration:
 `GET /api/launcher/browse` lists one bounded directory level from safe starting
 roots, `POST /api/launcher/register-library` reclassifies and registers an
@@ -417,9 +450,14 @@ personal home path is hardcoded. Registration is canonical-key unique and does
 not set `last_opened_at`. Create reuses the established managed-workspace
 initializer for `Inbox/`, `Library/`, `Quarantine/`, the workspace marker, and
 the local `logs/processed.db` index; it does not activate, start recovery or
-schedulers, or create rootless runtime `jobs.db` state. The existing Browse
-Libraries and Create New Library frontend dialogs remain informational until
-their targeted API wiring checkpoint.
+schedulers, or create rootless runtime `jobs.db` state. In local mode, the
+Browse Libraries dialog navigates only these backend-returned directories,
+registers only backend-selectable libraries, and opens the returned opaque
+`library_id`. Create New Library uses the same safe browser for its parent,
+submits `parent_directory` plus `name`, and also opens only by the returned
+registry ID. Both flows preserve the existing bounded activation polling and
+current-library verification. Over LAN, registered-library ID activation stays
+available, while Browse/Create remain unavailable and expose no host paths.
 It can safely identify a valid managed workspace, a real indexed Legacy Direct
 Library, an empty folder, an external music folder, a missing path, or a
 malformed/unsafe candidate without changing the candidate. Legacy evidence is
@@ -463,18 +501,18 @@ host directory.
    the desired access mode. Choose **Local only** when filesystem browse,
    registration, or creation is needed.
 2. Open the frontend; `/` redirects to `/libraries` while rootless.
-3. Select a registered library. After the pending frontend wiring checkpoint,
-   local operators may also browse/register an existing library or create a
-   managed library, then submit its returned `library_id` to the same activation
-   endpoint. The verified activation enters the normal workspace.
+3. Select a registered library. Local operators may also browse/register an
+   existing library or create a managed library, then open its returned opaque
+   `library_id` through the same activation endpoint. The verified activation
+   enters the normal workspace.
 4. Open **Inbox** and **Import Music** — this copies files in from an
    external Import Source; your originals are untouched.
 5. Run **Process All**, resolve anything in **Needs Review**, then
    **Move Ready to Library**.
 
-Browse/register and Create Library backend mutations are implemented; wiring
-the existing launcher dialogs and completing final live E2E verification remain
-deferred. No create/register operation activates or switches a library itself.
+Browse/register and Create Library are wired end to end in the launcher. The
+create/register API operation itself never activates or switches a library;
+the frontend follows it with the separate opaque-ID activation request.
 
 Explicit configured/Direct Library startup (scan an existing folder in place,
 with no managed Inbox/Library/Quarantine separation) remains available through

@@ -2,6 +2,135 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-02] — Consolidate Library Launcher stabilization
+
+- Consolidated the launcher Browse/Create, stable-port handoff, fail-closed
+  recovery, promoted-child lifetime, and provider-responsiveness work as one
+  verified stabilization set without changing product flow.
+- Recorded the completed live E2E evidence: explicit recovery restored rootless
+  startup, the promoted library backend survived activation-worker return, and
+  health stayed responsive for more than nine minutes while provider waits ran
+  off the event loop. One connection reset at deliberate backend replacement is
+  an accepted handoff boundary.
+- Isolated stale route, health, launch-script, provider-settings, and fixed-port
+  tests from the launcher gate, private local settings, live service port, and
+  superseded public contracts; no production behavior was changed by these
+  final test corrections.
+- Verification: 2,302 backend tests and 13 frontend tests passed; frontend
+  typecheck, production build, and Git whitespace checks passed. Files affected:
+  focused stabilization tests and shared documentation. Migration notes: none.
+
+[2026-09-01] — Keep metadata provider waits off the backend event loop
+
+- Dispatched Process All enrichment, explicit Beets/MusicBrainz lookup,
+  Enrich Selected, consensus preview, and metadata-source live tests through
+  worker threads so bounded synchronous HTTPS waits cannot stall unrelated
+  FastAPI routes such as `/api/health`.
+- Serialized the shared beets MusicBrainz client and closed its pooled HTTP
+  session after every success/failure path so peer-closed sockets are not
+  retained as persistent `CLOSE_WAIT` descriptors.
+- Added deterministic gated-provider regressions proving Process All remains
+  pending while health stays responsive, including an SSL failure with the
+  existing provider-warning semantics and verified session cleanup.
+- Files affected: metadata/provider route boundaries, Process All preparation,
+  MusicBrainz client, focused tests, README, and project context. Migration
+  notes: restart CrateIQ before live retesting; no schema/config migration.
+
+[2026-09-01] — Preserve promoted backend ownership after activation worker exit
+
+- Routed worker-requested backend process creation through one
+  supervisor-lifetime launch-owner thread so Linux `PR_SET_PDEATHSIG` remains
+  tied to a live parent thread after the short-lived activation worker returns.
+- Made promoted-child ownership explicit: uncommitted B remains eligible for
+  rollback termination, while verified B transfers into `self.active` before
+  the durable success commit and is removed from disposable handoff state.
+- Added real socket regressions that join the activation worker, run the child
+  monitor, re-probe the stable endpoint, and prove both post-success survival
+  and failure-side SIGTERM/reaping of an uncommitted promoted child.
+- Files affected: supervisor, focused socket handoff tests, and project docs.
+  Migration notes: restart the local supervisor before the final live retest.
+
+[2026-09-01] — Keep slow promoted backends verifiable during launcher handoff
+
+- Separated the promoted/rootless backend's bounded 30-second startup
+  verification window from the 15-second candidate window while retaining
+  repeated one-second authenticated probes and exact identity matching.
+- Made private identity verification explicitly require completed application
+  startup, the verification token, supervisor/backend instances, active role,
+  stable port, canonical root, and library key.
+- Kept supervisor status IPC responsive while the handoff owns its state lock
+  and moved backend status IPC off the FastAPI event loop, preventing a
+  two-second status poll from starving the promoted identity response.
+- Reverified the promoted child at activation commit, prohibited clean rollback
+  idle when the verified replacement has already exited, and added deterministic
+  slow-start, in-progress status, and no-backend fail-closed regressions.
+- Files affected: supervisor, private backend identity, launcher status route,
+  focused handoff/foundation/socket tests, and project docs. Migration notes:
+  restart the local supervisor before live retesting so it loads this contract.
+
+[2026-09-01] — Add explicit stale fail-closed launcher recovery
+
+- Added `recover-launcher` / `crateiq_recover_launcher` as an operator-only
+  recovery path that never runs automatically and never starts, stops, or
+  activates a library.
+- Recovery now requires exclusive supervisor and activation locks, rejects
+  live or ambiguous supervised-backend ownership (including persisted instance
+  identities and stable/candidate ports), safely withdraws only a proven-stale
+  supervisor socket, and validates registry plus compatibility-root state.
+- A successful recovery archives the failed activation record, clears stale
+  activation-lock metadata, atomically writes rootless idle state, and preserves
+  the library registry, saved root, workspace contents, and `last_opened_at`.
+- Added deterministic recovery regressions for stale success, live-child and
+  socket/lock refusal, saved-root mismatch, idempotency, stale socket cleanup,
+  and rootless startup admission. Files affected: supervisor/recovery backend,
+  registry validation seam, local service CLI, focused tests, and project docs.
+  Migration notes: run recovery explicitly only after services are fully stopped.
+
+[2026-09-01] — Restore deterministic supervisor stable-port reuse
+
+- Enabled `SO_REUSEADDR` on every supervisor-reserved backend listener so
+  verified/reaped handoffs can immediately reuse the stable port despite
+  accepted identity or admission connections remaining in kernel `TIME_WAIT`.
+- Preserved exclusive live listener ownership: the supervisor still closes its
+  parent FD immediately after spawn, does not enable `SO_REUSEPORT`, and only
+  promotes or restores a backend after the prior owner is terminated and reaped.
+- Added real loopback child-process regressions for rootless-to-library
+  promotion and rollback replacement on the same kernel-assigned stable port,
+  including explicit parent-FD and single-live-owner assertions.
+- Isolated one supervisor foundation multiprocessing helper from live persisted
+  activation state. Files affected: supervisor, focused supervisor tests, and
+  changelog. Migration notes: restart/recovery remains an explicit operator
+  action for an already persisted `fail_closed` state.
+
+[2026-09-01] — Stabilize Library Launcher dialogs
+
+- Kept Browse Libraries and Create New Library open during React StrictMode
+  effect replay by removing the native-dialog cleanup close.
+- Deferred initial browse effects until after replay cleanup so each deliberate
+  initial location load issues one request without abort churn.
+- Added focused StrictMode regression coverage for both dialogs.
+- Files affected: Library Launcher page/test and changelog. Migration notes:
+  none; no backend, supervisor, LAN-policy, or service-control change.
+
+[2026-09-01] — Wire Library Launcher browse and create workflows
+
+- Replaced the informational Browse Libraries and Create New Library dialogs
+  with typed, backend-driven local directory browsing, existing-library
+  registration, managed-workspace creation, validation, and bounded errors.
+- Reused the existing activation implementation for recent, registered, and
+  newly created libraries; every open request still submits only the opaque
+  `library_id`, preserves activation-ID matching/reconnect polling, and refreshes
+  current/recent state only after verified success.
+- Added explicit local-capability detection and LAN-safe unavailable states.
+  Registered-ID activation remains available over LAN, while filesystem paths,
+  browse, register, and create remain unavailable there.
+- Added careful `registry_write_failed_after_create` recovery copy and a direct
+  route back to Browse Libraries without claiming that the on-disk workspace
+  was rolled back.
+- Files affected: launcher frontend API/page/styles, README, project context,
+  task list, and changelog. Migration notes: none; no dependency, backend API,
+  supervisor activation, LAN policy, or service-control change.
+
 [2026-09-01] — Add safe Library Launcher browse, register, and create backend
 
 - Added local-operator-only, one-level bounded directory browsing with safe
