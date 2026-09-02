@@ -29,6 +29,7 @@ from __future__ import annotations
 from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ...core.library_root import selected_library_root
@@ -299,7 +300,7 @@ async def clean_selected(body: TrackIdsRequest):
 @router.post("/workspace/prepare/enrich")
 async def enrich_selected(body: TrackIdsRequest):
     try:
-        return preparation_service.enrich_tracks(_root(), body.track_ids)
+        return await run_in_threadpool(preparation_service.enrich_tracks, _root(), body.track_ids)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -343,6 +344,6 @@ async def preview_track_consensus(track_id: int):
     This is why it is a POST, explicit and user-triggered, not a GET.
     """
     try:
-        return provider_routing_service.preview_consensus(_root(), track_id)
+        return await run_in_threadpool(provider_routing_service.preview_consensus, _root(), track_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

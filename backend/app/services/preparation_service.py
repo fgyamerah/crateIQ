@@ -59,6 +59,26 @@ _SANITIZE_FIELDS = ("artist", "title", "album", "genre")
 _CONSENSUS_FIELDS = ("artist", "title", "genre")
 
 
+async def _enrich_tracks_off_event_loop(root: Path, track_ids: list[int]) -> dict[str, Any]:
+    """Run synchronous provider routing in a worker without abandoning it.
+
+    ``asyncio.to_thread`` keeps network waits off uvloop, but cancelling its
+    awaiter cannot stop the underlying Python thread. Shield and join that
+    bounded provider work before propagating cancellation so Process All's
+    durable operation scope is never released while the worker can still
+    update its captured library's review/cache state.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(enrich_tracks, root, track_ids))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        try:
+            await worker
+        except Exception:  # the cancellation remains the operation outcome
+            log.exception("Provider enrichment failed while Process All cancellation was pending")
+        raise
+
+
 def _sqlite_connect(root: Path):
     """
     Fails closed with ValueError rather than letting sqlite3.connect() silently
@@ -380,7 +400,11 @@ async def run_process_all(
             _finish(operation_id, root, track_ids, "cancelled", cleaned, enriched, written, failed, warnings)
             return
 
-        enrich_result = enrich_tracks(root, track_ids)
+        # Provider routing is intentionally synchronous (beets/MusicBrainz and
+        # requests-based adapters). Keep the complete lookup/cache/consensus
+        # transaction on one worker thread so no external-network wait can
+        # occupy the FastAPI/uvloop event-loop thread.
+        enrich_result = await _enrich_tracks_off_event_loop(root, track_ids)
         enriched = enrich_result["enriched_count"]
         warnings.extend(enrich_result["warnings"])
         await asyncio.sleep(0)

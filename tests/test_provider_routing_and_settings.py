@@ -105,7 +105,8 @@ def test_deezer_reports_ready_without_any_credentials():
     assert sources["deezer"]["requires_credentials"] is False
 
 
-def test_credential_requiring_providers_report_needs_setup_by_default():
+def test_credential_requiring_providers_report_needs_setup_by_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings_service, "METADATA_SOURCES_PATH", tmp_path / "metadata_sources.json")
     sources = {s["id"]: s for s in settings_service.get_metadata_sources()["sources"]}
     for source_id in ("acoustid", "discogs", "spotify", "beatport", "lastfm", "youtube"):
         assert sources[source_id]["connection_status"] == "needs_setup", source_id

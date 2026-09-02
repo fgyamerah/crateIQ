@@ -218,9 +218,11 @@ def online_lookup(track_id: int, source: str) -> dict[str, Any]:
     Explicit, single-track, bounded online lookup against Beets' real
     distance-scored MusicBrainz matching, or a raw MusicBrainz search.
 
-    Never called automatically; must be triggered per-track by the user.
-    Only proposes values for currently-missing allowed fields -- existing
-    non-empty metadata is never a lookup target or overwrite candidate.
+    Called either by an explicit per-track user action or by Process All's
+    bounded provider-consensus stage. Async callers must keep this synchronous
+    lookup workflow off the event-loop thread. Only proposes values for
+    currently-missing allowed fields -- existing non-empty metadata is never a
+    lookup target or overwrite candidate.
     """
     if source not in _ONLINE_SOURCES:
         raise ValueError(f"Unsupported online source: {source}.")
