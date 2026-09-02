@@ -8,9 +8,9 @@ TrackIssueItem — single item in the issues list response
 """
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..models.track import Track
 
@@ -22,6 +22,42 @@ def _recommended_issue_route(issues: List[str]) -> tuple[Optional[str], Optional
     if {"missing_artist", "missing_title", "weak_filename_parse"} & issue_set:
         return "Repair", "metadata-repair"
     return None, None
+
+
+class PreparationReason(BaseModel):
+    code: str
+    label: str
+    severity: Literal["blocker", "attention", "review", "unsaved"]
+
+
+class PreparationWarning(BaseModel):
+    code: str
+    label: str
+
+
+class PreparationWriteState(BaseModel):
+    has_unsaved_changes: bool
+    blocked: bool
+    blocker_code: Optional[str] = None
+    last_failure: Optional[str] = None
+
+
+class PreparationPromotionState(BaseModel):
+    ready: bool
+    destination: Optional[str] = None
+    collision: Optional[Literal["identical", "conflict"]] = None
+
+
+class InboxPreparationState(BaseModel):
+    track_id: int
+    status: Literal["WRITE_BLOCKED", "NEEDS_ATTENTION", "REVIEW", "UNSAVED", "READY"]
+    status_label: Literal["Write Blocked", "Needs Attention", "Review", "Unsaved", "Ready"]
+    reasons: List[PreparationReason] = Field(default_factory=list)
+    warnings: List[PreparationWarning] = Field(default_factory=list)
+    pending_fields: List[str] = Field(default_factory=list)
+    review_count: int = 0
+    write: PreparationWriteState
+    promotion: PreparationPromotionState
 
 
 class TrackSummary(BaseModel):
@@ -45,9 +81,12 @@ class TrackSummary(BaseModel):
     issues:       List[str] = []
     recommended_action: Optional[str] = None
     recommended_route: Optional[str] = None
+    preparation_state: Optional[InboxPreparationState] = None
 
     @classmethod
-    def from_track(cls, t: Track) -> "TrackSummary":
+    def from_track(
+        cls, t: Track, *, preparation_state: Optional[Dict[str, Any]] = None,
+    ) -> "TrackSummary":
         recommended_action, recommended_route = _recommended_issue_route(t.issues)
         return cls(
             id=t.id,
@@ -68,6 +107,7 @@ class TrackSummary(BaseModel):
             issues=t.issues,
             recommended_action=recommended_action,
             recommended_route=recommended_route,
+            preparation_state=preparation_state,
         )
 
 

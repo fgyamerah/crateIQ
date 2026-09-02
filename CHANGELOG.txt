@@ -2,6 +2,28 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-02] — Add read-only Inbox preparation state (Redesign Checkpoint 1)
+
+- Added one deterministic, read-only preparation-state projection for managed
+  Inbox tracks: Write Blocked, Needs Attention, Review, Unsaved, or Ready,
+  with human-readable reasons, secondary BPM/key warnings, exact pending tag
+  fields, actionable-review counts, current write safety, and promotion state.
+- Made Inbox summaries and promotion preview/apply consume the same batched
+  readiness logic. Current file tags are read once per track per projection;
+  review state, tag-write history, and track rows are each loaded in batches.
+- Made identical and different existing Library destinations both block
+  preview and apply, preserving the existing fail-closed/no-overwrite move
+  behavior. Actionable current provider review and serious current track
+  errors now prevent a false Ready state; BPM/key/waveform remain warnings.
+- Updated the current Inbox table to show the five human labels and expose
+  reasons accessibly without changing Clean, Enrich, Bulk Edit, Process All,
+  tag-write, or Move behavior. Files affected: focused workspace/tag-write
+  backend, Inbox API/schema/UI/types/tests, and project docs. Migration notes:
+  none.
+- Not implemented in this checkpoint: the full Inbox redesign, unified
+  DB-first editing, explicit Save to File UX, source selection drawer, inline
+  conflict review, Needs Review merge, Process All demotion, or mobile redesign.
+
 [2026-09-02] — Consolidate Library Launcher stabilization
 
 - Consolidated the launcher Browse/Create, stable-port handoff, fail-closed

@@ -142,6 +142,12 @@ The Inbox table supports direct editing without leaving the page:
 - Every column except the selection checkbox is **sortable** (click to sort
   ascending, click again to reverse); sorting is server-side and combines
   correctly with search and selection.
+- The **Status** column is one read-only preparation contract shared with
+  promotion: **Write Blocked**, **Needs Attention**, **Review**, **Unsaved**,
+  or **Ready**. Hover text and assistive-technology descriptions expose the
+  concrete reasons; missing BPM or key stays a secondary warning and does not
+  demote an otherwise Ready track. This status display does not introduce
+  another writer or change any Inbox action.
 
 ## Metadata intelligence
 
@@ -208,7 +214,10 @@ A track becomes promotable once:
 - Title is present
 - Genre is present
 - Its approved metadata has been verified written back to the file
-- No unresolved serious errors (e.g. the source file must still exist)
+- No current actionable provider review or unresolved serious error
+- The source is a supported, present managed Inbox file
+- No file already exists at the intended Library destination (identical
+  content also blocks rather than overwriting or silently discarding Inbox)
 
 **Warnings only (do not block promotion):**
 - Missing BPM

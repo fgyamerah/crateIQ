@@ -184,11 +184,21 @@ async def list_inbox_tracks(
             status_code=422,
             detail=f"Invalid sort key '{sort}'. Allowed: {', '.join(sorted(track_service.VALID_SORT_KEYS))}.",
         )
-    tracks, total = track_service.list_tracks(
-        q=search, storage_zone="INBOX", sort=sort, order=order, limit=limit, offset=offset,
-    )
+    root = _root()
+
+    def _load_page():
+        tracks, total = track_service.list_tracks(
+            q=search, storage_zone="INBOX", sort=sort, order=order, limit=limit, offset=offset,
+        )
+        states = workspace_service.inbox_preparation_states(root, [track.id for track in tracks]) if tracks else {}
+        return tracks, total, states
+
+    # Live tag inspection is bounded but synchronous (mutagen + filesystem).
+    # Keep the consolidated batch projection off the FastAPI event loop.
+    tracks, total, states = await run_in_threadpool(_load_page)
     return TrackPageResponse(
-        items=[TrackSummary.from_track(t) for t in tracks], limit=limit, offset=offset, total=total,
+        items=[TrackSummary.from_track(t, preparation_state=states.get(t.id)) for t in tracks],
+        limit=limit, offset=offset, total=total,
     )
 
 
@@ -249,7 +259,7 @@ async def apply_inbox_bulk_edit(body: InboxBulkEditApplyRequest):
 @router.post("/workspace/promotion/preview")
 async def preview_promotion(body: PromotionPreviewRequest):
     try:
-        return workspace_service.promotion_preview(_root(), body.track_ids)
+        return await run_in_threadpool(workspace_service.promotion_preview, _root(), body.track_ids)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

@@ -23,6 +23,7 @@ import type {
   PreparationOperation, PreparePreflight, PromotionPreview, SortOrder,
   WorkspaceImportResult, WorkspaceStatus,
 } from '../api/workspace'
+import type { InboxPreparationStatus } from '../types/track'
 import Badge from '../components/ui/Badge'
 import EmptyState from '../components/ui/EmptyState'
 import KpiCard from '../components/ui/KpiCard'
@@ -34,6 +35,14 @@ function messageFor(error: unknown, fallback: string) {
 }
 
 const POLL_INTERVAL_MS = 1500
+
+const PREPARATION_TONES: Record<InboxPreparationStatus, 'failed' | 'pending' | 'info' | 'running' | 'succeeded'> = {
+  WRITE_BLOCKED: 'failed',
+  NEEDS_ATTENTION: 'pending',
+  REVIEW: 'info',
+  UNSAVED: 'running',
+  READY: 'succeeded',
+}
 
 interface SortState {
   key: InboxSortKey
@@ -394,7 +403,6 @@ export default function Inbox() {
     }
   }
 
-  const readinessByTrackId = new Map((preview?.items ?? []).map((item) => [item.track_id, item]))
   const readyCount = preview?.ready_count ?? 0
   const blockedCount = preview?.blocked_count ?? 0
   const isProcessing = operation?.status === 'running'
@@ -650,12 +658,16 @@ export default function Inbox() {
                       <SortTh label="Genre" sortKey="genre" sort={sort} onSort={onSort} />
                       <SortTh label="BPM" sortKey="bpm" sort={sort} onSort={onSort} />
                       <SortTh label="Key" sortKey="key" sort={sort} onSort={onSort} />
-                      <SortTh label="Readiness" sortKey="readiness" sort={sort} onSort={onSort} />
+                      <SortTh label="Status" sortKey="readiness" sort={sort} onSort={onSort} />
                     </tr>
                   </thead>
                   <tbody>
                     {tracks.items.map((track) => {
-                      const readiness = readinessByTrackId.get(track.id)
+                      const preparation = track.preparation_state
+                      const preparationDetails = [
+                        ...(preparation?.reasons.map((reason) => reason.label) ?? []),
+                        ...(preparation?.warnings.map((warning) => warning.label) ?? []),
+                      ].join('. ')
                       const { base, ext } = splitExt(track.filename)
                       return (
                         <tr key={track.id}>
@@ -705,13 +717,17 @@ export default function Inbox() {
                           <td>{track.bpm ?? '—'}</td>
                           <td>{track.key_camelot || track.key_musical || '—'}</td>
                           <td>
-                            {readiness?.ready ? (
-                              <Badge tone="succeeded">Ready</Badge>
-                            ) : (
-                              <span title={readiness?.blockers.join(' ')}>
-                                <Badge tone="pending">{readiness?.blockers[0] || 'Needs review'}</Badge>
+                            {preparation ? (
+                              <span
+                                title={preparationDetails || preparation.status_label}
+                                aria-describedby={`preparation-reasons-${track.id}`}
+                              >
+                                <Badge tone={PREPARATION_TONES[preparation.status]}>{preparation.status_label}</Badge>
+                                <span id={`preparation-reasons-${track.id}`} className="lib-visually-hidden">
+                                  {preparationDetails || 'No blockers'}
+                                </span>
                               </span>
-                            )}
+                            ) : <Badge tone="pending">Needs Attention</Badge>}
                           </td>
                         </tr>
                       )

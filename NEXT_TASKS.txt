@@ -60,6 +60,12 @@ P1 / HIGH
 P2 / MEDIUM
 ----------------------------------------------------------------------
 
+[ ] Inbox Redesign Checkpoint 2 — selection/status filtering and an inspector
+    shell using the Checkpoint 1 read-only preparation-state contract. Keep
+    this separate from editing/write changes, provider selection, inline
+    conflict resolution, Needs Review merging, Process All changes, and the
+    later mobile/final visual pass.
+
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally
     unchanged for now: the backend version string and the export-context
@@ -106,10 +112,6 @@ P3 / LOW
 [ ] The bounded launcher audio scan returns once it finds audio, so a later
     unsafe symlink may not be reported as malformed. Keep this conservative
     scan-order edge case separate from the classification safety contract.
-
-[ ] `tests/test_workspace_service.py` has a pre-existing import-order
-    circular-import failure when run standalone (also present on origin/main
-    commit 171c2ca); it is not a Checkpoint 1B.1 regression.
 
 [ ] Resolve the FastAPI/Starlette `TestClient` HTTP-client deprecation and
     plan the current frontend build-tool upgrade path without changing the

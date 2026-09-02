@@ -164,7 +164,9 @@ def test_edit_external_original_unchanged(tmp_path, managed_root):
 
 
 def test_edit_refreshes_readiness(managed_root):
-    track_id = _seed_track(managed_root, "song.mp3", artist="A", title="T", genre="")
+    # Use non-suspicious metadata so this regression isolates the missing
+    # Genre transition under the preparation-state contract.
+    track_id = _seed_track(managed_root, "song.mp3", artist="Artist", title="Title", genre="")
     with sqlite3.connect(managed_root / "logs" / "processed.db") as conn:
         conn.execute("UPDATE tracks SET genre = NULL WHERE id = ?", (track_id,))
         conn.commit()

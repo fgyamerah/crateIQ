@@ -257,7 +257,12 @@ rather than living in the primary sidebar. `/duplicate-resolution-plan`
 Service map (`backend/app/services/`), current primary surfaces:
 
 * `workspace_service` — Inbox/Library/Quarantine state, import, safe
-  rename, inline/bulk metadata edit, promotion
+  rename, inline/bulk metadata edit, promotion, and the authoritative
+  read-only Inbox preparation-state projection. The projection batches
+  track/tag-plan/review/tag-write-history/destination reads, performs no
+  network or mutation, and exposes `preparation_state` on
+  `GET /api/workspace/inbox/tracks`; promotion preview/apply reuse the same
+  result rather than maintaining a second readiness interpretation.
 * `preparation_service` — Process All orchestration (clean -> enrich ->
   write-back), background operation tracking
 * `needs_review_service` — read-only aggregation across enrichment,
@@ -626,11 +631,32 @@ authoritative for BPM/key/cue points and is never overwritten (see
 
 ## Readiness
 
-Required for promotion:
+Inbox Redesign Checkpoint 1 defines five user-facing preparation states in
+strict precedence order:
+
+1. **Write Blocked** — the managed file cannot currently be safely written or
+   verified (unsupported format, missing/out-of-scope source, current planner
+   blocker, or a latest failed write whose DB/file difference is still open).
+2. **Needs Attention** — required Artist/Title/Genre is missing, current
+   suspicious metadata or a serious processing issue exists, or the intended
+   Library destination already exists.
+3. **Review** — a pending suggestion/conflict in the latest Inbox-scoped
+   enrichment snapshot still needs a decision. Applied, ignored, review-later,
+   and superseded history do not count.
+4. **Unsaved** — approved `tracks` metadata differs from live managed-file
+   tags and no higher-priority state applies.
+5. **Ready** — the complete promotion contract passes.
+
+The projection is read-only: `tracks` remains approved working metadata,
+`tag_write_service` remains the only tag writer, and external originals are
+never inspected as writable managed sources or modified. Required for Ready:
 
 * Artist, Title, Genre present
 * Metadata write verified (if any writes were pending)
-* Zero serious unresolved error
+* Zero serious current error or actionable provider review
+* Managed source present and safely contained in Inbox
+* No existing destination (identical content is also fail-closed because
+  promotion apply never overwrites or silently removes the Inbox copy)
 
 Warnings only (do not block promotion):
 
@@ -642,6 +668,10 @@ Quality Review (ffprobe snapshot findings and durable findings alike,
 including `recoverable_audio_decode_warning` and `audio_decode_failed`) is
 not currently consulted by promotion readiness at all -- it is purely
 informational, matching its pre-existing status.
+
+Checkpoint 1 does not implement the full Inbox redesign, unified DB-first
+editing, explicit Save to File UX, source selection drawer, inline conflict
+review, Needs Review merge, Process All demotion, or mobile redesign.
 
 ## Data Stores
 

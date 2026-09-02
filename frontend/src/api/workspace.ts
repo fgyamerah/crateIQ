@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { TrackSummary } from '../types/track'
+import type { InboxPreparationState, TrackSummary } from '../types/track'
 
 export interface WorkspaceStatus {
   state:            'managed_workspace' | 'legacy_direct_library' | 'not_configured'
@@ -46,6 +46,7 @@ export interface PromotionPreviewItem {
   warnings: string[]
   destination_relative: string | null
   collision: 'identical' | 'conflict' | null
+  preparation_state: InboxPreparationState
 }
 
 export interface PromotionPreview {

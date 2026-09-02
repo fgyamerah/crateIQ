@@ -23,6 +23,45 @@ export type TrackIssue =
 
 export type ParseConfidence = 'HIGH' | 'MEDIUM' | 'LOW' | 'UNKNOWN'
 
+export type InboxPreparationStatus =
+  | 'WRITE_BLOCKED'
+  | 'NEEDS_ATTENTION'
+  | 'REVIEW'
+  | 'UNSAVED'
+  | 'READY'
+
+export interface InboxPreparationReason {
+  code: string
+  label: string
+  severity: 'blocker' | 'attention' | 'review' | 'unsaved'
+}
+
+export interface InboxPreparationWarning {
+  code: string
+  label: string
+}
+
+export interface InboxPreparationState {
+  track_id: number
+  status: InboxPreparationStatus
+  status_label: 'Write Blocked' | 'Needs Attention' | 'Review' | 'Unsaved' | 'Ready'
+  reasons: InboxPreparationReason[]
+  warnings: InboxPreparationWarning[]
+  pending_fields: string[]
+  review_count: number
+  write: {
+    has_unsaved_changes: boolean
+    blocked: boolean
+    blocker_code: string | null
+    last_failure: string | null
+  }
+  promotion: {
+    ready: boolean
+    destination: string | null
+    collision: 'identical' | 'conflict' | null
+  }
+}
+
 // Shape returned by GET /api/tracks (list view)
 export interface TrackSummary {
   id:           number
@@ -43,6 +82,7 @@ export interface TrackSummary {
   issues:       TrackIssue[]
   recommended_action?: string | null
   recommended_route?: string | null
+  preparation_state?: InboxPreparationState | null
 }
 
 // Shape returned by GET /api/tracks/{id} (full detail)

@@ -23,8 +23,9 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
+from ..core import db as backend_db
 from ..core.config import TAG_WRITE_BACKUP_DIR
 from ..core.db import get_conn
 from ..core.library_key import current_library_key
@@ -120,6 +121,80 @@ def _plan_row(track: sqlite3.Row, root: Path) -> dict[str, Any]:
         # apply-time staleness check below.
         "expected_size": stat.st_size, "expected_mtime_ns": str(stat.st_mtime_ns),
     }
+
+
+def build_plan_items_for_rows(rows: Iterable[sqlite3.Row], root: Path) -> list[dict[str, Any]]:
+    """Build exact plan items for already-fetched rows in one filesystem pass.
+
+    This is the read-only batch seam used by Inbox preparation-state and
+    promotion preview. It avoids reopening the pipeline database once per
+    track and ensures each managed file's tags are read at most once by a
+    single projection request.
+    """
+    return [_plan_row(row, root) for row in rows]
+
+
+def latest_track_outcomes(track_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Return each requested track's latest persisted tag-write outcome.
+
+    Historical failures are deliberately not returned when a newer operation
+    has a successful/non-failed result for the same track. Callers must still
+    compare the current live plan before treating a latest failure as active.
+    """
+    wanted = set(track_ids)
+    if not wanted:
+        return {}
+    outcomes: dict[int, dict[str, Any]] = {}
+    jobs_db_path = Path(backend_db.JOBS_DB_PATH)
+    if not jobs_db_path.is_file():
+        return {}
+    try:
+        with sqlite3.connect(f"file:{jobs_db_path}?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT status, plan_json, result_json, error_reason, created_at "
+                "FROM tag_write_operations WHERE library_key = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 500",
+                (current_library_key(),),
+            ).fetchall()
+    except sqlite3.Error:
+        return {}
+
+    for row in rows:
+        try:
+            results = json.loads(row["result_json"] or "[]")
+        except (TypeError, ValueError):
+            results = []
+        result_ids: set[int] = set()
+        for result in results:
+            track_id = result.get("track_id")
+            if track_id not in wanted or track_id in outcomes:
+                continue
+            result_ids.add(track_id)
+            outcomes[track_id] = {
+                "status": result.get("status"),
+                "failed": result.get("status") == "failed",
+                "created_at": row["created_at"],
+            }
+
+        # An interrupted/operation-level failure can have no per-track result.
+        # Its saved plan is the bounded source of affected track identities.
+        if row["status"] == "failed" and row["error_reason"]:
+            try:
+                plan_items = json.loads(row["plan_json"] or "[]")
+            except (TypeError, ValueError):
+                plan_items = []
+            for item in plan_items:
+                track_id = item.get("track_id")
+                if track_id in wanted and track_id not in outcomes and track_id not in result_ids:
+                    outcomes[track_id] = {
+                        "status": "failed",
+                        "failed": True,
+                        "created_at": row["created_at"],
+                    }
+        if len(outcomes) == len(wanted):
+            break
+    return outcomes
 
 
 def build_plan(track_ids: list[int]) -> dict[str, Any]:
