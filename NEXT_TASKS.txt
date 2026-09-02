@@ -60,11 +60,10 @@ P1 / HIGH
 P2 / MEDIUM
 ----------------------------------------------------------------------
 
-[ ] Inbox Redesign Checkpoint 2 — selection/status filtering and an inspector
-    shell using the Checkpoint 1 read-only preparation-state contract. Keep
-    this separate from editing/write changes, provider selection, inline
-    conflict resolution, Needs Review merging, Process All changes, and the
-    later mobile/final visual pass.
+[ ] Inbox Redesign Checkpoint 3 — unified DB-first single-track editing and
+    expanded bulk editing for Artist, Title, Genre, and Album. Keep Year,
+    clear-field semantics, and explicit Save-to-File UX out of this checkpoint;
+    do not change provider selection, Needs Review, Process All, or mobile UX.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally

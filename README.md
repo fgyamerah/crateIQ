@@ -139,6 +139,15 @@ The Inbox table supports direct editing without leaving the page:
 - **Bulk Edit** — select multiple Inbox tracks to set one Artist and/or one
   Genre across all of them in a single, previewed operation. Bulk edit never
   renames files.
+- **Search and preparation filters** run across the server-side Inbox dataset,
+  not just the rendered page. Search covers filename, Artist, Title, and Genre;
+  the five status chips show search-scoped counts from the authoritative
+  preparation-state projection.
+- **Selection** is stored by track ID across sorting, refresh, status filters,
+  and pagination. The UI reports both total and visible selected tracks and
+  provides explicit clear-hidden/clear-all controls. The header checkbox is
+  deliberately labeled **Select visible page**; it never implies a hidden
+  query-wide selection.
 - Every column except the selection checkbox is **sortable** (click to sort
   ascending, click again to reverse); sorting is server-side and combines
   correctly with search and selection.
@@ -148,6 +157,11 @@ The Inbox table supports direct editing without leaving the page:
   concrete reasons; missing BPM or key stays a secondary warning and does not
   demote an otherwise Ready track. This status display does not introduce
   another writer or change any Inbox action.
+- A row's details chevron opens a read-only **Track Inspector**. Its Metadata,
+  Status, Analysis, and File sections expose current preparation reasons,
+  warnings, pending fields, review/write/promotion state, BPM/key/waveform
+  state, managed path, and destination preview. The inspector is restored by
+  `/inbox?track=<id>` and adds no edit, write, enrichment, or analysis action.
 
 ## Metadata intelligence
 

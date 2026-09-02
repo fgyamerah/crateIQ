@@ -108,6 +108,11 @@ def _build_order_by(sort: str, order: str) -> str:
             ", LOWER(TRIM(COALESCE(title,''))) ASC"
         )
     return f"(CASE WHEN {blank} THEN 1 ELSE 0 END) ASC, {value_expr} {order_dir}{secondary}, id ASC"
+
+
+def build_order_by(sort: str, order: str) -> str:
+    """Public validated ordering helper for read-only workspace projections."""
+    return _build_order_by(sort, order)
 _KNOWN_ISSUES = {
     "missing_bpm",
     "missing_key",

@@ -2,6 +2,31 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-02] — Build Inbox preparation workspace shell (Redesign Checkpoint 2)
+
+- Added server-side Inbox search across filename, Artist, Title, and Genre,
+  authoritative preparation-status filtering, full filtered totals, and
+  search-scoped counts for all five Checkpoint 1 states.
+- Reused one full candidate preparation projection per list request for status
+  counts, filtering, authoritative readiness sorting, pagination, and response
+  rendering. Each file's tags are read at most once and review state is loaded
+  once per projection; synchronous filesystem work remains off the event loop.
+- Added persistent ID-based multi-selection, honest Select Visible semantics,
+  shift-click ranges within rendered rows, visible/hidden selection counts,
+  clear-hidden/clear-all controls, pagination, and invalid-ID pruning after
+  refresh without changing any existing Inbox action semantics.
+- Added a URL-backed, read-only Inbox Track Inspector with Metadata, Status,
+  Analysis, and File sections; keyboard close/focus restoration; visible-track
+  navigation; and a narrow-layout overlay fallback. No metadata/file mutation,
+  enrichment acceptance, analysis action, or Save-to-File control was added.
+- Files affected: focused workspace/track services and route, Inbox API/types/
+  page/components/hook/styles/tests, and current project docs. Migration notes:
+  none.
+- Still deferred: unified DB-first editing, expanded Artist/Title/Genre/Album
+  bulk editing, explicit Save to File UX, per-batch provider selection, inline
+  enrichment/conflict application, Needs Review merge, Process All demotion,
+  full mobile redesign, and the final focused Impeccable pass.
+
 [2026-09-02] — Add read-only Inbox preparation state (Redesign Checkpoint 1)
 
 - Added one deterministic, read-only preparation-state projection for managed

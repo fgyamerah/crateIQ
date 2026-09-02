@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { InboxPreparationState, TrackSummary } from '../types/track'
+import type { InboxPreparationState, InboxPreparationStatus, TrackSummary } from '../types/track'
 
 export interface WorkspaceStatus {
   state:            'managed_workspace' | 'legacy_direct_library' | 'not_configured'
@@ -30,6 +30,8 @@ export interface InboxTrackPage {
   limit:  number
   offset: number
   total:  number
+  status_counts: Record<InboxPreparationStatus | 'ALL', number>
+  available_track_ids: number[]
 }
 
 export type InboxSortKey = 'artist' | 'title' | 'filename' | 'genre' | 'bpm' | 'key' | 'readiness'
@@ -95,15 +97,28 @@ export function importToInbox(sourcePaths: string[]): Promise<WorkspaceImportRes
 }
 
 export function fetchInboxTracks(
-  params: { search?: string; sort?: InboxSortKey; order?: SortOrder; limit?: number; offset?: number } = {},
+  params: {
+    search?: string
+    preparation_status?: InboxPreparationStatus
+    sort?: InboxSortKey
+    order?: SortOrder
+    limit?: number
+    offset?: number
+  } = {},
 ): Promise<InboxTrackPage> {
   const qs = new URLSearchParams()
   if (params.search) qs.set('search', params.search)
+  if (params.preparation_status) qs.set('preparation_status', params.preparation_status)
   if (params.sort) qs.set('sort', params.sort)
   if (params.order) qs.set('order', params.order)
   qs.set('limit', String(params.limit ?? 100))
   qs.set('offset', String(params.offset ?? 0))
   return apiFetch.get<InboxTrackPage>(`/workspace/inbox/tracks?${qs}`)
+}
+
+/** Read-only data for the Inbox preparation inspector. */
+export function fetchInboxTrackInspection(trackId: number): Promise<TrackSummary> {
+  return apiFetch.get<TrackSummary>(`/workspace/inbox/tracks/${trackId}/inspection`)
 }
 
 // ---------------------------------------------------------------------------

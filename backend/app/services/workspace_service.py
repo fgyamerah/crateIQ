@@ -31,7 +31,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from . import field_provenance_service, library_setup_service, tag_write_service
+from . import field_provenance_service, library_setup_service, tag_write_service, track_service
 from ..core.library_root import assert_path_under_root, assert_safe_new_root_path
 from ..core.preflight import redact_path
 from ..models.track import Track
@@ -524,6 +524,13 @@ _PREPARATION_STATUS_LABELS = {
     "UNSAVED": "Unsaved",
     "READY": "Ready",
 }
+_PREPARATION_STATUS_ORDER = {
+    "READY": 0,
+    "UNSAVED": 1,
+    "REVIEW": 2,
+    "NEEDS_ATTENTION": 3,
+    "WRITE_BLOCKED": 4,
+}
 
 
 def _reason(code: str, label: str, severity: str) -> dict[str, str]:
@@ -771,6 +778,108 @@ def inbox_preparation_states(
             }
             rows = [by_id[track_id] for track_id in track_ids if track_id in by_id]
     return _preparation_states_for_rows(root, rows)
+
+
+def inbox_track_page_projection(
+    root: Path,
+    *,
+    search: str | None = None,
+    preparation_status: str | None = None,
+    sort: str = "artist",
+    order: str = "asc",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Project, filter, sort, and paginate the authoritative Inbox state once.
+
+    Status counts are scoped to the current search but not the selected status,
+    so the filter chips remain useful while one status is active. All candidate
+    rows share one preparation-state projection; the resulting state objects are
+    reused for counts, filtering, readiness sorting, and response rendering.
+    """
+    try:
+        db_path = _require_initialized_db(root)
+    except ValueError:
+        return {
+            "items": [],
+            "states": {},
+            "limit": limit,
+            "offset": offset,
+            "total": 0,
+            "status_counts": {"ALL": 0, **{status: 0 for status in _PREPARATION_STATUS_LABELS}},
+            "available_track_ids": [],
+        }
+    where = ["COALESCE(storage_zone, 'LIBRARY') = 'INBOX'"]
+    params: list[object] = []
+    normalized_search = (search or "").strip()
+    if normalized_search:
+        term = f"%{normalized_search}%"
+        where.append("(artist LIKE ? OR title LIKE ? OR filename LIKE ? OR genre LIKE ?)")
+        params.extend([term, term, term, term])
+    where_sql = " AND ".join(where)
+    order_by = track_service.build_order_by(sort, order)
+
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT * FROM tracks WHERE {where_sql} ORDER BY {order_by}", params,
+        ).fetchall()
+        available_track_ids = [
+            int(row["id"])
+            for row in conn.execute(
+                "SELECT id FROM tracks WHERE COALESCE(storage_zone, 'LIBRARY') = 'INBOX' ORDER BY id"
+            ).fetchall()
+        ]
+
+    states = _preparation_states_for_rows(root, rows)
+    status_counts = {status: 0 for status in _PREPARATION_STATUS_LABELS}
+    for state in states.values():
+        status_counts[state["status"]] += 1
+
+    filtered_rows = (
+        [row for row in rows if states[int(row["id"])]["status"] == preparation_status]
+        if preparation_status else rows
+    )
+    if sort == "readiness":
+        direction = 1 if order == "asc" else -1
+        filtered_rows = sorted(
+            filtered_rows,
+            key=lambda row: (
+                direction * _PREPARATION_STATUS_ORDER[states[int(row["id"])]["status"]],
+                (row["artist"] or "").casefold(),
+                int(row["id"]),
+            ),
+        )
+
+    total = len(filtered_rows)
+    page_rows = filtered_rows[offset:offset + limit]
+    return {
+        "items": [Track.from_row(row) for row in page_rows],
+        "states": states,
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "status_counts": {"ALL": len(rows), **status_counts},
+        "available_track_ids": available_track_ids,
+    }
+
+
+def inbox_track_inspection(root: Path, track_id: int) -> tuple[Track, dict[str, Any]] | None:
+    """Return one Inbox track and its authoritative read-only preparation state."""
+    try:
+        db_path = _require_initialized_db(root)
+    except ValueError:
+        return None
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM tracks WHERE id = ? AND COALESCE(storage_zone, 'LIBRARY') = 'INBOX'",
+            (track_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    state = _preparation_states_for_rows(root, [row])[track_id]
+    return Track.from_row(row), state
 
 
 def _legacy_promotion_item(row: sqlite3.Row, state: dict[str, Any]) -> dict[str, Any]:

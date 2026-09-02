@@ -26,7 +26,7 @@ Multi-provider enrichment (Cycle 11):
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
@@ -88,6 +88,8 @@ class TrackPageResponse(BaseModel):
     limit: int
     offset: int
     total: int
+    status_counts: Dict[str, int]
+    available_track_ids: List[int]
 
 
 class PromotionPreviewRequest(BaseModel):
@@ -173,7 +175,10 @@ async def import_to_inbox(body: WorkspaceImportRequest):
 
 @router.get("/workspace/inbox/tracks", response_model=TrackPageResponse)
 async def list_inbox_tracks(
-    search: Optional[str] = Query(default=None, description="Search artist, title, filename"),
+    search: Optional[str] = Query(default=None, description="Search artist, title, genre, filename"),
+    preparation_status: Optional[
+        Literal["WRITE_BLOCKED", "NEEDS_ATTENTION", "REVIEW", "UNSAVED", "READY"]
+    ] = Query(default=None, description="Authoritative Inbox preparation status"),
     sort: str = Query(default="artist", description="Sort key"),
     order: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=100, ge=1, le=500),
@@ -187,19 +192,40 @@ async def list_inbox_tracks(
     root = _root()
 
     def _load_page():
-        tracks, total = track_service.list_tracks(
-            q=search, storage_zone="INBOX", sort=sort, order=order, limit=limit, offset=offset,
+        return workspace_service.inbox_track_page_projection(
+            root,
+            search=search,
+            preparation_status=preparation_status,
+            sort=sort,
+            order=order,
+            limit=limit,
+            offset=offset,
         )
-        states = workspace_service.inbox_preparation_states(root, [track.id for track in tracks]) if tracks else {}
-        return tracks, total, states
 
     # Live tag inspection is bounded but synchronous (mutagen + filesystem).
     # Keep the consolidated batch projection off the FastAPI event loop.
-    tracks, total, states = await run_in_threadpool(_load_page)
+    page = await run_in_threadpool(_load_page)
     return TrackPageResponse(
-        items=[TrackSummary.from_track(t, preparation_state=states.get(t.id)) for t in tracks],
-        limit=limit, offset=offset, total=total,
+        items=[
+            TrackSummary.from_track(track, preparation_state=page["states"].get(track.id))
+            for track in page["items"]
+        ],
+        limit=page["limit"],
+        offset=page["offset"],
+        total=page["total"],
+        status_counts=page["status_counts"],
+        available_track_ids=page["available_track_ids"],
     )
+
+
+@router.get("/workspace/inbox/tracks/{track_id}/inspection", response_model=TrackSummary)
+async def inspect_inbox_track(track_id: int) -> TrackSummary:
+    """Read-only Inbox inspector data; never runs providers, analysis, or writes."""
+    result = await run_in_threadpool(workspace_service.inbox_track_inspection, _root(), track_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Inbox track {track_id} not found.")
+    track, state = result
+    return TrackSummary.from_track(track, preparation_state=state)
 
 
 @router.patch("/workspace/inbox/tracks/{track_id}")

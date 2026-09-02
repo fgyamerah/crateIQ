@@ -669,9 +669,28 @@ including `recoverable_audio_decode_warning` and `audio_decode_failed`) is
 not currently consulted by promotion readiness at all -- it is purely
 informational, matching its pre-existing status.
 
-Checkpoint 1 does not implement the full Inbox redesign, unified DB-first
-editing, explicit Save to File UX, source selection drawer, inline conflict
-review, Needs Review merge, Process All demotion, or mobile redesign.
+Inbox Redesign Checkpoint 2 builds the read-only workspace layer on that same
+contract. `GET /api/workspace/inbox/tracks` accepts `preparation_status`,
+searches filename/Artist/Title/Genre, and returns search-scoped status counts,
+the full filtered total, and current Inbox IDs for safe selection validation.
+The service performs one candidate preparation projection, then reuses it for
+counts, status filtering, authoritative readiness sorting, pagination, and
+response rendering. The companion
+`GET /api/workspace/inbox/tracks/{track_id}/inspection` is a single-track,
+read-only projection for URL-backed (`/inbox?track=<id>`) inspector restore.
+
+Inbox selection is ID-based and persists across sorting, refetch, filtering,
+and pages. The UI distinguishes total selected from visible selected, exposes
+clear-hidden and clear-all actions, labels the header checkbox as Select
+Visible, and supports shift-click ranges only within rendered rows. The
+read-only Track Inspector shows Metadata, authoritative Status/reasons/warnings/
+write/promotion state, Analysis/waveform state, and managed File context. It
+adds no write, provider, enrichment-acceptance, or analysis action.
+
+Checkpoint 2 still does not implement unified DB-first editing, expanded
+Artist/Title/Genre/Album bulk editing, explicit Save to File UX, per-batch
+provider selection, inline conflict application, Needs Review merge, Process
+All demotion, the full mobile redesign, or the final focused Impeccable pass.
 
 ## Data Stores
 

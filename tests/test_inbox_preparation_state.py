@@ -324,3 +324,183 @@ def test_latest_failed_write_with_unresolved_difference_is_write_blocked(env):
     state = _state(env, track_id)
     assert state["status"] == "WRITE_BLOCKED"
     assert state["write"]["last_failure"] is not None
+
+
+def _seed_all_preparation_statuses(env) -> dict[str, int]:
+    ids = {
+        "READY": _seed(env, filename="ready.mp3"),
+        "NEEDS_ATTENTION": _seed(env, filename="attention.mp3", genre=None),
+        "REVIEW": _seed(env, filename="review.mp3"),
+        "UNSAVED": _seed(env, filename="unsaved.mp3"),
+        "WRITE_BLOCKED": _seed(env, filename="blocked.m4a"),
+    }
+    _queue_review(env, ids["REVIEW"])
+    env[1][env[0] / "Inbox" / "unsaved.mp3"]["artist"] = "Old Artist"
+    return ids
+
+
+@pytest.mark.parametrize(
+    "requested_status",
+    ["READY", "NEEDS_ATTENTION", "REVIEW", "UNSAVED", "WRITE_BLOCKED"],
+)
+def test_inbox_api_filters_each_authoritative_status(env, requested_status):
+    ids = _seed_all_preparation_statuses(env)
+    with TestClient(backend_main.app) as client:
+        response = client.get(
+            "/api/workspace/inbox/tracks",
+            params={"preparation_status": requested_status},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [ids[requested_status]]
+    assert body["items"][0]["preparation_state"]["status"] == requested_status
+
+
+def test_inbox_status_filter_composes_with_search_including_genre(env):
+    matching = _seed(env, filename="matching.mp3", artist="Alpha", genre="Deep House")
+    _seed(env, filename="other-ready.mp3", artist="Beta", genre="Techno")
+    _seed(env, filename="attention.mp3", artist="Gamma", genre=None)
+
+    with TestClient(backend_main.app) as client:
+        response = client.get(
+            "/api/workspace/inbox/tracks",
+            params={"search": "Deep House", "preparation_status": "READY"},
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 1
+    assert [item["id"] for item in body["items"]] == [matching]
+    assert body["status_counts"]["ALL"] == 1
+
+
+def test_inbox_status_filter_composes_with_sort(env):
+    zeta = _seed(env, filename="zeta.mp3", artist="Zeta")
+    alpha = _seed(env, filename="alpha.mp3", artist="Alpha")
+    _seed(env, filename="attention.mp3", artist="Middle", title=None)
+
+    with TestClient(backend_main.app) as client:
+        response = client.get(
+            "/api/workspace/inbox/tracks",
+            params={"preparation_status": "READY", "sort": "artist", "order": "desc"},
+        )
+
+    assert response.status_code == 200
+    assert [item["id"] for item in response.json()["items"]] == [zeta, alpha]
+
+
+def test_inbox_readiness_sort_uses_authoritative_status_precedence(env):
+    ids = _seed_all_preparation_statuses(env)
+    expected_ascending = [
+        ids["READY"], ids["UNSAVED"], ids["REVIEW"],
+        ids["NEEDS_ATTENTION"], ids["WRITE_BLOCKED"],
+    ]
+    with TestClient(backend_main.app) as client:
+        ascending = client.get(
+            "/api/workspace/inbox/tracks", params={"sort": "readiness", "order": "asc"}
+        )
+        descending = client.get(
+            "/api/workspace/inbox/tracks", params={"sort": "readiness", "order": "desc"}
+        )
+
+    assert [item["id"] for item in ascending.json()["items"]] == expected_ascending
+    assert [item["id"] for item in descending.json()["items"]] == list(reversed(expected_ascending))
+
+
+def test_inbox_status_filter_paginates_after_filter_and_reports_full_total(env):
+    ready_ids = [_seed(env, filename=f"ready-{index}.mp3", artist=f"Artist {index}") for index in range(3)]
+    attention_id = _seed(env, filename="attention.mp3", genre=None)
+
+    with TestClient(backend_main.app) as client:
+        response = client.get(
+            "/api/workspace/inbox/tracks",
+            params={
+                "preparation_status": "READY",
+                "sort": "artist",
+                "limit": 1,
+                "offset": 1,
+            },
+        )
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 3
+    assert [item["id"] for item in body["items"]] == [ready_ids[1]]
+    assert body["status_counts"] == {
+        "ALL": 4,
+        "WRITE_BLOCKED": 0,
+        "NEEDS_ATTENTION": 1,
+        "REVIEW": 0,
+        "UNSAVED": 0,
+        "READY": 3,
+    }
+    assert body["available_track_ids"] == sorted(ready_ids + [attention_id])
+
+
+def test_inbox_status_request_reads_each_candidate_file_once(env, monkeypatch):
+    _seed(env, filename="first.mp3")
+    _seed(env, filename="second.mp3")
+    reads: list[Path] = []
+
+    def read_tags(path: Path) -> dict[str, str]:
+        resolved = Path(path)
+        reads.append(resolved)
+        return env[1][resolved]
+
+    monkeypatch.setattr(tag_write_service, "_read_file_tags", read_tags)
+    with TestClient(backend_main.app) as client:
+        response = client.get("/api/workspace/inbox/tracks", params={"preparation_status": "READY"})
+
+    assert response.status_code == 200
+    assert reads == [env[0] / "Inbox" / "first.mp3", env[0] / "Inbox" / "second.mp3"]
+
+
+def test_inbox_status_request_reads_review_snapshot_once(env, monkeypatch):
+    _seed(env, filename="first.mp3")
+    _seed(env, filename="second.mp3")
+    review_calls = 0
+
+    def get_review():
+        nonlocal review_calls
+        review_calls += 1
+        return {"items": []}
+
+    monkeypatch.setattr(enrichment_review_service, "get_review", get_review)
+    with TestClient(backend_main.app) as client:
+        response = client.get("/api/workspace/inbox/tracks", params={"preparation_status": "READY"})
+
+    assert response.status_code == 200
+    assert review_calls == 1
+
+
+def test_inbox_api_rejects_unsupported_preparation_status(env):
+    _seed(env)
+    with TestClient(backend_main.app) as client:
+        response = client.get(
+            "/api/workspace/inbox/tracks",
+            params={"preparation_status": "NOT_A_REAL_STATUS"},
+        )
+    assert response.status_code == 422
+
+
+def test_inbox_api_without_status_filter_keeps_complete_list_behavior(env):
+    ids = [_seed(env, filename="ready.mp3"), _seed(env, filename="attention.mp3", genre=None)]
+    with TestClient(backend_main.app) as client:
+        response = client.get("/api/workspace/inbox/tracks", params={"sort": "filename"})
+    assert response.status_code == 200
+    body = response.json()
+    assert body["total"] == 2
+    assert {item["id"] for item in body["items"]} == set(ids)
+
+
+def test_inbox_inspection_is_read_only_and_reuses_preparation_contract(env):
+    track_id = _seed(env, filename="inspect.mp3", bpm=None)
+    with TestClient(backend_main.app) as client:
+        response = client.get(f"/api/workspace/inbox/tracks/{track_id}/inspection")
+    assert response.status_code == 200
+    item = response.json()
+    assert item["id"] == track_id
+    assert item["preparation_state"]["status"] == "READY"
+    assert item["preparation_state"]["warnings"] == [{"code": "bpm_missing", "label": "BPM is missing"}]
