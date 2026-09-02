@@ -93,22 +93,22 @@ function track(id: number, state: InboxPreparationState): TrackSummary {
   }
 }
 
-const statusCounts = {
+const statusCounts: Record<InboxPreparationStatus | 'ALL', number> = {
   ALL: 5,
   WRITE_BLOCKED: 1,
   NEEDS_ATTENTION: 1,
   REVIEW: 1,
   UNSAVED: 1,
   READY: 1,
-} as const
+}
 
-function page(items: TrackSummary[], total = items.length) {
+function page(items: TrackSummary[], total = items.length, counts = statusCounts) {
   return {
     items,
     limit: 200,
     offset: 0,
     total,
-    status_counts: statusCounts,
+    status_counts: counts,
     available_track_ids: [1, 2, 3, 4, 5],
   }
 }
@@ -319,5 +319,247 @@ describe('Inbox filtering, selection, and inspector', () => {
     expect(screen.getByRole('button', { name: 'Bulk Edit (0)' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Needs Review' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move Ready to Library (1)' })).toBeInTheDocument()
+  })
+
+  it('edits Artist, Title, Genre, and Album through the DB-first API and keeps selection', async () => {
+    let working = allTracks[0]
+    let fetchCount = 0
+    vi.mocked(workspaceApi.fetchInboxTracks).mockImplementation(async () => {
+      fetchCount += 1
+      return page(fetchCount === 1 ? allTracks : [working, ...allTracks.slice(1)], 3)
+    })
+    vi.mocked(workspaceApi.patchInboxTrack).mockImplementation(async (id, fields) => {
+      working = { ...working, ...fields, preparation_state: preparation(1, 'UNSAVED', ['Working metadata differs from file tags']) }
+      return {
+        track_id: id,
+        rename: null,
+        metadata: { ...working, album: working.album ?? null, preparation_state: working.preparation_state!, track_id: id, status: 'updated', fields_changed: Object.keys(fields), tag_write: null },
+        errors: [],
+      }
+    })
+
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    const select = await screen.findByRole('checkbox', { name: 'Select track-1.mp3' })
+    fireEvent.click(select)
+
+    for (const [field, nextValue] of [['Artist', 'New Artist'], ['Title', 'New Title'], ['Genre', 'Techno']] as const) {
+      fireEvent.click(screen.getByRole('button', { name: `Edit ${field} for track-1.mp3` }))
+      const input = screen.getByRole('textbox', { name: `${field} for track-1.mp3 value` })
+      fireEvent.change(input, { target: { value: nextValue } })
+      fireEvent.keyDown(input, { key: 'Enter' })
+      await waitFor(() => expect(workspaceApi.patchInboxTrack).toHaveBeenCalledWith(1, { [field.toLowerCase()]: nextValue }))
+      await waitFor(() => expect(screen.queryByRole('textbox', { name: `${field} for track-1.mp3 value` })).not.toBeInTheDocument())
+    }
+
+    expect(screen.getByText('New Artist')).toBeInTheDocument()
+    expect(screen.getByText('New Title')).toBeInTheDocument()
+    expect(screen.getByText('Techno')).toBeInTheDocument()
+    expect(screen.getAllByText('Unsaved').length).toBeGreaterThan(0)
+    expect(screen.getByText('1 selected · 1 visible')).toBeInTheDocument()
+    expect(screen.getByText('track-1')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Managed filename for track-1.mp3' }))
+    const filenameInput = screen.getByRole('textbox', { name: 'Managed filename for track-1.mp3 value' })
+    fireEvent.change(filenameInput, { target: { value: 'renamed-track-1' } })
+    vi.mocked(workspaceApi.patchInboxTrack).mockResolvedValueOnce({
+      track_id: 1,
+      rename: { track_id: 1, status: 'renamed', filename: 'renamed-track-1.mp3', filepath: '/managed/Inbox/renamed-track-1.mp3' },
+      metadata: null,
+      errors: [],
+    })
+    fireEvent.keyDown(filenameInput, { key: 'Enter' })
+    await waitFor(() => expect(workspaceApi.patchInboxTrack).toHaveBeenLastCalledWith(1, { filename: 'renamed-track-1' }))
+    expect(screen.getByText('New Title')).toBeInTheDocument()
+  })
+
+  it('shows local validation and restores the prior value after a failed edit', async () => {
+    vi.mocked(workspaceApi.patchInboxTrack).mockRejectedValue(new Error('Metadata service unavailable'))
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    const select = await screen.findByRole('checkbox', { name: 'Select track-1.mp3' })
+    fireEvent.click(select)
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Title for track-1.mp3' }))
+    const input = screen.getByRole('textbox', { name: 'Title for track-1.mp3 value' })
+    fireEvent.change(input, { target: { value: 'Changed title' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(await screen.findByRole('alert')).toHaveTextContent('Metadata service unavailable')
+    expect(screen.getByRole('textbox', { name: 'Title for track-1.mp3 value' })).toHaveValue('Changed title')
+    fireEvent.keyDown(input, { key: 'Escape' })
+    expect(screen.getByText('Title 1')).toBeInTheDocument()
+    expect(screen.getByText('1 selected · 1 visible')).toBeInTheDocument()
+  })
+
+  it('supports inspector metadata editing without closing or adding Save to File', async () => {
+    const updated = { ...allTracks[0], title: 'Inspector title', album: 'Inspector album', preparation_state: preparation(1, 'UNSAVED', ['Working metadata differs from file tags']) }
+    let fetchCount = 0
+    vi.mocked(workspaceApi.fetchInboxTracks).mockImplementation(async () => {
+      fetchCount += 1
+      return page(fetchCount === 1 ? allTracks : [updated, ...allTracks.slice(1)], 3)
+    })
+    vi.mocked(workspaceApi.patchInboxTrack).mockResolvedValue({
+      track_id: 1,
+      rename: null,
+      metadata: { ...updated, track_id: 1, status: 'updated', fields_changed: ['title'], tag_write: null },
+      errors: [],
+    })
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Inspect track-1.mp3' }))
+    const inspector = screen.getByRole('dialog', { name: 'Inbox Track Inspector' })
+    fireEvent.click(within(inspector).getByRole('tab', { name: 'Metadata' }))
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Edit Title' }))
+    const input = within(inspector).getByRole('textbox', { name: 'Title value' })
+    fireEvent.change(input, { target: { value: 'Inspector title' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await waitFor(() => expect(workspaceApi.patchInboxTrack).toHaveBeenCalledWith(1, { title: 'Inspector title' }))
+    expect(screen.getByRole('dialog', { name: 'Inbox Track Inspector' })).toBeInTheDocument()
+    expect(within(inspector).getAllByText('Inspector title').length).toBeGreaterThan(0)
+    fireEvent.click(within(inspector).getByRole('button', { name: 'Edit Album' }))
+    const albumInput = within(inspector).getByRole('textbox', { name: 'Album value' })
+    fireEvent.change(albumInput, { target: { value: 'Inspector album 2' } })
+    fireEvent.keyDown(albumInput, { key: 'Enter' })
+    await waitFor(() => expect(workspaceApi.patchInboxTrack).toHaveBeenCalledWith(1, { album: 'Inspector album 2' }))
+    fireEvent.click(within(inspector).getByRole('tab', { name: 'Status' }))
+    expect(within(inspector).getAllByText('Unsaved').length).toBeGreaterThan(0)
+    expect(within(inspector).getByText('Changes not yet written to file')).toBeInTheDocument()
+    expect(within(inspector).queryByRole('button', { name: /Save to File/i })).not.toBeInTheDocument()
+  })
+
+  it('bulk edits all four fields with opt-in validation, preview, and confirmation', async () => {
+    vi.mocked(workspaceApi.previewInboxBulkEdit).mockResolvedValue({
+      selected_count: 3,
+      eligible_count: 3,
+      changeable_count: 3,
+      skipped_not_inbox: 0,
+      missing_count: 0,
+      fields: {
+        artist: { current_values: ['Artist'], new_value: 'Shared Artist' },
+        title: { current_values: ['Title 1', 'Title 2'], new_value: 'Shared Title' },
+        genre: { current_values: ['House'], new_value: 'Techno' },
+        album: { current_values: ['Unknown'], new_value: 'Shared Album' },
+      },
+      message: 'Preview only. No metadata or files were changed.',
+    })
+    vi.mocked(workspaceApi.applyInboxBulkEdit).mockResolvedValue({
+      selected_count: 3, changed_count: 3, unchanged_count: 0, succeeded_count: 3,
+      failed_count: 0, skipped_count: 0, not_found_count: 0, results: [], tag_write: null,
+      message: 'Bulk edit applied to approved Inbox metadata only. File tags were not changed.',
+    })
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select visible page (3 tracks)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bulk Edit (3)' }))
+
+    for (const field of ['Artist', 'Title', 'Genre', 'Album']) {
+      fireEvent.click(screen.getByRole('checkbox', { name: field }))
+      fireEvent.change(screen.getByRole('textbox', { name: `New ${field.toLowerCase()} value for bulk edit` }), { target: { value: `Shared ${field}` } })
+    }
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    await screen.findByText('3 eligible tracks will change across 4 fields.')
+    expect(screen.getByText('Current values include: Artist')).toBeInTheDocument()
+    expect(screen.getByText('Shared Album')).toBeInTheDocument()
+    expect(workspaceApi.applyInboxBulkEdit).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'Review & apply' }))
+    expect(screen.getByRole('alertdialog', { name: 'Confirm working metadata changes' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Confirm apply' }))
+    await waitFor(() => expect(workspaceApi.applyInboxBulkEdit).toHaveBeenCalledWith([1, 2, 3], {
+      artist: 'Shared Artist', title: 'Shared Title', genre: 'Shared Genre', album: 'Shared Album',
+    }))
+    expect(screen.getByText(/3 succeeded, 0 unchanged/)).toBeInTheDocument()
+  })
+
+  it.each([
+    {
+      name: 'some selected tracks already match',
+      preview: { selected_count: 3, eligible_count: 3, changeable_count: 1, skipped_not_inbox: 0, missing_count: 0 },
+      expected: '3 selected · 3 eligible · 1 will change · 2 already match.',
+    },
+    {
+      name: 'no selected tracks would change',
+      preview: { selected_count: 3, eligible_count: 3, changeable_count: 0, skipped_not_inbox: 0, missing_count: 0 },
+      expected: '3 selected · 3 eligible · 0 will change · 3 already match.',
+    },
+    {
+      name: 'skips ineligible tracks',
+      preview: { selected_count: 3, eligible_count: 2, changeable_count: 1, skipped_not_inbox: 1, missing_count: 0 },
+      expected: '3 selected · 2 eligible · 1 will change · 1 already match · 1 skipped (not in Inbox).',
+    },
+  ])('renders truthful bulk-preview counts when $name', async ({ preview, expected }) => {
+    vi.mocked(workspaceApi.previewInboxBulkEdit).mockResolvedValue({
+      ...preview,
+      fields: { artist: { current_values: ['Artist'], new_value: 'Shared Artist' } },
+      message: 'Preview only. No metadata or files were changed.',
+    })
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select visible page (3 tracks)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bulk Edit (3)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Artist' }))
+    fireEvent.change(screen.getByRole('textbox', { name: 'New artist value for bulk edit' }), { target: { value: 'Shared Artist' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+
+    expect(await screen.findByText(expected)).toBeInTheDocument()
+    if (preview.changeable_count === 0 && preview.eligible_count > 0) {
+      expect(screen.getByText('No eligible selected Inbox tracks will change; 3 already match the proposed values.')).toBeInTheDocument()
+      expect(screen.queryByText('No selected Inbox tracks need a change.')).not.toBeInTheDocument()
+    }
+  })
+
+  it('refreshes authoritative preparation state and primary Unsaved count after inline metadata edit', async () => {
+    const updatedState = preparation(1, 'UNSAVED', ['Artist has changes not yet written to file'])
+    const updatedTrack = { ...allTracks[0], artist: 'Updated Artist', preparation_state: updatedState }
+    let fetchCount = 0
+    vi.mocked(workspaceApi.fetchInboxTracks).mockImplementation(async () => {
+      fetchCount += 1
+      const counts = fetchCount === 1 ? { ...statusCounts, UNSAVED: 0 } : { ...statusCounts, UNSAVED: 1, READY: 0 }
+      return page(fetchCount === 1 ? allTracks : [updatedTrack, allTracks[1], allTracks[2]], 3, counts)
+    })
+    vi.mocked(workspaceApi.patchInboxTrack).mockResolvedValue({
+      track_id: 1,
+      rename: null,
+      metadata: {
+        track_id: 1, status: 'updated', fields_changed: ['artist'], artist: 'Updated Artist', title: 'Title 1', genre: 'House', album: null,
+        tag_write: null, preparation_state: updatedState,
+      },
+      errors: [],
+    })
+
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('button', { name: 'Edit Artist for track-1.mp3' }))
+    const input = screen.getByRole('textbox', { name: 'Artist for track-1.mp3 value' })
+    fireEvent.change(input, { target: { value: 'Updated Artist' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await waitFor(() => expect(workspaceApi.patchInboxTrack).toHaveBeenCalledWith(1, { artist: 'Updated Artist' }))
+    await waitFor(() => expect(workspaceApi.fetchInboxTracks).toHaveBeenCalledTimes(2))
+    expect(screen.getByRole('button', { name: 'Unsaved 1' })).toBeInTheDocument()
+    expect(screen.getByText('Updated Artist')).toBeInTheDocument()
+    expect(updatedState.pending_fields).toEqual(['artist'])
+    expect(updatedState.write.has_unsaved_changes).toBe(true)
+  })
+
+  it('keeps higher-precedence status counts while exposing pending unsaved fields', async () => {
+    const blockedWithPending = preparation(1, 'NEEDS_ATTENTION', ['Genre is missing'])
+    blockedWithPending.pending_fields = ['artist']
+    blockedWithPending.write.has_unsaved_changes = true
+    const item = { ...allTracks[0], preparation_state: blockedWithPending }
+    vi.mocked(workspaceApi.fetchInboxTracks).mockResolvedValue(page([item], 1, {
+      ALL: 1, WRITE_BLOCKED: 0, NEEDS_ATTENTION: 1, REVIEW: 0, UNSAVED: 0, READY: 0,
+    }))
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+
+    expect(await screen.findByRole('button', { name: 'Unsaved 0' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Inspect track-1.mp3' }))
+    const inspector = await screen.findByRole('dialog', { name: 'Inbox Track Inspector' })
+    expect(within(inspector).getByText('Needs Attention')).toBeInTheDocument()
+    expect(within(inspector).getByText('artist')).toBeInTheDocument()
+    expect(within(inspector).getByText('Yes')).toBeInTheDocument()
+  })
+
+  it('rejects an enabled blank bulk field and omits unchecked fields', async () => {
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select visible page (3 tracks)' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Bulk Edit (3)' }))
+    fireEvent.click(screen.getByRole('checkbox', { name: 'Artist' }))
+    expect(screen.getByRole('alert')).toHaveTextContent('Artist cannot be empty.')
+    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled()
+    expect(workspaceApi.previewInboxBulkEdit).not.toHaveBeenCalled()
   })
 })

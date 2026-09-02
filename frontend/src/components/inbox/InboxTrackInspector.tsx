@@ -4,7 +4,9 @@ import type { TrackSummary } from '../../types/track'
 import { useTrackWaveform } from '../../hooks/useTrackWaveform'
 import EmptyWaveform from '../player/EmptyWaveform'
 import TrackWaveform from '../player/TrackWaveform'
+import EditableMetadataCell from './EditableMetadataCell'
 import PreparationStatusBadge from './PreparationStatusBadge'
+import type { InboxEditableMetadataField } from '../../types/track'
 
 type InspectorTab = 'overview' | 'status' | 'analysis' | 'file'
 
@@ -14,6 +16,7 @@ interface Props {
   onClose: () => void
   onPrevious?: () => void
   onNext?: () => void
+  onMetadataSave?: (field: InboxEditableMetadataField, value: string) => Promise<void>
 }
 
 function value(value: string | number | null | undefined) {
@@ -27,7 +30,7 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${remainder}`
 }
 
-export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext }: Props) {
+export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave }: Props) {
   const [tab, setTab] = useState<InspectorTab>('status')
   const closeRef = useRef<HTMLButtonElement>(null)
   const waveform = useTrackWaveform(track?.id ?? null)
@@ -93,10 +96,18 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
         {!loading && track && tab === 'overview' && (
           <section id="inbox-inspector-panel-overview" role="tabpanel" aria-labelledby="inbox-inspector-tab-overview">
             <h3>Overview / Metadata</h3>
+            <div className="inbox-inspector-edit-fields">
+              {(['artist', 'title', 'genre', 'album'] as InboxEditableMetadataField[]).map((field) => (
+                <EditableMetadataCell
+                  key={field}
+                  value={track[field] ?? ''}
+                  ariaLabel={field[0].toUpperCase() + field.slice(1)}
+                  variant="inspector"
+                  onSave={(next) => onMetadataSave ? onMetadataSave(field, next) : Promise.resolve()}
+                />
+              ))}
+            </div>
             <dl className="inbox-inspector-defs">
-              <dt>Artist</dt><dd>{value(track.artist)}</dd>
-              <dt>Title</dt><dd>{value(track.title)}</dd>
-              <dt>Genre</dt><dd>{value(track.genre)}</dd>
               <dt>Filename</dt><dd>{track.filename}</dd>
               <dt>Duration</dt><dd>{formatDuration(track.duration_sec)}</dd>
               <dt>Bitrate</dt><dd>{track.bitrate_kbps ? `${track.bitrate_kbps} kbps` : '—'}</dd>
@@ -108,7 +119,10 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
             <h3>Preparation status</h3>
             <div className="inbox-inspector-primary-state">
               <span>Primary state</span>
-              <PreparationStatusBadge state={preparation} idSuffix="-inspector" />
+              <span>
+                <PreparationStatusBadge state={preparation} idSuffix="-inspector" />
+                {preparation?.status === 'UNSAVED' && <small className="inbox-inspector-unsaved-note">Changes not yet written to file</small>}
+              </span>
             </div>
             <h4>Reasons</h4>
             {preparation?.reasons.length

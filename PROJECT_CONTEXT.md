@@ -690,11 +690,20 @@ adds no write, provider, enrichment-acceptance, or analysis action.
 Checkpoint 3A is complete: Inbox single-track and bulk metadata editing for
 Artist/Title/Genre/Album is DB-first, records existing manual provenance, and
 refreshes the authoritative preparation state without writing file tags.
-Checkpoint 3B still does not implement the expanded frontend editing UI,
-preview/confirmation presentation, or explicit Save to File UX. Provider
-selection, inline conflict application, Needs Review merge, Process All
-demotion, the full mobile redesign, and the final focused Impeccable pass also
-remain deferred.
+Checkpoint 3B is complete: the frontend provides inline Artist/Title/Genre
+editing in the dense Inbox table, Album editing in the Track Inspector and
+Bulk Edit panel, four-field opt-in bulk preview/confirmation, local validation,
+targeted refreshes, selection/filter/sort preservation, and clear Unsaved
+pending-field presentation. Bulk preview reports selected, eligible,
+changeable, already-matching, skipped, and missing tracks explicitly. Unsaved
+filter counts are primary-status counts; a higher-precedence state may still
+have `pending_fields` and `write.has_unsaved_changes`. These controls still
+update approved working metadata only; they never call tag-write APIs or imply
+that file tags changed.
+The next checkpoint is planning-only for explicit Save to File UX using the
+existing tag_write_service plan/apply contract. Provider-source selection,
+inline conflict application, Needs Review merge, Process All demotion, the
+full mobile redesign, and the final focused Impeccable pass remain deferred.
 
 ## Data Stores
 

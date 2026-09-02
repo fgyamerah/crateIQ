@@ -66,10 +66,16 @@ P2 / MEDIUM
     Year, clear-field semantics, provider selection, Needs Review, Process All,
     and mobile UX unchanged.
 
-[ ] Inbox Redesign Checkpoint 3B — add the frontend single-track and bulk
+[x] Inbox Redesign Checkpoint 3B — add the frontend single-track and bulk
     editing UI on top of the DB-first contracts, including preview/
     confirmation presentation and clear Unsaved state. Keep explicit
     Save-to-File UX out of this checkpoint.
+
+[ ] Next Inbox checkpoint — plan explicit Save to File UX using the existing
+    tag_write_service plan/apply contract. Keep provider-source selection,
+    inline enrichment conflict resolution, Needs Review merge, Process All
+    demotion, full mobile redesign, and the final focused Impeccable pass
+    deferred.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally

@@ -2,6 +2,32 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-02] — Correct Checkpoint 3B Inbox preview and status refresh reporting
+
+- Corrected Bulk Edit preview wording to distinguish selected, eligible,
+  changeable, already-matching, skipped, and missing tracks.
+- Confirmed inline metadata edits refresh authoritative preparation state and
+  primary-status filter counts; higher-priority states can retain pending
+  unsaved fields without increasing the primary Unsaved count.
+- Files affected: Inbox page and focused Inbox frontend tests.
+- No tag writes, Save-to-File behavior, or backend bulk-edit semantics changed.
+
+[2026-09-02] — Complete Inbox redesign Checkpoint 3B frontend editing UX
+
+- Added inline DB-first editing for Artist, Title, and Genre in the dense
+  Inbox table, with Album editing in the Track Inspector and Bulk Edit panel.
+- Expanded Bulk Edit to all four approved metadata fields with explicit
+  per-field opt-in, validation, concise before/apply preview, and confirmation
+  wording that keeps file tags out of scope.
+- Added local pending/loading/error handling, keyboard Enter/Escape behavior,
+  targeted refreshes, selection/filter/sort preservation, and clearer Unsaved
+  preparation-state details. No tag-write API or Save to File action was added.
+- Files affected: Inbox page, metadata editor, Track Inspector, Inbox styles,
+  focused frontend tests, and current project docs.
+- Still deferred: explicit Save to File UX, provider-source selection, inline
+  enrichment conflict resolution, Needs Review merge, Process All demotion,
+  full mobile redesign, and the final focused Impeccable pass.
+
 [2026-09-02] — Complete Inbox redesign Checkpoint 3A DB-first editing
 
 - Normalized Inbox Artist, Title, Genre, and Album single-track and bulk

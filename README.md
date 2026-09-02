@@ -127,24 +127,31 @@ subset instead of the whole Inbox.
 
 ### Inline editing and sorting
 
-The Inbox table supports direct editing without leaving the page:
+The Inbox table and Track Inspector support direct editing without leaving the
+page:
 
 - **Track / file** — the managed Inbox *filename* (basename only; the file
   extension is always locked to the current file and can never be changed
   through a rename). Editing it renames only the managed Inbox copy — it
   never changes **Title** metadata, and never touches external originals,
   promoted Library files, or Quarantine.
-- **Artist**, **Title**, **Genre**, and **Album** — editing any supported
-  metadata field updates approved `tracks` metadata and manual provenance
-  only. The preparation state immediately reports **Unsaved** when the DB
-  value differs from the live file tag; Title edits never rename files.
+- **Artist**, **Title**, and **Genre** — edit inline in the table. **Album** is
+  editable in the Track Inspector and Bulk Edit panel to keep the dense table
+  scannable. Editing any supported metadata field updates approved `tracks`
+  metadata and manual provenance only. The preparation state immediately
+  reports **Unsaved** when the DB value differs from the live file tag; Title
+  edits never rename files.
 - **Bulk Edit** — select multiple Inbox tracks to set one or more of Artist,
-  Title, Genre, and Album across all of them in a single, previewed,
-  DB-first operation. Bulk edit never renames files or writes tags.
+  Title, Genre, and Album across all of them in a concise previewed,
+  explicitly confirmed, DB-first operation. Only checked fields are included;
+  blank enabled fields are rejected. Bulk edit never renames files or writes
+  tags.
 - **Search and preparation filters** run across the server-side Inbox dataset,
   not just the rendered page. Search covers filename, Artist, Title, and Genre;
   the five status chips show search-scoped counts from the authoritative
-  preparation-state projection.
+  preparation-state projection. The **Unsaved** chip counts primary
+  `UNSAVED` states only; a higher-precedence state may still expose pending
+  fields and `has_unsaved_changes` in the Inspector.
 - **Selection** is stored by track ID across sorting, refresh, status filters,
   and pagination. The UI reports both total and visible selected tracks and
   provides explicit clear-hidden/clear-all controls. The header checkbox is

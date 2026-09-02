@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { Check, ChevronRight, FolderInput, Inbox as InboxIcon, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2, X } from 'lucide-react'
+import { ChevronRight, FolderInput, Inbox as InboxIcon, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
   applyInboxBulkEdit,
@@ -20,11 +20,11 @@ import {
   startProcessAll,
 } from '../api/workspace'
 import type {
-  InboxBulkEditApplyResult, InboxBulkEditPreview, InboxSortKey, InboxTrackPage,
+  InboxBulkEditApplyResult, InboxBulkEditPreview, InboxSortKey, InboxTrackMetadataEditResult, InboxTrackPage,
   PreparationOperation, PreparePreflight, PromotionPreview, SortOrder,
   WorkspaceImportResult, WorkspaceStatus,
 } from '../api/workspace'
-import type { TrackSummary } from '../types/track'
+import type { InboxEditableMetadataField, TrackSummary } from '../types/track'
 import EmptyState from '../components/ui/EmptyState'
 import KpiCard from '../components/ui/KpiCard'
 import PageHeader from '../components/PageHeader'
@@ -34,10 +34,13 @@ import type { InboxStatusFilter } from '../components/inbox/InboxFilters'
 import InboxSelectionBar from '../components/inbox/InboxSelectionBar'
 import InboxTrackInspector from '../components/inbox/InboxTrackInspector'
 import PreparationStatusBadge from '../components/inbox/PreparationStatusBadge'
+import EditableMetadataCell from '../components/inbox/EditableMetadataCell'
 import { useInboxSelection } from '../hooks/useInboxSelection'
 
 function messageFor(error: unknown, fallback: string) {
-  return error instanceof ApiError ? error.displayMessage : fallback
+  if (error instanceof ApiError) return error.displayMessage
+  if (error instanceof Error && error.message) return error.message
+  return fallback
 }
 
 const POLL_INTERVAL_MS = 1500
@@ -72,108 +75,10 @@ function SortTh({ label, sortKey, sort, onSort, title }: SortThProps) {
   )
 }
 
-// ---------------------------------------------------------------------------
-// Inline edit cell (Track/file basename, Artist, Genre)
-// ---------------------------------------------------------------------------
-
 function splitExt(filename: string): { base: string; ext: string } {
   const idx = filename.lastIndexOf('.')
   if (idx <= 0) return { base: filename, ext: '' }
   return { base: filename.slice(0, idx), ext: filename.slice(idx) }
-}
-
-interface EditableCellProps {
-  value: string
-  ariaLabel: string
-  onSave: (nextValue: string) => Promise<void>
-  onEditingChange: (editing: boolean) => void
-  suffix?: string
-  maxLength?: number
-}
-
-function EditableCell({ value, ariaLabel, onSave, onEditingChange, suffix, maxLength }: EditableCellProps) {
-  const [editing, setEditing] = useState(false)
-  const [draft, setDraft] = useState(value)
-  const [saving, setSaving] = useState(false)
-  const [localError, setLocalError] = useState<string | null>(null)
-  const inputRef = useRef<HTMLInputElement>(null)
-
-  useEffect(() => { if (!editing) setDraft(value) }, [value, editing])
-  useEffect(() => { if (editing) inputRef.current?.focus() }, [editing])
-
-  const startEdit = () => {
-    setDraft(value)
-    setLocalError(null)
-    setEditing(true)
-    onEditingChange(true)
-  }
-  const stopEdit = () => {
-    setEditing(false)
-    onEditingChange(false)
-  }
-  const cancel = () => {
-    setDraft(value)
-    setLocalError(null)
-    stopEdit()
-  }
-  const save = async () => {
-    const next = draft.trim()
-    if (!next) {
-      setLocalError('Cannot be empty.')
-      return
-    }
-    if (next === value.trim()) {
-      stopEdit()
-      return
-    }
-    setSaving(true)
-    setLocalError(null)
-    try {
-      await onSave(next)
-      stopEdit()
-    } catch (err) {
-      setLocalError(messageFor(err, 'Save failed.'))
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  if (!editing) {
-    return (
-      <button type="button" className="inbox-cell-edit-trigger" onClick={startEdit} aria-label={`Edit ${ariaLabel}`}>
-        <span className="inbox-cell-value">{value || '—'}</span>
-        <Pencil size={12} className="inbox-cell-pencil" aria-hidden="true" />
-      </button>
-    )
-  }
-
-  return (
-    <span className="inbox-cell-editing">
-      <span className="inbox-cell-input-row">
-        <input
-          ref={inputRef}
-          className="inbox-cell-input"
-          value={draft}
-          maxLength={maxLength}
-          disabled={saving}
-          onChange={(event) => setDraft(event.target.value)}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') { event.preventDefault(); void save() }
-            else if (event.key === 'Escape') { event.preventDefault(); cancel() }
-          }}
-          aria-label={`${ariaLabel} value`}
-        />
-        {suffix && <span className="inbox-cell-suffix">{suffix}</span>}
-        <button type="button" className="icon-btn icon-btn--sm icon-btn--approve" disabled={saving} onClick={() => void save()} aria-label={`Save ${ariaLabel}`}>
-          <Check size={13} />
-        </button>
-        <button type="button" className="icon-btn icon-btn--sm" disabled={saving} onClick={cancel} aria-label={`Cancel editing ${ariaLabel}`}>
-          <X size={13} />
-        </button>
-      </span>
-      {localError && <span className="inbox-cell-error">{localError}</span>}
-    </span>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -217,12 +122,15 @@ export default function Inbox() {
 
   // Bulk edit
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
-  const [bulkArtistEnabled, setBulkArtistEnabled] = useState(false)
-  const [bulkArtistValue, setBulkArtistValue] = useState('')
-  const [bulkGenreEnabled, setBulkGenreEnabled] = useState(false)
-  const [bulkGenreValue, setBulkGenreValue] = useState('')
+  const [bulkFieldsState, setBulkFieldsState] = useState<Record<InboxEditableMetadataField, { enabled: boolean; value: string }>>({
+    artist: { enabled: false, value: '' },
+    title: { enabled: false, value: '' },
+    genre: { enabled: false, value: '' },
+    album: { enabled: false, value: '' },
+  })
   const [bulkPreview, setBulkPreview] = useState<InboxBulkEditPreview | null>(null)
   const [bulkPreviewing, setBulkPreviewing] = useState(false)
+  const [bulkConfirming, setBulkConfirming] = useState(false)
   const [bulkApplying, setBulkApplying] = useState(false)
   const [bulkResult, setBulkResult] = useState<InboxBulkEditApplyResult | null>(null)
 
@@ -423,6 +331,66 @@ export default function Inbox() {
     }
   }
 
+  const fetchCurrentInboxData = useCallback(async () => {
+    const requestId = ++loadRequestRef.current
+    try {
+      const [nextTracks, nextPreview] = await Promise.all([
+        fetchInboxTracks({
+          search: search || undefined,
+          preparation_status: preparationFilter === 'ALL' ? undefined : preparationFilter,
+          limit: 200,
+          offset,
+          sort: sort.key,
+          order: sort.order,
+        }),
+        previewPromotion(),
+      ])
+      if (requestId !== loadRequestRef.current) return
+      setTracks(nextTracks)
+      setPreview(nextPreview)
+    } catch (err) {
+      if (requestId === loadRequestRef.current) setError(messageFor(err, 'Could not refresh Inbox metadata.'))
+    }
+  }, [offset, preparationFilter, search, sort])
+
+  const patchLocalMetadata = useCallback((metadata: InboxTrackMetadataEditResult) => {
+    const patch = {
+      artist: metadata.artist,
+      title: metadata.title,
+      genre: metadata.genre,
+      album: metadata.album,
+      preparation_state: metadata.preparation_state,
+    }
+    setTracks((current) => current
+      ? { ...current, items: current.items.map((item) => item.id === metadata.track_id ? { ...item, ...patch } : item) }
+      : current)
+    setInspectedTrack((current) => current && current.id === metadata.track_id ? { ...current, ...patch } : current)
+  }, [])
+
+  const saveMetadata = useCallback(async (trackId: number, field: InboxEditableMetadataField, value: string) => {
+    const response = await patchInboxTrack(trackId, { [field]: value })
+    if (response.errors.length) throw new Error(response.errors.join('; '))
+    if (!response.metadata) throw new Error('The metadata edit did not return an authoritative result.')
+    patchLocalMetadata(response.metadata)
+    await fetchCurrentInboxData()
+  }, [fetchCurrentInboxData, patchLocalMetadata])
+
+  const saveFilename = useCallback(async (trackId: number, filename: string) => {
+    const response = await patchInboxTrack(trackId, { filename })
+    if (response.errors.length) throw new Error(response.errors.join('; '))
+    if (response.rename) {
+      setTracks((current) => current
+        ? { ...current, items: current.items.map((item) => item.id === trackId
+          ? { ...item, filename: response.rename!.filename, filepath: response.rename!.filepath }
+          : item) }
+        : current)
+      setInspectedTrack((current) => current && current.id === trackId
+        ? { ...current, filename: response.rename!.filename, filepath: response.rename!.filepath }
+        : current)
+    }
+    await fetchCurrentInboxData()
+  }, [fetchCurrentInboxData])
+
   const onSort = (key: InboxSortKey) => {
     if (activeEditCount > 0) {
       setError('Finish or cancel the open edit before changing the sort order.')
@@ -436,13 +404,31 @@ export default function Inbox() {
     setOffset(0)
   }
 
-  const bulkFields = {
-    ...(bulkArtistEnabled && bulkArtistValue.trim() ? { artist: bulkArtistValue.trim() } : {}),
-    ...(bulkGenreEnabled && bulkGenreValue.trim() ? { genre: bulkGenreValue.trim() } : {}),
-  }
-  const bulkFieldsValid = Object.keys(bulkFields).length > 0
+  const bulkFields = Object.fromEntries(
+    (Object.entries(bulkFieldsState) as Array<[InboxEditableMetadataField, { enabled: boolean; value: string }]> )
+      .filter(([, state]) => state.enabled && state.value.normalize('NFC').trim().length > 0)
+      .map(([field, state]) => [field, state.value.normalize('NFC').trim()]),
+  ) as Partial<Record<InboxEditableMetadataField, string>>
+  const bulkFieldErrors = Object.fromEntries(
+    (Object.entries(bulkFieldsState) as Array<[InboxEditableMetadataField, { enabled: boolean; value: string }]> )
+      .filter(([, state]) => state.enabled)
+      .map(([field, state]) => {
+        const value = state.value.normalize('NFC').trim()
+        const label = field[0].toUpperCase() + field.slice(1)
+        const error = !value
+          ? `${label} cannot be empty.`
+          : value.length > 200
+            ? `${label} is too long (max 200 characters).`
+            : /[\u0000-\u001f]/.test(value)
+              ? `${label} contains an unsafe control character.`
+              : null
+        return [field, error]
+      }),
+  ) as Partial<Record<InboxEditableMetadataField, string | null>>
+  const bulkEnabledCount = Object.values(bulkFieldsState).filter((state) => state.enabled).length
+  const bulkFieldsValid = bulkEnabledCount > 0 && Object.values(bulkFieldErrors).every((error) => !error)
 
-  const resetBulkResults = () => { setBulkPreview(null); setBulkResult(null) }
+  const resetBulkResults = () => { setBulkPreview(null); setBulkResult(null); setBulkConfirming(false) }
 
   const doBulkPreview = async () => {
     if (!bulkFieldsValid || !selectedCount) return
@@ -466,7 +452,8 @@ export default function Inbox() {
     try {
       const result = await applyInboxBulkEdit(Array.from(selectedIds), bulkFields)
       setBulkResult(result)
-      await load()
+      setBulkConfirming(false)
+      await fetchCurrentInboxData()
     } catch (err) {
       setError(messageFor(err, 'Bulk edit apply failed.'))
     } finally {
@@ -657,41 +644,44 @@ export default function Inbox() {
               {bulkEditOpen && (
                 <div className="card settings-card inbox-bulk-edit">
                   <h2 className="card-title"><Pencil size={16} /> Bulk Edit — {selectedCount} selected track{selectedCount === 1 ? '' : 's'}</h2>
+                  <p className="muted inbox-bulk-edit-note">Changes apply to CrateIQ working metadata only. File tags are not changed.</p>
                   <div className="inbox-bulk-edit-fields">
-                    <label className="inbox-bulk-edit-field">
-                      <input
-                        type="checkbox"
-                        checked={bulkArtistEnabled}
-                        onChange={(event) => { setBulkArtistEnabled(event.target.checked); resetBulkResults() }}
-                      />
-                      Set Artist
-                      <input
-                        className="form-input"
-                        type="text"
-                        value={bulkArtistValue}
-                        disabled={!bulkArtistEnabled}
-                        onChange={(event) => { setBulkArtistValue(event.target.value); resetBulkResults() }}
-                        placeholder="New artist name"
-                        aria-label="New artist value for bulk edit"
-                      />
-                    </label>
-                    <label className="inbox-bulk-edit-field">
-                      <input
-                        type="checkbox"
-                        checked={bulkGenreEnabled}
-                        onChange={(event) => { setBulkGenreEnabled(event.target.checked); resetBulkResults() }}
-                      />
-                      Set Genre
-                      <input
-                        className="form-input"
-                        type="text"
-                        value={bulkGenreValue}
-                        disabled={!bulkGenreEnabled}
-                        onChange={(event) => { setBulkGenreValue(event.target.value); resetBulkResults() }}
-                        placeholder="New genre"
-                        aria-label="New genre value for bulk edit"
-                      />
-                    </label>
+                    {(['artist', 'title', 'genre', 'album'] as InboxEditableMetadataField[]).map((field) => {
+                      const fieldState = bulkFieldsState[field]
+                      const label = field[0].toUpperCase() + field.slice(1)
+                      const fieldError = bulkFieldErrors[field]
+                      return (
+                        <div className="inbox-bulk-edit-field" key={field}>
+                          <label className="inbox-bulk-edit-toggle">
+                            <input
+                              type="checkbox"
+                              checked={fieldState.enabled}
+                              onChange={(event) => {
+                                setBulkFieldsState((current) => ({ ...current, [field]: { ...current[field], enabled: event.target.checked } }))
+                                resetBulkResults()
+                              }}
+                            />
+                            <span>{label}</span>
+                          </label>
+                          <input
+                            className="form-input"
+                            type="text"
+                            value={fieldState.value}
+                            disabled={!fieldState.enabled || bulkApplying || bulkConfirming}
+                            maxLength={200}
+                            onChange={(event) => {
+                              setBulkFieldsState((current) => ({ ...current, [field]: { ...current[field], value: event.target.value } }))
+                              resetBulkResults()
+                            }}
+                            placeholder={`New ${field.toLowerCase()}`}
+                            aria-label={`New ${field} value for bulk edit`}
+                            aria-invalid={Boolean(fieldError)}
+                            aria-describedby={fieldError ? `bulk-${field}-error` : undefined}
+                          />
+                          {fieldError && <span id={`bulk-${field}-error`} className="inbox-cell-error" role="alert">{fieldError}</span>}
+                        </div>
+                      )
+                    })}
                   </div>
                   <div className="settings-actions">
                     <button className="btn btn--ghost btn--sm" disabled={bulkPreviewing || !bulkFieldsValid} onClick={() => void doBulkPreview()}>
@@ -718,6 +708,13 @@ export default function Inbox() {
                           <p>New value: <strong>{bulkPreview.fields.artist.new_value}</strong></p>
                         </div>
                       )}
+                      {bulkPreview.fields.title && (
+                        <div className="inbox-bulk-edit-preview-field">
+                          <strong>Title</strong>
+                          <p className="muted">Current values include: {bulkPreview.fields.title.current_values.join(', ')}</p>
+                          <p>New value: <strong>{bulkPreview.fields.title.new_value}</strong></p>
+                        </div>
+                      )}
                       {bulkPreview.fields.genre && (
                         <div className="inbox-bulk-edit-preview-field">
                           <strong>Genre</strong>
@@ -725,11 +722,42 @@ export default function Inbox() {
                           <p>New value: <strong>{bulkPreview.fields.genre.new_value}</strong></p>
                         </div>
                       )}
+                      {bulkPreview.fields.album && (
+                        <div className="inbox-bulk-edit-preview-field">
+                          <strong>Album</strong>
+                          <p className="muted">Current values include: {bulkPreview.fields.album.current_values.join(', ')}</p>
+                          <p>New value: <strong>{bulkPreview.fields.album.new_value}</strong></p>
+                        </div>
+                      )}
+                      <p className="inbox-bulk-edit-impact">
+                        {bulkPreview.selected_count} selected · {bulkPreview.eligible_count} eligible · {bulkPreview.changeable_count} will change · {Math.max(0, bulkPreview.eligible_count - bulkPreview.changeable_count)} already match
+                        {bulkPreview.skipped_not_inbox ? ` · ${bulkPreview.skipped_not_inbox} skipped (not in Inbox)` : ''}
+                        {bulkPreview.missing_count ? ` · ${bulkPreview.missing_count} not found` : ''}.
+                      </p>
+                      <p className="muted">
+                        {bulkPreview.changeable_count
+                          ? `${bulkPreview.changeable_count} eligible track${bulkPreview.changeable_count === 1 ? '' : 's'} will change across ${Object.keys(bulkPreview.fields).length} field${Object.keys(bulkPreview.fields).length === 1 ? '' : 's'}.`
+                          : bulkPreview.eligible_count
+                            ? `No eligible selected Inbox tracks will change; ${bulkPreview.eligible_count} already match the proposed value${bulkPreview.eligible_count === 1 ? '' : 's'}.`
+                            : 'No selected tracks are eligible for this Inbox edit.'}
+                      </p>
                       <div className="settings-actions">
-                        <button className="btn btn--primary btn--sm" disabled={bulkApplying} onClick={() => void doBulkApply()}>
-                          {bulkApplying ? 'Applying…' : `Apply to ${bulkPreview.eligible_count} track${bulkPreview.eligible_count === 1 ? '' : 's'}`}
+                        <button className="btn btn--primary btn--sm" disabled={bulkApplying || !bulkPreview.changeable_count} onClick={() => setBulkConfirming(true)}>
+                          Review & apply
                         </button>
                       </div>
+                      {bulkConfirming && (
+                        <div className="inbox-bulk-confirm" role="alertdialog" aria-labelledby="inbox-bulk-confirm-title" aria-describedby="inbox-bulk-confirm-description">
+                          <h3 id="inbox-bulk-confirm-title">Confirm working metadata changes</h3>
+                          <p id="inbox-bulk-confirm-description">Apply the proposed values to {bulkPreview.changeable_count} selected Inbox track{bulkPreview.changeable_count === 1 ? '' : 's'} in CrateIQ working metadata. File tags will not change.</p>
+                          <div className="settings-actions">
+                            <button className="btn btn--primary btn--sm" disabled={bulkApplying} onClick={() => void doBulkApply()}>
+                              {bulkApplying ? 'Applying…' : 'Confirm apply'}
+                            </button>
+                            <button className="btn btn--ghost btn--sm" disabled={bulkApplying} onClick={() => setBulkConfirming(false)}>Cancel</button>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   )}
 
@@ -756,9 +784,9 @@ export default function Inbox() {
                           aria-label={`Select visible page (${tracks.items.length} tracks)`}
                         />
                       </th>
-                      <SortTh label="Track / file" sortKey="filename" sort={sort} onSort={onSort} title="Managed Inbox filename — click to sort" />
+                      <SortTh label="Track / filename" sortKey="filename" sort={sort} onSort={onSort} title="Managed Inbox filename — click to sort" />
                       <SortTh label="Artist" sortKey="artist" sort={sort} onSort={onSort} />
-                      <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} />
+                      <SortTh label="Title" sortKey="title" sort={sort} onSort={onSort} title="Metadata title — does not rename the managed file" />
                       <SortTh label="Genre" sortKey="genre" sort={sort} onSort={onSort} />
                       <SortTh label="BPM" sortKey="bpm" sort={sort} onSort={onSort} />
                       <SortTh label="Key" sortKey="key" sort={sort} onSort={onSort} />
@@ -781,38 +809,36 @@ export default function Inbox() {
                             />
                           </td>
                           <td>
-                            <EditableCell
+                            <EditableMetadataCell
                               value={base}
                               suffix={ext}
-                              ariaLabel={`Track filename for ${track.filename}`}
+                              ariaLabel={`Managed filename for ${track.filename}`}
                               onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
-                              onSave={async (nextBase) => {
-                                await patchInboxTrack(track.id, { filename: nextBase })
-                                await load()
-                              }}
+                              onSave={(nextBase) => saveFilename(track.id, nextBase)}
                             />
                           </td>
                           <td>
-                            <EditableCell
+                            <EditableMetadataCell
                               value={track.artist ?? ''}
                               ariaLabel={`Artist for ${track.filename}`}
                               onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
-                              onSave={async (next) => {
-                                await patchInboxTrack(track.id, { artist: next })
-                                await load()
-                              }}
+                              onSave={(next) => saveMetadata(track.id, 'artist', next)}
                             />
                           </td>
-                          <td>{track.title || '—'}</td>
                           <td>
-                            <EditableCell
+                            <EditableMetadataCell
+                              value={track.title ?? ''}
+                              ariaLabel={`Title for ${track.filename}`}
+                              onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
+                              onSave={(next) => saveMetadata(track.id, 'title', next)}
+                            />
+                          </td>
+                          <td>
+                            <EditableMetadataCell
                               value={track.genre ?? ''}
                               ariaLabel={`Genre for ${track.filename}`}
                               onEditingChange={(editing) => setActiveEditCount((n) => Math.max(0, n + (editing ? 1 : -1)))}
-                              onSave={async (next) => {
-                                await patchInboxTrack(track.id, { genre: next })
-                                await load()
-                              }}
+                              onSave={(next) => saveMetadata(track.id, 'genre', next)}
                             />
                           </td>
                           <td>{track.bpm ?? '—'}</td>
@@ -895,6 +921,7 @@ export default function Inbox() {
               onClose={closeInspector}
               onPrevious={previousVisibleTrack ? () => navigateInspector(previousVisibleTrack) : undefined}
               onNext={nextVisibleTrack ? () => navigateInspector(nextVisibleTrack) : undefined}
+              onMetadataSave={(field, value) => inspectedId === null ? Promise.resolve() : saveMetadata(inspectedId, field, value)}
             />
           )}
         </>

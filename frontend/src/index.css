@@ -3291,6 +3291,8 @@ button.metadata-repair-row--selected {
 }
 
 .inbox-cell-input {
+  width: 100%;
+  box-sizing: border-box;
   min-width: 90px;
   padding: 3px 6px;
   border-radius: 4px;
@@ -3319,15 +3321,33 @@ button.metadata-repair-row--selected {
 }
 
 .inbox-bulk-edit-field {
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(100px, 120px) minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 8px;
+}
+
+.inbox-bulk-edit-toggle {
+  display: inline-flex;
   align-items: center;
   gap: 8px;
+  min-height: 34px;
+  color: var(--text);
+  font-size: 12px;
 }
 
 .inbox-bulk-edit-field .form-input {
   flex: 1;
   max-width: 320px;
 }
+
+.inbox-bulk-edit-note { margin: -4px 0 10px; }
+.inbox-bulk-edit-field .inbox-cell-error { padding-top: 8px; }
+.inbox-bulk-edit-impact { margin: 12px 0 0; color: var(--text); font-size: 12px; }
+.inbox-bulk-confirm { margin-top: 12px; padding: 12px; border: 1px solid rgba(32,212,216,.32); border-radius: 8px; background: rgba(32,212,216,.06); }
+.inbox-bulk-confirm h3 { margin: 0 0 6px; font-size: 13px; }
+.inbox-bulk-confirm p { margin: 0; color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.inbox-bulk-confirm .settings-actions { margin-top: 10px; }
 
 .inbox-bulk-edit-preview {
   margin-top: 10px;
@@ -3451,12 +3471,22 @@ button.metadata-repair-row--selected {
 .inbox-inspector-defs dd { min-width: 0; margin: 0; overflow-wrap: anywhere; }
 .inbox-inspector-path { color: var(--text-code); font-family: var(--font-mono); font-size: 10.5px; }
 .inbox-inspector-waveform { min-height: 72px; margin-top: 14px; }
+.inbox-inspector-edit-fields { display: grid; gap: 12px; margin-bottom: 16px; }
+.inbox-inspector-edit-field { display: grid; gap: 5px; }
+.inbox-inspector-edit-label { color: var(--text-muted); font-size: 10px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
+.inbox-cell-editing--inspector { display: grid; gap: 5px; }
+.inbox-cell-editing--inspector .inbox-cell-input-row { display: flex; }
+.inbox-cell-editing--inspector .inbox-cell-input { min-width: 0; }
+.inbox-inspector-primary-state > span:last-child { display: grid; justify-items: end; gap: 3px; }
+.inbox-inspector-unsaved-note { color: #fbbf24; font-size: 10px; text-align: right; }
 
 @media (max-width: 760px) {
   .inbox-inspector { top: 0; width: 100vw; }
   .inbox-selection-bar .btn:first-of-type { margin-left: 0; }
   .inbox-status-filters { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 3px; }
   .inbox-status-filters button { flex: 0 0 auto; }
+  .inbox-bulk-edit-field { grid-template-columns: minmax(100px, 1fr) minmax(0, 1fr); }
+  .inbox-bulk-edit-field .inbox-cell-error { grid-column: 2; padding-top: 0; }
 }
 
 .sort-indicator {
