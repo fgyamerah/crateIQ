@@ -254,7 +254,7 @@ def test_readiness_does_not_run_pipeline_jobs(tmp_path, monkeypatch):
     assert resp.status_code == 200
 
 
-def test_health_endpoint_remains_backward_compatible(tmp_path, monkeypatch):
+def test_health_endpoint_remains_generic_and_path_free(tmp_path, monkeypatch):
     root = _make_root(tmp_path)
     monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
@@ -264,5 +264,5 @@ def test_health_endpoint_remains_backward_compatible(tmp_path, monkeypatch):
 
     assert resp.status_code == 200
     payload = resp.json()
-    assert set(payload) == {"ok", "library_root", "db_path", "db_exists"}
+    assert set(payload) == {"ok", "db_exists"}
     assert payload["ok"] is True

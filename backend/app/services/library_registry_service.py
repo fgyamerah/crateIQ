@@ -120,9 +120,10 @@ def _validated_entry(raw: object) -> dict[str, str | None]:
         raise MalformedRegistryError("recent library entry is invalid") from exc
 
 
-def _read_registry() -> list[dict[str, str | None]]:
+def _read_registry(path: Path | None = None) -> list[dict[str, str | None]]:
+    registry_path = path or REGISTRY_PATH
     try:
-        raw = json.loads(REGISTRY_PATH.read_text(encoding="utf-8"))
+        raw = json.loads(registry_path.read_text(encoding="utf-8"))
     except FileNotFoundError:
         return []
     except (OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -147,6 +148,11 @@ def _read_registry() -> list[dict[str, str | None]]:
         ),
         reverse=True,
     )
+
+
+def validate_registry_state(path: Path | None = None) -> None:
+    """Validate an installation registry without changing entries or recency."""
+    _read_registry(path)
 
 
 @contextmanager

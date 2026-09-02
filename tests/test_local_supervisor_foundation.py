@@ -91,6 +91,7 @@ def _hold_control_socket(socket_path: str, lock_path: str, ready, release) -> No
     local = supervisor.LocalSupervisor(
         repo_root=Path(socket_path).parent,
         socket_path=Path(socket_path),
+        state_store=supervisor.ActivationStateStore(Path(socket_path).with_name("library_activation_state.json")),
         supervisor_lock_path=Path(lock_path),
         python_executable="/safe/python",
     )
@@ -128,7 +129,7 @@ def test_rootless_child_uses_fixed_non_reload_command_and_clears_inherited_roots
     monkeypatch.setenv("DJ_MUSIC_ROOT", "/stale")
     popen = FakePopen()
     local = _supervisor(tmp_path, popen)
-    child = local.start_active(role="rootless", port=8020, bind_host="127.0.0.1", library_root=None, access_mode="local")
+    child = local.start_active(role="rootless", port=0, bind_host="127.0.0.1", library_root=None, access_mode="local")
     call = popen.calls[-1]
     assert child.instance_id
     assert "--reload" not in call["command"]
@@ -144,13 +145,13 @@ def test_root_bound_child_passes_only_canonical_root_and_unique_instance(tmp_pat
     popen = FakePopen()
     local = _supervisor(tmp_path, popen)
     root = _managed_root(tmp_path / "library")
-    child = local.start_active(role="active", port=8020, bind_host="0.0.0.0", library_root=root.resolve(), access_mode="lan")
+    child = local.start_active(role="active", port=0, bind_host="0.0.0.0", library_root=root.resolve(), access_mode="lan")
     env = popen.calls[-1]["env"]
     assert env["CRATEIQ_LIBRARY_ROOT"] == str(root.resolve())
     assert env["DJ_MUSIC_ROOT"] == str(root.resolve())
     assert env["CRATEIQ_BACKEND_INSTANCE_ID"] == child.instance_id
     assert env["CRATEIQ_BACKEND_START_ROLE"] == "active"
-    assert env["CRATEIQ_BACKEND_BOUND_PORT"] == "8020"
+    assert env["CRATEIQ_BACKEND_BOUND_PORT"] == str(child.spec.port)
 
 
 def test_candidate_is_loopback_ephemeral_and_verified_state_is_persisted(monkeypatch, tmp_path):
@@ -176,7 +177,7 @@ def test_candidate_failure_terminates_only_candidate_and_returns_to_idle(monkeyp
     root = _managed_root(tmp_path / "candidate")
     popen = FakePopen()
     local = _supervisor(tmp_path, popen)
-    active = local.start_active(role="rootless", port=8020, bind_host="127.0.0.1", library_root=None, access_mode="local")
+    active = local.start_active(role="rootless", port=0, bind_host="127.0.0.1", library_root=None, access_mode="local")
     monkeypatch.setattr(local, "_wait_for_verified_identity", lambda child: False)
     with pytest.raises(supervisor.SupervisorError, match="readiness"):
         local.start_candidate(str(root))
@@ -224,6 +225,8 @@ def test_supervised_backend_identity_is_available_only_with_the_private_token(mo
     assert identity and identity["instance_id"] == "child-token"
     assert identity["library_root"] == str(root)
     assert identity["library_key"]
+    assert identity["verification_token"] == "private-token"
+    assert identity["ready"] is True
     assert "secret" not in identity
     assert verify_supervisor_token("wrong") is None
     assert verify_supervisor_token(None) is None
@@ -410,6 +413,47 @@ def test_unix_socket_ping_status_permissions_and_oversize_rejection(tmp_path):
         assert json.loads(client.recv(1024))["ok"] is False
     local.cleanup()
     thread.join(timeout=1)
+
+
+def test_status_ipc_remains_responsive_while_handoff_holds_state_lock(tmp_path):
+    root = _managed_root(tmp_path / "library")
+    local = _supervisor(tmp_path)
+    state = local._begin_activation_state(local.state_store.read(), root.resolve())
+    assert state["phase"] == "preparing"
+    local._set_activation_record({
+        "status": "activating",
+        "activation_id": str(state["activation_id"]),
+        "library_id": "library-test",
+    })
+    entered = threading.Event()
+    release = threading.Event()
+
+    def hold_handoff_lock() -> None:
+        with local._state_lock:
+            entered.set()
+            assert release.wait(2)
+
+    handoff = threading.Thread(target=hold_handoff_lock)
+    handoff.start()
+    assert entered.wait(1)
+    serving = threading.Thread(target=supervisor.serve, args=(local,), daemon=True)
+    serving.start()
+    deadline = time.monotonic() + 1
+    while not local.socket_path.exists() and time.monotonic() < deadline:
+        time.sleep(0.01)
+
+    started = time.monotonic()
+    status = request("status", socket_path=local.socket_path)
+    elapsed = time.monotonic() - started
+
+    assert elapsed < 0.5
+    assert status["activation"]["status"] == "activating"
+    assert status["activation_phase"] == "preparing"
+    assert handoff.is_alive()
+    release.set()
+    handoff.join(1)
+    local.cleanup()
+    serving.join(1)
 
 
 def test_cleanup_quiesces_accepted_mutating_handler_before_releasing_ownership(monkeypatch, tmp_path):
@@ -864,7 +908,7 @@ def test_monitor_reaps_normal_and_candidate_crash_and_clears_state(monkeypatch, 
     assert candidate.process.wait_calls >= 1
     assert local.candidate is None
     assert local.state_store.read()["phase"] == "idle"
-    active = local.start_active(role="rootless", port=8020, bind_host="127.0.0.1", library_root=None, access_mode="local")
+    active = local.start_active(role="rootless", port=0, bind_host="127.0.0.1", library_root=None, access_mode="local")
     active.process.returncode = 1
     local.monitor_children()
     assert local.status()["active_child"] is None

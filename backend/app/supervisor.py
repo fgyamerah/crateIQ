@@ -13,6 +13,7 @@ import fcntl
 import json
 import logging
 import os
+import queue
 import secrets
 import signal
 import socket
@@ -37,6 +38,10 @@ from .services.switch_blocker_service import inspect_switch_blockers
 IPC_SCHEMA_VERSION = 1
 MAX_IPC_MESSAGE_BYTES = 16 * 1024
 DEFAULT_IPC_READ_TIMEOUT_SECONDS = 2.0
+DEFAULT_CANDIDATE_STARTUP_TIMEOUT_SECONDS = 15.0
+DEFAULT_ACTIVE_STARTUP_TIMEOUT_SECONDS = 30.0
+IDENTITY_PROBE_TIMEOUT_SECONDS = 1.0
+IDENTITY_PROBE_INTERVAL_SECONDS = 0.1
 DEFAULT_SOCKET_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "crateiq-supervisor.sock"
 DEFAULT_SUPERVISOR_LOCK_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "crateiq-supervisor.lock"
 DEFAULT_STATE_PATH = Path(__file__).resolve().parents[2] / ".run" / "local" / "library_activation_state.json"
@@ -198,6 +203,80 @@ class ChildProcess:
             "library_key": library_key_for_root(self.spec.library_root),
             "running": self.process.poll() is None,
         }
+
+
+@dataclass
+class _ProcessLaunchRequest:
+    popen: Callable[..., Any]
+    command: list[str]
+    kwargs: dict[str, Any]
+    completed: threading.Event
+    process: Any = None
+    error: BaseException | None = None
+
+
+class _ProcessLaunchBroker:
+    """Create worker-requested children from one supervisor-lifetime thread.
+
+    Linux delivers ``PR_SET_PDEATHSIG`` when the specific thread that created
+    a child exits, not only when the complete parent process exits. Registered
+    activation runs on a short-lived worker, so spawning promoted B directly
+    there would make successful worker completion look like supervisor death.
+    The broker stays alive until explicit supervisor cleanup, which first
+    terminates and reaps every owned child and then closes this thread.
+    """
+
+    def __init__(self) -> None:
+        self._requests: queue.Queue[_ProcessLaunchRequest | None] = queue.Queue()
+        self._start_lock = threading.Lock()
+        self._thread: threading.Thread | None = None
+        self._closed = False
+
+    def launch(self, popen: Callable[..., Any], command: list[str], **kwargs: Any) -> Any:
+        request = _ProcessLaunchRequest(
+            popen=popen,
+            command=command,
+            kwargs=kwargs,
+            completed=threading.Event(),
+        )
+        with self._start_lock:
+            if self._closed:
+                raise SupervisorError("child launch owner is closed")
+            if self._thread is None or not self._thread.is_alive():
+                self._thread = threading.Thread(
+                    target=self._run,
+                    name="crateiq-child-launch-owner",
+                    daemon=True,
+                )
+                self._thread.start()
+        self._requests.put(request)
+        request.completed.wait()
+        if request.error is not None:
+            raise request.error
+        return request.process
+
+    def close(self) -> None:
+        with self._start_lock:
+            thread = self._thread
+            if self._closed:
+                return
+            self._closed = True
+            if thread is None:
+                return
+            self._requests.put(None)
+        thread.join()
+
+    def _run(self) -> None:
+        while True:
+            request = self._requests.get()
+            if request is None:
+                return
+            try:
+                request.process = request.popen(request.command, **request.kwargs)
+            except BaseException as exc:
+                request.error = exc
+            finally:
+                request.completed.set()
 
 
 class ActivationStateStore:
@@ -399,6 +478,14 @@ class ActivationLock:
             os.close(self._directory_fd)
             self._directory_fd = None
 
+    def clear_metadata(self) -> None:
+        """Clear stale advisory metadata while retaining the acquired flock."""
+        if self._descriptor is None:
+            raise ActivationLockUnavailable("activation lock is not held")
+        os.lseek(self._descriptor, 0, os.SEEK_SET)
+        os.ftruncate(self._descriptor, 0)
+        os.fsync(self._descriptor)
+
     def __enter__(self) -> "ActivationLock":
         self.acquire()
         return self
@@ -455,7 +542,8 @@ class LocalSupervisor:
         python_executable: str | None = None,
         cors_origins: str | None = None,
         popen: Callable[..., Any] = subprocess.Popen,
-        readiness_timeout_seconds: float = 15.0,
+        readiness_timeout_seconds: float = DEFAULT_CANDIDATE_STARTUP_TIMEOUT_SECONDS,
+        active_readiness_timeout_seconds: float = DEFAULT_ACTIVE_STARTUP_TIMEOUT_SECONDS,
         ipc_read_timeout_seconds: float = DEFAULT_IPC_READ_TIMEOUT_SECONDS,
     ) -> None:
         self.repo_root = (repo_root or Path(__file__).resolve().parents[2]).resolve()
@@ -466,7 +554,9 @@ class LocalSupervisor:
         self.python_executable = python_executable or str(self.repo_root / ".venv" / "bin" / "python")
         self.cors_origins = cors_origins
         self._popen = popen
+        self._process_launch_broker = _ProcessLaunchBroker()
         self.readiness_timeout_seconds = readiness_timeout_seconds
+        self.active_readiness_timeout_seconds = active_readiness_timeout_seconds
         self.ipc_read_timeout_seconds = ipc_read_timeout_seconds
         self.instance_id = _new_id()
         self.active: ChildProcess | None = None
@@ -498,6 +588,7 @@ class LocalSupervisor:
         # response. This is one supervisor-owned activation at a time; the
         # durable handoff lock/state remains the authority for the handoff.
         self._activation_thread: threading.Thread | None = None
+        self._activation_record_lock = threading.Lock()
         self._activation_record: dict[str, object] = {"status": "idle"}
         self._last_blocker_summary: dict[str, object] | None = None
 
@@ -693,11 +784,11 @@ class LocalSupervisor:
                 raise SupervisorError("activation_in_progress")
             activation_id = _new_id()
             self._last_blocker_summary = None
-            self._activation_record = {
+            self._set_activation_record({
                 "status": "activating",
                 "activation_id": activation_id,
                 "library_id": target["library_id"],
-            }
+            })
             worker = threading.Thread(
                 target=self._run_registered_library_activation,
                 args=(activation_id, target),
@@ -728,14 +819,14 @@ class LocalSupervisor:
                 warning_code = "registry_recency_update_failed"
                 log.exception("library activation completed but registry recency update failed")
             with self._state_lock:
-                self._activation_record = {
+                self._set_activation_record({
                     "status": "succeeded",
                     "activation_id": activation_id,
                     "library_id": verified["library_id"],
                     "result": result["result"],
                     "registry_recency_updated": recency_updated,
                     "warning_code": warning_code,
-                }
+                })
         except SupervisorError as exc:
             message = str(exc)
             if "persisted operation state blocks" in message:
@@ -761,15 +852,15 @@ class LocalSupervisor:
                     "message": "The library switch did not complete.",
                 }
             with self._state_lock:
-                self._activation_record = record
+                self._set_activation_record(record)
         except Exception:
             log.exception("library activation worker failed unexpectedly")
             with self._state_lock:
-                self._activation_record = {
+                self._set_activation_record({
                     "status": "failed", "activation_id": activation_id,
                     "library_id": target["library_id"], "error_code": "internal_failure",
                     "message": "The library switch did not complete.",
-                }
+                })
 
     def handoff_library(self, requested_root: str) -> dict[str, object]:
         """Perform one local, supervisor-owned root-bound backend handoff.
@@ -841,7 +932,6 @@ class LocalSupervisor:
                     "active", old_child.spec.port, old_child.spec.bind_host, root, old_child.spec.access_mode,
                 )
                 promoted = self._start_child(promoted_spec)
-                self.active = promoted
                 state = {**state, "active_instance_id": promoted.instance_id, "updated_at": _utc_now()}
                 self.state_store.write(state)
                 if not self._wait_for_verified_identity(promoted):
@@ -857,16 +947,38 @@ class LocalSupervisor:
                     # file rather than interpreting an exception as no write.
                     if not library_registry_service.compatibility_root_matches(root):
                         raise SupervisorError("saved compatibility root was not verified after promotion")
+                # Compatibility-root persistence can take non-zero time. Do
+                # not commit a clean terminal state unless the same promoted
+                # child still answers the complete authenticated identity
+                # contract on the stable endpoint.
+                if not self._wait_for_verified_identity(promoted):
+                    raise SupervisorError("promoted backend was not verified at activation commit")
+                # Transfer the verified stable-port child from the handoff's
+                # failure-cleanup ownership into the supervisor's sole active
+                # slot. Keep the local reference until the durable idle write
+                # succeeds so any commit failure still rolls B back.
+                self.active = promoted
                 state = self.state_store.transition(
                     state, "activated", candidate_instance_id=None, candidate_port=None,
                 )
+                if (
+                    self.active is not promoted
+                    or promoted.process.poll() is not None
+                    or promoted.spec.role != "active"
+                    or promoted.spec.port != old_child.spec.port
+                    or promoted.spec.library_root != root
+                    or library_key_for_root(promoted.spec.library_root) != requested_key
+                ):
+                    raise SupervisorError("promoted backend exited before idle commit")
                 self.state_store.transition(state, "idle", **self._idle_updates())
+                committed_active = promoted
+                promoted = None
                 return {
                     "result": "activated",
                     "activated": True,
                     "library_key": requested_key,
-                    "active_backend_instance_id": promoted.instance_id,
-                    "active_port": promoted.spec.port,
+                    "active_backend_instance_id": committed_active.instance_id,
+                    "active_port": committed_active.spec.port,
                 }
             except Exception as exc:
                 reason = str(exc) or exc.__class__.__name__
@@ -901,11 +1013,18 @@ class LocalSupervisor:
                 self._mark_fail_closed(state, f"{reason}; candidate termination unconfirmed", "candidate_termination")
                 return False
             self.candidate = None
-        if promoted is not None and self.active is promoted:
+        if promoted is not None:
+            if self.active is not None and self.active is not promoted:
+                self._mark_fail_closed(state, f"{reason}; promoted backend ownership is ambiguous", "promoted_backend_termination")
+                return False
             if not self._terminate_owned_child(promoted):
+                # Retain the only known handle if termination cannot be
+                # confirmed; fail-closed status must expose owned live state.
+                self.active = promoted
                 self._mark_fail_closed(state, f"{reason}; promoted backend termination unconfirmed", "promoted_backend_termination")
                 return False
-            self.active = None
+            if self.active is promoted:
+                self.active = None
 
         if saved_root_write_attempted:
             if not saved_root_snapshot_captured:
@@ -970,6 +1089,15 @@ class LocalSupervisor:
             if rollback["phase"] != "rollback":
                 rollback = self.state_store.transition(rollback, "rollback", active_instance_id=None)
             if restored is not None:
+                if self.active is not restored or restored.process.poll() is not None:
+                    if self.active is restored and self._reap_terminated_child(restored):
+                        self.active = None
+                    self._mark_fail_closed(
+                        rollback,
+                        f"{reason}; verified rollback backend exited before commit",
+                        "rollback_backend_verification",
+                    )
+                    return False
                 self.state_store.transition(rollback, "idle", **self._idle_updates(reason))
                 return True
         except (MalformedActivationState, SupervisorError, OSError):
@@ -1033,10 +1161,18 @@ class LocalSupervisor:
         environment = self.child_environment(spec, instance_id)
         environment["CRATEIQ_BACKEND_VERIFY_TOKEN"] = verification_token
         try:
-            process = self._popen(
-                command, cwd=self.repo_root, env=environment, shell=False,
-                close_fds=True, pass_fds=(listener.fileno(),), start_new_session=True,
-            )
+            popen_kwargs = {
+                "cwd": self.repo_root,
+                "env": environment,
+                "shell": False,
+                "close_fds": True,
+                "pass_fds": (listener.fileno(),),
+                "start_new_session": True,
+            }
+            if threading.current_thread() is threading.main_thread():
+                process = self._popen(command, **popen_kwargs)
+            else:
+                process = self._process_launch_broker.launch(self._popen, command, **popen_kwargs)
         finally:
             listener.close()
         return ChildProcess(spec=spec, instance_id=instance_id, verification_token=verification_token, process=process)
@@ -1049,7 +1185,13 @@ class LocalSupervisor:
             forbidden.add(self.active.spec.port)
         for _ in range(attempts):
             listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 0)
+            # Identity/admission requests can leave accepted connections in
+            # TIME_WAIT after a child is definitively terminated and reaped.
+            # Every supervisor-reserved listener opts into address reuse so a
+            # replacement owned child can bind the same stable endpoint
+            # immediately. This does not permit a second bind while the prior
+            # listener is still live (SO_REUSEPORT is deliberately not used).
+            listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
             listener.bind((spec.bind_host, spec.port))
             listener.listen(128)
             if spec.role != "candidate" or int(listener.getsockname()[1]) not in forbidden:
@@ -1058,9 +1200,18 @@ class LocalSupervisor:
         raise SupervisorError("could not reserve a safe candidate port")
 
     def _wait_for_verified_identity(self, child: ChildProcess) -> bool:
-        deadline = time.monotonic() + self.readiness_timeout_seconds
+        startup_timeout = (
+            self.readiness_timeout_seconds
+            if child.spec.role == "candidate"
+            else self.active_readiness_timeout_seconds
+        )
+        deadline = time.monotonic() + startup_timeout
         expected_root = str(child.spec.library_root) if child.spec.library_root else None
-        while time.monotonic() < deadline:
+        expected_library_key = library_key_for_root(child.spec.library_root)
+        while True:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
             if child.process.poll() is not None:
                 return False
             try:
@@ -1068,8 +1219,14 @@ class LocalSupervisor:
                     f"http://127.0.0.1:{child.spec.port}/api/internal/supervisor-identity",
                     headers={"X-CrateIQ-Supervisor-Token": child.verification_token},
                 )
-                with urllib.request.urlopen(request, timeout=1.0) as response:
-                    payload = json.loads(response.read(MAX_IPC_MESSAGE_BYTES + 1))
+                with urllib.request.urlopen(
+                    request,
+                    timeout=min(IDENTITY_PROBE_TIMEOUT_SECONDS, remaining),
+                ) as response:
+                    raw_payload = response.read(MAX_IPC_MESSAGE_BYTES + 1)
+                if len(raw_payload) > MAX_IPC_MESSAGE_BYTES:
+                    return False
+                payload = json.loads(raw_payload)
                 identity = payload.get("identity") if isinstance(payload, dict) else None
                 if (
                     isinstance(identity, dict)
@@ -1078,13 +1235,17 @@ class LocalSupervisor:
                     and identity.get("role") == child.spec.role
                     and identity.get("port") == child.spec.port
                     and identity.get("library_root") == expected_root
-                    and identity.get("library_key") == library_key_for_root(child.spec.library_root)
+                    and identity.get("library_key") == expected_library_key
+                    and identity.get("verification_token") == child.verification_token
+                    and identity.get("ready") is True
                 ):
                     return True
             except Exception:
                 pass
-            time.sleep(0.1)
-        return False
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                return False
+            time.sleep(min(IDENTITY_PROBE_INTERVAL_SECONDS, remaining))
 
     def _terminate(self, child: ChildProcess) -> None:
         if child.process.poll() is not None:
@@ -1163,9 +1324,22 @@ class LocalSupervisor:
             # Never overwrite malformed durable state during cleanup.
             pass
 
+    def _set_activation_record(self, record: dict[str, object]) -> None:
+        with self._activation_record_lock:
+            self._activation_record = record
+
     def status(self) -> dict[str, object]:
-        with self._state_lock:
-            self._refresh_children_locked()
+        # A handoff intentionally holds _state_lock across the complete child
+        # ownership transition. Status is served by a separate IPC handler and
+        # must not queue behind that long operation: doing so exhausts the
+        # backend's bounded IPC call and can also starve the promoted backend's
+        # event loop while the supervisor is probing its identity endpoint.
+        acquired = self._state_lock.acquire(blocking=False)
+        try:
+            if acquired:
+                self._refresh_children_locked()
+            active = self.active
+            candidate = self.candidate
             try:
                 activation_state = self.state_store.read()
                 phase = str(activation_state["phase"])
@@ -1173,15 +1347,20 @@ class LocalSupervisor:
             except MalformedActivationState:
                 phase = "malformed"
                 incomplete = True
-            return {
-                "supervisor_instance_id": self.instance_id,
-                "active_child": self.active.safe_status() if self.active else None,
-                "candidate_child": self.candidate.safe_status() if self.candidate else None,
-                "activation_phase": phase,
-                "activation_incomplete": incomplete,
-                "operation_admission_draining": phase == "active_draining",
-                "activation": dict(self._activation_record),
-            }
+        finally:
+            if acquired:
+                self._state_lock.release()
+        with self._activation_record_lock:
+            activation = dict(self._activation_record)
+        return {
+            "supervisor_instance_id": self.instance_id,
+            "active_child": active.safe_status() if active else None,
+            "candidate_child": candidate.safe_status() if candidate else None,
+            "activation_phase": phase,
+            "activation_incomplete": incomplete,
+            "operation_admission_draining": phase == "active_draining",
+            "activation": activation,
+        }
 
     def handle_message(self, message: object) -> dict[str, object]:
         with self._ipc_admission_lock:
@@ -1291,6 +1470,7 @@ class LocalSupervisor:
                 self._terminate(self.active)
                 self.active = None
             self._close_control_socket()
+        self._process_launch_broker.close()
 
     def bind_control_socket(self) -> None:
         """Acquire lifetime ownership and bind IPC before any child is spawned."""
@@ -1572,6 +1752,56 @@ def prepare_socket(
     finally:
         if owns_directory_fd:
             os.close(directory_fd)
+
+
+def recover_stale_socket(path: Path) -> bool:
+    """Atomically remove one proven-stale supervisor socket.
+
+    The caller must hold the installation's supervisor lifetime lock.  This
+    explicit recovery primitive never replaces a live, unsafe, or raced path.
+    """
+    directory_fd = _open_safe_runtime_directory(path.parent)
+    withdrawal_name: str | None = None
+    exchanged = False
+    try:
+        details = _entry_stat(directory_fd, path.name)
+        if details is None:
+            return False
+        if stat.S_ISLNK(details.st_mode):
+            raise SupervisorError("refusing unsafe supervisor socket symlink")
+        if not stat.S_ISSOCK(details.st_mode):
+            raise SupervisorError("refusing non-socket supervisor path")
+        if _socket_is_live(path, directory_fd=directory_fd):
+            raise SupervisorError("a live supervisor still owns the socket")
+
+        identity = (details.st_dev, details.st_ino)
+        withdrawal_name = f".{path.name}.recovery.{_new_id()}.withdraw"
+        os.mkdir(withdrawal_name, 0o700, dir_fd=directory_fd)
+        recovery_directory = _entry_stat(directory_fd, withdrawal_name)
+        assert recovery_directory is not None
+        recovery_directory_identity = (recovery_directory.st_dev, recovery_directory.st_ino)
+        _rename_exchange(directory_fd, path.name, withdrawal_name)
+        exchanged = True
+        withdrawn = _entry_stat(directory_fd, withdrawal_name)
+        replacement = _entry_stat(directory_fd, path.name)
+        if not _matches_socket_identity(withdrawn, identity):
+            raise SupervisorError("supervisor socket identity changed during recovery")
+        if (
+            replacement is None
+            or not stat.S_ISDIR(replacement.st_mode)
+            or (replacement.st_dev, replacement.st_ino) != recovery_directory_identity
+        ):
+            raise SupervisorError("supervisor socket pathname changed during recovery")
+        if not _safe_rmdir(directory_fd, path.name):
+            raise SupervisorError("supervisor socket pathname changed during recovery")
+        os.unlink(withdrawal_name, dir_fd=directory_fd)
+        withdrawal_name = None
+        os.fsync(directory_fd)
+        return True
+    finally:
+        if withdrawal_name is not None and not exchanged:
+            _safe_rmdir(directory_fd, withdrawal_name)
+        os.close(directory_fd)
 
 
 def serve(supervisor: LocalSupervisor) -> None:

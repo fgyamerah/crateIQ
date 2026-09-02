@@ -301,7 +301,9 @@ async def activate_library(body: ActivateLibraryRequest) -> ActivationStartRespo
 
 @router.get("/launcher/activation-status", response_model=ActivationStatusResponse)
 async def activation_status() -> ActivationStatusResponse:
-    payload, available = _activation_status_from_supervisor()
+    # Keep the promoted backend's event loop available for the supervisor's
+    # private identity probe even if local IPC is slow or interrupted.
+    payload, available = await asyncio.to_thread(_activation_status_from_supervisor)
     if not available:
         raise HTTPException(status_code=503, detail=_detail("supervisor_unavailable", "The local supervisor is unavailable."))
     return _activation_response(payload)
@@ -310,7 +312,7 @@ async def activation_status() -> ActivationStatusResponse:
 @router.get("/launcher/current-library", response_model=CurrentLibraryResponse)
 async def current_library() -> CurrentLibraryResponse:
     rootless, library_root, library_id, display_name = _active_registry_metadata()
-    activation, available = _activation_status_from_supervisor()
+    activation, available = await asyncio.to_thread(_activation_status_from_supervisor)
     return CurrentLibraryResponse(
         rootless=rootless, library_root=library_root, library_id=library_id, display_name=display_name,
         launcher_status="ready" if available else "supervisor_unavailable",

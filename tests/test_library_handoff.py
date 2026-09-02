@@ -312,6 +312,33 @@ def test_promoted_b_verification_failure_restarts_verified_a(monkeypatch, tmp_pa
     assert popen.processes[2].wait_calls >= 1
 
 
+def test_failed_promoted_and_failed_rollback_backend_remain_fail_closed(monkeypatch, tmp_path):
+    root_b = _managed_root(tmp_path / "B")
+    popen = FakePopen()
+    local = _local(tmp_path, popen)
+    local.start_active(
+        role="rootless", port=18041, bind_host="127.0.0.1", library_root=None, access_mode="local",
+    )
+    monkeypatch.setattr(
+        local,
+        "_wait_for_verified_identity",
+        lambda child: child.spec.role == "candidate",
+    )
+    monkeypatch.setattr(registry, "LOCAL_ENV_PATH", tmp_path / ".run/local/crateiq.env")
+
+    with pytest.raises(supervisor.SupervisorError, match="failed closed"):
+        local.handoff_library(str(root_b))
+
+    state = local.state_store.read()
+    assert local.active is None
+    assert local.candidate is None
+    assert all(process.poll() is not None for process in popen.processes)
+    assert state["phase"] == "fail_closed"
+    assert state["active_instance_id"] is None
+    assert state["failure_stage"] == "rollback_backend_start"
+    assert local.status()["activation_incomplete"] is True
+
+
 def test_saved_root_write_failure_restarts_a_without_false_success(monkeypatch, tmp_path):
     root_a = _managed_root(tmp_path / "A")
     root_b = _managed_root(tmp_path / "B")
