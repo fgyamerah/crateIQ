@@ -687,10 +687,14 @@ read-only Track Inspector shows Metadata, authoritative Status/reasons/warnings/
 write/promotion state, Analysis/waveform state, and managed File context. It
 adds no write, provider, enrichment-acceptance, or analysis action.
 
-Checkpoint 2 still does not implement unified DB-first editing, expanded
-Artist/Title/Genre/Album bulk editing, explicit Save to File UX, per-batch
-provider selection, inline conflict application, Needs Review merge, Process
-All demotion, the full mobile redesign, or the final focused Impeccable pass.
+Checkpoint 3A is complete: Inbox single-track and bulk metadata editing for
+Artist/Title/Genre/Album is DB-first, records existing manual provenance, and
+refreshes the authoritative preparation state without writing file tags.
+Checkpoint 3B still does not implement the expanded frontend editing UI,
+preview/confirmation presentation, or explicit Save to File UX. Provider
+selection, inline conflict application, Needs Review merge, Process All
+demotion, the full mobile redesign, and the final focused Impeccable pass also
+remain deferred.
 
 ## Data Stores
 

@@ -56,8 +56,10 @@ under one **Managed Root** folder you choose (Settings → Workspace):
 - **Import copies, never moves.** Selecting external files or folders in
   **Inbox** copies them into `Inbox/`; your original source files are never
   modified, renamed, or deleted.
-- **Inbox is crateIQ's working copy.** All metadata writes happen only
-  against managed Inbox copies, never against the external originals.
+- **Inbox is crateIQ's working copy.** Inbox metadata edits first update the
+  approved local index and provenance; they do not write file tags. Explicit
+  tag writes remain a separate controlled operation against managed Inbox
+  copies, never against external originals.
 - **Library contains only explicitly promoted finished tracks** — nothing
   lands there automatically.
 - **Quarantine is never an automatic destination.** No workflow moves files
@@ -132,13 +134,13 @@ The Inbox table supports direct editing without leaving the page:
   through a rename). Editing it renames only the managed Inbox copy — it
   never changes **Title** metadata, and never touches external originals,
   promoted Library files, or Quarantine.
-- **Artist** and **Genre** — editing either goes through the same
-  preview/stale-check/backup/write/verify write-back path Process All uses;
-  there is no separate, simplified writer. A manually entered non-empty,
-  non-junk value is never silently overwritten by a later Process All run.
-- **Bulk Edit** — select multiple Inbox tracks to set one Artist and/or one
-  Genre across all of them in a single, previewed operation. Bulk edit never
-  renames files.
+- **Artist**, **Title**, **Genre**, and **Album** — editing any supported
+  metadata field updates approved `tracks` metadata and manual provenance
+  only. The preparation state immediately reports **Unsaved** when the DB
+  value differs from the live file tag; Title edits never rename files.
+- **Bulk Edit** — select multiple Inbox tracks to set one or more of Artist,
+  Title, Genre, and Album across all of them in a single, previewed,
+  DB-first operation. Bulk edit never renames files or writes tags.
 - **Search and preparation filters** run across the server-side Inbox dataset,
   not just the rendered page. Search covers filename, Artist, Title, and Genre;
   the five status chips show search-scoped counts from the authoritative

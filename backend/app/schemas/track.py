@@ -68,6 +68,7 @@ class TrackSummary(BaseModel):
     filename:     str
     artist:       Optional[str] = None
     title:        Optional[str] = None
+    album:        Optional[str] = None
     genre:        Optional[str] = None
     bpm:          Optional[float] = None
     key_camelot:  Optional[str] = None
@@ -94,6 +95,7 @@ class TrackSummary(BaseModel):
             filename=t.filename,
             artist=t.artist,
             title=t.title,
+            album=t.album,
             genre=t.genre,
             bpm=t.bpm,
             key_camelot=t.key_camelot,
@@ -119,6 +121,7 @@ class TrackDetail(BaseModel):
     filename:       str
     artist:         Optional[str] = None
     title:          Optional[str] = None
+    album:          Optional[str] = None
     genre:          Optional[str] = None
     bpm:            Optional[float] = None
     key_camelot:    Optional[str] = None
@@ -156,6 +159,7 @@ class TrackDetail(BaseModel):
             filename=t.filename,
             artist=t.artist,
             title=t.title,
+            album=t.album,
             genre=t.genre,
             bpm=t.bpm,
             key_camelot=t.key_camelot,

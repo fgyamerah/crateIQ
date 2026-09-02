@@ -2,6 +2,23 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-02] — Complete Inbox redesign Checkpoint 3A DB-first editing
+
+- Normalized Inbox Artist, Title, Genre, and Album single-track and bulk
+  editing to update approved `tracks` metadata and existing manual provenance
+  only; ordinary edits no longer write managed-file tags or create backups.
+- Refreshed the authoritative preparation-state projection after edits so DB/
+  file differences report Unsaved with exact pending fields. Filename rename
+  remains separate and unchanged, and Album remains optional for promotion.
+- Extended Inbox edit/preview/apply API contracts and track summary/detail
+  schemas for the four supported fields. No frontend editing UI or Save to
+  File UX was added.
+- Files affected: Inbox workspace service/routes, track model/schemas,
+  frontend contract types, focused Inbox edit tests, and current docs.
+- Still deferred: Checkpoint 3B frontend editing UI, explicit Save to File UX,
+  provider-source selection, inline enrichment conflict resolution, Needs
+  Review merge, Process All demotion, mobile redesign, and final Impeccable.
+
 [2026-09-02] — Build Inbox preparation workspace shell (Redesign Checkpoint 2)
 
 - Added server-side Inbox search across filename, Artist, Title, and Genre,

@@ -60,10 +60,16 @@ P1 / HIGH
 P2 / MEDIUM
 ----------------------------------------------------------------------
 
-[ ] Inbox Redesign Checkpoint 3 — unified DB-first single-track editing and
-    expanded bulk editing for Artist, Title, Genre, and Album. Keep Year,
-    clear-field semantics, and explicit Save-to-File UX out of this checkpoint;
-    do not change provider selection, Needs Review, Process All, or mobile UX.
+[x] Inbox Redesign Checkpoint 3A — unified DB-first single-track editing and
+    expanded bulk backend contracts for Artist, Title, Genre, and Album.
+    File tags remain unchanged until a later explicit Save-to-File UX. Keep
+    Year, clear-field semantics, provider selection, Needs Review, Process All,
+    and mobile UX unchanged.
+
+[ ] Inbox Redesign Checkpoint 3B — add the frontend single-track and bulk
+    editing UI on top of the DB-first contracts, including preview/
+    confirmation presentation and clear Unsaved state. Keep explicit
+    Save-to-File UX out of this checkpoint.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally

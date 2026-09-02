@@ -112,13 +112,17 @@ class TrackIdsRequest(BaseModel):
 class InboxTrackEditRequest(BaseModel):
     filename: Optional[str] = Field(default=None, max_length=255)
     artist: Optional[str] = Field(default=None, max_length=200)
+    title: Optional[str] = Field(default=None, max_length=200)
     genre: Optional[str] = Field(default=None, max_length=200)
+    album: Optional[str] = Field(default=None, max_length=200)
 
 
 class InboxBulkEditRequest(BaseModel):
     track_ids: List[int] = Field(min_length=1, max_length=200)
     artist: Optional[str] = Field(default=None, max_length=200)
+    title: Optional[str] = Field(default=None, max_length=200)
     genre: Optional[str] = Field(default=None, max_length=200)
+    album: Optional[str] = Field(default=None, max_length=200)
 
 
 class InboxBulkEditApplyRequest(InboxBulkEditRequest):
@@ -232,13 +236,14 @@ async def inspect_inbox_track(track_id: int) -> TrackSummary:
 async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
     """
     Single-track Inbox edit: optional filename (managed Inbox rename, basename
-    only -- extension is always locked to the current file), artist, genre.
+    only -- extension is always locked to the current file), or approved
+    Artist/Title/Genre/Album metadata.
     Fields are processed independently so a failure in one never hides a
     success in another; if every requested field fails, the response is a
     422 with all failure reasons joined.
     """
-    if body.filename is None and body.artist is None and body.genre is None:
-        raise HTTPException(status_code=422, detail="Provide at least one of filename, artist, or genre.")
+    if all(value is None for value in (body.filename, body.artist, body.title, body.genre, body.album)):
+        raise HTTPException(status_code=422, detail="Provide at least one of filename, artist, title, genre, or album.")
     root = _root()
     result: dict = {"track_id": track_id, "rename": None, "metadata": None, "errors": []}
 
@@ -248,10 +253,11 @@ async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
         except ValueError as exc:
             result["errors"].append(str(exc))
 
-    if body.artist is not None or body.genre is not None:
+    if any(value is not None for value in (body.artist, body.title, body.genre, body.album)):
         try:
             result["metadata"] = workspace_service.edit_inbox_track_metadata(
-                root, track_id, artist=body.artist, genre=body.genre,
+                root, track_id, artist=body.artist, title=body.title,
+                genre=body.genre, album=body.album,
             )
         except ValueError as exc:
             result["errors"].append(str(exc))
@@ -263,9 +269,12 @@ async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
 
 @router.post("/workspace/inbox/bulk-edit/preview")
 async def preview_inbox_bulk_edit(body: InboxBulkEditRequest):
-    """Read-only: preview a bulk Artist/Genre edit before it is applied."""
+    """Read-only: preview a bulk Artist/Title/Genre/Album edit before it is applied."""
     try:
-        return workspace_service.bulk_edit_preview(_root(), body.track_ids, artist=body.artist, genre=body.genre)
+        return workspace_service.bulk_edit_preview(
+            _root(), body.track_ids, artist=body.artist, title=body.title,
+            genre=body.genre, album=body.album,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -276,7 +285,8 @@ async def apply_inbox_bulk_edit(body: InboxBulkEditApplyRequest):
         raise HTTPException(status_code=422, detail="Bulk edit requires confirm=true after reviewing the preview.")
     try:
         return workspace_service.bulk_edit_apply(
-            _root(), body.track_ids, artist=body.artist, genre=body.genre, confirm=True,
+            _root(), body.track_ids, artist=body.artist, title=body.title,
+            genre=body.genre, album=body.album, confirm=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { InboxPreparationState, InboxPreparationStatus, TrackSummary } from '../types/track'
+import type { InboxEditableMetadataField, InboxPreparationState, InboxPreparationStatus, TrackSummary } from '../types/track'
 
 export interface WorkspaceStatus {
   state:            'managed_workspace' | 'legacy_direct_library' | 'not_configured'
@@ -122,7 +122,7 @@ export function fetchInboxTrackInspection(trackId: number): Promise<TrackSummary
 }
 
 // ---------------------------------------------------------------------------
-// Inline Track/Artist/Genre editing + bulk edit
+// Inline Track/Artist/Title/Genre/Album editing + bulk edit contract
 // ---------------------------------------------------------------------------
 
 export interface InboxTrackRenameResult {
@@ -137,8 +137,11 @@ export interface InboxTrackMetadataEditResult {
   status: 'updated' | 'no_change'
   fields_changed: string[]
   artist: string | null
+  title: string | null
   genre: string | null
-  tag_write: { written_count: number; failed_count: number; warnings: string[] } | null
+  album: string | null
+  tag_write: null
+  preparation_state: InboxPreparationState
 }
 
 export interface InboxTrackEditResponse {
@@ -151,7 +154,7 @@ export interface InboxTrackEditResponse {
 /** Single-track Inbox edit. `filename` is the basename only -- the extension is always locked to the current file. */
 export function patchInboxTrack(
   trackId: number,
-  fields: { filename?: string; artist?: string; genre?: string },
+  fields: { filename?: string; artist?: string; title?: string; genre?: string; album?: string },
 ): Promise<InboxTrackEditResponse> {
   return apiFetch.patch<InboxTrackEditResponse>(`/workspace/inbox/tracks/${trackId}`, fields)
 }
@@ -164,13 +167,14 @@ export interface InboxBulkEditFieldPreview {
 export interface InboxBulkEditPreview {
   selected_count: number
   eligible_count: number
+  changeable_count: number
   skipped_not_inbox: number
   missing_count: number
-  fields: { artist?: InboxBulkEditFieldPreview; genre?: InboxBulkEditFieldPreview }
+  fields: Partial<Record<InboxEditableMetadataField, InboxBulkEditFieldPreview>>
   message: string
 }
 
-export function previewInboxBulkEdit(trackIds: number[], fields: { artist?: string; genre?: string }): Promise<InboxBulkEditPreview> {
+export function previewInboxBulkEdit(trackIds: number[], fields: Partial<Record<InboxEditableMetadataField, string>>): Promise<InboxBulkEditPreview> {
   return apiFetch.post<InboxBulkEditPreview>('/workspace/inbox/bulk-edit/preview', { track_ids: trackIds, ...fields })
 }
 
@@ -179,6 +183,7 @@ export interface InboxBulkEditResultItem {
   status: 'succeeded' | 'unchanged' | 'skipped' | 'not_found' | 'failed'
   fields?: string[]
   reason?: string
+  preparation_state?: InboxPreparationState
 }
 
 export interface InboxBulkEditApplyResult {
@@ -191,9 +196,10 @@ export interface InboxBulkEditApplyResult {
   not_found_count: number
   results: InboxBulkEditResultItem[]
   message: string
+  tag_write: null
 }
 
-export function applyInboxBulkEdit(trackIds: number[], fields: { artist?: string; genre?: string }): Promise<InboxBulkEditApplyResult> {
+export function applyInboxBulkEdit(trackIds: number[], fields: Partial<Record<InboxEditableMetadataField, string>>): Promise<InboxBulkEditApplyResult> {
   return apiFetch.post<InboxBulkEditApplyResult>('/workspace/inbox/bulk-edit/apply', { track_ids: trackIds, ...fields, confirm: true })
 }
 
