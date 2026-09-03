@@ -11,6 +11,7 @@ run ever writes into this repo's real backend/data/ directory.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -229,6 +230,27 @@ def test_apply_skips_tracks_with_no_diff_without_creating_backup(env):
     assert result["skipped"] == 1 and result["applied"] == 0
     operation = svc.get_operation(result["operation_id"])
     assert operation["backup_manifest"] == []
+
+
+def test_apply_blocks_noop_file_changed_since_preview(env):
+    """A stale no-op preview must not be silently rebased at apply time."""
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    _write_tags(path, artist="Same Artist")
+    track_id = _insert_track(root, filepath=path, artist="Same Artist")
+
+    plan = svc.build_plan([track_id])
+    item = plan["items"][0]
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+    expected = {track_id: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+
+    result = svc.apply_plan([track_id], expected, confirm=True)
+
+    assert result["failed"] == 1 and result["applied"] == 0
+    assert "stale" in result["results"][0]["reason"].lower()
+    assert svc.get_operation(result["operation_id"])["backup_manifest"] == []
 
 
 def test_restore_reverts_file_to_byte_identical_backup(env):

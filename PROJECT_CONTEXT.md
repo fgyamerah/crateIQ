@@ -682,10 +682,12 @@ read-only projection for URL-backed (`/inbox?track=<id>`) inspector restore.
 Inbox selection is ID-based and persists across sorting, refetch, filtering,
 and pages. The UI distinguishes total selected from visible selected, exposes
 clear-hidden and clear-all actions, labels the header checkbox as Select
-Visible, and supports shift-click ranges only within rendered rows. The
-read-only Track Inspector shows Metadata, authoritative Status/reasons/warnings/
-write/promotion state, Analysis/waveform state, and managed File context. It
-adds no write, provider, enrichment-acceptance, or analysis action.
+Visible, and supports shift-click ranges only within rendered rows. The Track
+Inspector shows Metadata, authoritative Status/reasons/warnings/write/
+promotion state, Analysis/waveform state, and managed File context. Its
+DB-first metadata editing remains separate from the explicit Save to File
+action, which is enabled only for pending writable changes and keeps the
+Inspector open while the verified result is shown.
 
 Checkpoint 3A is complete: Inbox single-track and bulk metadata editing for
 Artist/Title/Genre/Album is DB-first, records existing manual provenance, and
@@ -699,9 +701,12 @@ changeable, already-matching, skipped, and missing tracks explicitly. Unsaved
 filter counts are primary-status counts; a higher-precedence state may still
 have `pending_fields` and `write.has_unsaved_changes`. These controls still
 update approved working metadata only; they never call tag-write APIs or imply
-that file tags changed.
-The next checkpoint is planning-only for explicit Save to File UX using the
-existing tag_write_service plan/apply contract. Provider-source selection,
+that file tags changed. The Save to File checkpoint is complete: the frontend
+uses the existing tag_write_service plan/apply contract with 50-track request
+chunking, a concise exact-diff preview, managed-copy confirmation wording,
+verified per-track result reporting, stale-plan rejection, no-op/blocked
+handling, and authoritative Inbox refresh after apply. It does not add a new
+writer or a permanent SAVED preparation state. Provider-source selection,
 inline conflict application, Needs Review merge, Process All demotion, the
 full mobile redesign, and the final focused Impeccable pass remain deferred.
 

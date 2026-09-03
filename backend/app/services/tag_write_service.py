@@ -280,10 +280,6 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
                 skipped += 1
                 results.append({"track_id": track_id, "status": "skipped", "reason": item["blocker"]})
                 continue
-            if not item["fields"]:
-                skipped += 1
-                results.append({"track_id": track_id, "status": "skipped", "reason": "No approved fields differ from the file."})
-                continue
 
             path = assert_path_under_root(root / item["relative_path"], root)
             exp = expected.get(track_id) or {}
@@ -301,6 +297,11 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
                 failed += 1
                 results.append({"track_id": track_id, "status": "failed",
                                 "reason": "File changed since preview -- stale plan blocked. Re-run preview and try again."})
+                continue
+
+            if not item["fields"]:
+                skipped += 1
+                results.append({"track_id": track_id, "status": "skipped", "reason": "No approved fields differ from the file."})
                 continue
 
             # 1. Backup first -- byte-for-byte, hash-verified, before any mutation.

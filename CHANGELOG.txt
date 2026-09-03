@@ -2,6 +2,24 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-02] — Complete Inbox Save to File checkpoint
+
+- Added preview-first Save to File actions to the Inbox selection toolbar and
+  Track Inspector, using only the existing tag_write_service plan/apply
+  contract. The preview shows selected, changeable, no-op, blocked, and
+  per-field current→approved values; confirmation states that only managed
+  Inbox copies are modified and external originals remain untouched.
+- Added explicit 50-track frontend chunking, verified per-track success versus
+  blocked/failed outcomes, stale-plan retry guidance, no-op handling, and
+  authoritative track/status refresh while preserving selection and an open
+  Inspector. Extended the writer regression coverage so a changed no-op file
+  is also rejected as stale.
+- Files affected: Inbox Save to File components/helpers, Inbox page and
+  Inspector, Inbox styles/tests, tag-write service test, and current docs.
+- Still deferred: per-batch enrichment source selection, inline enrichment
+  conflict resolution, Needs Review merge, Process All demotion, full mobile
+  redesign, and the final focused Impeccable pass.
+
 [2026-09-02] — Correct Checkpoint 3B Inbox preview and status refresh reporting
 
 - Corrected Bulk Edit preview wording to distinguish selected, eligible,

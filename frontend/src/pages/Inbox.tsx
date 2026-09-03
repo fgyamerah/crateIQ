@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronRight, FolderInput, Inbox as InboxIcon, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
+import { ChevronRight, FileCheck2, FolderInput, Inbox as InboxIcon, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
   applyInboxBulkEdit,
@@ -36,6 +36,7 @@ import InboxTrackInspector from '../components/inbox/InboxTrackInspector'
 import PreparationStatusBadge from '../components/inbox/PreparationStatusBadge'
 import EditableMetadataCell from '../components/inbox/EditableMetadataCell'
 import { useInboxSelection } from '../hooks/useInboxSelection'
+import SaveToFileDialog from '../components/inbox/SaveToFileDialog'
 
 function messageFor(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.displayMessage
@@ -109,6 +110,8 @@ export default function Inbox() {
   const [activeEditCount, setActiveEditCount] = useState(0)
   const [inspectedTrack, setInspectedTrack] = useState<TrackSummary | null>(null)
   const [inspectorLoading, setInspectorLoading] = useState(false)
+  const [knownTracks, setKnownTracks] = useState<Record<number, TrackSummary>>({})
+  const [saveTrackIds, setSaveTrackIds] = useState<number[] | null>(null)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadRequestRef = useRef(0)
   const inspectorTriggerRef = useRef<HTMLElement | null>(null)
@@ -157,6 +160,10 @@ export default function Inbox() {
         ])
         if (requestId !== loadRequestRef.current) return
         setTracks(nextTracks)
+        setKnownTracks((current) => Object.fromEntries([
+          ...Object.entries(current),
+          ...nextTracks.items.map((track) => [track.id, track]),
+        ]))
         setPreview(nextPreview)
         setPreflight(nextPreflight)
       } else {
@@ -347,6 +354,10 @@ export default function Inbox() {
       ])
       if (requestId !== loadRequestRef.current) return
       setTracks(nextTracks)
+      setKnownTracks((current) => Object.fromEntries([
+        ...Object.entries(current),
+        ...nextTracks.items.map((track) => [track.id, track]),
+      ]))
       setPreview(nextPreview)
     } catch (err) {
       if (requestId === loadRequestRef.current) setError(messageFor(err, 'Could not refresh Inbox metadata.'))
@@ -463,6 +474,12 @@ export default function Inbox() {
 
   const readyCount = preview?.ready_count ?? 0
   const blockedCount = preview?.blocked_count ?? 0
+  const saveSelectionKnown = Array.from(selectedIds).every((trackId) => Boolean(knownTracks[trackId]?.preparation_state))
+  const selectedUnsavedWritableCount = Array.from(selectedIds).filter((trackId) => {
+    const preparation = knownTracks[trackId]?.preparation_state
+    return Boolean(preparation?.write.has_unsaved_changes && !preparation.write.blocked)
+  }).length
+  const saveToFileLabel = saveSelectionKnown ? `Save to File (${selectedUnsavedWritableCount})` : 'Save to File'
   const isProcessing = operation?.status === 'running'
   const inspectedVisibleIndex = inspectedId === null ? -1 : visibleIds.indexOf(inspectedId)
   const previousVisibleTrack = inspectedVisibleIndex > 0 ? tracks?.items[inspectedVisibleIndex - 1] : undefined
@@ -637,6 +654,14 @@ export default function Inbox() {
                   aria-expanded={bulkEditOpen}
                 >
                   <Pencil size={14} /> Bulk Edit ({selectedCount})
+                </button>
+                <button
+                  className="btn btn--primary btn--sm"
+                  disabled={!selectedCount || (saveSelectionKnown && selectedUnsavedWritableCount === 0) || batchBusy !== null}
+                  onClick={() => setSaveTrackIds(Array.from(selectedIds))}
+                  title={selectedCount && saveSelectionKnown && selectedUnsavedWritableCount === 0 ? 'No selected tracks have current unsaved writable metadata.' : undefined}
+                >
+                  <FileCheck2 size={14} /> {saveToFileLabel}
                 </button>
                 <Link className="btn btn--ghost btn--sm" to="/needs-review">Open Needs Review</Link>
               </div>
@@ -922,6 +947,14 @@ export default function Inbox() {
               onPrevious={previousVisibleTrack ? () => navigateInspector(previousVisibleTrack) : undefined}
               onNext={nextVisibleTrack ? () => navigateInspector(nextVisibleTrack) : undefined}
               onMetadataSave={(field, value) => inspectedId === null ? Promise.resolve() : saveMetadata(inspectedId, field, value)}
+              onSaveToFile={() => inspectedId !== null && setSaveTrackIds([inspectedId])}
+            />
+          )}
+          {saveTrackIds && (
+            <SaveToFileDialog
+              trackIds={saveTrackIds}
+              onClose={() => setSaveTrackIds(null)}
+              onApplied={() => void load()}
             />
           )}
         </>

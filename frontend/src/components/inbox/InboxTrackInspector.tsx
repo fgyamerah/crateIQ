@@ -17,6 +17,7 @@ interface Props {
   onPrevious?: () => void
   onNext?: () => void
   onMetadataSave?: (field: InboxEditableMetadataField, value: string) => Promise<void>
+  onSaveToFile?: () => void
 }
 
 function value(value: string | number | null | undefined) {
@@ -30,7 +31,7 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${remainder}`
 }
 
-export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave }: Props) {
+export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile }: Props) {
   const [tab, setTab] = useState<InspectorTab>('status')
   const closeRef = useRef<HTMLButtonElement>(null)
   const waveform = useTrackWaveform(track?.id ?? null)
@@ -123,6 +124,22 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
                 <PreparationStatusBadge state={preparation} idSuffix="-inspector" />
                 {preparation?.status === 'UNSAVED' && <small className="inbox-inspector-unsaved-note">Changes not yet written to file</small>}
               </span>
+            </div>
+            <div className="inbox-inspector-save-action">
+              <button
+                type="button"
+                className="btn btn--primary btn--sm"
+                onClick={onSaveToFile}
+                disabled={!preparation?.write.has_unsaved_changes || preparation.write.blocked || !onSaveToFile}
+                title={preparation?.write.blocked ? 'This track cannot be written in its current format or state.' : undefined}
+              >
+                Save to File
+              </button>
+              {preparation?.write.has_unsaved_changes && preparation.write.blocked
+                ? <small className="muted">Write blocked: resolve the current blocker before saving.</small>
+                : preparation?.write.has_unsaved_changes
+                  ? <small className="muted">Changes not yet written to file.</small>
+                  : <small className="muted">No pending writable metadata changes.</small>}
             </div>
             <h4>Reasons</h4>
             {preparation?.reasons.length

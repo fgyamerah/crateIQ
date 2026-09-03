@@ -71,11 +71,19 @@ P2 / MEDIUM
     confirmation presentation and clear Unsaved state. Keep explicit
     Save-to-File UX out of this checkpoint.
 
-[ ] Next Inbox checkpoint — plan explicit Save to File UX using the existing
-    tag_write_service plan/apply contract. Keep provider-source selection,
-    inline enrichment conflict resolution, Needs Review merge, Process All
-    demotion, full mobile redesign, and the final focused Impeccable pass
-    deferred.
+[x] Inbox Redesign Checkpoint 4 — explicit Save to File UX using the existing
+    tag_write_service plan/apply contract. Added preview-first exact diffs,
+    one explicit confirmation, selected-track-only operation, verified
+    partial-result handling, stale-plan protection, unsupported-format
+    blockers, 50-track chunking, Inspector save, and authoritative refresh.
+    Provider-source selection, inline enrichment conflict resolution, Needs
+    Review merge, Process All demotion, full mobile redesign, and the final
+    focused Impeccable pass remain deferred.
+
+[ ] Next Inbox checkpoint — planning-only per-batch metadata source selection
+    for Enrich using the existing provider routing and consensus contracts.
+    Do not implement conflict-resolution UI in that checkpoint unless the
+    existing contracts make the split artificial.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally

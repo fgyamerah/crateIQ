@@ -146,6 +146,14 @@ page:
   explicitly confirmed, DB-first operation. Only checked fields are included;
   blank enabled fields are rejected. Bulk edit never renames files or writes
   tags.
+- **Save to File** — after editing, cleaning, or accepting enrichment, select
+  one or more tracks with writable Unsaved changes and open a read-only preview
+  of the exact file-tag differences. One explicit confirmation sends only the
+  managed Inbox copies through the existing backup, stale-check, write, and
+  verification contract. The preview identifies no-ops and blocked formats;
+  external source originals are never modified. The toolbar count is a cheap
+  count of selected unsaved writable tracks when their current state is known;
+  the preview remains authoritative for exact writable/no-op/blocked totals.
 - **Search and preparation filters** run across the server-side Inbox dataset,
   not just the rendered page. Search covers filename, Artist, Title, and Genre;
   the five status chips show search-scoped counts from the authoritative
@@ -166,11 +174,13 @@ page:
   concrete reasons; missing BPM or key stays a secondary warning and does not
   demote an otherwise Ready track. This status display does not introduce
   another writer or change any Inbox action.
-- A row's details chevron opens a read-only **Track Inspector**. Its Metadata,
-  Status, Analysis, and File sections expose current preparation reasons,
-  warnings, pending fields, review/write/promotion state, BPM/key/waveform
-  state, managed path, and destination preview. The inspector is restored by
-  `/inbox?track=<id>` and adds no edit, write, enrichment, or analysis action.
+- A row's details chevron opens the **Track Inspector**. Its Metadata, Status,
+  Analysis, and File sections expose current preparation reasons, warnings,
+  pending fields, review/write/promotion state, BPM/key/waveform state,
+  managed path, and destination preview. Metadata edits remain DB-first; when
+  writable changes are pending, the Inspector also provides **Save to File**
+  and keeps itself open after the verified result. The inspector is restored
+  by `/inbox?track=<id>`.
 
 ## Metadata intelligence
 
@@ -286,10 +296,10 @@ integration is via staged, reviewable artifacts.
   nothing about setup, import, crate building, preview, or export/sync
   touches the source files you imported from.
 - **crateIQ works on managed Inbox copies.** Controlled metadata write-back
-  is a real, supported capability of Process All and Enrich Selected — it is
-  *not* true that "crateIQ never modifies music tags." What's true is that
-  writes are scoped to managed Inbox copies, confidence-gated, and behind
-  explicit confirmation.
+  is a real, supported capability of Process All and the explicit Inbox
+  **Save to File** workflow — it is *not* true that "crateIQ never modifies
+  music tags." What's true is that writes are scoped to managed Inbox copies,
+  confidence/plan-gated, and behind explicit confirmation.
 - Metadata writes go through the existing protections: a preview, a
   stale-check against the file on disk, a backup, an explicit confirmation,
   a post-write re-read verification, and a restore path if verification

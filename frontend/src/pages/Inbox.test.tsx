@@ -166,8 +166,19 @@ describe('Inbox preparation status', () => {
     expect(screen.getByRole('button', { name: 'Clean Selected (0)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enrich Selected (0)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Bulk Edit (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Save to File (0)' })).toBeDisabled()
     expect(screen.getByRole('link', { name: 'Open Needs Review' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move Ready to Library (1)' })).toBeInTheDocument()
+  })
+
+  it('shows Save to File only for selected tracks with current writable changes', async () => {
+    const unsaved = preparation(1, 'UNSAVED', ['Artist has changes not yet written to file'])
+    vi.mocked(workspaceApi.fetchInboxTracks).mockResolvedValue(page([track(1, unsaved)], 1, {
+      ALL: 1, WRITE_BLOCKED: 0, NEEDS_ATTENTION: 0, REVIEW: 0, UNSAVED: 1, READY: 0,
+    }))
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select track-1.mp3' }))
+    expect(screen.getByRole('button', { name: 'Save to File (1)' })).toBeEnabled()
   })
 })
 
@@ -388,7 +399,7 @@ describe('Inbox filtering, selection, and inspector', () => {
     expect(screen.getByText('1 selected · 1 visible')).toBeInTheDocument()
   })
 
-  it('supports inspector metadata editing without closing or adding Save to File', async () => {
+  it('supports inspector metadata editing without closing and exposes Save to File for unsaved changes', async () => {
     const updated = { ...allTracks[0], title: 'Inspector title', album: 'Inspector album', preparation_state: preparation(1, 'UNSAVED', ['Working metadata differs from file tags']) }
     let fetchCount = 0
     vi.mocked(workspaceApi.fetchInboxTracks).mockImplementation(async () => {
@@ -420,7 +431,7 @@ describe('Inbox filtering, selection, and inspector', () => {
     fireEvent.click(within(inspector).getByRole('tab', { name: 'Status' }))
     expect(within(inspector).getAllByText('Unsaved').length).toBeGreaterThan(0)
     expect(within(inspector).getByText('Changes not yet written to file')).toBeInTheDocument()
-    expect(within(inspector).queryByRole('button', { name: /Save to File/i })).not.toBeInTheDocument()
+    expect(within(inspector).getByRole('button', { name: 'Save to File' })).toBeInTheDocument()
   })
 
   it('bulk edits all four fields with opt-in validation, preview, and confirmation', async () => {
