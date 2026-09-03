@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-09-01
+**Updated:** 2026-09-03
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -509,6 +509,24 @@ closes its pooled session after every lookup attempt, including errors.
 Traxsource is legacy: it exists only in old `pipeline.py`-era code and is
 not part of the current provider set — do not treat it as active.
 
+The Settings metadata-source response is the source of truth for source roles
+(`local_input`, `analysis_only`, or `track_enrichment`) and readiness. An
+explicit Inbox **Enrich Selected** action may select only sources marked
+`selectable_for_enrichment`: globally enabled, configured, ready, and usable
+by the current provider router. `source_ids` is optional for backward
+compatibility on `POST /api/workspace/prepare/enrich`; when omitted, the
+server resolves the globally enabled + ready track-enrichment defaults. When
+provided, every ID must be validated and the selected sources are eligible to
+be queried, not guaranteed to run, because staged routing may stop early after
+strong consensus. Process All continues to use the global defaults and does
+not open the per-batch selector. Credentials never enter the Inbox request.
+
+Beets and MusicBrainz readiness for this routing path reflects the shared
+Beets Python API used by `musicbrainz_client`; the forbidden `beet` CLI is not
+used. Local tags and filename hints remain automatic local-input evidence, and
+Mixed In Key remains an analysis-only trusted input rather than a selectable
+track-enrichment provider.
+
 ## Confidence / Review Model
 
 Consensus is field-level and explainable, one verdict per field:
@@ -706,9 +724,10 @@ uses the existing tag_write_service plan/apply contract with 50-track request
 chunking, a concise exact-diff preview, managed-copy confirmation wording,
 verified per-track result reporting, stale-plan rejection, no-op/blocked
 handling, and authoritative Inbox refresh after apply. It does not add a new
-writer or a permanent SAVED preparation state. Provider-source selection,
-inline conflict application, Needs Review merge, Process All demotion, the
-full mobile redesign, and the final focused Impeccable pass remain deferred.
+writer or a permanent SAVED preparation state. Per-batch provider-source
+selection is complete for explicit Enrich Selected. Inline conflict
+application, Needs Review merge, Process All demotion, the full mobile
+redesign, and the final focused Impeccable pass remain deferred.
 
 ## Data Stores
 

@@ -37,6 +37,7 @@ import PreparationStatusBadge from '../components/inbox/PreparationStatusBadge'
 import EditableMetadataCell from '../components/inbox/EditableMetadataCell'
 import { useInboxSelection } from '../hooks/useInboxSelection'
 import SaveToFileDialog from '../components/inbox/SaveToFileDialog'
+import EnrichmentSourceDialog from '../components/inbox/EnrichmentSourceDialog'
 
 function messageFor(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.displayMessage
@@ -112,6 +113,7 @@ export default function Inbox() {
   const [inspectorLoading, setInspectorLoading] = useState(false)
   const [knownTracks, setKnownTracks] = useState<Record<number, TrackSummary>>({})
   const [saveTrackIds, setSaveTrackIds] = useState<number[] | null>(null)
+  const [enrichmentSourceDialogOpen, setEnrichmentSourceDialogOpen] = useState(false)
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadRequestRef = useRef(0)
   const inspectorTriggerRef = useRef<HTMLElement | null>(null)
@@ -324,12 +326,18 @@ export default function Inbox() {
     }
   }
 
-  const doEnrichSelected = async () => {
+  const openEnrichmentSourceDialog = () => {
+    if (!selectedCount) return
+    setError(null)
+    setEnrichmentSourceDialogOpen(true)
+  }
+
+  const doEnrichSelected = async (sourceIds: string[]) => {
     if (!selectedCount) return
     setBatchBusy('enrich')
     setError(null)
     try {
-      await enrichSelected(Array.from(selectedIds))
+      await enrichSelected(Array.from(selectedIds), sourceIds)
       await load()
     } catch (err) {
       setError(messageFor(err, 'Enrich Selected failed.'))
@@ -644,7 +652,7 @@ export default function Inbox() {
                 <button className="btn btn--ghost btn--sm" disabled={!selectedCount || batchBusy !== null} onClick={() => void doCleanSelected()}>
                   {batchBusy === 'clean' ? 'Cleaning…' : `Clean Selected (${selectedCount})`}
                 </button>
-                <button className="btn btn--ghost btn--sm" disabled={!selectedCount || batchBusy !== null} onClick={() => void doEnrichSelected()}>
+                <button className="btn btn--ghost btn--sm" disabled={!selectedCount || batchBusy !== null} onClick={openEnrichmentSourceDialog}>
                   {batchBusy === 'enrich' ? 'Enriching…' : `Enrich Selected (${selectedCount})`}
                 </button>
                 <button
@@ -955,6 +963,13 @@ export default function Inbox() {
               trackIds={saveTrackIds}
               onClose={() => setSaveTrackIds(null)}
               onApplied={() => void load()}
+            />
+          )}
+          {enrichmentSourceDialogOpen && (
+            <EnrichmentSourceDialog
+              trackCount={selectedCount}
+              onClose={() => setEnrichmentSourceDialogOpen(false)}
+              onConfirm={doEnrichSelected}
             />
           )}
         </>

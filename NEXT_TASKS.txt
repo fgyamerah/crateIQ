@@ -80,10 +80,16 @@ P2 / MEDIUM
     Review merge, Process All demotion, full mobile redesign, and the final
     focused Impeccable pass remain deferred.
 
-[ ] Next Inbox checkpoint — planning-only per-batch metadata source selection
-    for Enrich using the existing provider routing and consensus contracts.
-    Do not implement conflict-resolution UI in that checkpoint unless the
-    existing contracts make the split artificial.
+[x] Inbox Redesign Checkpoint 5 — per-batch metadata source selection for
+    explicit Enrich Selected using the existing provider routing and consensus
+    contracts. Server-side role/readiness validation is authoritative, source
+    selection is an inclusion gate, and Process All continues to use global
+    enabled/default sources. No conflict-resolution UI was added.
+
+[ ] Next Inbox checkpoint — planning-only inline enrichment suggestion/conflict
+    review inside Inbox using the existing Enrichment Review contracts. Keep
+    Needs Review merge, Process All demotion, full mobile redesign, and the
+    final focused Impeccable pass out of scope.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally

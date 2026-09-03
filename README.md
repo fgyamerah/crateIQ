@@ -98,13 +98,12 @@ explicit confirmation, it runs:
    trusted values.
 
 **Process All does not query every provider for every track.** Evidence
-gathering follows a bounded, staged order (Beets + MusicBrainz first, since
-they need no credentials; AcoustID fingerprinting next if configured; then
-Discogs/Beatport, Spotify/Deezer, Last.fm, and finally YouTube as a
-last-resort corroboration source), stopping early once identity confidence
-is already HIGH. Only providers whose credentials are configured and who
-report themselves ready are queried; an unconfigured provider is silently
-skipped, never an error.
+gathering follows the existing bounded, staged order (Beets + MusicBrainz;
+AcoustID fingerprinting; Discogs/Beatport; Spotify/Deezer; Last.fm; and
+YouTube as a last-resort corroboration source), stopping early once identity
+confidence is already HIGH. Only sources that Settings reports as globally
+enabled, configured, ready, and usable by the router are queried; an
+unavailable source is skipped, never an error.
 
 The provider adapters use bounded synchronous clients, but CrateIQ dispatches
 provider work to backend worker threads. A slow, timed-out, or failed metadata
@@ -123,7 +122,14 @@ general no-overwrite rule.
 separate, explicit action (see "Ready and promotion" below).
 
 You can also run **Clean Selected** or **Enrich Selected** on a chosen
-subset instead of the whole Inbox.
+subset instead of the whole Inbox. **Enrich Selected** first opens a
+per-batch source selector showing only currently eligible track-enrichment
+sources. Confirming the selector sends `source_ids` with the selected track
+IDs; selected sources are eligible to be queried, but staged routing may stop
+early after a strong match. If `source_ids` is omitted for backward
+compatibility, the backend uses the globally enabled + ready enrichment
+defaults. Process All continues to use those global defaults and does not
+open this selector.
 
 ### Inline editing and sorting
 
@@ -154,6 +160,12 @@ page:
   external source originals are never modified. The toolbar count is a cheap
   count of selected unsaved writable tracks when their current state is known;
   the preview remains authoritative for exact writable/no-op/blocked totals.
+- **Enrich Selected** — opens a source-selection checkpoint before the
+  existing bounded provider-routing and consensus operation. Settings remains
+  authoritative for credentials, enabled state, readiness, and defaults; the
+  Inbox selection applies only to this enrichment batch. Enrichment keeps the
+  existing HIGH auto-apply and MEDIUM/LOW/CONFLICT review behavior and never
+  writes file tags automatically.
 - **Search and preparation filters** run across the server-side Inbox dataset,
   not just the rendered page. Search covers filename, Artist, Title, and Genre;
   the five status chips show search-scoped counts from the authoritative
@@ -641,6 +653,7 @@ Sources for each provider's live status and exact setup steps.
 | Managed workspace (Inbox/Library/Quarantine) | Implemented | Copy-based import, Process All batch preparation, unified Needs Review, explicit Move Ready to Library promotion. Additive to the existing direct-library model; an existing library is never auto-restructured. |
 | Process All batch preparation | Implemented | Deterministic cleanup + staged multi-provider consensus enrichment + verified tag write-back + BPM/key analysis behind one confirmation. Never promotes to Library. |
 | Multi-provider consensus | Implemented, wired into Process All | Field-by-field HIGH/MEDIUM/LOW/CONFLICT evidence aggregation with staged provider routing and genre-authority weighting. HIGH fields auto-apply during Process All/Enrich Selected; MEDIUM/LOW/CONFLICT always go to Needs Review with full provenance. |
+| Per-batch Enrich source selection | Implemented | Explicit Enrich Selected validates server-owned source roles/readiness, sends optional `source_ids` through the existing router as an inclusion gate, and keeps Process All on global enabled/default sources. |
 | Direct per-track provider lookup (Enrichment Review) | Implemented | Manual, explicit Beets/MusicBrainz online lookup for a single track outside of batch consensus. |
 | Local-suggestion enrichment review | Implemented foundation | Compares conservative local suggestions (filename hints, embedded tags) against selected empty local-index fields only; no provider API calls — distinct from multi-provider consensus above. |
 | Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |

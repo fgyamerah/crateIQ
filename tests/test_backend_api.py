@@ -3675,6 +3675,15 @@ def test_metadata_sources_are_safe_local_settings_and_never_echo_credentials(cli
         "local_tags", "filename_hints", "mixed_in_key", "beets", "musicbrainz",
         "acoustid", "discogs", "spotify", "deezer", "beatport", "lastfm", "youtube",
     } == set(sources)
+    assert len(sources) == 12
+    assert all(source["role"] for source in sources.values())
+    assert all("selectable_for_enrichment" in source for source in sources.values())
+    assert all("display_name" not in source for source in sources.values())
+    assert sources["local_tags"]["role"] == "local_input"
+    assert sources["filename_hints"]["selectable_for_enrichment"] is False
+    assert sources["mixed_in_key"]["selectable_for_enrichment"] is False
+    assert sources["discogs"]["label"] == "Discogs"
+    assert not any("safe-client" in json.dumps(source) for source in sources.values())
     assert sources["spotify"]["enabled"] is False
     assert sources["mixed_in_key"]["credentials_status"] == "not_required"
     assert sources["deezer"]["credentials_status"] == "not_required"

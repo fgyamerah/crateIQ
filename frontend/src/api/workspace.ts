@@ -259,8 +259,11 @@ export function cleanSelected(trackIds: number[]): Promise<{ cleaned_count: numb
   return apiFetch.post('/workspace/prepare/clean', { track_ids: trackIds })
 }
 
-export function enrichSelected(trackIds: number[]): Promise<{ enriched_count: number; considered: number; warnings: string[] }> {
-  return apiFetch.post('/workspace/prepare/enrich', { track_ids: trackIds })
+export function enrichSelected(trackIds: number[], sourceIds?: string[]): Promise<{ enriched_count: number; considered: number; review_added?: number; warnings: string[] }> {
+  return apiFetch.post('/workspace/prepare/enrich', {
+    track_ids: trackIds,
+    ...(sourceIds === undefined ? {} : { source_ids: sourceIds }),
+  })
 }
 
 export function fetchPrepareOperation(operationId: string): Promise<PreparationOperation> {

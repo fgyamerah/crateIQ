@@ -45,6 +45,7 @@ from . import (
     export_validation,
     preparation_operations_service,
     provider_routing_service,
+    settings_service,
     tag_write_service,
     workspace_service,
 )
@@ -213,7 +214,14 @@ def _needs_consensus_enrichment(row: Any) -> bool:
     return any(_is_junk_value(field, row[field]) for field in _CONSENSUS_FIELDS)
 
 
-def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_LOOKUPS_PER_RUN) -> dict[str, Any]:
+def enrich_tracks(
+    root: Path,
+    track_ids: list[int],
+    *,
+    source_ids: list[str] | None = None,
+    limit: int = _MAX_ENRICH_LOOKUPS_PER_RUN,
+) -> dict[str, Any]:
+    selected_source_ids = settings_service.validate_enrichment_source_ids(source_ids)
     with _sqlite_connect(root) as conn:
         placeholders = ",".join("?" * len(track_ids)) if track_ids else ""
         rows = conn.execute(
@@ -236,6 +244,7 @@ def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_
                 track_id, artist=row["artist"], title=row["title"],
                 inbox_copy_path=inbox_path if inbox_path.is_file() else None,
                 credentials_by_source=credentials_by_source,
+                selected_source_ids=selected_source_ids,
             )
             with _sqlite_connect(root) as conn:
                 consensus = consensus_service.build_track_consensus(track_id, evidence, conn=conn)

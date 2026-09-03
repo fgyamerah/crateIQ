@@ -65,6 +65,23 @@ _METADATA_SOURCE_DEFINITIONS: tuple[dict[str, Any], ...] = (
     {"id": "youtube", "label": "YouTube", "category": "external_api", "requires_credentials": True, "default_enabled": False, "priority": 95, "best_for": ["Low-authority corroboration/discovery only"], "current_behavior": "implemented", "credential_fields": ("api_key",), "configuration_note": "Uses the official YouTube Data API v3 via a Google Cloud API key. Never used alone for high-confidence metadata. Default quota is 10,000 units/day and a single search.list call costs 100 units (~100 searches/day); queried only as a late-stage fallback after stronger providers, never scraped."},
 )
 _METADATA_SOURCE_BY_ID = {source["id"]: source for source in _METADATA_SOURCE_DEFINITIONS}
+_METADATA_SOURCE_ROLES = {
+    "local_tags": "local_input",
+    "filename_hints": "local_input",
+    "mixed_in_key": "analysis_only",
+    "beets": "track_enrichment",
+    "musicbrainz": "track_enrichment",
+    "acoustid": "track_enrichment",
+    "discogs": "track_enrichment",
+    "beatport": "track_enrichment",
+    "spotify": "track_enrichment",
+    "deezer": "track_enrichment",
+    "lastfm": "track_enrichment",
+    "youtube": "track_enrichment",
+}
+_ROUTABLE_ENRICHMENT_SOURCE_IDS = frozenset({
+    "beets", "musicbrainz", "acoustid", "discogs", "beatport", "spotify", "deezer", "lastfm", "youtube",
+})
 
 
 def _load_metadata_source_settings() -> dict[str, Any]:
@@ -83,11 +100,29 @@ def _save_metadata_source_settings(settings: dict[str, Any]) -> None:
     temporary.replace(METADATA_SOURCES_PATH)
 
 
-def _metadata_source_tool_available(source_id: str) -> bool:
-    if source_id != "beets":
+def _musicbrainz_python_api_available() -> bool:
+    """Return whether the shared Beets Python API used for lookups imports.
+
+    The current routing path never invokes the ``beet`` CLI. Beets and the
+    direct MusicBrainz source both use the isolated Python API in
+    ``musicbrainz_client`` instead.
+    """
+    try:
+        import beets  # noqa: F401
+        import beetsplug.musicbrainz  # noqa: F401
+    except Exception:  # noqa: BLE001 - capability checks must fail closed
+        return False
+    return True
+
+
+def _metadata_source_ready(source_id: str, saved_credentials: dict[str, str]) -> bool:
+    if source_id in {"local_tags", "filename_hints", "mixed_in_key"}:
         return True
-    report = run_preflight()
-    return any(check["name"] == "binary_beet" and check["status"] == "pass" for check in report["checks"])
+    if source_id in {"beets", "musicbrainz"}:
+        return _musicbrainz_python_api_available()
+    if source_id in _PROVIDER_ADAPTERS:
+        return _PROVIDER_ADAPTERS[source_id].capability(saved_credentials).status == "ready"
+    return False
 
 
 def get_metadata_sources() -> dict[str, Any]:
@@ -100,17 +135,15 @@ def get_metadata_sources() -> dict[str, Any]:
         credential_fields = tuple(definition.get("credential_fields", ()))
         saved_fields = sorted(field for field in credential_fields if isinstance(credentials.get(field), str) and credentials[field].strip())
         requires_credentials = bool(definition["requires_credentials"])
-        configured = bool(saved_fields) if credential_fields else (source_id != "beets" or _metadata_source_tool_available(source_id))
+        saved_credentials = {field: credentials[field] for field in saved_fields}
+        configured = bool(saved_fields) if credential_fields else _metadata_source_ready(source_id, saved_credentials)
         if requires_credentials:
             credential_status = "saved" if set(credential_fields).issubset(saved_fields) else "missing"
         else:
             credential_status = "not_required"
-        if source_id == "beets":
-            connection_status = "ready" if _metadata_source_tool_available(source_id) else "unavailable"
-        elif source_id == "musicbrainz":
-            connection_status = "ready"
+        if source_id in {"beets", "musicbrainz"}:
+            connection_status = "ready" if _musicbrainz_python_api_available() else "unavailable"
         elif source_id in _PROVIDER_ADAPTERS:
-            saved_credentials = {field: credentials[field] for field in saved_fields}
             connection_status = _PROVIDER_ADAPTERS[source_id].capability(saved_credentials).status
         elif definition["category"] == "external_api":
             connection_status = "not_implemented"
@@ -118,15 +151,55 @@ def get_metadata_sources() -> dict[str, Any]:
             connection_status = "ready"
         sources.append({
             "id": source_id, "label": definition["label"], "category": definition["category"],
+            "role": _METADATA_SOURCE_ROLES[source_id],
             "enabled": bool(state.get("enabled", definition["default_enabled"])), "configured": configured,
             "requires_credentials": requires_credentials, "credentials_status": credential_status,
             "credential_fields": list(credential_fields), "saved_credential_fields": saved_fields,
             "connection_status": connection_status, "priority": state.get("priority", definition["priority"]),
+            "needs_setup": connection_status in {"needs_setup", "misconfigured"} or (requires_credentials and not configured),
+            "selectable_for_enrichment": (
+                source_id in _ROUTABLE_ENRICHMENT_SOURCE_IDS
+                and bool(state.get("enabled", definition["default_enabled"]))
+                and configured
+                and connection_status == "ready"
+            ),
             "best_for": definition["best_for"], "current_behavior": definition["current_behavior"],
             "configuration_note": definition.get("configuration_note"),
             "safety": ["review_first", "db_only", "no_tag_writes", "no_file_writes"],
         })
     return {"sources": sorted(sources, key=lambda source: (source["priority"], source["label"]))}
+
+
+def validate_enrichment_source_ids(source_ids: list[str] | None = None) -> list[str]:
+    """Validate an optional per-batch source selection against live settings.
+
+    ``None`` is the backward-compatible request form: it resolves to every
+    globally enabled, ready source that the current routing layer supports.
+    Explicit selections must all remain eligible at request time.
+    """
+    sources = get_metadata_sources()["sources"]
+    by_id = {source["id"]: source for source in sources}
+    eligible = {source["id"] for source in sources if source["selectable_for_enrichment"]}
+    if source_ids is None:
+        return sorted(eligible, key=lambda source_id: by_id[source_id]["priority"])
+    if not source_ids:
+        raise ValueError("Select at least one ready track-enrichment source.")
+
+    if len(set(source_ids)) != len(source_ids):
+        raise ValueError("source_ids must not contain duplicates.")
+    for source_id in source_ids:
+        source = by_id.get(source_id)
+        if source is None:
+            raise ValueError(f"Unknown metadata source: {source_id}.")
+        if source["role"] != "track_enrichment":
+            raise ValueError(f"Metadata source '{source_id}' is not a track-enrichment source.")
+        if not source["enabled"]:
+            raise ValueError(f"Metadata source '{source_id}' is disabled in Settings.")
+        if not source["configured"] or source["connection_status"] != "ready":
+            raise ValueError(f"Metadata source '{source_id}' is not ready. Configure it in Settings first.")
+        if source_id not in _ROUTABLE_ENRICHMENT_SOURCE_IDS:
+            raise ValueError(f"Metadata source '{source_id}' is not usable by the enrichment router.")
+    return list(source_ids)
 
 
 def update_metadata_sources(updates: list[dict[str, Any]]) -> dict[str, Any]:
@@ -190,11 +263,12 @@ def test_metadata_source(source_id: str) -> dict[str, Any]:
     source = next(item for item in get_metadata_sources()["sources"] if item["id"] == source_id)
     if source_id == "beets":
         ready = source["connection_status"] == "ready"
-        return {"source_id": source_id, "connection_status": "ready" if ready else "unavailable", "message": "Beets executable detection only; no Beets command was run.", "network_used": False}
+        return {"source_id": source_id, "connection_status": "ready" if ready else "unavailable", "message": "Beets Python API detection only; no Beets CLI command was run.", "network_used": False}
     if source_id in {"local_tags", "filename_hints", "mixed_in_key"}:
         return {"source_id": source_id, "connection_status": "ready", "message": "Local metadata source is available; no scan or tag write was performed.", "network_used": False}
     if source_id == "musicbrainz":
-        return {"source_id": source_id, "connection_status": "ready", "message": "MusicBrainz lookup is available in Enrichment Review and Process All's bounded provider-consensus stage. This button does not perform a live network check.", "network_used": False}
+        ready = source["connection_status"] == "ready"
+        return {"source_id": source_id, "connection_status": "ready" if ready else "unavailable", "message": "MusicBrainz lookup uses the shared Beets Python API; this button does not perform a live network check.", "network_used": False}
     if source_id == "acoustid":
         # No generic artist/title search exists for AcoustID -- lookup needs
         # a real fingerprint from a real track. Capability check only.

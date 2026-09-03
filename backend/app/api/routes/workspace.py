@@ -109,6 +109,10 @@ class TrackIdsRequest(BaseModel):
     track_ids: List[int] = Field(min_length=1, max_length=200)
 
 
+class EnrichSelectedRequest(TrackIdsRequest):
+    source_ids: Optional[List[str]] = Field(default=None, max_length=9)
+
+
 class InboxTrackEditRequest(BaseModel):
     filename: Optional[str] = Field(default=None, max_length=255)
     artist: Optional[str] = Field(default=None, max_length=200)
@@ -344,9 +348,14 @@ async def clean_selected(body: TrackIdsRequest):
 
 
 @router.post("/workspace/prepare/enrich")
-async def enrich_selected(body: TrackIdsRequest):
+async def enrich_selected(body: EnrichSelectedRequest):
     try:
-        return await run_in_threadpool(preparation_service.enrich_tracks, _root(), body.track_ids)
+        return await run_in_threadpool(
+            preparation_service.enrich_tracks,
+            _root(),
+            body.track_ids,
+            source_ids=body.source_ids,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

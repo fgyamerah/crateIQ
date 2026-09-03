@@ -2,6 +2,33 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-03] — Complete Inbox per-batch enrichment source selection
+
+- Added a server-owned source-role and eligibility contract to Settings
+  metadata sources. Only globally enabled, configured, ready
+  track-enrichment sources can be selected for an explicit Enrich Selected
+  batch; local inputs and analysis-only sources remain non-selectable.
+- The registry contains 12 metadata sources; the earlier implementation
+  report's total of 14 was incorrect. The API exposes the canonical `label`
+  plus server-owned `role` and `selectable_for_enrichment` fields.
+- Extended `/api/workspace/prepare/enrich` with optional `source_ids` while
+  preserving the 200-track limit. Omitted `source_ids` uses the current
+  globally enabled + ready enrichment defaults; explicit selections are
+  validated and passed through the existing staged routing/consensus engine as
+  an inclusion gate. Process All continues to use those global defaults.
+- Replaced immediate Inbox enrichment with an accessible source selector that
+  confirms the batch lookup, keeps selection intact, reports empty/stale
+  source states, and leaves Save to File as a separate action. No consensus or
+  conflict-resolution behavior changed and no tag writes are automatic.
+- Corrected Beets/MusicBrainz source readiness to reflect the shared Beets
+  Python API used by routing; no `beet` CLI invocation was added.
+- Files affected: Settings/source contract, provider routing, preparation and
+  workspace enrichment API, Inbox source-selector component/styles/tests,
+  focused backend tests, and current project docs. Migration notes: none.
+- Still deferred: inline enrichment conflict-resolution redesign, Needs Review
+  merge, Process All demotion, full mobile redesign, and the final focused
+  Impeccable pass.
+
 [2026-09-02] — Complete Inbox Save to File checkpoint
 
 - Added preview-first Save to File actions to the Inbox selection toolbar and
@@ -16,9 +43,9 @@ CRATEIQ — CHANGELOG
   is also rejected as stale.
 - Files affected: Inbox Save to File components/helpers, Inbox page and
   Inspector, Inbox styles/tests, tag-write service test, and current docs.
-- Still deferred: per-batch enrichment source selection, inline enrichment
-  conflict resolution, Needs Review merge, Process All demotion, full mobile
-  redesign, and the final focused Impeccable pass.
+- Still deferred: inline enrichment conflict resolution, Needs Review merge,
+  Process All demotion, full mobile redesign, and the final focused Impeccable
+  pass.
 
 [2026-09-02] — Correct Checkpoint 3B Inbox preview and status refresh reporting
 

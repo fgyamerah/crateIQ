@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import { MemoryRouter } from 'react-router-dom'
 import * as workspaceApi from '../api/workspace'
+import * as metadataSourcesApi from '../api/metadataSources'
 import type { InboxPreparationState, InboxPreparationStatus, TrackSummary } from '../types/track'
 import Inbox from './Inbox'
 
@@ -21,6 +22,10 @@ vi.mock('../api/workspace', () => ({
   previewInboxBulkEdit: vi.fn(),
   previewPromotion: vi.fn(),
   startProcessAll: vi.fn(),
+}))
+
+vi.mock('../api/metadataSources', () => ({
+  fetchMetadataSources: vi.fn(),
 }))
 
 vi.mock('../hooks/useTrackWaveform', () => ({
@@ -113,9 +118,34 @@ function page(items: TrackSummary[], total = items.length, counts = statusCounts
   }
 }
 
+function metadataSource(id: string, displayName: string, overrides: Partial<Awaited<ReturnType<typeof metadataSourcesApi.fetchMetadataSources>>['sources'][number]> = {}) {
+  return {
+    id,
+    label: displayName,
+    category: 'external_api' as const,
+    role: 'track_enrichment' as const,
+    enabled: true,
+    configured: true,
+    needs_setup: false,
+    selectable_for_enrichment: true,
+    requires_credentials: false,
+    credentials_status: 'not_required' as const,
+    credential_fields: [],
+    saved_credential_fields: [],
+    connection_status: 'ready' as const,
+    priority: 40,
+    best_for: [],
+    current_behavior: 'implemented' as const,
+    configuration_note: null,
+    safety: [],
+    ...overrides,
+  }
+}
+
 describe('Inbox preparation status', () => {
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(metadataSourcesApi.fetchMetadataSources).mockResolvedValue({ sources: [] })
     vi.mocked(workspaceApi.fetchWorkspaceStatus).mockResolvedValue({
       state: 'managed_workspace',
       library_root: '/managed',
@@ -192,6 +222,12 @@ describe('Inbox filtering, selection, and inspector', () => {
 
   beforeEach(() => {
     vi.resetAllMocks()
+    vi.mocked(metadataSourcesApi.fetchMetadataSources).mockResolvedValue({ sources: [
+      metadataSource('musicbrainz', 'MusicBrainz'),
+      metadataSource('deezer', 'Deezer', { priority: 80 }),
+      metadataSource('discogs', 'Discogs', { enabled: false, selectable_for_enrichment: false }),
+      metadataSource('local_tags', 'Local tags', { role: 'local_input', selectable_for_enrichment: false }),
+    ] })
     vi.mocked(workspaceApi.fetchWorkspaceStatus).mockResolvedValue({
       state: 'managed_workspace',
       library_root: '/managed',
@@ -330,6 +366,51 @@ describe('Inbox filtering, selection, and inspector', () => {
     expect(screen.getByRole('button', { name: 'Bulk Edit (0)' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Needs Review' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move Ready to Library (1)' })).toBeInTheDocument()
+  })
+
+  it('opens the source selector without enriching, shows only eligible sources, and preserves selection on cancel', async () => {
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select track-1.mp3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enrich Selected (1)' }))
+
+    const dialog = await screen.findByRole('dialog', { name: /Find metadata for 1 selected track/ })
+    expect(within(dialog).getByRole('checkbox', { name: 'MusicBrainz' })).toBeChecked()
+    expect(within(dialog).getByRole('checkbox', { name: 'Deezer' })).toBeChecked()
+    expect(within(dialog).queryByText('Discogs')).not.toBeInTheDocument()
+    expect(within(dialog).queryByText('Local tags')).not.toBeInTheDocument()
+    expect(within(dialog).getByText('2 sources selected')).toBeInTheDocument()
+    expect(workspaceApi.enrichSelected).not.toHaveBeenCalled()
+
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Find metadata/ })).not.toBeInTheDocument())
+    expect(screen.getByText('1 selected · 1 visible')).toBeInTheDocument()
+  })
+
+  it('sends the checked source IDs only after Find Metadata is confirmed', async () => {
+    vi.mocked(workspaceApi.enrichSelected).mockResolvedValue({ enriched_count: 0, considered: 1, warnings: [] })
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select track-1.mp3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enrich Selected (1)' }))
+
+    const dialog = await screen.findByRole('dialog', { name: /Find metadata for 1 selected track/ })
+    fireEvent.click(within(dialog).getByRole('checkbox', { name: 'Deezer' }))
+    expect(within(dialog).getByText('1 source selected')).toBeInTheDocument()
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Find Metadata' }))
+
+    await waitFor(() => expect(workspaceApi.enrichSelected).toHaveBeenCalledWith([1], ['musicbrainz']))
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: /Find metadata/ })).not.toBeInTheDocument())
+    expect(screen.getByText('1 selected · 1 visible')).toBeInTheDocument()
+  })
+
+  it('disables Find Metadata and explains when no eligible sources are available', async () => {
+    vi.mocked(metadataSourcesApi.fetchMetadataSources).mockResolvedValue({ sources: [] })
+    render(<MemoryRouter><Inbox /></MemoryRouter>)
+    fireEvent.click(await screen.findByRole('checkbox', { name: 'Select track-1.mp3' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Enrich Selected (1)' }))
+
+    const dialog = await screen.findByRole('dialog', { name: /Find metadata for 1 selected track/ })
+    expect(within(dialog).getByText('No sources available')).toBeInTheDocument()
+    expect(within(dialog).getByRole('button', { name: 'Find Metadata' })).toBeDisabled()
   })
 
   it('edits Artist, Title, Genre, and Album through the DB-first API and keeps selection', async () => {

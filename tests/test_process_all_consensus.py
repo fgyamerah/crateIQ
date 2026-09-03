@@ -123,9 +123,37 @@ def test_enrich_tracks_routes_through_provider_routing_service(managed_root, mon
     assert calls == [track_id], "Process All's enrich stage must call provider_routing_service.gather_evidence"
 
 
+def test_explicit_enrich_selection_reaches_the_existing_router(managed_root, monkeypatch):
+    track_id = _seed_inbox_track(managed_root, filename="selected-source.mp3")
+    settings_service.update_metadata_sources([{"id": "deezer", "enabled": True}])
+    selected = []
+
+    def fake_gather_evidence(tid, **kwargs):
+        selected.extend(kwargs["selected_source_ids"])
+        return {}
+
+    monkeypatch.setattr(routing, "gather_evidence", fake_gather_evidence)
+    preparation_service.enrich_tracks(managed_root, [track_id], source_ids=["deezer"])
+
+    assert selected == ["deezer"]
+
+
+def test_explicit_enrich_selection_does_not_write_managed_file_tags(managed_root, monkeypatch):
+    track_id = _seed_inbox_track(managed_root, filename="no-tag-write.mp3")
+    source_path = managed_root / "Inbox" / "no-tag-write.mp3"
+    before = source_path.read_bytes()
+    settings_service.update_metadata_sources([{"id": "deezer", "enabled": True}])
+    monkeypatch.setattr(routing, "gather_evidence", lambda tid, **kwargs: _HIGH_ARTIST_TITLE)
+
+    preparation_service.enrich_tracks(managed_root, [track_id], source_ids=["deezer"])
+
+    assert source_path.read_bytes() == before
+
+
 def test_enrich_tracks_only_configured_providers_run_missing_credentials_skip_cleanly(managed_root, monkeypatch):
     track_id = _seed_inbox_track(managed_root, filename="b.mp3")
     monkeypatch.setattr(enrichment_review_service, "online_lookup", lambda tid, src: {"items": []})
+    settings_service.update_metadata_sources([{"id": "deezer", "enabled": True}])
 
     deezer_calls = []
     other_calls = []
