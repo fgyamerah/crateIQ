@@ -1,5 +1,11 @@
 import type { CSSProperties } from 'react'
 
+/**
+ * @deprecated Superseded by `UnifiedWaveform` (single mirrored waveform). No
+ * screen renders three separate Low/Mid/High rows anymore; this component is
+ * retained only for reference and is no longer imported.
+ */
+
 type BandName = 'low' | 'mid' | 'high'
 
 interface Props {

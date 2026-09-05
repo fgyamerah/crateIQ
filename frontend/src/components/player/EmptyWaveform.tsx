@@ -1,4 +1,7 @@
 /**
+ * @deprecated Superseded by `UnifiedWaveform` (which renders its own muted
+ * empty center line). Kept for reference; no screen imports this anymore.
+ *
  * Truthful "no waveform" visual.
  *
  * Replaces the old ThreeBandWaveform placeholder in surfaces that present the

@@ -171,3 +171,100 @@ def build_resolutions(
         "player": interleave_peaks(player_mins, player_maxs),
         "compact": interleave_peaks(compact_mins, compact_maxs),
     }
+
+
+# ---------------------------------------------------------------------------
+# Spectral color weighting (single mirrored waveform)
+#
+# These band-energy fractions exist ONLY to tint each slice of the one
+# mirrored waveform. They are never rendered as three separate Low/Mid/High
+# rows, and they never change the peak (height) data.
+# ---------------------------------------------------------------------------
+
+# Colour analysis is capped so a pathological bucket count cannot make
+# extraction unreasonably slow; the visual only ever needs player resolution.
+MAX_COLOR_ANALYSIS_BUCKETS = 4096
+
+
+def compute_band_color_weights(
+    samples,
+    sample_rate: int,
+    bucket_count: int,
+    *,
+    low_edge: int = 250,
+    high_edge: int = 4000,
+) -> list[float]:
+    """Return interleaved ``[low, mid, high]`` energy fractions per bucket.
+
+    Each triplet sums to ~1.0 (silence resolves to an even 1/3 split). The
+    values are scale-invariant ratios, so raw 16-bit samples are fine without
+    amplitude normalization.
+    """
+    import numpy as np
+
+    x = np.asarray(samples, dtype=np.float32)
+    total = int(x.size)
+    if total == 0 or bucket_count <= 0:
+        return []
+    bucket_count = max(1, min(bucket_count, total, MAX_COLOR_ANALYSIS_BUCKETS))
+
+    nyquist = sample_rate / 2.0
+    mid_upper = min(high_edge, nyquist)
+    weights: list[float] = []
+
+    for i in range(bucket_count):
+        start = i * total // bucket_count
+        end = (i + 1) * total // bucket_count
+        if end <= start:
+            end = start + 1
+        seg = x[start:end]
+        n = int(seg.size)
+        window = np.hanning(n).astype(np.float32) if n > 1 else np.ones(1, dtype=np.float32)
+        seg = seg * window
+        fft_size = 1
+        while fft_size < n:
+            fft_size <<= 1
+        power = np.abs(np.fft.rfft(seg, n=fft_size)) ** 2
+        freqs = np.fft.rfftfreq(fft_size, d=1.0 / sample_rate)
+        low = float(power[freqs < low_edge].sum())
+        mid = float(power[(freqs >= low_edge) & (freqs < mid_upper)].sum())
+        high = float(power[freqs >= mid_upper].sum())
+        total_energy = low + mid + high
+        if total_energy <= 1e-12:
+            weights.extend((1 / 3, 1 / 3, 1 / 3))
+        else:
+            weights.extend((low / total_energy, mid / total_energy, high / total_energy))
+    return weights
+
+
+def resize_color_bands(color_bands: list[float], target_pairs: int) -> list[float]:
+    """Resample interleaved band triplets to ``target_pairs`` buckets.
+
+    Downsampling averages band fractions (never extrema); upsampling repeats
+    the nearest source bucket. The result has ``target_pairs * 3`` values when
+    both inputs are positive, else an empty list.
+    """
+    source_pairs = len(color_bands) // 3
+    if source_pairs == 0 or target_pairs <= 0:
+        return []
+    if target_pairs >= source_pairs:
+        out: list[float] = []
+        for i in range(target_pairs):
+            src = min(source_pairs - 1, i * source_pairs // target_pairs)
+            out.extend(color_bands[src * 3 : src * 3 + 3])
+        return out
+    out = []
+    for i in range(target_pairs):
+        start = i * source_pairs // target_pairs
+        end = (i + 1) * source_pairs // target_pairs
+        if end <= start:
+            end = start + 1
+        end = min(end, source_pairs)
+        lo = mid = hi = 0.0
+        for j in range(start, end):
+            lo += color_bands[j * 3]
+            mid += color_bands[j * 3 + 1]
+            hi += color_bands[j * 3 + 2]
+        span = end - start
+        out.extend((lo / span, mid / span, hi / span))
+    return out

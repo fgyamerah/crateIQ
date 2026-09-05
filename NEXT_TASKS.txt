@@ -157,6 +157,18 @@ P3 / LOW
     but the runtime remains read-only/plan-only; do not implement execution
     without a separately approved task and disposable-root acceptance tests.
 
+[ ] Waveform zoom: the unified waveform currently serves compact/player
+    resolution. A future zoomable detail view can reuse the stored detail
+    min/max peaks (and, if needed, a higher-resolution `color_bands` base)
+    without re-decoding audio. Deferred until a zoom UI is actually requested.
+
+[ ] Review bulk waveform operation polling cadence. Browser verification of a
+    long-running bulk generation showed `GET /api/waveform-bulk/operations/{id}`
+    polled roughly every 1–2 seconds, producing ~500 requests over ~13 minutes.
+    Consider adaptive backoff, a slower steady-state interval, server-sent
+    progress/events, or another low-complexity approach. Non-blocking; recorded
+    during the unified-waveform closure and deliberately not implemented there.
+
 ----------------------------------------------------------------------
 P3 / LOW
 ----------------------------------------------------------------------

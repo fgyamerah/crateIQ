@@ -10,11 +10,15 @@ future W3 to wire up.
 from __future__ import annotations
 
 import os
+from array import array as _s16_array
 
 from ..core.waveform_limits import (
     ANALYSIS_SAMPLE_RATE_HZ,
     COMPACT_PAIR_COUNT,
     DECODER_THREADS,
+    HIGH_BAND_EDGE_HZ,
+    LOW_BAND_EDGE_HZ,
+    MAX_BAND_BUFFER_BYTES,
     MAX_SOURCE_SIZE_BYTES,
     PCM_CHANNELS,
     PLAYER_PAIR_COUNT,
@@ -36,7 +40,13 @@ from .track_source_service import (
     ValidatedTrackSource,
     source_stat_snapshot,
 )
-from .waveform_peaks import PcmFrameParser, PeakAccumulator, build_resolutions
+from .waveform_peaks import (
+    PcmFrameParser,
+    PeakAccumulator,
+    build_resolutions,
+    compute_band_color_weights,
+    resize_color_bands,
+)
 from .waveform_probe import probe_source
 
 _SAFE_SUBPROCESS_ENV = {
@@ -123,8 +133,20 @@ async def extract_waveform(
 
     parser = PcmFrameParser()
     accumulator = PeakAccumulator(detail_target)
+    # Raw decoded samples are buffered only for the optional spectral tint and
+    # only up to a hard byte cap; peaks never depend on this buffer. If the cap
+    # is exceeded the tint is skipped and the frontend falls back to amplitude
+    # coloring, but the waveform itself is still produced.
+    raw_samples: _s16_array | None = _s16_array("h")
+    raw_bytes = 0
     async for chunk in managed.stdout:
-        accumulator.add_samples(parser.feed(chunk))
+        samples = parser.feed(chunk)
+        accumulator.add_samples(samples)
+        if raw_samples is not None:
+            raw_samples.extend(samples)
+            raw_bytes += len(samples) * 2
+            if raw_bytes > MAX_BAND_BUFFER_BYTES:
+                raw_samples = None
     parser.finalize()  # trailing partial byte, if any, is discarded, never fabricated
 
     outcome = managed.outcome
@@ -160,6 +182,21 @@ async def extract_waveform(
     else:
         duration_ms = round(accumulator.sample_count / ANALYSIS_SAMPLE_RATE_HZ * 1000)
 
+    color_bands: dict[str, list[float]] | None = None
+    if raw_samples is not None and len(raw_samples) > 0:
+        base = compute_band_color_weights(
+            raw_samples,
+            ANALYSIS_SAMPLE_RATE_HZ,
+            accumulator.pair_count,
+            low_edge=LOW_BAND_EDGE_HZ,
+            high_edge=HIGH_BAND_EDGE_HZ,
+        )
+        if base:
+            color_bands = {
+                "player": resize_color_bands(base, len(resolutions["player"]) // 2),
+                "compact": resize_color_bands(base, len(resolutions["compact"]) // 2),
+            }
+
     return WaveformExtractionResult(
         duration_ms=duration_ms,
         source_channels=probe.source_channels,
@@ -167,4 +204,5 @@ async def extract_waveform(
         analysis_sample_rate_hz=ANALYSIS_SAMPLE_RATE_HZ,
         encoding="int16_min_max_interleaved",
         resolutions=resolutions,
+        color_bands=color_bands,
     )

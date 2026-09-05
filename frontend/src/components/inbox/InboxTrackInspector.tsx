@@ -2,8 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { ChevronLeft, ChevronRight, Loader2, X } from 'lucide-react'
 import type { TrackSummary } from '../../types/track'
 import { useTrackWaveform } from '../../hooks/useTrackWaveform'
-import EmptyWaveform from '../player/EmptyWaveform'
-import TrackWaveform from '../player/TrackWaveform'
+import UnifiedWaveform from '../player/UnifiedWaveform'
 import EditableMetadataCell from './EditableMetadataCell'
 import PreparationStatusBadge from './PreparationStatusBadge'
 import EnrichmentReviewPanel from './EnrichmentReviewPanel'
@@ -53,7 +52,6 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
 
   const extension = track?.filename.includes('.') ? track.filename.split('.').pop()?.toUpperCase() : null
   const blocker = preparation?.reasons.find((reason) => reason.severity === 'blocker')?.label
-  const waveformReady = waveform.waveform?.status === 'ready'
 
   return (
     <aside className="inbox-inspector" role="dialog" aria-label="Inbox Track Inspector" aria-modal="false">
@@ -180,16 +178,16 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
               <dt>Waveform</dt><dd>{waveform.loading ? 'Loading' : (waveform.waveform?.status ?? 'Not generated')}</dd>
             </dl>
             <div className="inbox-inspector-waveform">
-              {waveformReady && waveform.waveform?.status === 'ready' ? (
-                <TrackWaveform
-                  peaks={waveform.waveform.peaks}
-                  scale={waveform.waveform.scale}
-                  currentTime={0}
-                  duration={track.duration_sec ?? 0}
-                  inactive
-                  upcomingIntensity={1}
-                />
-              ) : <EmptyWaveform inactive />}
+              <UnifiedWaveform
+                peaks={waveform.waveform?.status === 'ready' ? waveform.waveform.peaks : undefined}
+                colorBands={waveform.waveform?.status === 'ready' ? waveform.waveform.colorBands : null}
+                scale={waveform.waveform?.status === 'ready' ? waveform.waveform.scale : undefined}
+                currentTime={0}
+                duration={track.duration_sec ?? 0}
+                inactive
+                variant="standard"
+                status={waveform.loading || !waveform.waveform ? 'loading' : waveform.waveform.status}
+              />
             </div>
           </section>
         )}

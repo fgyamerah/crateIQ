@@ -2,6 +2,51 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-03] — Unified single-mirrored waveform + first-open auto-generation
+
+- Replaced every waveform surface (bottom player, Library Track Inspector,
+  Inbox Track Inspector, Music Review) with one canonical `UnifiedWaveform`
+  renderer: a single mirrored, densely-bared DJ waveform centered on one
+  axis — never three stacked Low/Mid/High rows. The old `ThreeBandWaveform`,
+  `TrackWaveform`, and `EmptyWaveform` components are retained only as
+  deprecated references.
+- Frequency information is now represented through color inside that one
+  waveform. The backend decodes mono at 22050 Hz and, alongside the existing
+  signed min/max peaks, computes per-bucket low/mid/high band-energy fractions
+  (`color_bands`) via a bounded numpy FFT pass (memory-capped; long files fall
+  back to the amplitude ramp without dropping the waveform). Artifact
+  algorithm bumped to `mono-minmax-band-s16-v2`; old artifacts are superseded
+  and regenerate automatically.
+- Waveform generation now starts automatically the first time a track is
+  opened (player/inspector/review) when the read returns a no-valid-waveform
+  state (`not_generated`/`stale`/`cancelled`). `failed` and `unsupported`
+  never auto-retry; they expose the existing controlled Retry action. The GET
+  remains read-only — the auto-trigger is a deliberate POST from the narrow
+  "track opened" hook, never from rendering a list, and backend dedup
+  prevents duplicate jobs across tabs/screens.
+- Added a polished animated skeleton ("Preparing waveform…" aria state) and a
+  muted empty center line; playback/seeking continue to use the player's
+  native range control overlaid on the waveform, with a canvas playhead.
+- Fixed a duplicate-generation regression: when two same-tab consumers of the
+  same track (e.g. Persistent Player and Track Inspector) both saw
+  `not_generated`, each issued its own generation POST. A module-level
+  in-flight set in `useTrackWaveform` now guarantees one POST per track per
+  tab; the second consumer observes the in-flight request on the poll timer
+  and hands off to normal job polling once the job is visible. Backend
+  concurrency/idempotency dedup remains as the cross-tab safety net.
+- Live browser verification passed (frontend :5175, backend :8020) on tracks
+  1 (Dele Sosimi — Turbulent Times) and 6 (Zakes Bantwini — Osama): exactly
+  one generation POST each from `not_generated`, both surfaces synchronized
+  to the same job, polling stopped at the terminal state, and reopening each
+  track issued zero POSTs (cached artifact served). Playback, playhead
+  movement, and seeking were verified on the unified waveform.
+- Files affected: waveform models/limits/peaks/extractor/artifact/schema/
+  route, `api/waveforms.ts`, `waveformGeometry.ts`, new `UnifiedWaveform`,
+  `useTrackWaveform` (auto-trigger + in-flight dedup), the four migrated
+  surfaces, CSS, and focused backend + frontend tests.
+  Migration notes: none destructive; the waveform cache is derived and
+  disposable, and the algorithm-version bump simply re-derives waveforms.
+
 [2026-09-05] — Inline enrichment review in the Inbox Track Inspector
 
 - Added actionable enrichment review to the Inbox Track Inspector as a new

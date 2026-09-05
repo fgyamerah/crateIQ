@@ -151,6 +151,7 @@ async def get_waveform(
     try:
         document = waveform_artifact_service.read_artifact(validated_cache, generation_key)
         pair_count, peaks = waveform_artifact_service.resolution_payload(document, resolution)
+        color_bands = waveform_artifact_service.resolution_color_bands(document, resolution)
     except waveform_artifact_service.WaveformArtifactError:
         # Missing or corrupt cache: degrade safely, repair state, never regenerate.
         log.info("waveform artifact unusable track_id=%s reason=cache_invalid", track_id)
@@ -178,6 +179,7 @@ async def get_waveform(
         pair_count=pair_count,
         encoding=_ENCODING,
         peaks=peaks,
+        color_bands=color_bands or None,
         generated_at=state.generated_at,
     )
 

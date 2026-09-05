@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { Pause, Play } from 'lucide-react'
-import ThreeBandWaveform from '../components/player/ThreeBandWaveform'
+import UnifiedWaveform from '../components/player/UnifiedWaveform'
 import { usePersistentPlayer } from '../components/player/usePersistentPlayer'
 import type { PersistentPlayerTrack } from '../components/player/usePersistentPlayer'
+import { useTrackWaveform } from '../hooks/useTrackWaveform'
 import { apiFetch } from '../api/client'
 import PageHeader from '../components/PageHeader'
 import StatusStrip from '../components/ui/StatusStrip'
@@ -197,6 +198,10 @@ export default function MusicReview() {
     return () => window.removeEventListener('keydown', handler)
   }, [tracks, selected, notes])
 
+  const waveform = useTrackWaveform(selected?.track_id ?? null)
+  const isCurrentReviewTrack = persistentPlayer.currentTrack?.id === selected?.track_id
+  const reviewWaveformState = selected ? waveform.waveform : null
+
   return (
     <main className="page music-review-page">
       <PageHeader
@@ -274,7 +279,16 @@ export default function MusicReview() {
             </button>
             <span>Uses the visible Music Review queue · browser preview only</span>
           </div>
-          <ThreeBandWaveform seed={selected?.track_id ?? 0} inactive={!selected} />
+          <UnifiedWaveform
+            peaks={reviewWaveformState?.status === 'ready' ? reviewWaveformState.peaks : undefined}
+            colorBands={reviewWaveformState?.status === 'ready' ? reviewWaveformState.colorBands : null}
+            scale={reviewWaveformState?.status === 'ready' ? reviewWaveformState.scale : undefined}
+            currentTime={isCurrentReviewTrack ? persistentPlayer.currentTime : 0}
+            duration={selected?.duration_sec ?? 0}
+            inactive={!selected || !(isCurrentReviewTrack && persistentPlayer.playing)}
+            variant="expanded"
+            status={!selected ? 'idle' : waveform.loading || !reviewWaveformState ? 'loading' : reviewWaveformState.status}
+          />
           {selected && (
             <>
               <div className="music-review-status-section">

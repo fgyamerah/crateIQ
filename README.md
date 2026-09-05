@@ -682,7 +682,7 @@ Sources for each provider's live status and exact setup steps.
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Duplicate resolution plan | Plan only — no files changed | Read-only `/duplicate-resolution-plan` page derives a deterministic keep/candidate/blocked plan from the latest Duplicate Review snapshot and decisions; no apply/execute endpoint exists. See [Duplicate Resolution Spec](docs/architecture/DUPLICATE_RESOLUTION_SPEC.md). |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Waveform generation and playback | Implemented | Explicit, demand-driven backend generation with a bounded worker, dedup, cancellation, atomic cache, and a real canvas waveform seek control in the player. Never generated automatically. See [Waveform Architecture](docs/architecture/WAVEFORM_ARCHITECTURE.md) for the full design, safety audit, and measured performance. |
+| Waveform generation and playback | Implemented | One canonical single-mirrored, frequency-tinted canvas waveform used everywhere (bottom player, track inspector, Music Review, Inbox inspector). Backend generation is bounded/dedup'd/cancellable with an atomic cache and now starts automatically the first time a track is opened when no waveform exists (failed/unsupported never auto-retry). See [Waveform Architecture](docs/architecture/WAVEFORM_ARCHITECTURE.md) for the full design, safety audit, and measured performance. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes

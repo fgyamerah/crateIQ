@@ -338,6 +338,67 @@ textarea {
 
 .empty-waveform--inactive { opacity: .62; }
 
+/* Canonical unified waveform (single mirrored, frequency-tinted). One surface
+   replaces the separate real/empty/decorative renderers across the app. */
+.unified-waveform {
+  min-width: 0;
+  position: relative;
+  height: 46px;
+  border-radius: 6px;
+  background: rgba(255,255,255,.018);
+  overflow: hidden;
+}
+
+.unified-waveform canvas { display: block; width: 100%; height: 100%; }
+.unified-waveform--inactive { opacity: .62; }
+
+/* Size variants: the same waveform, only height/detail density differ. */
+.unified-waveform--compact { height: 30px; }
+.unified-waveform--expanded { height: 88px; }
+
+/* Truthful empty state: a thin muted center line only, never a fake spectral
+   shape. */
+.unified-waveform-empty-line {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-50%);
+  background: rgba(133, 158, 184, 0.22);
+}
+
+/* Animated skeleton while a waveform is being prepared. Bars are mirrored
+   around the center axis and shimmer; prefers-reduced-motion disables the
+   animation while preserving the shape. */
+.unified-waveform-skeleton {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding: 0 4px;
+  overflow: hidden;
+  opacity: .9;
+}
+
+.unified-waveform-skeleton-bar {
+  flex: 1 1 0;
+  min-width: 1px;
+  border-radius: 1px;
+  background: linear-gradient(180deg, rgba(32,212,216,.55), rgba(32,212,216,.12));
+  animation: unified-waveform-shimmer 1.6s ease-in-out infinite;
+}
+
+@keyframes unified-waveform-shimmer {
+  0%, 100% { opacity: .45; }
+  50% { opacity: .95; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .unified-waveform-skeleton-bar { animation: none; }
+}
+
 /* Seek surface: wraps whichever waveform visual is showing (real or empty)
    with a transparent native range input stretched over the full box.
    Seeking works identically for both, since it is fundamentally
@@ -346,7 +407,8 @@ textarea {
    semantic seek control, not two duplicate accessible sliders. */
 .persistent-player-wave-surface { position: relative; min-width: 0; }
 .persistent-player-wave-surface .track-waveform,
-.persistent-player-wave-surface .empty-waveform {
+.persistent-player-wave-surface .empty-waveform,
+.persistent-player-wave-surface .unified-waveform {
   pointer-events: none;
 }
 
@@ -8724,7 +8786,7 @@ tr.row--selected td {
 .music-review-empty { margin: 0; padding: 28px 18px; color: var(--text-muted); font-size: 12px; text-align: center; }
 
 .music-review-detail .audio-preview-player { margin: 0; background: rgba(5,9,16,.48); border-color: rgba(32,212,216,.2); }
-.music-review-detail .three-band-waveform { background: rgba(5,9,16,.62); }
+.music-review-detail .unified-waveform { background: rgba(5,9,16,.62); }
 
 .music-review-player-action {
   display: flex;

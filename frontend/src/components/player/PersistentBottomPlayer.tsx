@@ -13,8 +13,7 @@ import {
   X,
 } from 'lucide-react'
 import { useTrackWaveform } from '../../hooks/useTrackWaveform'
-import EmptyWaveform from './EmptyWaveform'
-import TrackWaveform from './TrackWaveform'
+import UnifiedWaveform from './UnifiedWaveform'
 import { presentWaveformState } from './waveformGeometry'
 import { usePersistentPlayer } from './usePersistentPlayer'
 
@@ -106,17 +105,16 @@ export default function PersistentBottomPlayer() {
       {!player.minimized && (
         <div className="persistent-player-waveform">
           <div className="persistent-player-wave-surface">
-            {isReady && waveformState.status === 'ready' ? (
-              <TrackWaveform
-                peaks={waveformState.peaks}
-                scale={waveformState.scale}
-                currentTime={player.currentTime}
-                duration={resolvedDuration}
-                inactive={!player.playing}
-              />
-            ) : (
-              <EmptyWaveform inactive={!player.playing} />
-            )}
+            <UnifiedWaveform
+              peaks={waveformState?.status === 'ready' ? waveformState.peaks : undefined}
+              colorBands={waveformState?.status === 'ready' ? waveformState.colorBands : null}
+              scale={waveformState?.status === 'ready' ? waveformState.scale : undefined}
+              currentTime={player.currentTime}
+              duration={resolvedDuration}
+              inactive={!player.playing}
+              variant="compact"
+              status={waveform.loading || !waveformState ? 'loading' : waveformState.status}
+            />
             {/* The waveform visual is presentation only (pointer-events: none in
                 CSS); this native range is the single seek control and interaction
                 surface, spanning the full waveform box so seeking works whether or

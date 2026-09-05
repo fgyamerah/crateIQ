@@ -65,6 +65,21 @@ supported under Settings -> Advanced as a secondary compatibility mode.
 * SQLite for tracks, jobs, and operational state
 * Local filesystem for the managed music workspace
 
+**Unified waveform.** All waveform surfaces render one canonical
+`UnifiedWaveform` (a single mirrored, frequency-tinted canvas — never three
+Low/Mid/High rows). The backend decodes mono at 22050 Hz and stores signed
+min/max peaks plus optional per-bucket low/mid/high band-energy fractions
+(`color_bands`) used only to color each slice of the one waveform; artifact
+algorithm `mono-minmax-band-s16-v2` supersedes `mono-minmax-s16-v1`.
+Generation is demand-driven via `POST /api/tracks/{id}/waveform/generate`
+(dedup'd, cancellable, atomic cache) and now auto-starts from the
+`useTrackWaveform` hook the first time a track is opened when no valid
+waveform exists (`not_generated`/`stale`/`cancelled`); `failed`/`unsupported`
+never auto-retry. The GET endpoint stays read-only. A module-level in-flight
+set in the hook guarantees one generation POST per track per tab; additional
+same-track consumers observe the in-flight request and attach to the visible
+job, with backend dedup as the cross-tab safety net.
+
 ## Runtime
 
 * Repo path: this repository root
