@@ -86,10 +86,18 @@ P2 / MEDIUM
     selection is an inclusion gate, and Process All continues to use global
     enabled/default sources. No conflict-resolution UI was added.
 
-[ ] Next Inbox checkpoint — planning-only inline enrichment suggestion/conflict
-    review inside Inbox using the existing Enrichment Review contracts. Keep
-    Needs Review merge, Process All demotion, full mobile redesign, and the
-    final focused Impeccable pass out of scope.
+[x] Inbox Redesign Checkpoint 6 — inline enrichment review in the Inbox
+    Inspector using the existing Enrichment Review contracts and shared
+    persistence. Field/proposal "Use Suggested"/"Keep Current" decisions are
+    DB-only (never a tag write) and refresh the authoritative preparation
+    state. Needs Review merge/demotion, Process All demotion, full mobile
+    redesign, and the final focused Impeccable pass remain deferred.
+
+[ ] Next Inbox checkpoint — planning-only merge/demote of Needs Review (and
+    Enrichment Review) specialist navigation into Inbox now that normal review
+    is available in the Inspector, preserving specialist capabilities that
+    still add value. Do not implement Process All demotion in the same
+    checkpoint unless the navigation architecture makes that split artificial.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally

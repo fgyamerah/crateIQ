@@ -3457,7 +3457,7 @@ button.metadata-repair-row--selected {
 .inbox-inspector-header small { color: var(--text-muted); }
 
 .inbox-inspector-nav { display: flex; justify-content: space-between; gap: 8px; padding: 9px 12px; border-bottom: 1px solid var(--border); }
-.inbox-inspector-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border-bottom: 1px solid var(--border); }
+.inbox-inspector-tabs { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border-bottom: 1px solid var(--border); }
 .inbox-inspector-tabs button { min-height: 40px; padding: 5px 3px; border: 0; border-bottom: 2px solid transparent; color: var(--text-muted); background: transparent; cursor: pointer; font-size: 11px; }
 .inbox-inspector-tabs button.is-active { border-bottom-color: var(--brand-cyan); color: var(--brand-cyan); background: rgba(32,212,216,.05); }
 .inbox-inspector-body { padding: 16px; }
@@ -3482,6 +3482,37 @@ button.metadata-repair-row--selected {
 .inbox-inspector-save-action { display: grid; gap: 5px; margin-top: 12px; padding: 10px; border: 1px solid rgba(32,212,216,.28); border-radius: 8px; background: rgba(32,212,216,.05); }
 .inbox-inspector-save-action .btn { justify-self: start; }
 .inbox-inspector-save-action small { line-height: 1.45; }
+
+/* Inline enrichment review in the Track Inspector */
+.inbox-review-panel { display: grid; gap: 12px; }
+.inbox-review-summary { margin: 0; padding: 9px 11px; border: 1px solid var(--border); border-radius: 8px; background: rgba(255,255,255,.02); color: var(--text); font-size: 12px; font-weight: 600; outline: none; }
+.inbox-review-card { display: grid; gap: 10px; padding: 11px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.015); }
+.inbox-review-card-head { display: grid; gap: 6px; }
+.inbox-review-card-head > div { display: flex; align-items: center; gap: 8px; }
+.inbox-review-card-head strong { color: var(--text-strong); font-size: 13px; overflow-wrap: anywhere; }
+.inbox-review-card-head small { font-size: 11px; line-height: 1.45; }
+.inbox-review-fields { display: grid; gap: 10px; }
+.inbox-review-field { display: grid; gap: 6px; padding-top: 9px; border-top: 1px solid var(--border); }
+.inbox-review-field:first-child { padding-top: 0; border-top: 0; }
+.inbox-review-field-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.inbox-review-field-head > span { color: var(--text-strong); font-size: 12px; font-weight: 700; }
+.inbox-review-values { display: grid; grid-template-columns: minmax(70px, auto) minmax(0, 1fr); gap: 3px 12px; margin: 0; font-size: 12px; }
+.inbox-review-values dt { color: var(--text-muted); }
+.inbox-review-values dd { margin: 0; min-width: 0; overflow-wrap: anywhere; color: var(--text); }
+.inbox-review-values dd.inbox-review-suggested { color: var(--brand-cyan); font-weight: 600; }
+.inbox-review-evidence { display: grid; gap: 3px; margin: 0; padding: 7px 9px; border: 1px solid var(--border); border-radius: 7px; background: rgba(0,0,0,.14); list-style: none; font-size: 11.5px; }
+.inbox-review-evidence li { overflow-wrap: anywhere; }
+.inbox-review-evidence-note { margin: 0; font-size: 11px; }
+.inbox-review-conflict-note { margin: 0; font-size: 11px; line-height: 1.5; }
+.inbox-review-pick { display: inline-flex; align-items: center; gap: 7px; margin-top: 2px; color: var(--text); font-size: 12px; cursor: pointer; }
+.inbox-review-pick input { width: 16px; height: 16px; flex: 0 0 auto; }
+.inbox-review-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.inbox-review-actions .btn { min-height: 32px; }
+.inbox-review-error { display: flex; align-items: flex-start; gap: 7px; padding: 8px 10px; border: 1px solid rgba(252,165,165,.4); border-radius: 8px; background: rgba(127,29,29,.18); color: #fca5a5; font-size: 12px; line-height: 1.45; }
+.inbox-review-error svg { flex: 0 0 auto; margin-top: 1px; }
+.inbox-review-empty { display: flex; align-items: center; gap: 9px; padding: 13px; border: 1px solid var(--border); border-radius: 9px; background: rgba(255,255,255,.018); color: var(--text-muted); font-size: 12px; line-height: 1.5; }
+.inbox-review-empty p { margin: 0; }
+.inbox-review-count { display: block; margin-top: 4px; color: var(--text-muted); font-size: 10.5px; }
 
 /* Inbox Save to File preview and verified result */
 .save-to-file-backdrop { position: fixed; inset: 0; z-index: 110; display: flex; align-items: center; justify-content: center; padding: 18px; background: rgba(0,0,0,.72); }

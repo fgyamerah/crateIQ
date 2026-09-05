@@ -2,6 +2,35 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-05] — Inline enrichment review in the Inbox Track Inspector
+
+- Added actionable enrichment review to the Inbox Track Inspector as a new
+  Review section (tab). It reads the existing enrichment_review_service
+  snapshot/decision queue -- no new review table or proposal store -- so a
+  decision made here is immediately visible in the specialist Enrichment
+  Review page and vice versa.
+- Added a thin read-only aggregation
+  `GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` returning
+  only actionable (pending) suggestions for one track. No provider/network
+  work, no tag writes.
+- The Inspector Review section shows current vs suggested working metadata,
+  text confidence (HIGH/MEDIUM/LOW/CONFLICT), and source/provider attribution
+  including per-source disagreement for CONFLICT fields. "Use Suggested"
+  applies the selected field(s) through the existing update_suggestion +
+  apply_selected contract (DB-only); "Keep Current" resolves the proposal via
+  the existing 'ignored' decision without changing metadata.
+- Decisions refresh the authoritative preparation-state projection, so tracks
+  move between Review / Unsaved / Ready without a page reload. The Inbox table
+  shows a minimal per-track "N suggestions" indicator reusing the existing
+  review_count projection; no second review column was added.
+- Files affected: enrichment_review_service, workspace API route, Inbox
+  Inspector + new EnrichmentReviewPanel, enrichment review API/types, Inbox
+  page/styles, focused backend + frontend tests, and current project docs.
+  Migration notes: none (read-only endpoint; existing tables unchanged).
+- Still deferred: Needs Review / Enrichment Review navigation merge/demotion,
+  Process All demotion, full mobile redesign, and the final focused Impeccable
+  pass.
+
 [2026-09-03] — Complete Inbox per-batch enrichment source selection
 
 - Added a server-owned source-role and eligibility contract to Settings

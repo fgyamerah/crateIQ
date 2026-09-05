@@ -6,9 +6,10 @@ import EmptyWaveform from '../player/EmptyWaveform'
 import TrackWaveform from '../player/TrackWaveform'
 import EditableMetadataCell from './EditableMetadataCell'
 import PreparationStatusBadge from './PreparationStatusBadge'
+import EnrichmentReviewPanel from './EnrichmentReviewPanel'
 import type { InboxEditableMetadataField } from '../../types/track'
 
-type InspectorTab = 'overview' | 'status' | 'analysis' | 'file'
+type InspectorTab = 'overview' | 'review' | 'status' | 'analysis' | 'file'
 
 interface Props {
   track: TrackSummary | null
@@ -18,6 +19,7 @@ interface Props {
   onNext?: () => void
   onMetadataSave?: (field: InboxEditableMetadataField, value: string) => Promise<void>
   onSaveToFile?: () => void
+  onReviewDecision?: () => Promise<void> | void
 }
 
 function value(value: string | number | null | undefined) {
@@ -31,7 +33,7 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${remainder}`
 }
 
-export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile }: Props) {
+export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision }: Props) {
   const [tab, setTab] = useState<InspectorTab>('status')
   const closeRef = useRef<HTMLButtonElement>(null)
   const waveform = useTrackWaveform(track?.id ?? null)
@@ -76,7 +78,7 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
       </div>
 
       <div className="inbox-inspector-tabs" role="tablist" aria-label="Track inspector sections">
-        {(['overview', 'status', 'analysis', 'file'] as InspectorTab[]).map((item) => (
+        {(['overview', 'review', 'status', 'analysis', 'file'] as InspectorTab[]).map((item) => (
           <button
             key={item}
             id={`inbox-inspector-tab-${item}`}
@@ -113,6 +115,12 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
               <dt>Duration</dt><dd>{formatDuration(track.duration_sec)}</dd>
               <dt>Bitrate</dt><dd>{track.bitrate_kbps ? `${track.bitrate_kbps} kbps` : '—'}</dd>
             </dl>
+          </section>
+        )}
+        {!loading && track && tab === 'review' && (
+          <section id="inbox-inspector-panel-review" role="tabpanel" aria-labelledby="inbox-inspector-tab-review">
+            <h3>Review suggestions</h3>
+            <EnrichmentReviewPanel trackId={track.id} onDecision={onReviewDecision} />
           </section>
         )}
         {!loading && track && tab === 'status' && (

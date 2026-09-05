@@ -186,13 +186,24 @@ page:
   concrete reasons; missing BPM or key stays a secondary warning and does not
   demote an otherwise Ready track. This status display does not introduce
   another writer or change any Inbox action.
-- A row's details chevron opens the **Track Inspector**. Its Metadata, Status,
-  Analysis, and File sections expose current preparation reasons, warnings,
-  pending fields, review/write/promotion state, BPM/key/waveform state,
-  managed path, and destination preview. Metadata edits remain DB-first; when
-  writable changes are pending, the Inspector also provides **Save to File**
-  and keeps itself open after the verified result. The inspector is restored
-  by `/inbox?track=<id>`.
+- A row's details chevron opens the **Track Inspector**. Its Metadata, Review,
+  Status, Analysis, and File sections expose current preparation reasons,
+  warnings, pending fields, review/write/promotion state, BPM/key/waveform
+  state, managed path, and destination preview. Metadata edits remain DB-first;
+  when writable changes are pending, the Inspector also provides **Save to
+  File** and keeps itself open after the verified result. The inspector is
+  restored by `/inbox?track=<id>`.
+- **Inline enrichment review** lives in the Inspector's **Review** section. It
+  reads the same shared enrichment decision queue as the specialist Enrichment
+  Review page, so a decision made in either place is reflected in the other.
+  For each actionable suggestion the section shows the current working value
+  versus the proposed value, a text confidence label (HIGH/MEDIUM/LOW/CONFLICT),
+  and source/provider attribution — including per-source disagreement for
+  CONFLICT fields. **Use Suggested** applies the selected field(s) through the
+  existing review apply contract (DB-only, never a tag write); **Keep Current**
+  resolves the proposal without changing metadata. Either decision refreshes the
+  authoritative preparation state, so a track may move between **Review**,
+  **Unsaved**, and **Ready** without leaving the Inspector.
 
 ## Metadata intelligence
 

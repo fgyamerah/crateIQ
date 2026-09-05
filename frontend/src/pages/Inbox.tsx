@@ -878,6 +878,11 @@ export default function Inbox() {
                           <td>{track.key_camelot || track.key_musical || '—'}</td>
                           <td>
                             <PreparationStatusBadge state={track.preparation_state} />
+                            {track.preparation_state?.review_count ? (
+                              <span className="inbox-review-count" aria-label={`${track.preparation_state.review_count} enrichment suggestion${track.preparation_state.review_count === 1 ? '' : 's'} need review`}>
+                                {track.preparation_state.review_count} suggestion{track.preparation_state.review_count === 1 ? '' : 's'}
+                              </span>
+                            ) : null}
                           </td>
                           <td>
                             <button
@@ -956,6 +961,7 @@ export default function Inbox() {
               onNext={nextVisibleTrack ? () => navigateInspector(nextVisibleTrack) : undefined}
               onMetadataSave={(field, value) => inspectedId === null ? Promise.resolve() : saveMetadata(inspectedId, field, value)}
               onSaveToFile={() => inspectedId !== null && setSaveTrackIds([inspectedId])}
+              onReviewDecision={() => fetchCurrentInboxData()}
             />
           )}
           {saveTrackIds && (

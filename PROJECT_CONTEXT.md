@@ -725,9 +725,15 @@ chunking, a concise exact-diff preview, managed-copy confirmation wording,
 verified per-track result reporting, stale-plan rejection, no-op/blocked
 handling, and authoritative Inbox refresh after apply. It does not add a new
 writer or a permanent SAVED preparation state. Per-batch provider-source
-selection is complete for explicit Enrich Selected. Inline conflict
-application, Needs Review merge, Process All demotion, the full mobile
-redesign, and the final focused Impeccable pass remain deferred.
+selection is complete for explicit Enrich Selected. Inline enrichment review
+is complete: the Inbox Track Inspector now exposes a Review section that reads
+the shared enrichment_review_service decision queue (no new review store) and
+supports field/proposal "Use Suggested" (DB-only apply) and "Keep Current"
+(ignored) decisions that refresh the authoritative preparation state.
+`GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` is a thin
+read-only track-scoped aggregation of actionable (pending) suggestions.
+Needs Review merge/demotion, Process All demotion, the full mobile redesign,
+and the final focused Impeccable pass remain deferred.
 
 ## Data Stores
 

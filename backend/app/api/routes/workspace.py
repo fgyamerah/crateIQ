@@ -35,6 +35,7 @@ from pydantic import BaseModel, Field
 from ...core.library_root import selected_library_root
 from ...schemas.track import TrackSummary
 from ...services import (
+    enrichment_review_service,
     preparation_operations_service,
     preparation_service,
     provider_routing_service,
@@ -234,6 +235,16 @@ async def inspect_inbox_track(track_id: int) -> TrackSummary:
         raise HTTPException(status_code=404, detail=f"Inbox track {track_id} not found.")
     track, state = result
     return TrackSummary.from_track(track, preparation_state=state)
+
+
+@router.get("/workspace/inbox/tracks/{track_id}/enrichment-review")
+async def inspect_inbox_track_enrichment_review(track_id: int):
+    """Read-only, track-scoped actionable enrichment suggestions for the Inspector.
+
+    Thin aggregation over the existing enrichment_review_service decision queue --
+    no new review persistence, no provider/network work, no tag writes.
+    """
+    return await run_in_threadpool(enrichment_review_service.get_track_review, track_id)
 
 
 @router.patch("/workspace/inbox/tracks/{track_id}")
