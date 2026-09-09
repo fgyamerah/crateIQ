@@ -13,7 +13,7 @@ from pathlib import Path
 
 import pytest
 
-from backend.app.core.waveform_limits import MAX_SOURCE_SIZE_BYTES
+from backend.app.core.waveform_limits import ANALYSIS_SAMPLE_RATE_HZ, MAX_SOURCE_SIZE_BYTES
 from backend.app.core.waveform_process import ManagedRun, ProcessOutcome
 from backend.app.models.waveform import SourceStatSnapshot
 from backend.app.models.waveform_extraction import (
@@ -131,7 +131,7 @@ async def test_extract_waveform_full_pipeline_success(tmp_path, monkeypatch):
 
     assert result.source_channels == 2
     assert result.source_sample_rate_hz == 44100
-    assert result.analysis_sample_rate_hz == 8000
+    assert result.analysis_sample_rate_hz == ANALYSIS_SAMPLE_RATE_HZ
     assert result.encoding == "int16_min_max_interleaved"
     assert result.duration_ms == 1000
     assert set(result.resolutions) == {"compact", "player", "detail"}
@@ -313,7 +313,7 @@ def test_build_decode_argv_has_no_shell_no_output_path_and_expected_flags():
     assert "-i" in argv
     assert argv[argv.index("-i") + 1] == "/library/sets/weird -- 'name'.flac"
     assert "-ac" in argv and argv[argv.index("-ac") + 1] == "1"
-    assert "-ar" in argv and argv[argv.index("-ar") + 1] == "8000"
+    assert "-ar" in argv and argv[argv.index("-ar") + 1] == str(ANALYSIS_SAMPLE_RATE_HZ)
     assert "-f" in argv and argv[argv.index("-f") + 1] == "s16le"
     # no output media path, overwrite flag, or tag/metadata option
     for forbidden in ("-y", "-metadata", "-map_metadata", "output.wav", "output.mp3"):

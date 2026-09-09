@@ -19,6 +19,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Literal
 
 from ..core.db import get_conn
+from ..core.library_key import current_library_key
 from ..models.waveform import (
     WAVEFORM_ALGORITHM_VERSION,
     WAVEFORM_SCHEMA_VERSION,
@@ -79,6 +80,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+def _bound_library_key() -> str | None:
+    """Return a service-test compatibility fallback; live startup is bound."""
+    try:
+        return current_library_key()
+    except RuntimeError:
+        return None
+
+
 def _job_from_row(row: sqlite3.Row) -> WaveformJobRecord:
     return WaveformJobRecord(
         id=row["id"],
@@ -101,9 +110,13 @@ def _active_job_row(conn: sqlite3.Connection, library_id: str, track_id: int) ->
     ).fetchone()
 
 
-def get_job_generation_key(job_id: str) -> str | None:
+def get_job_generation_key(job_id: str, *, library_key: str | None = None) -> str | None:
+    key = library_key or current_library_key()
     with get_conn() as conn:
-        row = conn.execute("SELECT generation_key FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute(
+            "SELECT generation_key FROM waveform_jobs WHERE id = ? AND library_id = ?",
+            (job_id, key),
+        ).fetchone()
     return row["generation_key"] if row else None
 
 
@@ -113,12 +126,12 @@ def get_active_job_for_track(library_id: str, track_id: int) -> WaveformJobRecor
     return _job_from_row(row) if row else None
 
 
-def count_queued_jobs() -> int:
+def count_queued_jobs(library_key: str | None = None) -> int:
     with get_conn() as conn:
-        row = conn.execute(
-            "SELECT COUNT(*) AS n FROM waveform_jobs WHERE status = ?",
-            (WaveformJobStatus.QUEUED.value,),
-        ).fetchone()
+        if library_key is None:
+            row = conn.execute("SELECT COUNT(*) AS n FROM waveform_jobs WHERE status = ?", (WaveformJobStatus.QUEUED.value,)).fetchone()
+        else:
+            row = conn.execute("SELECT COUNT(*) AS n FROM waveform_jobs WHERE status = ? AND library_id = ?", (WaveformJobStatus.QUEUED.value, library_key)).fetchone()
     return int(row["n"])
 
 
@@ -176,7 +189,7 @@ def submit_generation_job(
         ):
             return SubmitResult("already_ready", None, current_status)
 
-        if count_queued_in(conn) >= max_queue_size:
+        if count_queued_in(conn, library_id) >= max_queue_size:
             return SubmitResult("queue_full", None, current_status)
 
         job_id = str(uuid.uuid4())
@@ -195,14 +208,14 @@ def submit_generation_job(
             return SubmitResult("deduplicated", _job_from_row(winner), current_status)
 
         _upsert_state_for_submission(conn, state_row, snapshot, current_status, now)
-        created = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        created = conn.execute("SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, library_id)).fetchone()
         return SubmitResult("queued", _job_from_row(created), current_status)
 
 
-def count_queued_in(conn: sqlite3.Connection) -> int:
+def count_queued_in(conn: sqlite3.Connection, library_id: str) -> int:
     row = conn.execute(
-        "SELECT COUNT(*) AS n FROM waveform_jobs WHERE status = ?",
-        (WaveformJobStatus.QUEUED.value,),
+        "SELECT COUNT(*) AS n FROM waveform_jobs WHERE status = ? AND library_id = ?",
+        (WaveformJobStatus.QUEUED.value, library_id),
     ).fetchone()
     return int(row["n"])
 
@@ -265,19 +278,20 @@ def _upsert_state_for_submission(
     )
 
 
-def claim_job(job_id: str) -> WaveformJobRecord | None:
+def claim_job(job_id: str, *, library_key: str | None = None) -> WaveformJobRecord | None:
     """Transition a queued job to processing. Returns ``None`` if not claimable."""
     now = _now()
+    library_key = library_key or current_library_key()
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, library_key)).fetchone()
         if row is None or row["status"] != WaveformJobStatus.QUEUED.value:
             return None
         if row["cancel_requested"]:
             return None
         conn.execute(
-            "UPDATE waveform_jobs SET status = ?, started_at = ? WHERE id = ?",
-            (WaveformJobStatus.PROCESSING.value, now, job_id),
+            "UPDATE waveform_jobs SET status = ?, started_at = ? WHERE id = ? AND library_id = ?",
+            (WaveformJobStatus.PROCESSING.value, now, job_id, library_key),
         )
         conn.execute(
             """UPDATE waveform_track_state SET status = ?, updated_at = ?
@@ -290,13 +304,17 @@ def claim_job(job_id: str) -> WaveformJobRecord | None:
                 WaveformArtifactStatus.QUEUED.value,
             ),
         )
-        claimed = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        claimed = conn.execute("SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, library_key)).fetchone()
         return _job_from_row(claimed)
 
 
-def is_cancel_requested(job_id: str) -> bool:
+def is_cancel_requested(job_id: str, *, library_key: str | None = None) -> bool:
+    key = library_key or current_library_key()
     with get_conn() as conn:
-        row = conn.execute("SELECT cancel_requested FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute(
+            "SELECT cancel_requested FROM waveform_jobs WHERE id = ? AND library_id = ?",
+            (job_id, key),
+        ).fetchone()
     return bool(row["cancel_requested"]) if row else False
 
 
@@ -330,8 +348,8 @@ def complete_job_ready(job_id: str, *, generation_key: str, snapshot: SourceStat
             ),
         )
         conn.execute(
-            "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = NULL WHERE id = ?",
-            (WaveformJobStatus.SUCCEEDED.value, now, job_id),
+            "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = NULL WHERE id = ? AND library_id = ?",
+            (WaveformJobStatus.SUCCEEDED.value, now, job_id, snapshot.library_id),
         )
 
 
@@ -341,6 +359,7 @@ def finish_job_unsuccessfully(
     job_status: WaveformJobStatus,
     track_status: WaveformArtifactStatus | None,
     error_code: str | None,
+    library_key: str | None = None,
 ) -> None:
     """Terminate a job without publishing, leaving any prior artifact intact.
 
@@ -349,14 +368,15 @@ def finish_job_unsuccessfully(
     cancelled regeneration.
     """
     now = _now()
+    library_key = library_key or current_library_key()
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, library_key)).fetchone()
         if row is None:
             return
         conn.execute(
-            "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? WHERE id = ?",
-            (job_status.value, now, error_code, job_id),
+            "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? WHERE id = ? AND library_id = ?",
+            (job_status.value, now, error_code, job_id, library_key),
         )
         if track_status is not None:
             conn.execute(
@@ -378,20 +398,21 @@ def finish_job_unsuccessfully(
 def request_cancellation(job_id: str) -> WaveformJobRecord | None:
     """Flag a job for cancellation. Terminal jobs are left untouched."""
     now = _now()
+    library_key = current_library_key()
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
-        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, library_key)).fetchone()
         if row is None:
             return None
         if row["status"] not in ACTIVE_JOB_STATUSES:
             return _job_from_row(row)  # already finished: deterministic no-op
-        conn.execute("UPDATE waveform_jobs SET cancel_requested = 1 WHERE id = ?", (job_id,))
+        conn.execute("UPDATE waveform_jobs SET cancel_requested = 1 WHERE id = ? AND library_id = ?", (job_id, library_key))
         if row["status"] == WaveformJobStatus.QUEUED.value:
             # A queued job has no worker to interrupt; finish it here so the
             # active-job index is released immediately.
             conn.execute(
-                "UPDATE waveform_jobs SET status = ?, finished_at = ? WHERE id = ?",
-                (WaveformJobStatus.CANCELLED.value, now, job_id),
+                "UPDATE waveform_jobs SET status = ?, finished_at = ? WHERE id = ? AND library_id = ?",
+                (WaveformJobStatus.CANCELLED.value, now, job_id, library_key),
             )
             conn.execute(
                 """UPDATE waveform_track_state SET status = ?, updated_at = ?
@@ -405,13 +426,16 @@ def request_cancellation(job_id: str) -> WaveformJobRecord | None:
                     WaveformArtifactStatus.PROCESSING.value,
                 ),
             )
-        updated = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        updated = conn.execute("SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, library_key)).fetchone()
         return _job_from_row(updated)
 
 
-def get_job(job_id: str) -> WaveformJobRecord | None:
+def get_job(job_id: str, *, library_key: str | None = None) -> WaveformJobRecord | None:
+    key = library_key or current_library_key()
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM waveform_jobs WHERE id = ?", (job_id,)).fetchone()
+        row = conn.execute(
+            "SELECT * FROM waveform_jobs WHERE id = ? AND library_id = ?", (job_id, key)
+        ).fetchone()
     return _job_from_row(row) if row else None
 
 
@@ -470,16 +494,39 @@ def touch_artifact_access(library_id: str, track_id: int) -> bool:
     return True
 
 
-def list_referenced_generation_keys() -> set[str]:
-    """Every generation key any track state currently points at, ready or not."""
+def list_referenced_generation_keys(library_key: str | None = None) -> set[str]:
+    """Generation keys referenced by one library, or all for safe protection."""
+    with get_conn() as conn:
+        if library_key is None:
+            rows = conn.execute(
+                "SELECT DISTINCT cache_key FROM waveform_track_state WHERE cache_key IS NOT NULL"
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                "SELECT DISTINCT cache_key FROM waveform_track_state "
+                "WHERE library_id = ? AND cache_key IS NOT NULL",
+                (library_key,),
+            ).fetchall()
+    return {row["cache_key"] for row in rows if row["cache_key"]}
+
+
+def list_owned_generation_keys(library_key: str) -> set[str]:
+    """Keys proven to originate from one library's jobs or track state."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT DISTINCT cache_key FROM waveform_track_state WHERE cache_key IS NOT NULL"
+            """SELECT generation_key AS cache_key
+               FROM waveform_jobs
+               WHERE library_id = ? AND generation_key IS NOT NULL
+               UNION
+               SELECT cache_key
+               FROM waveform_track_state
+               WHERE library_id = ? AND cache_key IS NOT NULL""",
+            (library_key, library_key),
         ).fetchall()
     return {row["cache_key"] for row in rows if row["cache_key"]}
 
 
-def list_cached_artifacts() -> list[CachedArtifactRef]:
+def list_cached_artifacts(library_key: str | None = None) -> list[CachedArtifactRef]:
     """Return referenced artifacts ordered least-recently-used first.
 
     Ordering key is ``last_accessed_at`` when present, else ``generated_at``,
@@ -487,13 +534,23 @@ def list_cached_artifacts() -> list[CachedArtifactRef]:
     deterministic position rather than being treated as infinitely recent.
     """
     with get_conn() as conn:
-        rows = conn.execute(
-            """SELECT library_id, track_id, cache_key, status,
-                      COALESCE(last_accessed_at, generated_at, updated_at) AS last_used_at
-               FROM waveform_track_state
-               WHERE cache_key IS NOT NULL
-               ORDER BY last_used_at ASC"""
-        ).fetchall()
+        if library_key is None:
+            rows = conn.execute(
+                """SELECT library_id, track_id, cache_key, status,
+                          COALESCE(last_accessed_at, generated_at, updated_at) AS last_used_at
+                   FROM waveform_track_state
+                   WHERE cache_key IS NOT NULL
+                   ORDER BY last_used_at ASC"""
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT library_id, track_id, cache_key, status,
+                          COALESCE(last_accessed_at, generated_at, updated_at) AS last_used_at
+                   FROM waveform_track_state
+                   WHERE library_id = ? AND cache_key IS NOT NULL
+                   ORDER BY last_used_at ASC""",
+                (library_key,),
+            ).fetchall()
     return [
         CachedArtifactRef(
             library_id=row["library_id"],
@@ -537,12 +594,16 @@ def mark_artifact_unavailable(
         )
 
 
-def list_ready_states() -> list[CachedArtifactRef]:
+def list_ready_states(library_key: str | None = None) -> list[CachedArtifactRef]:
     """Only tracks currently advertising a ready artifact."""
-    return [ref for ref in list_cached_artifacts() if ref.status == WaveformArtifactStatus.READY.value]
+    return [
+        ref
+        for ref in list_cached_artifacts(library_key)
+        if ref.status == WaveformArtifactStatus.READY.value
+    ]
 
 
-def fail_active_jobs_for_shutdown() -> int:
+def fail_active_jobs_for_shutdown(library_key: str) -> int:
     """Close out jobs still active when the backend is shutting down.
 
     Distinct from a user cancellation: the operator did not cancel anything,
@@ -552,13 +613,21 @@ def fail_active_jobs_for_shutdown() -> int:
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute(
-            "SELECT id, library_id, track_id FROM waveform_jobs WHERE status IN (?, ?)",
-            ACTIVE_JOB_STATUSES,
+            "SELECT id, library_id, track_id FROM waveform_jobs "
+            "WHERE library_id = ? AND status IN (?, ?)",
+            (library_key, *ACTIVE_JOB_STATUSES),
         ).fetchall()
         for row in rows:
             conn.execute(
-                "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? WHERE id = ?",
-                (WaveformJobStatus.FAILED.value, now, ERROR_BACKEND_SHUTDOWN, row["id"]),
+                "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? "
+                "WHERE id = ? AND library_id = ?",
+                (
+                    WaveformJobStatus.FAILED.value,
+                    now,
+                    ERROR_BACKEND_SHUTDOWN,
+                    row["id"],
+                    library_key,
+                ),
             )
             conn.execute(
                 """UPDATE waveform_track_state
@@ -579,7 +648,9 @@ def fail_active_jobs_for_shutdown() -> int:
     return len(rows)
 
 
-def purge_expired_job_rows(retention_days: int = JOB_ROW_RETENTION_DAYS) -> int:
+def purge_expired_job_rows(
+    library_key: str, retention_days: int = JOB_ROW_RETENTION_DAYS
+) -> int:
     """Delete aged-out failed/cancelled job rows. Rows only, never artifacts.
 
     Succeeded rows are kept: they are the record of what produced a cache
@@ -592,9 +663,15 @@ def purge_expired_job_rows(retention_days: int = JOB_ROW_RETENTION_DAYS) -> int:
         cursor = conn.execute(
             """DELETE FROM waveform_jobs
                WHERE status IN (?, ?)
+                 AND library_id = ?
                  AND finished_at IS NOT NULL
                  AND finished_at < ?""",
-            (WaveformJobStatus.FAILED.value, WaveformJobStatus.CANCELLED.value, cutoff),
+            (
+                WaveformJobStatus.FAILED.value,
+                WaveformJobStatus.CANCELLED.value,
+                library_key,
+                cutoff,
+            ),
         )
         deleted = cursor.rowcount or 0
     if deleted:
@@ -602,7 +679,9 @@ def purge_expired_job_rows(retention_days: int = JOB_ROW_RETENTION_DAYS) -> int:
     return deleted
 
 
-def purge_expired_track_states(retention_days: int = TRACK_STATE_RETENTION_DAYS) -> int:
+def purge_expired_track_states(
+    library_key: str, retention_days: int = TRACK_STATE_RETENTION_DAYS
+) -> int:
     """Forget track states that hold no artifact and have gone quiet.
 
     Guarded so a row is only removed when it cannot matter: it must hold no
@@ -618,9 +697,10 @@ def purge_expired_track_states(retention_days: int = TRACK_STATE_RETENTION_DAYS)
         cursor = conn.execute(
             f"""DELETE FROM waveform_track_state
                 WHERE cache_key IS NULL
+                  AND library_id = ?
                   AND status IN ({placeholders})
                   AND COALESCE(last_accessed_at, updated_at) < ?""",
-            (*_EXPIRABLE_TRACK_STATUSES, cutoff),
+            (library_key, *_EXPIRABLE_TRACK_STATUSES, cutoff),
         )
         deleted = cursor.rowcount or 0
     if deleted:
@@ -628,7 +708,7 @@ def purge_expired_track_states(retention_days: int = TRACK_STATE_RETENTION_DAYS)
     return deleted
 
 
-def recover_interrupted_jobs() -> int:
+def recover_interrupted_jobs(library_key: str | None = None) -> int:
     """Terminate jobs left active by a previous process.
 
     A backend restart must never silently resume music-library analysis, so
@@ -637,11 +717,13 @@ def recover_interrupted_jobs() -> int:
     rewrites operational rows; no audio is read.
     """
     now = _now()
+    library_key = library_key or current_library_key()
     with get_conn() as conn:
         conn.execute("BEGIN IMMEDIATE")
         rows = conn.execute(
-            "SELECT id, library_id, track_id, status FROM waveform_jobs WHERE status IN (?, ?)",
-            ACTIVE_JOB_STATUSES,
+            "SELECT id, library_id, track_id, status FROM waveform_jobs "
+            "WHERE library_id = ? AND status IN (?, ?)",
+            (library_key, *ACTIVE_JOB_STATUSES),
         ).fetchall()
         for row in rows:
             interrupted = row["status"] == WaveformJobStatus.PROCESSING.value
@@ -650,8 +732,15 @@ def recover_interrupted_jobs() -> int:
                 WaveformArtifactStatus.FAILED if interrupted else WaveformArtifactStatus.CANCELLED
             )
             conn.execute(
-                "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? WHERE id = ?",
-                (job_status.value, now, ERROR_BACKEND_RESTARTED, row["id"]),
+                "UPDATE waveform_jobs SET status = ?, finished_at = ?, error_code = ? "
+                "WHERE id = ? AND library_id = ?",
+                (
+                    job_status.value,
+                    now,
+                    ERROR_BACKEND_RESTARTED,
+                    row["id"],
+                    library_key,
+                ),
             )
             conn.execute(
                 """UPDATE waveform_track_state

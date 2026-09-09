@@ -69,6 +69,7 @@ interface WaveformResponseWire {
   pair_count: number | null
   encoding: WaveformEncodingWire | null
   peaks: number[] | null
+  color_bands: number[] | null
   generated_at: string | null
   error_code: string | null
 }
@@ -106,6 +107,8 @@ export interface WaveformReadyState {
   durationMs: number
   pairCount: number
   peaks: number[]
+  /** Interleaved [low, mid, high] fractions per bucket; null when absent. */
+  colorBands: number[] | null
   scale: number
   generatedAt: string | null
 }
@@ -173,6 +176,7 @@ export function normalizeWaveformResponse(wire: WaveformResponseWire): WaveformS
       durationMs: wire.duration_ms,
       pairCount: wire.pair_count ?? Math.floor(wire.peaks.length / 2),
       peaks: wire.peaks,
+      colorBands: Array.isArray(wire.color_bands) ? wire.color_bands : null,
       scale: wire.encoding?.scale && wire.encoding.scale > 0 ? wire.encoding.scale : 32767,
       generatedAt: wire.generated_at,
     }

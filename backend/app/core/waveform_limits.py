@@ -28,9 +28,20 @@ MAX_SAMPLE_RATE_HZ = 384000
 # Decoder output contract
 # ---------------------------------------------------------------------------
 
-ANALYSIS_SAMPLE_RATE_HZ = 8000
+# 22050 Hz keeps the decoded mono stream small while leaving enough high-band
+# headroom (Nyquist ~11 kHz) for the low/mid/high spectral tint.
+ANALYSIS_SAMPLE_RATE_HZ = 22050
 PCM_SAMPLE_WIDTH_BYTES = 2  # signed 16-bit little-endian
 PCM_CHANNELS = 1  # mono
+
+# Band edges for the spectral tint. Low < 250 Hz, mid 250 Hz–4 kHz, high above.
+LOW_BAND_EDGE_HZ = 250
+HIGH_BAND_EDGE_HZ = 4000
+
+# Bound on raw decoded samples kept in memory solely for spectral tinting. If
+# a source exceeds this, peaks are still produced and the frontend falls back
+# to amplitude coloring; the waveform is never dropped.
+MAX_BAND_BUFFER_BYTES = 256 * 1024 * 1024  # 256 MiB of s16 mono
 
 # ---------------------------------------------------------------------------
 # Process/IO bounds

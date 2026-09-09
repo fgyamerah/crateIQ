@@ -29,7 +29,7 @@ import re
 from pathlib import Path
 from typing import Callable, Dict, FrozenSet, List
 
-from ..core.config import JOBS_LOG_DIR, PIPELINE_PY, PYTHON_BIN, TOOLKIT_ROOT
+from ..core.config import PIPELINE_PY, PYTHON_BIN, TOOLKIT_ROOT
 from ..core.library_root import selected_library_root
 from . import process_registry
 
@@ -189,7 +189,9 @@ _running_tasks: set[asyncio.Task] = set()
 # Job execution
 # ---------------------------------------------------------------------------
 
-async def _run_job(job_id: str, cmd: List[str], log_path: Path) -> None:
+async def _run_job(
+    job_id: str, cmd: List[str], log_path: Path, library_key: str
+) -> None:
     """
     Execute *cmd* as a subprocess, stream output to *log_path*, and update
     the job record in the database on start and finish.
@@ -202,7 +204,7 @@ async def _run_job(job_id: str, cmd: List[str], log_path: Path) -> None:
 
     log_path.parent.mkdir(parents=True, exist_ok=True)
 
-    job_service.mark_running(job_id)
+    job_service.mark_running(job_id, library_key=library_key)
     log.info("job=%s  starting: %s", job_id, " ".join(cmd))
 
     exit_code: int = -1
@@ -220,7 +222,7 @@ async def _run_job(job_id: str, cmd: List[str], log_path: Path) -> None:
             )
             # Register process for cancellation support
             process_registry.register(job_id, proc)
-            job_service.mark_pid(job_id, proc.pid)
+            job_service.mark_pid(job_id, proc.pid, library_key=library_key)
 
             exit_code = await proc.wait()
 
@@ -243,12 +245,16 @@ async def _run_job(job_id: str, cmd: List[str], log_path: Path) -> None:
             pass
     finally:
         process_registry.unregister(job_id)
-        job_service.clear_pid(job_id)
+        job_service.clear_pid(job_id, library_key=library_key)
 
-    job_service.mark_finished(job_id, status=status, exit_code=exit_code)
+    job_service.mark_finished(
+        job_id, status=status, exit_code=exit_code, library_key=library_key
+    )
 
 
-def create_and_start_job(job_id: str, command: str, args: List[str]) -> None:
+def create_and_start_job(
+    job_id: str, command: str, args: List[str], *, library_key: str
+) -> None:
     """
     Build the command, resolve the log path, and fire off the background task.
 
@@ -258,10 +264,15 @@ def create_and_start_job(job_id: str, command: str, args: List[str]) -> None:
     Raises ValueError (propagated from build_command) if validation fails —
     the caller should handle this before the DB record is created.
     """
-    cmd      = build_command(command, args)
-    log_path = JOBS_LOG_DIR / f"{job_id}.log"
+    from . import job_service
 
-    task = asyncio.create_task(_run_job(job_id, cmd, log_path))
+    cmd      = build_command(command, args)
+    job = job_service.get_job(job_id, library_key=library_key)
+    if job is None or not job.log_path:
+        raise RuntimeError("Scoped job record is unavailable for execution.")
+    log_path = Path(job.log_path)
+
+    task = asyncio.create_task(_run_job(job_id, cmd, log_path, job.library_key))
 
     # Keep a reference so asyncio doesn't garbage-collect the task before it
     # finishes (tasks with no references can be silently dropped).

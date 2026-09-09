@@ -2,6 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { buildWaveformBars, progressFraction, waveformAmplitudeColor } from './waveformGeometry'
 
 /**
+ * @deprecated Superseded by `UnifiedWaveform`. Kept for reference; no screen
+ * imports this anymore.
+ *
  * Real waveform renderer.
  *
  * Pure presentation: it receives peaks and playback position as props and

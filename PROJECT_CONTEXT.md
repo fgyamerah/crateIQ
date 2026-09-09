@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-08-11
+**Updated:** 2026-09-06
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -65,18 +65,190 @@ supported under Settings -> Advanced as a secondary compatibility mode.
 * SQLite for tracks, jobs, and operational state
 * Local filesystem for the managed music workspace
 
+**Unified waveform.** All waveform surfaces render one canonical
+`UnifiedWaveform` (a single mirrored, frequency-tinted canvas — never three
+Low/Mid/High rows). The backend decodes mono at 22050 Hz and stores signed
+min/max peaks plus optional per-bucket low/mid/high band-energy fractions
+(`color_bands`) used only to color each slice of the one waveform; artifact
+algorithm `mono-minmax-band-s16-v2` supersedes `mono-minmax-s16-v1`.
+Generation is demand-driven via `POST /api/tracks/{id}/waveform/generate`
+(dedup'd, cancellable, atomic cache) and now auto-starts from the
+`useTrackWaveform` hook the first time a track is opened when no valid
+waveform exists (`not_generated`/`stale`/`cancelled`); `failed`/`unsupported`
+never auto-retry. The GET endpoint stays read-only. A module-level in-flight
+set in the hook guarantees one generation POST per track per tab; additional
+same-track consumers observe the in-flight request and attach to the visible
+job, with backend dedup as the cross-tab safety net.
+
 ## Runtime
 
 * Repo path: this repository root
 * Backend: port 8020
 * Frontend: port 5175
-* Launch/status: `scripts/crateiq-local-services.sh {start|stop|restart|status|logs}`
-  (also `start-demo-local`, `start-library-local` variants); PID files/logs
-  under `.run/` (gitignored). For configured-library starts, the
+* Launch/status: `scripts/crateiq-local-services.sh {start|stop|restart|status|logs}`.
+  Normal interactive `start` now defaults to the rootless Library Launcher,
+  followed by the existing LAN/local-only access choice; it starts the
+  long-lived supervisor, rootless backend on 8020, and frontend on 5175 without
+  requiring a configured root or `logs/processed.db`. Explicit
+  `start-demo-local`, `start-library-local`, and `start-launcher-local`
+  variants remain available. PID files/logs live under `.run/` (gitignored).
+  For configured-library starts, the
   Settings-managed `.run/local/crateiq.env` root is authoritative at every
   configured-library selection (including sourced aliases and restart); an
   inherited `CRATEIQ_LIBRARY_ROOT` is only a fallback when that file has no
   saved root.
+* Safe local supervisor foundation (Checkpoint 1B.2A): the helper starts a
+  dedicated, non-reload `backend.app.supervisor` process which owns its
+  backend child; the Vite frontend remains independently owned. Supervisor
+  IPC is only `.run/local/crateiq-supervisor.sock` (owner-only Unix socket,
+  no TCP control listener). A process-lifetime flock at
+  `.run/local/crateiq-supervisor.lock` is acquired and the IPC socket is bound
+  before an active child is spawned. Runtime directories and lock files are
+  descriptor-validated and reject symlinks, non-regular paths, and
+  multiply-linked aliases before lock metadata can mutate an inode; accepted
+  IPC handlers have byte/time-bounded reads, are actively interrupted during
+  shutdown, and quiesce before children or lifetime ownership are released.
+  Backend subprocess creation is pinned to long-lived supervisor ownership:
+  main startup uses the supervisor main thread, while worker/IPC requests use
+  one supervisor-lifetime launch-owner thread. This preserves Linux
+  `PR_SET_PDEATHSIG` protection without tying a promoted backend to the
+  short-lived registered-activation worker thread; successful worker return
+  therefore cannot terminate the committed active child while an uncommitted
+  child remains subject to rollback cleanup.
+  Normal cooperative socket cleanup atomically withdraws the published public
+  link through unique instance-private entries, leaving replacement files or
+  symlinks untouched; ambiguous crash/stale artifacts fail closed rather than
+  unlink a pathname whose ownership cannot be proven. Process All and bulk waveform reserve
+  gate-owned descendant scopes before their durable parent rows, so a future
+  drain waits for their deferred durable work. It uses
+  fixed allowlisted operations and no shell command input. A candidate is
+  always started on a supervisor-reserved
+  loopback-only temporary port (never 8020 or the active port). Public health
+  is generic; private candidate identity is available only through a
+  loopback-only, supervisor-token-protected endpoint and must match the
+  generated instance, supervisor instance, canonical root, role, port,
+  deterministic root key, verification token, and explicit post-lifespan
+  readiness. Candidate startup has a bounded 15-second verification window;
+  promoted/rootless startup has a bounded 30-second window for normal DB/cache,
+  tool-readiness, and scheduler initialization. Both use repeated short probes.
+  The supervisor and its fail-closed parent-death protection are Linux-only.
+  `.run/local/library_activation_state.json` and the adjacent OS-level lock
+  are restrictive and atomic; malformed or impossible state fails closed.
+  Checkpoint 1B.2B-2A adds the internal-only handoff engine: it classifies a
+  canonical requested root, starts/verifies a fresh loopback candidate, drains
+  the active backend through its token-protected loopback admission bridge,
+  inspects persisted exact-key blockers, then retires/reaps the old child and
+  launches/verifies a fresh root-bound active child on the original stable
+  port. Candidate and promoted identities are verified independently. Saved
+  root compatibility data is atomically written only after active verification;
+  the exact prior file (including rootless absence) is held in memory and a
+  post-replace/fsync error is reconciled against disk before any rollback is
+  reported. A child reference is cleared only after confirmed reaping; any
+  ambiguous candidate, promoted backend, original-child retirement, or config
+  restoration retains ownership and a diagnosable durable `fail_closed` state.
+  The engine is exposed only through a registry-ID launcher activation
+  contract. The API accepts an opaque ID rather than a path, revalidates the
+  saved entry, and submits canonical root/key/classification data through the
+  owner-only supervisor IPC. Because successful handoff replaces the serving
+  backend, activation uses start-and-status semantics; the supervisor retains
+  the safe outcome for the replacement backend to report. It updates registry
+  `last_opened_at` only after a verified activation or same-library no-op.
+  Recency failure is a bounded warning and never rolls back a verified active
+  backend. LAN clients may open a known safe registry ID, but arbitrary path
+  inspection, browse, register, and create administration remain local-only.
+  Status IPC is handled independently of the handoff-wide ownership lock and
+  backend status calls run outside the FastAPI event loop, so polling reports
+  `activating` without starving the promoted backend's identity response. A
+  clean terminal `idle` transition requires a still-live verified promoted or
+  rollback child; promoted B is transferred into the sole in-memory `active`
+  slot before success and removed from disposable handoff ownership only after
+  the durable idle write. Otherwise the activation rolls back or remains
+  `fail_closed`.
+  Local-operator launcher administration is now implemented through a bounded,
+  one-level directory browser plus explicit register/create endpoints. Browse
+  is rooted in environment-derived home/Music and standard mount locations,
+  plus registered-library parents; it filters hidden entries, never follows
+  symlinks, scans at most 512 entries, and returns at most 100 per request.
+  Registration canonicalizes, reclassifies, deduplicates by the existing
+  library key, writes under a restrictive cross-process registry lock, and
+  leaves `last_opened_at` null until verified activation. Create accepts a
+  validated parent and one safe name segment, exclusively creates the target,
+  reuses `workspace_service.configure_workspace()`, validates the result with
+  the normal launcher classifier, then registers it. Provably operation-owned
+  partial initialization is rolled back; ambiguous content is left in place
+  and reported. A registry failure after valid initialization leaves the valid
+  workspace intact for deterministic registration retry. Create never starts
+  recovery/schedulers or creates the rootless runtime jobs database.
+  The frontend `/libraries` route is an installation-level chooser outside the
+  workspace shell. Rootless workspace routes redirect there; active users can
+  reopen it from the sidebar or Settings. It renders at most four recent
+  registered libraries, submits only `library_id`, and uses bounded status and
+  current-library polling that tolerates the backend replacement gap without
+  inferring success from elapsed time. In local mode, Browse Libraries now uses
+  the bounded backend directory contract to register only selectable managed or
+  strict Legacy Direct libraries, while Create New Library chooses a returned
+  parent directory and submits the validated parent plus one name segment. Both
+  immediately reuse the same opaque-registry-ID activation flow. A create that
+  succeeds on disk but fails registry persistence is reported as partial
+  success and routes the operator back to Browse for registration. In LAN mode,
+  registered-ID activation remains available while Browse/Create and host paths
+  remain unavailable.
+  The central process-local operation-admission gate atomically drains the
+  bounded durable-create sections for Process All, single/bulk waveform,
+  BPM/key analysis, and exact BPM retry only. Checkpoint 1B.2B-1 adds the
+  data-side prerequisite: one canonical SHA-256 library key (the established
+  waveform identity; `waveform_*.library_id` is a compatibility column name),
+  keyed jobs/operation history and recovery, conservative legacy NULL-row
+  handling, and persisted switch-blocker inspection. Waveform scheduler
+  shutdown, startup/cache maintenance, worker source resolution, generic
+  background job updates, and bulk waveform polling retain their immutable
+  originating key (and root where source resolution requires it). Reference
+  findings filter BPM/tag-write operational rows by that exact key, and active
+  queued/processing `waveform_track_state` rows participate in switch blockers.
+  Terminal NULL rows are
+  excluded from ordinary views; active NULL and known active rows for another
+  key fail closed. Global tag backups/job logs are namespaced by key and
+  publish destinations are v2 per-key records; a legacy global destination is
+  preserved but never inferred. The internal handoff uses this persisted
+  blocker only after the drained gate and preserves key/root-bound startup,
+  shutdown, recovery, artifacts, and publish settings. The launcher API now
+  exposes activation start/status, active registry identity, four recent
+  successfully opened entries, and the local-only browse/register/create
+  contracts to the `/libraries` frontend launcher. Registered-but-never-opened
+  entries remain activation-resolvable but do not masquerade as recents.
+* Launcher foundation (Checkpoint 1B.1): installation-scoped recents live at
+  `.run/local/library_registry.json` (schema v1, maximum 16 canonical roots;
+  launcher returns the latest four). Its classifier is strictly read-only and
+  distinguishes `managed_workspace`, `legacy_direct_library`, `empty_folder`,
+  `external_music_folder`, `malformed_or_unsafe`, and `missing`. Legacy
+  detection uses immutable SQLite inspection and requires the supported
+  historical CrateIQ schema core (`tracks`, `track_history`, `pipeline_runs`,
+  and `duplicate_groups` with their characteristic pipeline columns), not a
+  generic `tracks` table. Rootless
+  startup exposes only launcher/health/version/readiness endpoints, does not
+  open library indexes or the jobs database, and does not run library recovery
+  or schedulers. The frontend gate redirects rootless workspace requests to
+  `/libraries`; verified registry-ID activation performs the existing
+  supervisor-owned switch into the normal workspace.
+  Rootless compatibility seeding uses only the Settings-managed saved root;
+  the launcher clears inherited root state before booting rootless, while
+  inherited `CRATEIQ_LIBRARY_ROOT` remains a configured-library startup
+  fallback. Candidate host-path inspection is enabled only by local-only
+  server startup state and is disabled for all LAN-mode requests (including
+  loopback Vite proxy traffic); unauthenticated LAN clients must not browse
+  server filesystem paths.
+  Persisted `fail_closed` activation state is never cleared on startup. The
+  explicit `recover-launcher` operator command can reset it to rootless idle
+  only while holding both installation locks and after proving no owned
+  supervisor/backend survives, atomically withdrawing any proven-stale socket,
+  validating registry/saved-root consistency, and archiving the failed state.
+  The same command also repairs an `idle` state left beside a crash-stale
+  supervisor socket: it holds both locks, validates prior activation-lock PID
+  metadata, scans installation-local supervisor/backend ownership, and uses
+  the same fresh socket probe plus atomic withdrawal. `idle` with no socket is
+  a clean no-op; live, malformed, or ambiguous ownership leaves the pathname
+  untouched. Recovery preserves registry recency and compatibility-root bytes
+  and never activates the requested library.
 * Frontend: <http://127.0.0.1:5175>; backend health:
   <http://127.0.0.1:8020/api/health>; runtime readiness:
   <http://127.0.0.1:8020/api/runtime/readiness>
@@ -105,7 +277,12 @@ rather than living in the primary sidebar. `/duplicate-resolution-plan`
 Service map (`backend/app/services/`), current primary surfaces:
 
 * `workspace_service` — Inbox/Library/Quarantine state, import, safe
-  rename, inline/bulk metadata edit, promotion
+  rename, inline/bulk metadata edit, promotion, and the authoritative
+  read-only Inbox preparation-state projection. The projection batches
+  track/tag-plan/review/tag-write-history/destination reads, performs no
+  network or mutation, and exposes `preparation_state` on
+  `GET /api/workspace/inbox/tracks`; promotion preview/apply reuse the same
+  result rather than maintaining a second readiness interpretation.
 * `preparation_service` — Process All orchestration (clean -> enrich ->
   write-back), background operation tracking
 * `needs_review_service` — read-only aggregation across enrichment,
@@ -209,6 +386,14 @@ Service map (`backend/app/services/`), current primary surfaces:
   exposes "Retry BPM now" and, only while paused, "Resume automatic
   retries" -- separate from `BpmReview.tsx`'s unrelated anomaly-review
   `Queue` action.
+* `WaveformGenerationCard` observes an active bulk waveform operation through
+  one adaptive chained-timeout stream (1 second during startup, 2.5 seconds
+  through two minutes, then 5 seconds steady-state). The timeout ref represents
+  only a callback that has not fired, while a separate abortable request slot
+  represents the sole in-flight status read. Visibility resume polls
+  immediately only when that request slot is idle; terminal states and request
+  errors stop the stream, and a monotonically invalidated session prevents old
+  callbacks from rescheduling or updating state after supersession or unmount.
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
 * `sync_destination_service` — Publish/SSD Sync source and destination
@@ -339,8 +524,36 @@ basic search. **Beets Python API is allowed; the `beet` CLI binary is
 forbidden** — this is enforced by a static AST regression guard
 (`tests/test_no_beet_cli_invocation.py`).
 
+Provider adapters remain synchronous and preserve their existing timeout,
+matching, cache, and fallback semantics, but every FastAPI/Process All entry
+point that can reach them dispatches the complete synchronous provider
+workflow to a worker thread. No external provider network wait runs on the
+uvloop event-loop thread. Process All joins a bounded in-flight provider
+worker before propagating cancellation so its durable library scope is not
+released while that worker can still update review/cache state. The shared
+beets MusicBrainz client serializes access to its singleton rate limiter and
+closes its pooled session after every lookup attempt, including errors.
+
 Traxsource is legacy: it exists only in old `pipeline.py`-era code and is
 not part of the current provider set — do not treat it as active.
+
+The Settings metadata-source response is the source of truth for source roles
+(`local_input`, `analysis_only`, or `track_enrichment`) and readiness. An
+explicit Inbox **Enrich Selected** action may select only sources marked
+`selectable_for_enrichment`: globally enabled, configured, ready, and usable
+by the current provider router. `source_ids` is optional for backward
+compatibility on `POST /api/workspace/prepare/enrich`; when omitted, the
+server resolves the globally enabled + ready track-enrichment defaults. When
+provided, every ID must be validated and the selected sources are eligible to
+be queried, not guaranteed to run, because staged routing may stop early after
+strong consensus. Process All continues to use the global defaults and does
+not open the per-batch selector. Credentials never enter the Inbox request.
+
+Beets and MusicBrainz readiness for this routing path reflects the shared
+Beets Python API used by `musicbrainz_client`; the forbidden `beet` CLI is not
+used. Local tags and filename hints remain automatic local-input evidence, and
+Mixed In Key remains an analysis-only trusted input rather than a selectable
+track-enrichment provider.
 
 ## Confidence / Review Model
 
@@ -464,11 +677,32 @@ authoritative for BPM/key/cue points and is never overwritten (see
 
 ## Readiness
 
-Required for promotion:
+Inbox Redesign Checkpoint 1 defines five user-facing preparation states in
+strict precedence order:
+
+1. **Write Blocked** — the managed file cannot currently be safely written or
+   verified (unsupported format, missing/out-of-scope source, current planner
+   blocker, or a latest failed write whose DB/file difference is still open).
+2. **Needs Attention** — required Artist/Title/Genre is missing, current
+   suspicious metadata or a serious processing issue exists, or the intended
+   Library destination already exists.
+3. **Review** — a pending suggestion/conflict in the latest Inbox-scoped
+   enrichment snapshot still needs a decision. Applied, ignored, review-later,
+   and superseded history do not count.
+4. **Unsaved** — approved `tracks` metadata differs from live managed-file
+   tags and no higher-priority state applies.
+5. **Ready** — the complete promotion contract passes.
+
+The projection is read-only: `tracks` remains approved working metadata,
+`tag_write_service` remains the only tag writer, and external originals are
+never inspected as writable managed sources or modified. Required for Ready:
 
 * Artist, Title, Genre present
 * Metadata write verified (if any writes were pending)
-* Zero serious unresolved error
+* Zero serious current error or actionable provider review
+* Managed source present and safely contained in Inbox
+* No existing destination (identical content is also fail-closed because
+  promotion apply never overwrites or silently removes the Inbox copy)
 
 Warnings only (do not block promotion):
 
@@ -480,6 +714,54 @@ Quality Review (ffprobe snapshot findings and durable findings alike,
 including `recoverable_audio_decode_warning` and `audio_decode_failed`) is
 not currently consulted by promotion readiness at all -- it is purely
 informational, matching its pre-existing status.
+
+Inbox Redesign Checkpoint 2 builds the read-only workspace layer on that same
+contract. `GET /api/workspace/inbox/tracks` accepts `preparation_status`,
+searches filename/Artist/Title/Genre, and returns search-scoped status counts,
+the full filtered total, and current Inbox IDs for safe selection validation.
+The service performs one candidate preparation projection, then reuses it for
+counts, status filtering, authoritative readiness sorting, pagination, and
+response rendering. The companion
+`GET /api/workspace/inbox/tracks/{track_id}/inspection` is a single-track,
+read-only projection for URL-backed (`/inbox?track=<id>`) inspector restore.
+
+Inbox selection is ID-based and persists across sorting, refetch, filtering,
+and pages. The UI distinguishes total selected from visible selected, exposes
+clear-hidden and clear-all actions, labels the header checkbox as Select
+Visible, and supports shift-click ranges only within rendered rows. The Track
+Inspector shows Metadata, authoritative Status/reasons/warnings/write/
+promotion state, Analysis/waveform state, and managed File context. Its
+DB-first metadata editing remains separate from the explicit Save to File
+action, which is enabled only for pending writable changes and keeps the
+Inspector open while the verified result is shown.
+
+Checkpoint 3A is complete: Inbox single-track and bulk metadata editing for
+Artist/Title/Genre/Album is DB-first, records existing manual provenance, and
+refreshes the authoritative preparation state without writing file tags.
+Checkpoint 3B is complete: the frontend provides inline Artist/Title/Genre
+editing in the dense Inbox table, Album editing in the Track Inspector and
+Bulk Edit panel, four-field opt-in bulk preview/confirmation, local validation,
+targeted refreshes, selection/filter/sort preservation, and clear Unsaved
+pending-field presentation. Bulk preview reports selected, eligible,
+changeable, already-matching, skipped, and missing tracks explicitly. Unsaved
+filter counts are primary-status counts; a higher-precedence state may still
+have `pending_fields` and `write.has_unsaved_changes`. These controls still
+update approved working metadata only; they never call tag-write APIs or imply
+that file tags changed. The Save to File checkpoint is complete: the frontend
+uses the existing tag_write_service plan/apply contract with 50-track request
+chunking, a concise exact-diff preview, managed-copy confirmation wording,
+verified per-track result reporting, stale-plan rejection, no-op/blocked
+handling, and authoritative Inbox refresh after apply. It does not add a new
+writer or a permanent SAVED preparation state. Per-batch provider-source
+selection is complete for explicit Enrich Selected. Inline enrichment review
+is complete: the Inbox Track Inspector now exposes a Review section that reads
+the shared enrichment_review_service decision queue (no new review store) and
+supports field/proposal "Use Suggested" (DB-only apply) and "Keep Current"
+(ignored) decisions that refresh the authoritative preparation state.
+`GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` is a thin
+read-only track-scoped aggregation of actionable (pending) suggestions.
+Needs Review merge/demotion, Process All demotion, the full mobile redesign,
+and the final focused Impeccable pass remain deferred.
 
 ## Data Stores
 

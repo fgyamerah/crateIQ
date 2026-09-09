@@ -4,6 +4,7 @@ from __future__ import annotations
 from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, HTTPException
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ...core.preflight import run_preflight
@@ -184,7 +185,8 @@ async def patch_metadata_sources(body: MetadataSourcesUpdateRequest) -> Metadata
 @router.post("/settings/metadata-sources/{source_id}/test", response_model=MetadataSourceTestResponse)
 async def test_metadata_source(source_id: str) -> MetadataSourceTestResponse:
     try:
-        return MetadataSourceTestResponse(**settings_service.test_metadata_source(source_id))
+        result = await run_in_threadpool(settings_service.test_metadata_source, source_id)
+        return MetadataSourceTestResponse(**result)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 

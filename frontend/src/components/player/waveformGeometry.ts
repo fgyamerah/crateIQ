@@ -142,6 +142,105 @@ export function waveformAmplitudeColor(normalizedAmplitude: number, intensity = 
   return `rgba(${r}, ${g}, ${b}, ${alpha.toFixed(3)})`
 }
 
+// ---------------------------------------------------------------------------
+// Spectral coloring (single mirrored waveform)
+//
+// Per-bucket [low, mid, high] energy fractions tint the ONE mirrored waveform;
+// they are never rendered as three separate Low/Mid/High rows. The mapping
+// below is a single continuous ramp, not fixed color zones across the track.
+// ---------------------------------------------------------------------------
+
+interface ColorStop {
+  readonly position: number
+  readonly rgb: readonly [number, number, number]
+}
+
+const FREQUENCY_COLOR_STOPS: ReadonlyArray<ColorStop> = [
+  { position: 0.0, rgb: [0x20, 0xd4, 0xd8] }, // cyan      — bass/kick-heavy
+  { position: 0.18, rgb: [0x28, 0xd9, 0x6b] }, // green     — low-mid energy
+  { position: 0.38, rgb: [0x23, 0x88, 0xff] }, // blue      — midrange
+  { position: 0.52, rgb: [0x00, 0xc8, 0xe8] }, // cyan      — midrange
+  { position: 0.64, rgb: [0xf5, 0xd9, 0x0a] }, // yellow    — upper-mid
+  { position: 0.82, rgb: [0xff, 0x8a, 0x00] }, // orange    — high/transient
+  { position: 1.0, rgb: [0xe8, 0x79, 0xf9] }, // magenta   — transient-heavy
+]
+
+function colorFromStops(stops: ReadonlyArray<ColorStop>, value: number, alpha: number): string {
+  const position = clampUnit01(value)
+  let lower = stops[0]
+  let upper = stops[stops.length - 1]
+  for (let index = 0; index < stops.length - 1; index += 1) {
+    const candidateLower = stops[index]
+    const candidateUpper = stops[index + 1]
+    if (position >= candidateLower.position && position <= candidateUpper.position) {
+      lower = candidateLower
+      upper = candidateUpper
+      break
+    }
+  }
+  const span = upper.position - lower.position
+  const t = span > 0 ? (position - lower.position) / span : 0
+  const r = Math.round(lerp(lower.rgb[0], upper.rgb[0], t))
+  const g = Math.round(lerp(lower.rgb[1], upper.rgb[1], t))
+  const b = Math.round(lerp(lower.rgb[2], upper.rgb[2], t))
+  return `rgba(${r}, ${g}, ${b}, ${clampUnit01(alpha).toFixed(3)})`
+}
+
+/**
+ * Maps per-bucket low/mid/high energy fractions to a single waveform color.
+ *
+ * Low-heavy slices read cyan/green, midrange reads blue/cyan/yellow, and
+ * high/transient-heavy reads orange/red/magenta. `intensity` scales alpha so
+ * played vs. upcoming sections differ by brightness without changing hue.
+ */
+export function waveformFrequencyColor(
+  lowFraction: number,
+  midFraction: number,
+  highFraction: number,
+  intensity = 1,
+): string {
+  const low = clampUnit01(lowFraction)
+  const mid = clampUnit01(midFraction)
+  const high = clampUnit01(highFraction)
+  // Weighted "spectral position" on the single ramp. Bass pulls toward the
+  // low end, midrange to the middle, transients to the top.
+  const position = low * 0.1 + mid * 0.55 + high * 0.92
+  return colorFromStops(FREQUENCY_COLOR_STOPS, position, intensity)
+}
+
+/**
+ * Reduce interleaved `[low, mid, high]` triplets to `barCount` buckets,
+ * averaging band fractions per bucket (never extrema). The returned array has
+ * exactly `barCount` entries of `[low, mid, high]` when the source is
+ * non-empty and `barCount` is positive, else an empty array.
+ */
+export function downsampleColorBands(
+  colorBands: readonly number[],
+  barCount: number,
+): [number, number, number][] {
+  const sourcePairs = Math.floor(colorBands.length / 3)
+  if (sourcePairs <= 0 || !Number.isFinite(barCount) || barCount <= 0) return []
+  const columns = Math.min(Math.floor(barCount), sourcePairs)
+  const out: [number, number, number][] = new Array(columns)
+  for (let index = 0; index < columns; index += 1) {
+    const start = Math.floor((index * sourcePairs) / columns)
+    let end = Math.floor(((index + 1) * sourcePairs) / columns)
+    if (end <= start) end = start + 1
+    if (end > sourcePairs) end = sourcePairs
+    let low = 0
+    let mid = 0
+    let high = 0
+    for (let pair = start; pair < end; pair += 1) {
+      low += colorBands[pair * 3]
+      mid += colorBands[pair * 3 + 1]
+      high += colorBands[pair * 3 + 2]
+    }
+    const span = end - start
+    out[index] = [low / span, mid / span, high / span]
+  }
+  return out
+}
+
 /**
  * Playback progress as a 0..1 fraction.
  *

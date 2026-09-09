@@ -11,7 +11,9 @@ from typing import Optional
 
 
 WAVEFORM_SCHEMA_VERSION = 1
-WAVEFORM_ALGORITHM_VERSION = "mono-minmax-s16-v1"
+# v2 adds per-bucket low/mid/high band-energy fractions used ONLY to tint the
+# single mirrored waveform. They are never rendered as three separate rows.
+WAVEFORM_ALGORITHM_VERSION = "mono-minmax-band-s16-v2"
 
 
 class WaveformArtifactStatus(str, Enum):

@@ -2,6 +2,658 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-06] — Recover stale idle launcher sockets safely
+
+- Extended the explicit `recover-launcher` command to handle an `idle`
+  activation record paired with a forced-shutdown supervisor socket; idle
+  state with no socket remains a zero-write no-op.
+- Recovery now holds both installation locks, validates prior activation-lock
+  PID metadata, rejects live installation-local supervisor/backend processes,
+  freshly probes the fixed socket, and uses the existing atomic withdrawal
+  primitive. Live, malformed, unsafe, raced, or otherwise ambiguous ownership
+  remains fail-closed and no unrelated pathname is removed.
+- Added focused coverage for idle/no-socket, idle/stale, live and ambiguous
+  ownership, active-state refusal, stale/live PID metadata, idempotency,
+  unrelated socket preservation, and admitted startup after recovery.
+- Files affected: launcher recovery, activation-lock metadata capture,
+  launcher recovery tests, and current launcher documentation. Migration
+  notes: none; run the documented recovery command only after services stop.
+
+[2026-09-06] — Harden bulk waveform operation polling
+
+- Replaced the Jobs page's fixed 2-second bulk-waveform status interval with
+  one adaptive chained-timeout stream: 1 second during startup, 2.5 seconds
+  through two minutes, then 5 seconds for long-running generation.
+- Made timer and request ownership explicit. A fired timeout clears its ref
+  before fetching; one abortable request slot prevents overlap; visibility
+  resume never forks the chain; and terminal states, request errors,
+  supersession, cancellation, and unmount invalidate the polling session.
+- Guarded preview/history/action completions so stale async work cannot update
+  an unmounted card or replace a newly started operation with older history.
+- Added focused Vitest regression coverage for cadence, terminal/error stops,
+  hidden/visible transitions (including visibility change during an unresolved
+  request), single-stream scheduling, cancel ordering, stale completion, and
+  cleanup. Files affected: waveform bulk frontend API/card/tests and current
+  project docs. Migration notes: none; backend routes and data are unchanged.
+- Disposable-library browser verification passed with non-blocking findings:
+  22 status reads completed with zero overlaps or duplicate chains, observed
+  the 1-second and 2.5-second phases, resumed from one visibility pause without
+  a burst, and stopped cleanly at completion. The run finished before the
+  5-second phase; the true in-flight visibility race, cancellation, and unmount
+  paths remain covered by the focused automated regressions rather than that
+  browser run.
+
+[2026-09-03] — Unified single-mirrored waveform + first-open auto-generation
+
+- Replaced every waveform surface (bottom player, Library Track Inspector,
+  Inbox Track Inspector, Music Review) with one canonical `UnifiedWaveform`
+  renderer: a single mirrored, densely-bared DJ waveform centered on one
+  axis — never three stacked Low/Mid/High rows. The old `ThreeBandWaveform`,
+  `TrackWaveform`, and `EmptyWaveform` components are retained only as
+  deprecated references.
+- Frequency information is now represented through color inside that one
+  waveform. The backend decodes mono at 22050 Hz and, alongside the existing
+  signed min/max peaks, computes per-bucket low/mid/high band-energy fractions
+  (`color_bands`) via a bounded numpy FFT pass (memory-capped; long files fall
+  back to the amplitude ramp without dropping the waveform). Artifact
+  algorithm bumped to `mono-minmax-band-s16-v2`; old artifacts are superseded
+  and regenerate automatically.
+- Waveform generation now starts automatically the first time a track is
+  opened (player/inspector/review) when the read returns a no-valid-waveform
+  state (`not_generated`/`stale`/`cancelled`). `failed` and `unsupported`
+  never auto-retry; they expose the existing controlled Retry action. The GET
+  remains read-only — the auto-trigger is a deliberate POST from the narrow
+  "track opened" hook, never from rendering a list, and backend dedup
+  prevents duplicate jobs across tabs/screens.
+- Added a polished animated skeleton ("Preparing waveform…" aria state) and a
+  muted empty center line; playback/seeking continue to use the player's
+  native range control overlaid on the waveform, with a canvas playhead.
+- Fixed a duplicate-generation regression: when two same-tab consumers of the
+  same track (e.g. Persistent Player and Track Inspector) both saw
+  `not_generated`, each issued its own generation POST. A module-level
+  in-flight set in `useTrackWaveform` now guarantees one POST per track per
+  tab; the second consumer observes the in-flight request on the poll timer
+  and hands off to normal job polling once the job is visible. Backend
+  concurrency/idempotency dedup remains as the cross-tab safety net.
+- Live browser verification passed (frontend :5175, backend :8020) on tracks
+  1 (Dele Sosimi — Turbulent Times) and 6 (Zakes Bantwini — Osama): exactly
+  one generation POST each from `not_generated`, both surfaces synchronized
+  to the same job, polling stopped at the terminal state, and reopening each
+  track issued zero POSTs (cached artifact served). Playback, playhead
+  movement, and seeking were verified on the unified waveform.
+- Files affected: waveform models/limits/peaks/extractor/artifact/schema/
+  route, `api/waveforms.ts`, `waveformGeometry.ts`, new `UnifiedWaveform`,
+  `useTrackWaveform` (auto-trigger + in-flight dedup), the four migrated
+  surfaces, CSS, and focused backend + frontend tests.
+  Migration notes: none destructive; the waveform cache is derived and
+  disposable, and the algorithm-version bump simply re-derives waveforms.
+
+[2026-09-05] — Inline enrichment review in the Inbox Track Inspector
+
+- Added actionable enrichment review to the Inbox Track Inspector as a new
+  Review section (tab). It reads the existing enrichment_review_service
+  snapshot/decision queue -- no new review table or proposal store -- so a
+  decision made here is immediately visible in the specialist Enrichment
+  Review page and vice versa.
+- Added a thin read-only aggregation
+  `GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` returning
+  only actionable (pending) suggestions for one track. No provider/network
+  work, no tag writes.
+- The Inspector Review section shows current vs suggested working metadata,
+  text confidence (HIGH/MEDIUM/LOW/CONFLICT), and source/provider attribution
+  including per-source disagreement for CONFLICT fields. "Use Suggested"
+  applies the selected field(s) through the existing update_suggestion +
+  apply_selected contract (DB-only); "Keep Current" resolves the proposal via
+  the existing 'ignored' decision without changing metadata.
+- Decisions refresh the authoritative preparation-state projection, so tracks
+  move between Review / Unsaved / Ready without a page reload. The Inbox table
+  shows a minimal per-track "N suggestions" indicator reusing the existing
+  review_count projection; no second review column was added.
+- Files affected: enrichment_review_service, workspace API route, Inbox
+  Inspector + new EnrichmentReviewPanel, enrichment review API/types, Inbox
+  page/styles, focused backend + frontend tests, and current project docs.
+  Migration notes: none (read-only endpoint; existing tables unchanged).
+- Still deferred: Needs Review / Enrichment Review navigation merge/demotion,
+  Process All demotion, full mobile redesign, and the final focused Impeccable
+  pass.
+
+[2026-09-03] — Complete Inbox per-batch enrichment source selection
+
+- Added a server-owned source-role and eligibility contract to Settings
+  metadata sources. Only globally enabled, configured, ready
+  track-enrichment sources can be selected for an explicit Enrich Selected
+  batch; local inputs and analysis-only sources remain non-selectable.
+- The registry contains 12 metadata sources; the earlier implementation
+  report's total of 14 was incorrect. The API exposes the canonical `label`
+  plus server-owned `role` and `selectable_for_enrichment` fields.
+- Extended `/api/workspace/prepare/enrich` with optional `source_ids` while
+  preserving the 200-track limit. Omitted `source_ids` uses the current
+  globally enabled + ready enrichment defaults; explicit selections are
+  validated and passed through the existing staged routing/consensus engine as
+  an inclusion gate. Process All continues to use those global defaults.
+- Replaced immediate Inbox enrichment with an accessible source selector that
+  confirms the batch lookup, keeps selection intact, reports empty/stale
+  source states, and leaves Save to File as a separate action. No consensus or
+  conflict-resolution behavior changed and no tag writes are automatic.
+- Corrected Beets/MusicBrainz source readiness to reflect the shared Beets
+  Python API used by routing; no `beet` CLI invocation was added.
+- Files affected: Settings/source contract, provider routing, preparation and
+  workspace enrichment API, Inbox source-selector component/styles/tests,
+  focused backend tests, and current project docs. Migration notes: none.
+- Still deferred: inline enrichment conflict-resolution redesign, Needs Review
+  merge, Process All demotion, full mobile redesign, and the final focused
+  Impeccable pass.
+
+[2026-09-02] — Complete Inbox Save to File checkpoint
+
+- Added preview-first Save to File actions to the Inbox selection toolbar and
+  Track Inspector, using only the existing tag_write_service plan/apply
+  contract. The preview shows selected, changeable, no-op, blocked, and
+  per-field current→approved values; confirmation states that only managed
+  Inbox copies are modified and external originals remain untouched.
+- Added explicit 50-track frontend chunking, verified per-track success versus
+  blocked/failed outcomes, stale-plan retry guidance, no-op handling, and
+  authoritative track/status refresh while preserving selection and an open
+  Inspector. Extended the writer regression coverage so a changed no-op file
+  is also rejected as stale.
+- Files affected: Inbox Save to File components/helpers, Inbox page and
+  Inspector, Inbox styles/tests, tag-write service test, and current docs.
+- Still deferred: inline enrichment conflict resolution, Needs Review merge,
+  Process All demotion, full mobile redesign, and the final focused Impeccable
+  pass.
+
+[2026-09-02] — Correct Checkpoint 3B Inbox preview and status refresh reporting
+
+- Corrected Bulk Edit preview wording to distinguish selected, eligible,
+  changeable, already-matching, skipped, and missing tracks.
+- Confirmed inline metadata edits refresh authoritative preparation state and
+  primary-status filter counts; higher-priority states can retain pending
+  unsaved fields without increasing the primary Unsaved count.
+- Files affected: Inbox page and focused Inbox frontend tests.
+- No tag writes, Save-to-File behavior, or backend bulk-edit semantics changed.
+
+[2026-09-02] — Complete Inbox redesign Checkpoint 3B frontend editing UX
+
+- Added inline DB-first editing for Artist, Title, and Genre in the dense
+  Inbox table, with Album editing in the Track Inspector and Bulk Edit panel.
+- Expanded Bulk Edit to all four approved metadata fields with explicit
+  per-field opt-in, validation, concise before/apply preview, and confirmation
+  wording that keeps file tags out of scope.
+- Added local pending/loading/error handling, keyboard Enter/Escape behavior,
+  targeted refreshes, selection/filter/sort preservation, and clearer Unsaved
+  preparation-state details. No tag-write API or Save to File action was added.
+- Files affected: Inbox page, metadata editor, Track Inspector, Inbox styles,
+  focused frontend tests, and current project docs.
+- Still deferred: explicit Save to File UX, provider-source selection, inline
+  enrichment conflict resolution, Needs Review merge, Process All demotion,
+  full mobile redesign, and the final focused Impeccable pass.
+
+[2026-09-02] — Complete Inbox redesign Checkpoint 3A DB-first editing
+
+- Normalized Inbox Artist, Title, Genre, and Album single-track and bulk
+  editing to update approved `tracks` metadata and existing manual provenance
+  only; ordinary edits no longer write managed-file tags or create backups.
+- Refreshed the authoritative preparation-state projection after edits so DB/
+  file differences report Unsaved with exact pending fields. Filename rename
+  remains separate and unchanged, and Album remains optional for promotion.
+- Extended Inbox edit/preview/apply API contracts and track summary/detail
+  schemas for the four supported fields. No frontend editing UI or Save to
+  File UX was added.
+- Files affected: Inbox workspace service/routes, track model/schemas,
+  frontend contract types, focused Inbox edit tests, and current docs.
+- Still deferred: Checkpoint 3B frontend editing UI, explicit Save to File UX,
+  provider-source selection, inline enrichment conflict resolution, Needs
+  Review merge, Process All demotion, mobile redesign, and final Impeccable.
+
+[2026-09-02] — Build Inbox preparation workspace shell (Redesign Checkpoint 2)
+
+- Added server-side Inbox search across filename, Artist, Title, and Genre,
+  authoritative preparation-status filtering, full filtered totals, and
+  search-scoped counts for all five Checkpoint 1 states.
+- Reused one full candidate preparation projection per list request for status
+  counts, filtering, authoritative readiness sorting, pagination, and response
+  rendering. Each file's tags are read at most once and review state is loaded
+  once per projection; synchronous filesystem work remains off the event loop.
+- Added persistent ID-based multi-selection, honest Select Visible semantics,
+  shift-click ranges within rendered rows, visible/hidden selection counts,
+  clear-hidden/clear-all controls, pagination, and invalid-ID pruning after
+  refresh without changing any existing Inbox action semantics.
+- Added a URL-backed, read-only Inbox Track Inspector with Metadata, Status,
+  Analysis, and File sections; keyboard close/focus restoration; visible-track
+  navigation; and a narrow-layout overlay fallback. No metadata/file mutation,
+  enrichment acceptance, analysis action, or Save-to-File control was added.
+- Files affected: focused workspace/track services and route, Inbox API/types/
+  page/components/hook/styles/tests, and current project docs. Migration notes:
+  none.
+- Still deferred: unified DB-first editing, expanded Artist/Title/Genre/Album
+  bulk editing, explicit Save to File UX, per-batch provider selection, inline
+  enrichment/conflict application, Needs Review merge, Process All demotion,
+  full mobile redesign, and the final focused Impeccable pass.
+
+[2026-09-02] — Add read-only Inbox preparation state (Redesign Checkpoint 1)
+
+- Added one deterministic, read-only preparation-state projection for managed
+  Inbox tracks: Write Blocked, Needs Attention, Review, Unsaved, or Ready,
+  with human-readable reasons, secondary BPM/key warnings, exact pending tag
+  fields, actionable-review counts, current write safety, and promotion state.
+- Made Inbox summaries and promotion preview/apply consume the same batched
+  readiness logic. Current file tags are read once per track per projection;
+  review state, tag-write history, and track rows are each loaded in batches.
+- Made identical and different existing Library destinations both block
+  preview and apply, preserving the existing fail-closed/no-overwrite move
+  behavior. Actionable current provider review and serious current track
+  errors now prevent a false Ready state; BPM/key/waveform remain warnings.
+- Updated the current Inbox table to show the five human labels and expose
+  reasons accessibly without changing Clean, Enrich, Bulk Edit, Process All,
+  tag-write, or Move behavior. Files affected: focused workspace/tag-write
+  backend, Inbox API/schema/UI/types/tests, and project docs. Migration notes:
+  none.
+- Not implemented in this checkpoint: the full Inbox redesign, unified
+  DB-first editing, explicit Save to File UX, source selection drawer, inline
+  conflict review, Needs Review merge, Process All demotion, or mobile redesign.
+
+[2026-09-02] — Consolidate Library Launcher stabilization
+
+- Consolidated the launcher Browse/Create, stable-port handoff, fail-closed
+  recovery, promoted-child lifetime, and provider-responsiveness work as one
+  verified stabilization set without changing product flow.
+- Recorded the completed live E2E evidence: explicit recovery restored rootless
+  startup, the promoted library backend survived activation-worker return, and
+  health stayed responsive for more than nine minutes while provider waits ran
+  off the event loop. One connection reset at deliberate backend replacement is
+  an accepted handoff boundary.
+- Isolated stale route, health, launch-script, provider-settings, and fixed-port
+  tests from the launcher gate, private local settings, live service port, and
+  superseded public contracts; no production behavior was changed by these
+  final test corrections.
+- Verification: 2,302 backend tests and 13 frontend tests passed; frontend
+  typecheck, production build, and Git whitespace checks passed. Files affected:
+  focused stabilization tests and shared documentation. Migration notes: none.
+
+[2026-09-01] — Keep metadata provider waits off the backend event loop
+
+- Dispatched Process All enrichment, explicit Beets/MusicBrainz lookup,
+  Enrich Selected, consensus preview, and metadata-source live tests through
+  worker threads so bounded synchronous HTTPS waits cannot stall unrelated
+  FastAPI routes such as `/api/health`.
+- Serialized the shared beets MusicBrainz client and closed its pooled HTTP
+  session after every success/failure path so peer-closed sockets are not
+  retained as persistent `CLOSE_WAIT` descriptors.
+- Added deterministic gated-provider regressions proving Process All remains
+  pending while health stays responsive, including an SSL failure with the
+  existing provider-warning semantics and verified session cleanup.
+- Files affected: metadata/provider route boundaries, Process All preparation,
+  MusicBrainz client, focused tests, README, and project context. Migration
+  notes: restart CrateIQ before live retesting; no schema/config migration.
+
+[2026-09-01] — Preserve promoted backend ownership after activation worker exit
+
+- Routed worker-requested backend process creation through one
+  supervisor-lifetime launch-owner thread so Linux `PR_SET_PDEATHSIG` remains
+  tied to a live parent thread after the short-lived activation worker returns.
+- Made promoted-child ownership explicit: uncommitted B remains eligible for
+  rollback termination, while verified B transfers into `self.active` before
+  the durable success commit and is removed from disposable handoff state.
+- Added real socket regressions that join the activation worker, run the child
+  monitor, re-probe the stable endpoint, and prove both post-success survival
+  and failure-side SIGTERM/reaping of an uncommitted promoted child.
+- Files affected: supervisor, focused socket handoff tests, and project docs.
+  Migration notes: restart the local supervisor before the final live retest.
+
+[2026-09-01] — Keep slow promoted backends verifiable during launcher handoff
+
+- Separated the promoted/rootless backend's bounded 30-second startup
+  verification window from the 15-second candidate window while retaining
+  repeated one-second authenticated probes and exact identity matching.
+- Made private identity verification explicitly require completed application
+  startup, the verification token, supervisor/backend instances, active role,
+  stable port, canonical root, and library key.
+- Kept supervisor status IPC responsive while the handoff owns its state lock
+  and moved backend status IPC off the FastAPI event loop, preventing a
+  two-second status poll from starving the promoted identity response.
+- Reverified the promoted child at activation commit, prohibited clean rollback
+  idle when the verified replacement has already exited, and added deterministic
+  slow-start, in-progress status, and no-backend fail-closed regressions.
+- Files affected: supervisor, private backend identity, launcher status route,
+  focused handoff/foundation/socket tests, and project docs. Migration notes:
+  restart the local supervisor before live retesting so it loads this contract.
+
+[2026-09-01] — Add explicit stale fail-closed launcher recovery
+
+- Added `recover-launcher` / `crateiq_recover_launcher` as an operator-only
+  recovery path that never runs automatically and never starts, stops, or
+  activates a library.
+- Recovery now requires exclusive supervisor and activation locks, rejects
+  live or ambiguous supervised-backend ownership (including persisted instance
+  identities and stable/candidate ports), safely withdraws only a proven-stale
+  supervisor socket, and validates registry plus compatibility-root state.
+- A successful recovery archives the failed activation record, clears stale
+  activation-lock metadata, atomically writes rootless idle state, and preserves
+  the library registry, saved root, workspace contents, and `last_opened_at`.
+- Added deterministic recovery regressions for stale success, live-child and
+  socket/lock refusal, saved-root mismatch, idempotency, stale socket cleanup,
+  and rootless startup admission. Files affected: supervisor/recovery backend,
+  registry validation seam, local service CLI, focused tests, and project docs.
+  Migration notes: run recovery explicitly only after services are fully stopped.
+
+[2026-09-01] — Restore deterministic supervisor stable-port reuse
+
+- Enabled `SO_REUSEADDR` on every supervisor-reserved backend listener so
+  verified/reaped handoffs can immediately reuse the stable port despite
+  accepted identity or admission connections remaining in kernel `TIME_WAIT`.
+- Preserved exclusive live listener ownership: the supervisor still closes its
+  parent FD immediately after spawn, does not enable `SO_REUSEPORT`, and only
+  promotes or restores a backend after the prior owner is terminated and reaped.
+- Added real loopback child-process regressions for rootless-to-library
+  promotion and rollback replacement on the same kernel-assigned stable port,
+  including explicit parent-FD and single-live-owner assertions.
+- Isolated one supervisor foundation multiprocessing helper from live persisted
+  activation state. Files affected: supervisor, focused supervisor tests, and
+  changelog. Migration notes: restart/recovery remains an explicit operator
+  action for an already persisted `fail_closed` state.
+
+[2026-09-01] — Stabilize Library Launcher dialogs
+
+- Kept Browse Libraries and Create New Library open during React StrictMode
+  effect replay by removing the native-dialog cleanup close.
+- Deferred initial browse effects until after replay cleanup so each deliberate
+  initial location load issues one request without abort churn.
+- Added focused StrictMode regression coverage for both dialogs.
+- Files affected: Library Launcher page/test and changelog. Migration notes:
+  none; no backend, supervisor, LAN-policy, or service-control change.
+
+[2026-09-01] — Wire Library Launcher browse and create workflows
+
+- Replaced the informational Browse Libraries and Create New Library dialogs
+  with typed, backend-driven local directory browsing, existing-library
+  registration, managed-workspace creation, validation, and bounded errors.
+- Reused the existing activation implementation for recent, registered, and
+  newly created libraries; every open request still submits only the opaque
+  `library_id`, preserves activation-ID matching/reconnect polling, and refreshes
+  current/recent state only after verified success.
+- Added explicit local-capability detection and LAN-safe unavailable states.
+  Registered-ID activation remains available over LAN, while filesystem paths,
+  browse, register, and create remain unavailable there.
+- Added careful `registry_write_failed_after_create` recovery copy and a direct
+  route back to Browse Libraries without claiming that the on-disk workspace
+  was rolled back.
+- Files affected: launcher frontend API/page/styles, README, project context,
+  task list, and changelog. Migration notes: none; no dependency, backend API,
+  supervisor activation, LAN policy, or service-control change.
+
+[2026-09-01] — Add safe Library Launcher browse, register, and create backend
+
+- Added local-operator-only, one-level bounded directory browsing with safe
+  starting roots, deterministic directory ordering, hidden-entry filtering,
+  explicit blocked symlinks, strict launcher classification, and pagination.
+- Added existing-library registration that canonicalizes and reclassifies at
+  write time, accepts only managed workspaces or strict Legacy Direct
+  fingerprints, deduplicates stable library IDs/keys, and leaves
+  `last_opened_at` unset until successful activation.
+- Added rollback-safe new managed-library creation from a validated parent and
+  safe single-segment name. It reuses the existing workspace initializer,
+  validates before registry insertion, never creates rootless runtime jobs
+  state, and leaves a valid new workspace intact if registry persistence fails.
+- Serialized registry read/modify/replace writers with a restrictive local
+  lock while preserving schema-v1 compatibility, the 16-entry bound, atomic
+  writes, and success-only recency. LAN registered-ID activation is unchanged;
+  LAN browse/register/create is denied.
+- Added focused browse/register/create/LAN/rollback/failure tests and made one
+  rootless foundation test explicitly isolate supervisor IPC from live state.
+- Files affected: launcher route/admin/registry services, focused launcher
+  tests, README, project context, task list, and changelog. No frontend wiring,
+  activation-by-path, supervisor handoff redesign, service action, dependency,
+  or music-file mutation was added. Migration notes: none; schema v1 now
+  permits `last_opened_at: null` for registered-but-never-opened entries.
+
+[2026-09-01] — Make the Library Launcher the normal local startup path
+
+- Changed interactive `crateiq_start`/`start` to offer Library Launcher first
+  and by default, followed by Demo and explicit Legacy Configured Library
+  compatibility modes; the existing LAN/local-only choice remains unchanged.
+- Rootless startup now reaches the long-lived supervisor, rootless backend, and
+  frontend without selecting a library or requiring `logs/processed.db`.
+  Inherited root variables remain cleared for this explicit rootless profile.
+- Added deterministic dry-run coverage for rootless local/LAN startup, stale
+  inherited roots, legacy initialization enforcement, demo/cancel behavior,
+  status reporting, and stop target routing. Tests start no real services.
+- Files affected: local service helper, focused startup tests, README, and
+  PROJECT_CONTEXT. No handoff, LAN security policy, PID ownership, dependency,
+  backend route, frontend launcher, or library-data behavior changed.
+
+[2026-09-01] — Add the Library Launcher frontend
+
+- Added `/libraries` as a responsive installation-level launcher with the
+  approved hero, current/recent library state, accessible library cards, and
+  deliberate Switch Library entries in the sidebar and Settings.
+- Added typed registry/current/activation API integration. Activation submits
+  only `library_id`, retains the activation ID, polls to a fixed bound, tolerates
+  temporary reconnect failures during backend replacement, and enters the
+  workspace only after current-library verification.
+- Added safe busy, blocker, unavailable, failure, fail-closed, empty, loading,
+  and same-library success handling. Browse/Create are polished informational
+  dialogs only; they accept no path and perform no fake or filesystem action.
+- Files affected: frontend launcher API/page/routing/navigation/styles and
+  current-state documentation. No backend handoff, LAN behavior, dependency,
+  authentication, or service-control change.
+
+[2026-09-01] — Add registry-bound launcher activation API (Checkpoint 1B.2B-2B)
+
+- Added registry-ID-only launcher activation start/status/current-library
+  endpoints; they revalidate saved entries and submit only canonical
+  root/key/classification data through the owner-only supervisor IPC.
+- Successful handoff is asynchronous because it replaces the backend handling
+  the request. The supervisor retains a bounded safe outcome, maps busy,
+  blocker, fail-closed, and unavailable states for the future launcher UI, and
+  updates `last_opened_at` only after verified activation or same-library no-op.
+- Registry recency failure is reported as a warning without rolling back the
+  verified active backend. Known safe registry IDs remain openable over LAN;
+  arbitrary host-path inspection remains local-operator-only.
+- Files affected: launcher route/registry service, supervisor IPC/activation
+  status, focused API/supervisor tests, and current-state documentation. No
+  frontend launcher, Create Library UI, live-service action, or in-process
+  root switch was added.
+
+[2026-08-31] — Fail closed ambiguous library-handoff rollback
+
+- Retained every supervisor-owned candidate, promoted, or original child
+  reference until termination and reaping are confirmed; ambiguous retirement
+  never starts a replacement child or reports idle.
+- Added a durable `fail_closed` activation phase with activation, root/key,
+  child-identity, and failure-stage diagnostics.
+- Snapshotted exact compatibility-root state before promotion and reconciled
+  post-replace failures against disk; rollback now restores and verifies the
+  prior configured or rootless state before returning idle.
+- Added deterministic rollback tests for candidate/promoted/old-child
+  retirement failures, late saved-root fsync, restoration failure,
+  post-promotion state-write failure, rootless recovery, and no-dual-active
+  ownership assertions.
+- Files affected: supervisor, compatibility-root helper, focused handoff
+  tests, and current-state documentation. No activation API, registry recency,
+  launcher UI, LAN behavior, or live services changed.
+
+[2026-08-31] — Add internal supervisor library handoff (Checkpoint 1B.2B-2A)
+
+- Added a supervisor-owned, Unix-socket-only A→B/rootless→B handoff engine:
+  strict activation state, verified loopback candidate, active admission drain,
+  persisted exact-key switch blockers, fresh stable-port promotion, bounded
+  child reaping, and deterministic rollback/fail-closed reporting.
+- Promoted backends are independently verified before the literal,
+  atomic/restrictive compatibility saved-root write. Registry recency remains
+  untouched; no HTTP activation API or launcher UI was added.
+- A completed exact v1 idle activation record upgrades in memory to v2;
+  malformed or non-idle v1 records remain fail-closed.
+- Added focused fake-process handoff tests, including blocker, identity,
+  promoted-backend, saved-root-write, old-termination, rootless, and no-op
+  outcomes. LAN startup behavior is unchanged.
+- Files affected: supervisor/runtime identity bridge, compatibility-root
+  writer, focused tests, and current-state documentation.
+
+[2026-08-31] — Correct Checkpoint 1B.2B-1 waveform/background isolation
+
+- Bound waveform scheduler shutdown, startup reconciliation, retention, cache
+  eviction, worker source resolution, and operation polling to the immutable
+  originating library key/root; foreign and legacy NULL state is not adopted.
+- Scoped BPM/tag-write reference findings and added active
+  `waveform_track_state` rows to conservative persisted switch blockers.
+- Added immutable `library_key` ownership to generic jobs and threaded it
+  through toolkit/rsync background status, PID, progress, and failure updates.
+- Added two-library regression coverage. No handoff, promotion, activation API,
+  registry recency update, frontend launcher, LAN change, or live-service action.
+
+[2026-08-31] — Add library-key operation isolation (Checkpoint 1B.2B-1)
+
+- Centralized the established canonical waveform-root digest as `library_key`;
+  rootless instances have no key and legacy waveform `library_id` remains a
+  compatibility column for that same value.
+- Migrated jobs, BPM anomalies, and persisted operation histories with scoped
+  indexes; current-library reads/recovery no longer adopt NULL legacy rows.
+  Active NULL and foreign-key rows are reported fail-closed by the persisted
+  switch-blocker inspection.
+- Namespaced global tag backups/job logs by key and changed publish destination
+  settings to conservative per-library v2 records; legacy global data is
+  preserved but is not automatically attributed.
+- No handoff, candidate promotion, activation API, registry update, frontend
+  launcher, or in-process root switch was implemented.
+
+[2026-08-31] — Close final Checkpoint 1B.2A safety blockers
+
+- Rejected multiply-linked activation and supervisor lock files before any
+  chmod, truncate, metadata write, or flock mutation, preserving an aliased
+  target's bytes and mode.
+- Made normal cooperative supervisor shutdown restartable: atomically
+  withdraws the public socket through instance-private entries, removes its
+  owned public and bound paths, and leaves replacement regular files or
+  symlinks untouched; ambiguous stale artifacts still fail closed.
+- Added real Process All/BPM and bulk-waveform/job drain-boundary tests that
+  prove a successful child durable row is created before drain returns and an
+  expired operation scope cannot create another one afterward.
+- Files affected: `backend/app/supervisor.py`, focused supervisor/Process
+  All/bulk waveform tests, and current-state docs. No handoff, jobs
+  namespacing, activation API, or frontend launcher was added.
+
+[2026-08-31] — Finalize Checkpoint 1B.2A P2 safety corrections
+
+- Removed the final socket pathname check→unlink path: stale recovery and
+  cooperative shutdown now fail closed and retain an existing socket pathname
+  when Linux/Python cannot atomically prove ownership at deletion time.
+- Bounded accepted supervisor IPC reads and actively closes tracked accepted
+  sockets during shutdown before child cleanup and lifetime-flock release.
+- Reserved Process All and bulk waveform descendant scopes atomically before
+  parent-row creation, and made row/scheduling/cancellation/preflight and
+  terminal-recording paths release those scopes exactly once.
+- Added deterministic supervisor and real-adapter regression coverage for
+  post-verification replacements, incomplete frames, cancellation-before-run,
+  scheduling failures, draining rejection, and bulk preflight/terminal errors.
+- Files affected: supervisor/gate/Process All/bulk waveform services, focused
+  tests, and current-state docs. No handoff, jobs namespacing, activation API,
+  or frontend launcher was added.
+
+[2026-08-31] — Close Checkpoint 1B.2A supervisor safety findings
+
+- Hardened activation locking with descriptor-validated regular files and
+  no-follow, descriptor-anchored runtime directories; symlink and non-regular
+  lock paths fail closed without touching a target.
+- Quiesced accepted Unix IPC handlers before child finalization and lifetime
+  flock release, and closed IPC admission before shutdown state mutation.
+- Anchored supervisor socket recovery/binding/cleanup to the verified runtime
+  directory, installed the bound socket without replacing a newly appeared
+  pathname, and preserve observed replacements rather than unlinking them.
+- Added long-lived internal descendant scopes so Process All and bulk waveform
+  drains wait for their deferred durable BPM/key or waveform-job creation.
+- Files affected: supervisor, admission, Process All/analysis/waveform
+  services, focused tests, and current-state documentation. No library
+  handoff, activation API, jobs schema migration, or frontend launcher added.
+
+[2026-08-30] — Make local supervisor socket ownership process-safe
+
+- Replaced the check-and-owner-record socket claim with a process-lifetime,
+  non-blocking flock at `.run/local/crateiq-supervisor.lock`.
+- The supervisor now binds its Unix IPC socket before it spawns the active
+  child, recovers stale sockets only while holding that lock, and only unlinks
+  the exact socket inode it bound.
+- Files affected: `backend/app/supervisor.py`, focused supervisor tests, and
+  supervisor contract documentation. No activation or handoff behavior changed.
+
+[2026-08-30] — Correct supervisor admission and containment foundation
+
+- Replaced check-only operation admission with an atomic lease/drain contract
+  and covered Process All, single/bulk waveform, BPM/key, and exact BPM retry
+  durable-create paths; existing Process All stages retain their parent
+  authorization after admission.
+- Preserved explicit supported runtime/tool configuration in supervised
+  children, added continuous child reaping, fail-closed Linux parent-death
+  setup, serialized supervisor state mutation, safe socket ownership, strict
+  activation phase invariants, and candidate-port exclusion.
+- Separated public health from loopback/token-protected internal candidate
+  verification. No handoff, jobs schema migration, or launcher surface was
+  added.
+- Files affected: supervisor/admission/identity/health services and routes,
+  targeted operation adapters, service helper, focused tests, and docs.
+- Migration notes: no library contents, indexes, jobs schema, backups, logs,
+  publish destination, saved root, or exports are changed.
+
+[2026-08-30] — Safe local supervisor foundation (Checkpoint 1B.2A)
+
+- Added a dedicated local supervisor that owns fixed, non-reload backend
+  children. The service helper now starts that supervisor for rootless and
+  configured-library profiles; frontend lifetime remains separate.
+- Added owner-only Unix-socket IPC, token/root-bound backend health identity,
+  temporary loopback candidate startup and verification, restrictive atomic
+  activation state/lock primitives, and a central process-local operation
+  admission gate with initial waveform, Process All, and analysis adapters.
+- This is infrastructure only: no active backend is stopped, no candidate is
+  promoted, no root/config is switched, and no activation HTTP API or launcher
+  UI exists. Library/operation storage isolation remains future work.
+- Files affected: supervisor/identity/IPC/admission services, health and
+  selected operation adapters, local service helper, focused tests, README,
+  project context, task list, and changelog.
+- Migration notes: no music contents, indexes, jobs schema, registry recency,
+  saved root, exports, or sync destination is changed. An incomplete or
+  malformed activation record fails closed at supervisor startup.
+
+[2026-08-30] — Harden launcher foundation review corrections
+
+- Disabled arbitrary host-path classification for every LAN-mode backend
+  process using explicit server startup state, so Vite's loopback API proxy
+  cannot bypass the local-only boundary; forwarded headers are not trusted.
+- Changed Legacy Direct Library inspection to immutable SQLite reads, which
+  cannot create WAL shared-memory files, checkpoint, recover, migrate, or
+  otherwise alter a candidate. WAL-only evidence that immutable SQLite cannot
+  see is conservatively rejected.
+- Limited rootless compatibility seeding to the Settings-managed saved root.
+  The launcher clears inherited root variables before rootless startup;
+  inherited `CRATEIQ_LIBRARY_ROOT` remains a configured-library fallback.
+- Strengthened legacy recognition to require the stable historical CrateIQ
+  schema core (`tracks`, `track_history`, `pipeline_runs`, and
+  `duplicate_groups` plus characteristic columns), rejecting generic
+  tracks-only databases.
+- Files affected: launcher route/service, local service helper, focused
+  launcher/startup tests, README, project context, task list, and changelog.
+- Migration notes: no library contents, markers, `processed.db`, WAL, or SHM
+  files are modified; switching, supervisor handoff, jobs namespacing,
+  create-library UI, visual changes, and authentication remain out of scope.
+
+[2026-08-30] — Multi-library launcher foundation (Checkpoint 1B.1)
+
+- Added the installation-scoped, atomic `.run/local/library_registry.json`
+  schema-v1 registry (maximum 16 canonical roots; launcher returns four),
+  compatibility seeding from the Settings-managed root, and a read-only,
+  fail-closed library classifier.
+- Added rootless launcher bootstrap startup plus read-only launcher registry,
+  classification, and current-library APIs. Rootless processes do not open
+  library indexes, run recovery, initialize a default library, or expose
+  library-scoped routes.
+- Preserved `.run/local/crateiq.env` as the Settings precedence and future
+  supervisor handoff file. Candidate host-path classification is restricted
+  to the local operator because unauthenticated LAN clients cannot safely
+  administer arbitrary server filesystem paths.
+- Files affected: launcher registry/classifier service and routes, backend
+  startup guard, local service helper, focused tests, and current docs.
+- Migration notes: no library contents, markers, or `processed.db` files are
+  modified. Active-library switching, supervisor handoff, jobs namespacing,
+  and launcher UI remain future work.
+
 [2026-08-13] — Settings workspace restart precedence
 
 - Made the Settings-managed `CRATEIQ_LIBRARY_ROOT` in

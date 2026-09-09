@@ -37,7 +37,7 @@ import asyncio
 import logging
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable
 
 from . import (
     consensus_service,
@@ -45,9 +45,11 @@ from . import (
     export_validation,
     preparation_operations_service,
     provider_routing_service,
+    settings_service,
     tag_write_service,
     workspace_service,
 )
+from .operation_admission_gate import OperationScope, operation_admission_gate
 from ..core.library_root import assert_path_under_root
 
 log = logging.getLogger(__name__)
@@ -56,6 +58,26 @@ _MAX_ENRICH_LOOKUPS_PER_RUN = 25
 _WRITE_CHUNK_SIZE = 50
 _SANITIZE_FIELDS = ("artist", "title", "album", "genre")
 _CONSENSUS_FIELDS = ("artist", "title", "genre")
+
+
+async def _enrich_tracks_off_event_loop(root: Path, track_ids: list[int]) -> dict[str, Any]:
+    """Run synchronous provider routing in a worker without abandoning it.
+
+    ``asyncio.to_thread`` keeps network waits off uvloop, but cancelling its
+    awaiter cannot stop the underlying Python thread. Shield and join that
+    bounded provider work before propagating cancellation so Process All's
+    durable operation scope is never released while the worker can still
+    update its captured library's review/cache state.
+    """
+    worker = asyncio.create_task(asyncio.to_thread(enrich_tracks, root, track_ids))
+    try:
+        return await asyncio.shield(worker)
+    except asyncio.CancelledError:
+        try:
+            await worker
+        except Exception:  # the cancellation remains the operation outcome
+            log.exception("Provider enrichment failed while Process All cancellation was pending")
+        raise
 
 
 def _sqlite_connect(root: Path):
@@ -192,7 +214,14 @@ def _needs_consensus_enrichment(row: Any) -> bool:
     return any(_is_junk_value(field, row[field]) for field in _CONSENSUS_FIELDS)
 
 
-def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_LOOKUPS_PER_RUN) -> dict[str, Any]:
+def enrich_tracks(
+    root: Path,
+    track_ids: list[int],
+    *,
+    source_ids: list[str] | None = None,
+    limit: int = _MAX_ENRICH_LOOKUPS_PER_RUN,
+) -> dict[str, Any]:
+    selected_source_ids = settings_service.validate_enrichment_source_ids(source_ids)
     with _sqlite_connect(root) as conn:
         placeholders = ",".join("?" * len(track_ids)) if track_ids else ""
         rows = conn.execute(
@@ -215,6 +244,7 @@ def enrich_tracks(root: Path, track_ids: list[int], *, limit: int = _MAX_ENRICH_
                 track_id, artist=row["artist"], title=row["title"],
                 inbox_copy_path=inbox_path if inbox_path.is_file() else None,
                 credentials_by_source=credentials_by_source,
+                selected_source_ids=selected_source_ids,
             )
             with _sqlite_connect(root) as conn:
                 consensus = consensus_service.build_track_consensus(track_id, evidence, conn=conn)
@@ -362,7 +392,12 @@ def write_tracks(track_ids: list[int]) -> dict[str, Any]:
 # Process All -- async background orchestrator (cancellable, restart-safe)
 # ---------------------------------------------------------------------------
 
-async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -> None:
+async def run_process_all(
+    operation_id: str, root: Path, track_ids: list[int], *, durable_scope: OperationScope | None = None,
+    on_started: Callable[[], None] | None = None,
+) -> None:
+    if on_started is not None:
+        on_started()
     cleaned = enriched = written = failed = 0
     warnings: list[str] = []
     try:
@@ -374,7 +409,11 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
             _finish(operation_id, root, track_ids, "cancelled", cleaned, enriched, written, failed, warnings)
             return
 
-        enrich_result = enrich_tracks(root, track_ids)
+        # Provider routing is intentionally synchronous (beets/MusicBrainz and
+        # requests-based adapters). Keep the complete lookup/cache/consensus
+        # transaction on one worker thread so no external-network wait can
+        # occupy the FastAPI/uvloop event-loop thread.
+        enrich_result = await _enrich_tracks_off_event_loop(root, track_ids)
         enriched = enrich_result["enriched_count"]
         warnings.extend(enrich_result["warnings"])
         await asyncio.sleep(0)
@@ -397,7 +436,13 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
             # which can legitimately exceed the external API's per-request
             # track_ids bound once tracks accumulate across multiple imports.
             from . import analysis_jobs_service
-            bpm_result = analysis_jobs_service.run("bpm_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
+            # This task retains only its own admitted descendant authority.
+            # A drain blocks new top-level operations, but waits for this
+            # scope before it returns so its BPM/key records remain atomic.
+            bpm_result = analysis_jobs_service.run(
+                "bpm_analysis", confirm=True, limit=25, track_ids=track_ids,
+                max_track_ids=None, durable_scope=durable_scope,
+            )
             # Read the suppression count immediately, before key analysis
             # runs -- if key analysis raises, this warning must still survive
             # so the user isn't left without the only signal explaining why
@@ -411,7 +456,10 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
             # Paused BPM tracks (proven two-stage decode failures) must not
             # fail the batch -- they are simply excluded from BPM candidate
             # selection; key analysis must still run over the full batch.
-            analysis_jobs_service.run("key_analysis", confirm=True, limit=25, track_ids=track_ids, max_track_ids=None)
+            analysis_jobs_service.run(
+                "key_analysis", confirm=True, limit=25, track_ids=track_ids,
+                max_track_ids=None, durable_scope=durable_scope,
+            )
         except Exception as exc:  # noqa: BLE001 - analysis is best-effort within Process All
             warnings.append(f"Analysis step skipped: {exc}")
 
@@ -428,6 +476,15 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
 
         status = "cancelled" if preparation_operations_service.is_cancel_requested(operation_id) else "completed"
         _finish(operation_id, root, track_ids, status, cleaned, enriched, written, failed, warnings)
+    except asyncio.CancelledError:
+        # Terminalize the originating parent operation using its captured
+        # library_key (via finish_operation's row lookup), not the current
+        # context. Release scope exactly once (idempotent), then re-raise to
+        # preserve normal asyncio cancellation semantics.
+        _finish(operation_id, root, track_ids, "cancelled", cleaned, enriched, written, failed, warnings)
+        if durable_scope is not None:
+            durable_scope.release()
+        raise
     except Exception as exc:  # noqa: BLE001 - must always reach a terminal state
         log.exception("Process All operation %s failed", operation_id)
         preparation_operations_service.finish_operation(
@@ -435,6 +492,9 @@ async def run_process_all(operation_id: str, root: Path, track_ids: list[int]) -
             written_count=written, needs_review_count=0, ready_count=0, failed_count=failed,
             warnings=warnings, error_reason=str(exc),
         )
+    finally:
+        if durable_scope is not None:
+            durable_scope.release()
 
 
 def _finish(
@@ -460,6 +520,58 @@ def start_process_all(root: Path, *, confirm: bool) -> dict[str, Any]:
     track_ids = _inbox_track_ids(root, None)
     if not track_ids:
         raise ValueError("Inbox is empty. Import music before running Process All.")
-    operation = preparation_operations_service.start_operation("process_all", track_count=len(track_ids))
-    asyncio.create_task(run_process_all(operation["id"], root, track_ids))
+    # Reserve before the parent row is durable.  This is one gate transaction:
+    # a drain either rejects us before any row exists, or waits until this
+    # workflow has explicitly released its descendant authority.
+    durable_scope = operation_admission_gate.reserve_operation_scope()
+    operation: dict[str, Any] | None = None
+    execution_started = False
+
+    async def _run_owned_operation(operation_id: str) -> None:
+        def _mark_execution_started() -> None:
+            nonlocal execution_started
+            execution_started = True
+
+        # If cancellation wins before run_process_all reaches its first
+        # instruction, the done callback owns terminalization. After that,
+        # the workflow's own terminal paths are the only parent-row writers.
+        await run_process_all(
+            operation_id, root, track_ids, durable_scope=durable_scope,
+            on_started=_mark_execution_started,
+        )
+
+    try:
+        operation = preparation_operations_service.start_operation("process_all", track_count=len(track_ids))
+        coroutine = _run_owned_operation(operation["id"])
+        try:
+            task = asyncio.create_task(coroutine)
+        except Exception:
+            coroutine.close()
+            raise
+
+        def _reconcile_unstarted_task(completed: asyncio.Task) -> None:
+            try:
+                if completed.cancelled() and not execution_started:
+                    preparation_operations_service.finish_operation(
+                        operation["id"], status="cancelled", cleaned_count=0, enriched_count=0,
+                        written_count=0, needs_review_count=0, ready_count=0, failed_count=0,
+                        warnings=[], error_reason="task_cancelled_before_start",
+                    )
+            finally:
+                # run_process_all also releases after it begins; scope release
+                # is idempotent so this covers only the pre-start gap.
+                durable_scope.release()
+
+        task.add_done_callback(_reconcile_unstarted_task)
+    except Exception as exc:
+        try:
+            if operation is not None:
+                preparation_operations_service.finish_operation(
+                    operation["id"], status="failed", cleaned_count=0, enriched_count=0,
+                    written_count=0, needs_review_count=0, ready_count=0, failed_count=0,
+                    warnings=[], error_reason=f"Process All could not be scheduled: {exc}",
+                )
+        finally:
+            durable_scope.release()
+        raise
     return {"operation_id": operation["id"], "track_count": len(track_ids)}

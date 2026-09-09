@@ -29,6 +29,7 @@ from .api.routes import health as health_router
 from .api.routes import genres as genres_router
 from .api.routes import insights as insights_router
 from .api.routes import jobs as jobs_router
+from .api.routes import launcher as launcher_router
 from .api.routes import library as library_router
 from .api.routes import metadata_repair as metadata_repair_router
 from .api.routes import metadata_repair_queue as metadata_repair_queue_router
@@ -51,7 +52,8 @@ from .api.routes import workspace as workspace_router
 from .core.config import BACKEND_VERSION, PIPELINE_PY, TOOLKIT_ROOT
 from .core.db import init_db
 from .core.library_root import selected_library_root
-from .services import analysis_operations_service, publish_operations_service, read_only as read_only_service
+from .core.library_key import current_library_key
+from .services import analysis_operations_service, library_registry_service, publish_operations_service, read_only as read_only_service
 from .services import library_setup_service
 from .services import preparation_operations_service
 from .services import tag_write_service
@@ -89,6 +91,26 @@ _EXTRACTOR_VERIFY_TIMEOUT = 10.0
 async def lifespan(app: FastAPI):
     # --- startup ---
     log.info("CrateIQ backend v%s starting up", BACKEND_VERSION)
+    try:
+        active_root = selected_library_root()
+    except RuntimeError:
+        active_root = None
+    if active_root is None:
+        # Launcher bootstrap is intentionally installation-scoped. Do not
+        # create/open jobs.db, inspect a previous library, or start recovery
+        # and analysis workers until a future supervisor starts a fresh bound
+        # backend process for an explicitly selected root.
+        try:
+            library_registry_service.bootstrap_compatibility_registry()
+        except library_registry_service.MalformedRegistryError:
+            log.warning("launcher registry is malformed; it was left unchanged")
+        except Exception:  # pragma: no cover - registry must never block launcher startup
+            log.exception("launcher registry compatibility seed skipped")
+        log.info("CrateIQ launcher bootstrap started without an active library")
+        yield
+        log.info("CrateIQ launcher bootstrap shutting down")
+        return
+
     log.info(
         "CrateIQ runtime configured pipeline_entrypoint=%s pipeline_db_present=%s",
         PIPELINE_PY.is_file(),
@@ -114,7 +136,7 @@ async def lifespan(app: FastAPI):
     # is marked terminal and requires a renewed explicit request. This only
     # rewrites operational rows in jobs.db; no audio is read.
     try:
-        waveform_job_service.recover_interrupted_jobs()
+        waveform_job_service.recover_interrupted_jobs(current_library_key())
     except Exception:  # pragma: no cover - recovery must never block startup
         log.exception("waveform job recovery skipped")
 
@@ -169,7 +191,9 @@ async def lifespan(app: FastAPI):
     try:
         _config, _validated = resolve_cache_runtime()
         waveform_cache_service.startup_reconcile(
-            _validated, max_cache_bytes=_config.max_cache_bytes
+            _validated,
+            max_cache_bytes=_config.max_cache_bytes,
+            library_key=current_library_key(),
         )
     except WaveformRuntimeError:
         pass  # feature disabled or cache unsafe: nothing to reconcile
@@ -233,6 +257,26 @@ app.add_middleware(
 )
 
 
+_ROOTLESS_ALLOWED_API_PREFIXES = (
+    "/api/health", "/api/version", "/api/runtime/readiness", "/api/launcher", "/api/internal/supervisor-identity",
+)
+
+
+@app.middleware("http")
+async def require_active_library_for_library_routes(request, call_next):
+    """Prevent rootless bootstrap from serving stale library-scoped state."""
+    if request.url.path.startswith("/api/") and not request.url.path.startswith(_ROOTLESS_ALLOWED_API_PREFIXES):
+        try:
+            selected_library_root()
+        except RuntimeError:
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                status_code=409,
+                content={"detail": "No library is selected. Start or activate a library before using this endpoint."},
+            )
+    return await call_next(request)
+
+
 @app.middleware("http")
 async def log_request_timing(request, call_next):
     started = time.perf_counter()
@@ -260,6 +304,7 @@ app.include_router(runtime_router.router,    prefix=API_PREFIX)
 app.include_router(reviews_router.router,    prefix=API_PREFIX)
 app.include_router(settings_router.router,   prefix=API_PREFIX)
 app.include_router(jobs_router.router,       prefix=API_PREFIX)
+app.include_router(launcher_router.router,   prefix=API_PREFIX)
 app.include_router(library_router.router,    prefix=API_PREFIX)
 app.include_router(tracks_router.router,     prefix=API_PREFIX)
 app.include_router(waveforms_router.router,  prefix=API_PREFIX)

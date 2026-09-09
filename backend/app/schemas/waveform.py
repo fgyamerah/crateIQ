@@ -58,6 +58,9 @@ class WaveformResponse(BaseModel):
     pair_count: Optional[int] = None
     encoding: Optional[WaveformPeakEncoding] = None
     peaks: Optional[List[int]] = None
+    # Interleaved [low, mid, high] energy fractions per peak bucket, used ONLY
+    # to tint the single mirrored waveform. Absent when no tint was computed.
+    color_bands: Optional[List[float]] = None
     generated_at: Optional[str] = None
     error_code: Optional[str] = None
 

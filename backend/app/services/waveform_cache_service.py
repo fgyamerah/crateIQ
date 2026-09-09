@@ -30,6 +30,7 @@ import weakref
 from dataclasses import dataclass
 from pathlib import Path
 
+from ..core.library_key import current_library_key
 from ..core.waveform_cache import (
     ValidatedWaveformCacheRoot,
     WaveformCacheSafetyError,
@@ -290,25 +291,29 @@ def cleanup_cache(
     *,
     max_cache_bytes: int,
     protect_generation_key: str | None = None,
+    library_key: str | None = None,
     temp_min_age_seconds: float = TEMP_FILE_MIN_AGE_SECONDS,
     superseded_min_age_seconds: float = SUPERSEDED_LAYOUT_MIN_AGE_SECONDS,
     now: float | None = None,
 ) -> CleanupOutcome:
     """Free cache space in ascending order of regret.
 
-    Order: abandoned temp files, then aged-out superseded-layout artifacts,
-    then orphan artifacts nothing references, then artifacts whose track state
-    is no longer ``ready``, and only then least-recently-used ready artifacts.
+    Order within the originating library: aged-out superseded-layout artifacts,
+    then proven-owned orphan artifacts, then artifacts whose track state is no
+    longer ``ready``, and only then least-recently-used ready artifacts.
     ``protect_generation_key`` shields a just-published artifact so a
     publication cannot immediately evict itself.
 
-    Abandoned temp files and aged-out superseded layouts are always swept
-    regardless of the size limit — neither can ever be served. The size-driven
-    tiers run only while usage exceeds ``max_cache_bytes``.
+    Temp files carry no library identity and are left untouched by root-bound
+    cleanup. Proven-owned aged-out superseded layouts are swept regardless of
+    the size limit. Size-driven tiers run only while usage exceeds the limit.
     """
+    library_key = library_key or current_library_key()
     current_time = time.time() if now is None else now
     entries = scan_cache_entries(validated)
     bytes_before = sum(entry.size_bytes for entry in entries)
+    referenced = waveform_job_service.list_referenced_generation_keys(library_key)
+    owned = waveform_job_service.list_owned_generation_keys(library_key)
 
     removed = {"temp": 0, "superseded": 0, "orphan": 0, "stale": 0, "lru": 0}
     freed = 0
@@ -325,19 +330,20 @@ def cleanup_cache(
             freed += released
             usage -= released
 
-    # 1. Abandoned temp files. A young temp file may be an active publication.
+    # 1. Temp filenames do not encode a library key. A root-bound lifecycle
+    # cannot prove which backend created one, so it leaves temp cleanup to an
+    # explicit installation-wide maintenance action rather than adopting it.
     for entry in entries:
         if not entry.is_temp:
             continue
-        if current_time - entry.modified_at < temp_min_age_seconds:
-            continue
-        _sweep(entry, "temp")
 
     # 2. Superseded schema/algorithm layouts. A version mismatch is always a
     # cache miss, so these can never be served; they age out on their own
     # schedule rather than waiting for storage pressure.
     for entry in entries:
         if not entry.superseded_layout or entry.path in swept:
+            continue
+        if entry.generation_key not in owned:
             continue
         if current_time - entry.modified_at < superseded_min_age_seconds:
             continue
@@ -360,10 +366,14 @@ def cleanup_cache(
     artifacts = {
         entry.generation_key: entry
         for entry in entries
-        if not entry.is_temp and entry.generation_key and entry.path not in swept
+        if (
+            not entry.is_temp
+            and entry.generation_key
+            and entry.generation_key in owned
+            and entry.path not in swept
+        )
     }
-    referenced = waveform_job_service.list_referenced_generation_keys()
-    ordered_refs = waveform_job_service.list_cached_artifacts()
+    ordered_refs = waveform_job_service.list_cached_artifacts(library_key)
 
     def _try_remove(key: str, bucket: str) -> None:
         """Evict one artifact if still over target. Counts only real deletions."""
@@ -430,18 +440,23 @@ async def cleanup_cache_locked(
     *,
     max_cache_bytes: int,
     protect_generation_key: str | None = None,
+    library_key: str | None = None,
 ) -> CleanupOutcome:
     """Run one cleanup pass, serialized against any other pass in-process."""
+    key = library_key or current_library_key()
     async with _cleanup_lock():
         return await asyncio.to_thread(
             cleanup_cache,
             validated,
             max_cache_bytes=max_cache_bytes,
             protect_generation_key=protect_generation_key,
+            library_key=key,
         )
 
 
-def reconcile_ready_states(validated: ValidatedWaveformCacheRoot) -> int:
+def reconcile_ready_states(
+    validated: ValidatedWaveformCacheRoot, *, library_key: str
+) -> int:
     """Repair tracks claiming ``ready`` whose artifact is gone.
 
     Covers a crash between atomic publication and the ready transaction, an
@@ -450,7 +465,7 @@ def reconcile_ready_states(validated: ValidatedWaveformCacheRoot) -> int:
     request can rebuild it.
     """
     repaired = 0
-    for ref in waveform_job_service.list_ready_states():
+    for ref in waveform_job_service.list_ready_states(library_key):
         try:
             path = waveform_artifact_service.artifact_path(validated, ref.generation_key)
         except waveform_artifact_service.WaveformArtifactError:
@@ -475,18 +490,21 @@ def startup_reconcile(
     validated: ValidatedWaveformCacheRoot,
     *,
     max_cache_bytes: int,
+    library_key: str,
 ) -> tuple[int, CacheUsage]:
-    """Lightweight startup pass: sweep old temps and repair missing artifacts.
+    """Lightweight startup pass for one library's cache and persisted state.
 
     Deliberately does not decode audio, hash sources, scan the music library,
     or regenerate anything.
     """
-    repaired = reconcile_ready_states(validated)
-    cleanup_cache(validated, max_cache_bytes=max_cache_bytes)
+    repaired = reconcile_ready_states(validated, library_key=library_key)
+    cleanup_cache(
+        validated, max_cache_bytes=max_cache_bytes, library_key=library_key
+    )
     # Operational-row retention. These delete only CrateIQ's own bookkeeping
     # rows in jobs.db; no artifact, source, or trusted pipeline row is touched.
-    purged_jobs = waveform_job_service.purge_expired_job_rows()
-    purged_states = waveform_job_service.purge_expired_track_states()
+    purged_jobs = waveform_job_service.purge_expired_job_rows(library_key)
+    purged_states = waveform_job_service.purge_expired_track_states(library_key)
     usage = cache_usage(validated)
     log.info(
         "waveform cache startup usage_bytes=%d limit_bytes=%d artifacts=%d temps=%d "
@@ -501,26 +519,36 @@ def startup_reconcile(
 # Manual "clear waveform cache" action
 #
 # Preview first, then an explicitly confirmed clear. Both are scoped to the
-# validated cache root and to CrateIQ's own artifact/temp naming, so the
+# validated cache root, originating library key, and artifact naming, so the
 # worst case of a confirmed clear is that every waveform has to be explicitly
 # regenerated. No source audio, tag, playlist, crate, review, or DJ-database
 # value is involved in either direction.
 # ---------------------------------------------------------------------------
 
 
-def preview_clear_cache(validated: ValidatedWaveformCacheRoot) -> CacheClearPreview:
+def preview_clear_cache(
+    validated: ValidatedWaveformCacheRoot, *, library_key: str | None = None
+) -> CacheClearPreview:
     """Report exactly what a confirmed clear would remove. Deletes nothing."""
-    usage = cache_usage(validated)
+    key = library_key or current_library_key()
+    owned = waveform_job_service.list_owned_generation_keys(key)
+    entries = [
+        entry
+        for entry in scan_cache_entries(validated)
+        if not entry.is_temp and entry.generation_key in owned
+    ]
     return CacheClearPreview(
-        artifact_count=usage.artifact_count,
-        temp_count=usage.temp_count,
-        total_bytes=usage.total_bytes,
-        ready_track_count=len(waveform_job_service.list_ready_states()),
+        artifact_count=len(entries),
+        temp_count=0,
+        total_bytes=sum(entry.size_bytes for entry in entries),
+        ready_track_count=len(waveform_job_service.list_ready_states(key)),
     )
 
 
-def clear_cache(validated: ValidatedWaveformCacheRoot) -> CacheClearOutcome:
-    """Remove every CrateIQ-owned cache file and drop all ready claims.
+def clear_cache(
+    validated: ValidatedWaveformCacheRoot, *, library_key: str | None = None
+) -> CacheClearOutcome:
+    """Remove one library's proven-owned cache files and ready claims.
 
     Each deletion goes through the same containment assertion as ordinary
     cleanup, so an unknown file, a symlink, a directory, or anything outside
@@ -528,9 +556,13 @@ def clear_cache(validated: ValidatedWaveformCacheRoot) -> CacheClearOutcome:
     after their artifact is actually gone, and nothing is regenerated — a
     cleared waveform simply returns to ``stale`` until explicitly rebuilt.
     """
+    key = library_key or current_library_key()
+    owned = waveform_job_service.list_owned_generation_keys(key)
     removed = 0
     freed = 0
     for entry in scan_cache_entries(validated):
+        if entry.is_temp or entry.generation_key not in owned:
+            continue
         released = _delete_contained(entry.path, validated)
         if entry.path.exists():
             continue
@@ -538,7 +570,7 @@ def clear_cache(validated: ValidatedWaveformCacheRoot) -> CacheClearOutcome:
         freed += released
 
     reset = 0
-    for ref in waveform_job_service.list_ready_states():
+    for ref in waveform_job_service.list_ready_states(key):
         waveform_job_service.mark_artifact_unavailable(
             ref.library_id, ref.track_id,
             error_code=waveform_job_service.ERROR_CACHE_CLEARED,
@@ -559,10 +591,13 @@ def clear_cache(validated: ValidatedWaveformCacheRoot) -> CacheClearOutcome:
     )
 
 
-async def clear_cache_locked(validated: ValidatedWaveformCacheRoot) -> CacheClearOutcome:
+async def clear_cache_locked(
+    validated: ValidatedWaveformCacheRoot, *, library_key: str | None = None
+) -> CacheClearOutcome:
     """Clear the cache off the event loop, serialized against cleanup passes."""
+    key = library_key or current_library_key()
     async with _cleanup_lock():
-        return await asyncio.to_thread(clear_cache, validated)
+        return await asyncio.to_thread(clear_cache, validated, library_key=key)
 
 
 def cache_status(validated: ValidatedWaveformCacheRoot, *, max_cache_bytes: int) -> dict[str, object]:

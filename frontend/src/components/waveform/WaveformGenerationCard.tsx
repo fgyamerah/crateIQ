@@ -17,7 +17,16 @@ import Badge, { type BadgeTone } from '../ui/Badge'
 import KpiCard from '../ui/KpiCard'
 import StatusStrip from '../ui/StatusStrip'
 
-const POLL_INTERVAL_MS = 2000
+/** Adaptive bulk-operation polling cadence: quick while a run spins up,
+ * slower steady-state for long runs, so a 10+ minute generation does not
+ * hammer the status route (~500 requests over 13 min at a flat 2 s).
+ * Progress rendering, terminal-state stops, and cancel semantics are
+ * unchanged -- only the timer cadence moved. */
+const POLL_FAST_INTERVAL_MS = 1000
+const POLL_FAST_UNTIL_MS = 15_000
+const POLL_MEDIUM_INTERVAL_MS = 2500
+const POLL_MEDIUM_UNTIL_MS = 120_000
+const POLL_STEADY_INTERVAL_MS = 5000
 
 const STATUS_TONE: Record<WaveformBulkOperationStatus, BadgeTone> = {
   running: 'running',
@@ -74,56 +83,153 @@ export default function WaveformGenerationCard() {
   const [starting, setStarting] = useState(false)
   const [cancelling, setCancelling] = useState(false)
   const [actionError, setActionError] = useState<string | null>(null)
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const pollAbortRef = useRef<AbortController | null>(null)
+  const pollSessionRef = useRef(0)
+  const visibilityRef = useRef<(() => void) | null>(null)
+  const mountedRef = useRef(true)
+  const previewRequestRef = useRef(0)
+  const historyRequestRef = useRef(0)
 
   const loadPreview = useCallback(async () => {
+    if (!mountedRef.current) return
+    const requestId = ++previewRequestRef.current
     setPreviewLoading(true)
     setPreviewError(null)
     try {
-      setPreview(await fetchWaveformBulkPreview())
+      const updated = await fetchWaveformBulkPreview()
+      if (mountedRef.current && previewRequestRef.current === requestId) {
+        setPreview(updated)
+      }
     } catch (err) {
-      setPreviewError(errorMessage(err))
+      if (mountedRef.current && previewRequestRef.current === requestId) {
+        setPreviewError(errorMessage(err))
+      }
     } finally {
-      setPreviewLoading(false)
+      if (mountedRef.current && previewRequestRef.current === requestId) {
+        setPreviewLoading(false)
+      }
     }
   }, [])
 
   const stopPolling = useCallback(() => {
+    // Invalidating the session first makes every awaiting callback stale before
+    // any timer/listener/request cleanup can itself trigger a continuation.
+    pollSessionRef.current += 1
     if (pollRef.current !== null) {
-      clearInterval(pollRef.current)
+      clearTimeout(pollRef.current)
       pollRef.current = null
+    }
+    if (pollAbortRef.current !== null) {
+      pollAbortRef.current.abort()
+      pollAbortRef.current = null
+    }
+    if (visibilityRef.current !== null) {
+      document.removeEventListener('visibilitychange', visibilityRef.current)
+      visibilityRef.current = null
     }
   }, [])
 
   const pollOperation = useCallback((operationId: string) => {
     stopPolling()
-    pollRef.current = setInterval(() => {
-      fetchWaveformBulkOperation(operationId)
-        .then((updated) => {
-          setOperation(updated)
-          if (updated.status !== 'running') {
-            stopPolling()
-            void loadPreview()
-          }
-        })
-        .catch(() => stopPolling())
-    }, POLL_INTERVAL_MS)
+    if (!mountedRef.current) return
+    const session = pollSessionRef.current
+    const startedAt = Date.now()
+    const nextDelay = () => {
+      const elapsed = Date.now() - startedAt
+      if (elapsed < POLL_FAST_UNTIL_MS) return POLL_FAST_INTERVAL_MS
+      if (elapsed < POLL_MEDIUM_UNTIL_MS) return POLL_MEDIUM_INTERVAL_MS
+      return POLL_STEADY_INTERVAL_MS
+    }
+    const isActive = () => mountedRef.current && pollSessionRef.current === session
+
+    // pollRef owns only a timer that has not fired yet. Clearing it at callback
+    // entry prevents visibility changes from mistaking a stale timer ID for an
+    // idle polling chain. The non-null check is the single-timer invariant.
+    const scheduleNext = () => {
+      if (!isActive() || pollRef.current !== null || pollAbortRef.current !== null) return
+      const timeoutId = setTimeout(() => {
+        if (pollRef.current !== timeoutId) return
+        pollRef.current = null
+        void tick()
+      }, nextDelay())
+      pollRef.current = timeoutId
+    }
+
+    // Chained timeouts plus one AbortController-owned request slot guarantee
+    // that a slow response, a visibility event, or a superseded session cannot
+    // create overlapping requests or a second timeout chain.
+    const tick = async () => {
+      if (!isActive()) return
+      // No network traffic while the tab is hidden; the visibility listener
+      // fires an immediate tick on return, so a terminal state is picked up
+      // as soon as the user is back instead of being missed.
+      if (document.hidden) {
+        scheduleNext()
+        return
+      }
+      // A visibility transition can ask for an immediate tick while the prior
+      // request is still awaiting. That request owns the next scheduling step.
+      if (pollAbortRef.current !== null) return
+
+      const controller = new AbortController()
+      pollAbortRef.current = controller
+      try {
+        const updated = await fetchWaveformBulkOperation(operationId, controller.signal)
+        if (!isActive()) return
+        setOperation(updated)
+        if (updated.status !== 'running') {
+          stopPolling()
+          void loadPreview()
+          return
+        }
+      } catch {
+        if (isActive()) stopPolling()
+        return
+      } finally {
+        if (pollAbortRef.current === controller) {
+          pollAbortRef.current = null
+        }
+      }
+      scheduleNext()
+    }
+    const onVisibilityChange = () => {
+      if (document.visibilityState !== 'visible' || !isActive()) return
+      if (pollRef.current !== null) clearTimeout(pollRef.current)
+      pollRef.current = null
+      // If a request is already in flight, its completion owns the next tick;
+      // otherwise resume immediately instead of waiting out the hidden delay.
+      if (pollAbortRef.current === null) void tick()
+    }
+    visibilityRef.current = onVisibilityChange
+    document.addEventListener('visibilitychange', onVisibilityChange)
+    scheduleNext()
   }, [loadPreview, stopPolling])
 
   useEffect(() => {
+    let active = true
+    mountedRef.current = true
+    const historyRequestId = ++historyRequestRef.current
     void loadPreview()
     // Recover a run already in progress (e.g. this page mounted after a
     // reload mid-run) from persisted history -- this only reads state, it
     // never starts anything.
     fetchWaveformBulkHistory()
       .then((result) => {
+        if (!active || historyRequestRef.current !== historyRequestId) return
         const latest = result.history[0]
         if (!latest) return
         setOperation(latest)
         if (latest.status === 'running') pollOperation(latest.id)
       })
       .catch(() => {})
-    return () => stopPolling()
+    return () => {
+      active = false
+      mountedRef.current = false
+      previewRequestRef.current += 1
+      historyRequestRef.current += 1
+      stopPolling()
+    }
     // Mount-only: re-running this on every loadPreview/pollOperation
     // identity change would refetch history in a loop for no reason.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -134,27 +240,45 @@ export default function WaveformGenerationCard() {
     setActionError(null)
     try {
       const started = await startWaveformBulkGenerate()
+      if (!mountedRef.current) return
+      // A late mount-time history response describes state from before this
+      // explicit run and must never supersede it or restart an older poller.
+      historyRequestRef.current += 1
+      stopPolling()
       const initial = await fetchWaveformBulkOperation(started.id)
+      if (!mountedRef.current) return
       setOperation(initial)
       if (initial.status === 'running') pollOperation(initial.id)
       else void loadPreview()
     } catch (err) {
-      setActionError(errorMessage(err))
+      if (mountedRef.current) setActionError(errorMessage(err))
     } finally {
-      setStarting(false)
+      if (mountedRef.current) setStarting(false)
     }
   }
 
   const cancel = async () => {
     if (!operation) return
+    const current = operation
     setCancelling(true)
     setActionError(null)
+    // The cancel response is newer authority than any status read already in
+    // flight. Invalidate that read so it cannot overwrite cancel_requested or
+    // a terminal cancellation with stale running state.
+    stopPolling()
     try {
-      setOperation(await cancelWaveformBulkOperation(operation.id))
+      const updated = await cancelWaveformBulkOperation(current.id)
+      if (!mountedRef.current) return
+      setOperation(updated)
+      if (updated.status === 'running') pollOperation(updated.id)
+      else void loadPreview()
     } catch (err) {
-      setActionError(errorMessage(err))
+      if (mountedRef.current) {
+        setActionError(errorMessage(err))
+        pollOperation(current.id)
+      }
     } finally {
-      setCancelling(false)
+      if (mountedRef.current) setCancelling(false)
     }
   }
 

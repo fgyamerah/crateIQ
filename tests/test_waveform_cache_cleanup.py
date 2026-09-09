@@ -13,6 +13,7 @@ from pathlib import Path
 import pytest
 
 from backend.app.core import db as backend_db
+from backend.app.core.library_key import library_key_for_root
 from backend.app.core.waveform_cache import (
     ValidatedWaveformCacheRoot,
     WaveformCacheSafetyError,
@@ -22,11 +23,17 @@ from backend.app.models.waveform import WAVEFORM_ALGORITHM_VERSION, SourceStatSn
 from backend.app.services import waveform_cache_service as cache_service
 from backend.app.services import waveform_identity, waveform_job_service, waveform_state_service
 
-LIBRARY = "c" * 64
+LIBRARY = ""
 
 
 @pytest.fixture()
 def jobs_db(tmp_path, monkeypatch):
+    global LIBRARY
+    library = tmp_path / "library-root"
+    library.mkdir()
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(library))
+    monkeypatch.delenv("CRATEIQ_BACKEND_LIBRARY_KEY", raising=False)
+    LIBRARY = library_key_for_root(library) or ""
     path = tmp_path / "operational" / "jobs.db"
     monkeypatch.setattr(backend_db, "JOBS_DB_PATH", path)
     backend_db.init_db()
@@ -84,6 +91,16 @@ def _make_ready(track_id: int, key: str, *, accessed_at: str | None = None) -> N
                 "UPDATE waveform_track_state SET last_accessed_at = ? WHERE library_id = ? AND track_id = ?",
                 (accessed_at, LIBRARY, track_id),
             )
+
+
+def _own_artifact(track_id: int, key: str, *, library_id: str = "") -> None:
+    owner = library_id or LIBRARY
+    with backend_db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO waveform_jobs (id, library_id, track_id, status, created_at, "
+            "finished_at, generation_key) VALUES (?, ?, ?, 'failed', 'now', 'now', ?)",
+            (f"owner-{owner}-{track_id}-{key}", owner, track_id, key),
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -225,6 +242,13 @@ def test_orphans_are_removed_before_ready_artifacts(cache, jobs_db):
     _write_artifact(cache, referenced, size=1000)
     _write_artifact(cache, orphan, size=1000)
     _make_ready(1, referenced, accessed_at="2026-01-01T00:00:00+00:00")
+    with backend_db.get_conn() as conn:
+        conn.execute(
+            "INSERT INTO waveform_jobs (id, library_id, track_id, status, created_at, "
+            "finished_at, generation_key) VALUES ('orphan-owner', ?, 2, 'failed', "
+            "'now', 'now', ?)",
+            (LIBRARY, orphan),
+        )
 
     outcome = cache_service.cleanup_cache(cache, max_cache_bytes=1500)
 
@@ -267,11 +291,11 @@ def test_accounting_after_deletion_is_consistent(cache, jobs_db):
 # ---------------------------------------------------------------------------
 
 
-def test_old_temp_file_is_removed(cache, jobs_db):
+def test_old_temp_file_is_not_adopted_by_scoped_cleanup(cache, jobs_db):
     old = _write_temp(cache, "a" * 32, age_seconds=48 * 3600)
     outcome = cache_service.cleanup_cache(cache, max_cache_bytes=10_000)
-    assert outcome.removed_temp == 1
-    assert not old.exists()
+    assert outcome.removed_temp == 0
+    assert old.exists()
 
 
 def test_fresh_temp_file_is_retained(cache, jobs_db):
@@ -391,7 +415,7 @@ def test_cache_root_overlapping_library_is_still_rejected(tmp_path):
 def test_reconcile_marks_ready_state_stale_when_artifact_missing(cache, jobs_db):
     key = _key(1)
     _make_ready(1, key)  # state says ready, but no file was ever written
-    repaired = cache_service.reconcile_ready_states(cache)
+    repaired = cache_service.reconcile_ready_states(cache, library_key=LIBRARY)
     assert repaired == 1
     state = waveform_state_service.get_track_state(1, library_id=LIBRARY)
     assert state.status.value == "stale"
@@ -402,24 +426,26 @@ def test_reconcile_leaves_valid_ready_states_alone(cache, jobs_db):
     key = _key(1)
     _write_artifact(cache, key)
     _make_ready(1, key)
-    assert cache_service.reconcile_ready_states(cache) == 0
+    assert cache_service.reconcile_ready_states(cache, library_key=LIBRARY) == 0
     assert waveform_state_service.get_track_state(1, library_id=LIBRARY).status.value == "ready"
 
 
 def test_reconcile_is_idempotent(cache, jobs_db):
     _make_ready(1, _key(1))
-    assert cache_service.reconcile_ready_states(cache) == 1
-    assert cache_service.reconcile_ready_states(cache) == 0
-    assert cache_service.reconcile_ready_states(cache) == 0
+    assert cache_service.reconcile_ready_states(cache, library_key=LIBRARY) == 1
+    assert cache_service.reconcile_ready_states(cache, library_key=LIBRARY) == 0
+    assert cache_service.reconcile_ready_states(cache, library_key=LIBRARY) == 0
 
 
 def test_startup_reconcile_sweeps_temp_and_repairs_state(cache, jobs_db):
     stale_temp = _write_temp(cache, "c" * 32, age_seconds=72 * 3600)
     _make_ready(1, _key(1))
-    repaired, usage = cache_service.startup_reconcile(cache, max_cache_bytes=10_000)
+    repaired, usage = cache_service.startup_reconcile(
+        cache, max_cache_bytes=10_000, library_key=LIBRARY
+    )
     assert repaired == 1
-    assert not stale_temp.exists()
-    assert usage.total_bytes == 0
+    assert stale_temp.exists()
+    assert usage.total_bytes == stale_temp.stat().st_size
 
 
 def test_startup_reconcile_performs_no_extraction(cache, jobs_db, monkeypatch):
@@ -432,7 +458,78 @@ def test_startup_reconcile_performs_no_extraction(cache, jobs_db, monkeypatch):
     monkeypatch.setattr(_asyncio, "create_subprocess_exec", _forbidden)
     _write_artifact(cache, _key(1))
     _make_ready(1, _key(1))
-    cache_service.startup_reconcile(cache, max_cache_bytes=10_000)
+    cache_service.startup_reconcile(
+        cache, max_cache_bytes=10_000, library_key=LIBRARY
+    )
+
+
+def test_library_b_startup_maintenance_preserves_library_a_state_and_artifact(
+    cache, jobs_db
+):
+    library_a = "a" * 64
+    library_b = "b" * 64
+    key_a = _key(41)
+    key_b = _key(42)
+    artifact_a = _write_artifact(cache, key_a, size=1000)
+    artifact_b = _write_artifact(cache, key_b, size=1000)
+    now = "2020-01-01T00:00:00+00:00"
+    with backend_db.get_conn() as conn:
+        conn.executemany(
+            """INSERT INTO waveform_track_state
+               (library_id, track_id, status, schema_version, algorithm_version,
+                cache_key, generated_at, updated_at)
+               VALUES (?, ?, 'ready', 1, ?, ?, ?, ?)""",
+            [
+                (library_a, 1, WAVEFORM_ALGORITHM_VERSION, key_a, now, now),
+                (library_b, 2, WAVEFORM_ALGORITHM_VERSION, key_b, now, now),
+            ],
+        )
+
+    artifact_b.unlink()
+    repaired, _usage = cache_service.startup_reconcile(
+        cache, max_cache_bytes=100, library_key=library_b
+    )
+
+    assert repaired == 1
+    assert artifact_a.exists()
+    assert waveform_state_service.get_track_state(
+        1, library_id=library_a
+    ).status.value == "ready"
+    assert waveform_state_service.get_track_state(
+        2, library_id=library_b
+    ).status.value == "stale"
+
+
+def test_library_b_cleanup_does_not_evict_foreign_library_artifact(cache, jobs_db):
+    library_a = "a" * 64
+    library_b = "b" * 64
+    key_a = _key(51)
+    key_b = _key(52)
+    artifact_a = _write_artifact(cache, key_a, size=1000)
+    artifact_b = _write_artifact(cache, key_b, size=1000)
+    now = "2020-01-01T00:00:00+00:00"
+    with backend_db.get_conn() as conn:
+        conn.executemany(
+            """INSERT INTO waveform_track_state
+               (library_id, track_id, status, schema_version, algorithm_version,
+                cache_key, generated_at, updated_at)
+               VALUES (?, ?, 'ready', 1, ?, ?, ?, ?)""",
+            [
+                (library_a, 1, WAVEFORM_ALGORITHM_VERSION, key_a, now, now),
+                (library_b, 2, WAVEFORM_ALGORITHM_VERSION, key_b, now, now),
+            ],
+        )
+
+    cache_service.cleanup_cache(cache, max_cache_bytes=100, library_key=library_b)
+
+    assert artifact_a.exists()
+    assert not artifact_b.exists()
+    assert waveform_state_service.get_track_state(
+        1, library_id=library_a
+    ).status.value == "ready"
+    assert waveform_state_service.get_track_state(
+        2, library_id=library_b
+    ).status.value == "stale"
 
 
 # ---------------------------------------------------------------------------
@@ -497,6 +594,13 @@ def _write_superseded(
     path = cache.root / layout / algorithm / key[:2] / f"{key}.json.gz"
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(b"o" * size)
+    with backend_db.get_conn() as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO waveform_jobs "
+            "(id, library_id, track_id, status, created_at, finished_at, generation_key) "
+            "VALUES (?, ?, ?, 'failed', 'now', 'now', ?)",
+            (f"superseded-{key}", LIBRARY, int(key[-8:], 16), key),
+        )
     if age_seconds:
         import os
         old = time.time() - age_seconds
@@ -581,10 +685,11 @@ def test_clear_preview_reports_counts_and_bytes(cache, jobs_db):
     _write_artifact(cache, _key(2), size=2000)
     _write_temp(cache, "d" * 32, size=500)
     _make_ready(1, _key(1))
+    _own_artifact(2, _key(2))
     preview = cache_service.preview_clear_cache(cache)
     assert preview.artifact_count == 2
-    assert preview.temp_count == 1
-    assert preview.total_bytes == 3500
+    assert preview.temp_count == 0
+    assert preview.total_bytes == 3000
     assert preview.ready_track_count == 1
 
 
@@ -609,14 +714,16 @@ def test_clear_preview_on_empty_cache_is_all_zero(cache, jobs_db):
 
 def test_clear_removes_every_owned_cache_file(cache, jobs_db):
     artifacts = [_write_artifact(cache, _key(i), size=100) for i in range(1, 4)]
+    for i in range(1, 4):
+        _own_artifact(i, _key(i))
     temp = _write_temp(cache, "e" * 32, size=50)
     fresh_temp = _write_temp(cache, "f" * 32, size=50, age_seconds=0)
     outcome = cache_service.clear_cache(cache)
-    assert outcome.removed_files == 5
-    assert outcome.freed_bytes == 400
-    assert outcome.remaining_files == 0
+    assert outcome.removed_files == 3
+    assert outcome.freed_bytes == 300
+    assert outcome.remaining_files == 2
     assert not any(path.exists() for path in artifacts)
-    assert not temp.exists() and not fresh_temp.exists()
+    assert temp.exists() and fresh_temp.exists()
 
 
 def test_clear_resets_ready_track_states(cache, jobs_db):
@@ -643,12 +750,46 @@ def test_clear_never_deletes_source_music(cache, jobs_db):
 
 def test_clear_leaves_unknown_files_alone(cache, jobs_db):
     _write_artifact(cache, _key(1))
+    _own_artifact(1, _key(1))
     stranger = cache.root / "v1" / WAVEFORM_ALGORITHM_VERSION / "ab" / "README.txt"
     stranger.parent.mkdir(parents=True, exist_ok=True)
     stranger.write_text("not a CrateIQ artifact")
     outcome = cache_service.clear_cache(cache)
     assert outcome.removed_files == 1
     assert stranger.exists()
+
+
+def test_library_b_clear_preserves_library_a_artifact_and_state(cache, jobs_db):
+    library_a = "a" * 64
+    library_b = "b" * 64
+    key_a = _key(61)
+    key_b = _key(62)
+    artifact_a = _write_artifact(cache, key_a)
+    artifact_b = _write_artifact(cache, key_b)
+    now = "2020-01-01T00:00:00+00:00"
+    with backend_db.get_conn() as conn:
+        conn.executemany(
+            """INSERT INTO waveform_track_state
+               (library_id, track_id, status, schema_version, algorithm_version,
+                cache_key, generated_at, updated_at)
+               VALUES (?, ?, 'ready', 1, ?, ?, ?, ?)""",
+            [
+                (library_a, 1, WAVEFORM_ALGORITHM_VERSION, key_a, now, now),
+                (library_b, 2, WAVEFORM_ALGORITHM_VERSION, key_b, now, now),
+            ],
+        )
+
+    outcome = cache_service.clear_cache(cache, library_key=library_b)
+
+    assert outcome.removed_files == 1
+    assert artifact_a.exists()
+    assert not artifact_b.exists()
+    assert waveform_state_service.get_track_state(
+        1, library_id=library_a
+    ).status.value == "ready"
+    assert waveform_state_service.get_track_state(
+        2, library_id=library_b
+    ).status.value == "stale"
 
 
 def test_clear_does_not_follow_symlinks_out_of_the_cache(cache, jobs_db, tmp_path):
@@ -740,20 +881,20 @@ def _finish(track_id: int, status: str, error_code: str = "X") -> str:
 def test_old_failed_job_rows_are_purged(cache, jobs_db):
     job_id = _finish(1, "failed")
     _age_job(job_id, 40)
-    assert waveform_job_service.purge_expired_job_rows() == 1
+    assert waveform_job_service.purge_expired_job_rows(LIBRARY) == 1
     assert waveform_job_service.get_job(job_id) is None
 
 
 def test_old_cancelled_job_rows_are_purged(cache, jobs_db):
     job_id = _finish(1, "cancelled")
     _age_job(job_id, 40)
-    assert waveform_job_service.purge_expired_job_rows() == 1
+    assert waveform_job_service.purge_expired_job_rows(LIBRARY) == 1
 
 
 def test_recent_job_rows_are_retained(cache, jobs_db):
     job_id = _finish(1, "failed")
     _age_job(job_id, 3)
-    assert waveform_job_service.purge_expired_job_rows() == 0
+    assert waveform_job_service.purge_expired_job_rows(LIBRARY) == 0
     assert waveform_job_service.get_job(job_id) is not None
 
 
@@ -766,7 +907,7 @@ def test_active_job_rows_are_never_purged(cache, jobs_db):
             "UPDATE waveform_jobs SET created_at = ?, finished_at = ? WHERE id = ?",
             ("2000-01-01T00:00:00+00:00", "2000-01-01T00:00:00+00:00", job.id),
         )
-    assert waveform_job_service.purge_expired_job_rows() == 0
+    assert waveform_job_service.purge_expired_job_rows(LIBRARY) == 0
     assert waveform_job_service.get_job(job.id) is not None
 
 
@@ -775,7 +916,7 @@ def test_purging_job_rows_deletes_no_cache_file(cache, jobs_db):
     _make_ready(1, _key(1))
     job_id = _finish(2, "failed")
     _age_job(job_id, 40)
-    waveform_job_service.purge_expired_job_rows()
+    waveform_job_service.purge_expired_job_rows(LIBRARY)
     assert artifact.exists(), "row retention must never touch the cache"
     assert waveform_state_service.get_track_state(1, library_id=LIBRARY).status.value == "ready"
 
@@ -784,7 +925,7 @@ def test_quiet_artifactless_track_states_are_purged(cache, jobs_db):
     job_id = _finish(1, "failed")
     _age_job(job_id, 40)
     _age_track_state(1, 40)
-    assert waveform_job_service.purge_expired_track_states() == 1
+    assert waveform_job_service.purge_expired_track_states(LIBRARY) == 1
     # A forgotten row simply reads back as the pre-request default.
     assert waveform_state_service.get_track_state(1, library_id=LIBRARY).status.value == "not_generated"
 
@@ -793,7 +934,7 @@ def test_ready_track_states_are_never_purged(cache, jobs_db):
     _write_artifact(cache, _key(1))
     _make_ready(1, _key(1))
     _age_track_state(1, 400)
-    assert waveform_job_service.purge_expired_track_states() == 0
+    assert waveform_job_service.purge_expired_track_states(LIBRARY) == 0
     assert waveform_state_service.get_track_state(1, library_id=LIBRARY).status.value == "ready"
 
 
@@ -801,14 +942,16 @@ def test_recent_track_states_are_retained(cache, jobs_db):
     job_id = _finish(1, "failed")
     _age_job(job_id, 40)
     _age_track_state(1, 2)
-    assert waveform_job_service.purge_expired_track_states() == 0
+    assert waveform_job_service.purge_expired_track_states(LIBRARY) == 0
 
 
 def test_startup_reconcile_applies_row_retention(cache, jobs_db):
     job_id = _finish(1, "failed")
     _age_job(job_id, 40)
     _age_track_state(1, 40)
-    cache_service.startup_reconcile(cache, max_cache_bytes=10_000)
+    cache_service.startup_reconcile(
+        cache, max_cache_bytes=10_000, library_key=LIBRARY
+    )
     assert waveform_job_service.get_job(job_id) is None
 
 

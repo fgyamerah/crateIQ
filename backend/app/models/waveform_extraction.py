@@ -81,3 +81,7 @@ class WaveformExtractionResult:
     analysis_sample_rate_hz: int
     encoding: str
     resolutions: Mapping[str, list[int]] = field(default_factory=dict)
+    # Optional per-resolution spectral tint for the SINGLE mirrored waveform:
+    # interleaved [low, mid, high] energy fractions per peak bucket. Used only
+    # to color each slice; never rendered as three separate Low/Mid/High rows.
+    color_bands: Mapping[str, list[float]] | None = None

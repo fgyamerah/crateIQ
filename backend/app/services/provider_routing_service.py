@@ -15,8 +15,9 @@ reaches HIGH identity confidence:
   5. Last.fm (tag/genre evidence)
   6. YouTube (last-resort, low-authority corroboration only)
 
-Each stage only runs for providers whose capability() currently reports
-"ready" -- an unconfigured provider is silently skipped, never an error.
+Each stage only runs for providers that are globally enabled, currently ready,
+and included in the optional per-batch source selection. An unconfigured or
+disabled provider is silently skipped, never an error.
 Bounded to at most one request per provider per track (AcoustID: one
 fingerprint + one lookup).
 """
@@ -47,10 +48,10 @@ _TEXT_SEARCH_STAGES = (
 )
 
 
-def _beets_musicbrainz_candidates(track_id: int) -> dict[str, list[ProviderCandidate]]:
+def _beets_musicbrainz_candidates(track_id: int, selected_source_ids: set[str]) -> dict[str, list[ProviderCandidate]]:
     """Reuses Cycle 6's online_lookup exactly; converts its shape into ProviderCandidate."""
-    out: dict[str, list[ProviderCandidate]] = {"beets": [], "musicbrainz": []}
-    for source in ("beets", "musicbrainz"):
+    out: dict[str, list[ProviderCandidate]] = {source: [] for source in ("beets", "musicbrainz") if source in selected_source_ids}
+    for source in out:
         try:
             review = enrichment_review_service.online_lookup(track_id, source)
         except (ValueError, LookupError) as exc:
@@ -74,19 +75,22 @@ def gather_evidence(
     title: str | None,
     inbox_copy_path: Path | None,
     credentials_by_source: dict[str, dict[str, str]],
+    selected_source_ids: list[str] | None = None,
 ) -> dict[str, list[ProviderCandidate]]:
     """
     Returns {provider_id: [ProviderCandidate, ...]}. Stops early once
     identity confidence is already HIGH after a stage completes.
     """
-    evidence = _beets_musicbrainz_candidates(track_id)
+    globally_eligible = set(settings_service.validate_enrichment_source_ids())
+    selected = globally_eligible if selected_source_ids is None else globally_eligible.intersection(selected_source_ids)
+    evidence = _beets_musicbrainz_candidates(track_id, selected)
 
     def _current_confidence() -> str:
         return build_track_consensus(track_id, evidence).identity_confidence
 
     if _current_confidence() != "HIGH":
         acoustid_creds = credentials_by_source.get("acoustid", {})
-        if inbox_copy_path is not None and acoustid_client.capability(acoustid_creds).status == "ready":
+        if "acoustid" in selected and inbox_copy_path is not None and acoustid_client.capability(acoustid_creds).status == "ready":
             fingerprint, duration, error = acoustid_client.fingerprint_file(inbox_copy_path)
             if fingerprint and duration:
                 result = acoustid_client.lookup(fingerprint, duration, credentials=acoustid_creds)
@@ -97,6 +101,8 @@ def gather_evidence(
     for source_id, adapter in _TEXT_SEARCH_STAGES:
         if _current_confidence() == "HIGH":
             break
+        if source_id not in selected:
+            continue
         creds = credentials_by_source.get(source_id, {})
         if adapter.capability(creds).status != "ready":
             continue
@@ -140,6 +146,7 @@ def preview_consensus(root: Path, track_id: int) -> dict[str, Any]:
             track_id, artist=row["artist"], title=row["title"],
             inbox_copy_path=inbox_path if inbox_path.is_file() else None,
             credentials_by_source=credentials_by_source,
+            selected_source_ids=settings_service.validate_enrichment_source_ids(),
         )
         consensus = build_track_consensus(track_id, evidence, conn=conn)
 

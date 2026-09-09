@@ -35,6 +35,7 @@ from datetime import datetime, timezone
 from typing import Dict, List, Optional, Tuple
 
 from ..core.db import get_conn
+from ..core.library_key import current_library_key
 from ..core.pipeline_db import get_pipeline_conn, pipeline_db_exists
 from ..schemas.bpm_analysis import BpmAnomalyResponse
 
@@ -128,13 +129,14 @@ def run_bpm_check() -> Tuple[int, int, int, List[BpmAnomalyResponse]]:
     scanned = len(rows)
     new_count = 0
     resolved_count = 0
+    library_key = current_library_key()
 
     with get_conn() as conn:
         # Build a set of track_ids currently stored as non-resolved anomalies
         existing_ids = {
             row[0]
             for row in conn.execute(
-                "SELECT track_id FROM bpm_anomalies WHERE review_status != 'resolved'"
+                "SELECT track_id FROM bpm_anomalies WHERE library_key = ? AND review_status != 'resolved'", (library_key,)
             ).fetchall()
         }
 
@@ -152,8 +154,8 @@ def run_bpm_check() -> Tuple[int, int, int, List[BpmAnomalyResponse]]:
                     conn.execute(
                         """UPDATE bpm_anomalies
                            SET review_status='resolved', reviewed_at=?
-                           WHERE track_id=? AND review_status NOT IN ('reviewed','ignored')""",
-                        (_now(), track_id),
+                           WHERE track_id=? AND library_key = ? AND review_status NOT IN ('reviewed','ignored')""",
+                        (_now(), track_id, library_key),
                     )
                     resolved_count += 1
                 continue
@@ -169,9 +171,9 @@ def run_bpm_check() -> Tuple[int, int, int, List[BpmAnomalyResponse]]:
             conn.execute(
                 """INSERT INTO bpm_anomalies
                        (track_id, filepath, artist, title, genre, current_bpm,
-                        suggested_bpm, reason, review_status, detected_at)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?)
-                   ON CONFLICT(track_id) DO UPDATE SET
+                        suggested_bpm, reason, review_status, detected_at, library_key)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, ?)
+                   ON CONFLICT(library_key, track_id) DO UPDATE SET
                        filepath      = excluded.filepath,
                        artist        = excluded.artist,
                        title         = excluded.title,
@@ -195,14 +197,14 @@ def run_bpm_check() -> Tuple[int, int, int, List[BpmAnomalyResponse]]:
                     float(bpm) if bpm is not None else None,
                     suggested,
                     reason,
-                    _now(),
+                    _now(), library_key,
                 ),
             )
 
         # Fetch all non-resolved anomalies to return
         anomaly_rows = conn.execute(
             """SELECT * FROM bpm_anomalies
-               WHERE review_status != 'resolved'
+               WHERE library_key = ? AND review_status != 'resolved'
                ORDER BY
                    CASE reason
                        WHEN 'too_low_10x'    THEN 0
@@ -213,7 +215,7 @@ def run_bpm_check() -> Tuple[int, int, int, List[BpmAnomalyResponse]]:
                        ELSE                       5
                    END,
                    LOWER(COALESCE(artist, ''))"""
-        ).fetchall()
+        , (library_key,)).fetchall()
 
     items = [_row_to_response(r) for r in anomaly_rows]
     log.info(
@@ -234,8 +236,8 @@ def list_anomalies(
     offset: int = 0,
 ) -> List[BpmAnomalyResponse]:
     """Return stored anomaly records with optional filters."""
-    clauses: List[str] = []
-    params: List[object] = []
+    clauses: List[str] = ["library_key = ?"]
+    params: List[object] = [current_library_key()]
 
     if status and status != "all":
         clauses.append("review_status = ?")
@@ -303,13 +305,13 @@ def update_anomaly(
             fields.append("reanalysis_job_id = ?")
             values.append(reanalysis_job_id)
 
-        values.append(anomaly_id)
+        values.extend((anomaly_id, current_library_key()))
         conn.execute(
-            f"UPDATE bpm_anomalies SET {', '.join(fields)} WHERE id = ?",
+            f"UPDATE bpm_anomalies SET {', '.join(fields)} WHERE id = ? AND library_key = ?",
             values,
         )
         row = conn.execute(
-            "SELECT * FROM bpm_anomalies WHERE id = ?", (anomaly_id,)
+            "SELECT * FROM bpm_anomalies WHERE id = ? AND library_key = ?", (anomaly_id, current_library_key())
         ).fetchone()
 
     return _row_to_response(row) if row else None
@@ -322,7 +324,7 @@ def update_anomaly(
 def get_anomaly(anomaly_id: int) -> Optional[BpmAnomalyResponse]:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM bpm_anomalies WHERE id = ?", (anomaly_id,)
+            "SELECT * FROM bpm_anomalies WHERE id = ? AND library_key = ?", (anomaly_id, current_library_key())
         ).fetchone()
     return _row_to_response(row) if row else None
 
@@ -335,7 +337,7 @@ def get_summary() -> Dict[str, int]:
     """Return counts grouped by review_status."""
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT review_status, COUNT(*) AS cnt FROM bpm_anomalies GROUP BY review_status"
+            "SELECT review_status, COUNT(*) AS cnt FROM bpm_anomalies WHERE library_key = ? GROUP BY review_status", (current_library_key(),)
         ).fetchall()
     return {r["review_status"]: r["cnt"] for r in rows}
 
@@ -346,13 +348,13 @@ def get_summary_by_reason() -> Dict[str, Dict[str, int]]:
         by_status = {
             r["review_status"]: r["cnt"]
             for r in conn.execute(
-                "SELECT review_status, COUNT(*) AS cnt FROM bpm_anomalies GROUP BY review_status"
+                "SELECT review_status, COUNT(*) AS cnt FROM bpm_anomalies WHERE library_key = ? GROUP BY review_status", (current_library_key(),)
             ).fetchall()
         }
         by_reason_raw = {
             r["reason"]: r["cnt"]
             for r in conn.execute(
-                "SELECT reason, COUNT(*) AS cnt FROM bpm_anomalies GROUP BY reason"
+                "SELECT reason, COUNT(*) AS cnt FROM bpm_anomalies WHERE library_key = ? GROUP BY reason", (current_library_key(),)
             ).fetchall()
         }
     by_reason = {REASON_LABELS.get(k, k): v for k, v in by_reason_raw.items()}

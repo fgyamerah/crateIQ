@@ -22,6 +22,7 @@ class Track:
     filename:       str
     artist:         Optional[str]
     title:          Optional[str]
+    album:          Optional[str]
     genre:          Optional[str]
     bpm:            Optional[float]
     key_musical:    Optional[str]
@@ -51,6 +52,7 @@ class Track:
             filename=row["filename"],
             artist=_get("artist"),
             title=_get("title"),
+            album=_get("album"),
             genre=_get("genre"),
             bpm=_get("bpm"),
             key_musical=_get("key_musical"),

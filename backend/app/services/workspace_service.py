@@ -31,9 +31,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from . import field_provenance_service, library_setup_service, tag_write_service
+from . import field_provenance_service, library_setup_service, tag_write_service, track_service
 from ..core.library_root import assert_path_under_root, assert_safe_new_root_path
 from ..core.preflight import redact_path
+from ..models.track import Track
 
 WORKSPACE_MARKER_NAME = ".crateiq-workspace.json"
 WORKSPACE_MARKER_VERSION = 1
@@ -43,11 +44,15 @@ _CRATEIQ_OWNED_TOP_LEVEL = {
     "Inbox", "Library", "Quarantine", "logs", "exports", "data", ".run",
     WORKSPACE_MARKER_NAME,
 }
-_AUDIO_EXTENSIONS = library_setup_service._AUDIO_EXTENSIONS
 _MAX_IMPORT_FILES = 2000
 _SAMPLE_LIMIT = 20
 
 WorkspaceState = Literal["managed_workspace", "legacy_direct_library", "not_configured"]
+
+
+def _audio_extensions() -> set[str]:
+    """Resolve lazily so settings/sync/workspace imports cannot form a cycle."""
+    return library_setup_service._AUDIO_EXTENSIONS
 
 
 # ---------------------------------------------------------------------------
@@ -111,7 +116,7 @@ def _has_audio_directly_present(root: Path) -> bool:
     """Non-recursive legacy-library signal: audio files sitting directly under root."""
     try:
         for entry in root.iterdir():
-            if entry.is_file() and entry.suffix.lower() in _AUDIO_EXTENSIONS:
+            if entry.is_file() and entry.suffix.lower() in _audio_extensions():
                 return True
     except OSError:
         return False
@@ -328,7 +333,7 @@ def _discover_audio_files(source: Path) -> tuple[list[Path], list[str]]:
     if source.is_symlink():
         return [], [f"Skipped symlink source: {source.name}"]
     if source.is_file():
-        if source.suffix.lower() in _AUDIO_EXTENSIONS:
+        if source.suffix.lower() in _audio_extensions():
             return [source], []
         return [], [f"Unsupported file type: {source.name}"]
 
@@ -351,7 +356,7 @@ def _discover_audio_files(source: Path) -> tuple[list[Path], list[str]]:
                 if len(warnings) < _SAMPLE_LIMIT:
                     warnings.append(f"Skipped symlink: {name}")
                 continue
-            if candidate.suffix.lower() in _AUDIO_EXTENSIONS:
+            if candidate.suffix.lower() in _audio_extensions():
                 found.append(candidate)
     found.sort()
     return found, warnings
@@ -512,76 +517,398 @@ def _destination_for(root: Path, genre: str, artist: str, title: str, ext: str) 
     )
 
 
-def _promotion_readiness(row: sqlite3.Row, root: Path) -> dict[str, Any]:
-    """
-    Note: the metadata-write-verification check below reuses
-    tag_write_service.build_plan(), which internally re-derives its own root
-    via selected_library_root() rather than accepting one as a parameter.
-    This function's `root` argument is used directly for path/destination
-    construction and must therefore always equal selected_library_root() at
-    call time -- true by construction for every caller in this module
-    (promotion_preview/promote_tracks are only ever invoked by the workspace
-    API route with root = selected_library_root()).
-    """
-    blockers: list[str] = []
-    warnings: list[str] = []
-    artist = (row["artist"] or "").strip()
-    title = (row["title"] or "").strip()
-    genre = (row["genre"] or "").strip()
-    if not artist:
-        blockers.append("Artist is required.")
-    if not title:
-        blockers.append("Title is required.")
-    if not genre:
-        blockers.append("Genre is required.")
+_PREPARATION_STATUS_LABELS = {
+    "WRITE_BLOCKED": "Write Blocked",
+    "NEEDS_ATTENTION": "Needs Attention",
+    "REVIEW": "Review",
+    "UNSAVED": "Unsaved",
+    "READY": "Ready",
+}
+_PREPARATION_STATUS_ORDER = {
+    "READY": 0,
+    "UNSAVED": 1,
+    "REVIEW": 2,
+    "NEEDS_ATTENTION": 3,
+    "WRITE_BLOCKED": 4,
+}
 
+
+def _reason(code: str, label: str, severity: str) -> dict[str, str]:
+    return {"code": code, "label": label, "severity": severity}
+
+
+def _write_blocker_reason(row: sqlite3.Row, blocker: str | None) -> dict[str, str]:
+    text = blocker or "Metadata cannot currently be written safely."
+    if "outside the configured library root" in text:
+        return _reason("source_outside_managed_root", "Managed file is outside the configured library", "blocker")
+    if "no longer exists" in text:
+        return _reason("managed_file_missing", "Managed Inbox file is missing", "blocker")
+    if "not a supported write-back format" in text:
+        extension = Path(row["filepath"]).suffix.lstrip(".").upper() or "This format"
+        return _reason(
+            "unsupported_write_format",
+            f"{extension} metadata write-back is not supported",
+            "blocker",
+        )
+    if "local index" in text:
+        return _reason("track_missing_from_index", "Track is missing from the local index", "blocker")
+    return _reason("metadata_write_blocked", "Metadata cannot currently be written safely", "blocker")
+
+
+def _review_reasons(entries: list[dict[str, Any]]) -> list[dict[str, str]]:
+    reasons: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for entry in entries:
+        evidence = entry.get("evidence") if isinstance(entry.get("evidence"), dict) else {}
+        suggested = entry.get("suggested_fields") if isinstance(entry.get("suggested_fields"), dict) else {}
+        fields = list(evidence) or list(suggested)
+        summary = str(entry.get("reason") or "").casefold()
+        conflict = any(token in summary for token in ("disagreement", "disagree", "conflict"))
+        if fields:
+            for field in fields:
+                display = str(field).replace("_", " ").title()
+                code = f"provider_{'conflict' if conflict else 'review'}_{field}"
+                if code in seen:
+                    continue
+                seen.add(code)
+                label = (
+                    f"Metadata sources disagree on {display}"
+                    if conflict else f"Suggested {display} needs review"
+                )
+                reasons.append(_reason(code, label, "review"))
+        elif "provider_review" not in seen:
+            seen.add("provider_review")
+            reasons.append(_reason("provider_review", "A metadata suggestion needs review", "review"))
+    return reasons
+
+
+def _active_enrichment_reviews(track_ids: list[int]) -> dict[int, list[dict[str, Any]]]:
+    # Local import avoids the settings -> sync destination -> workspace
+    # import cycle during service initialization.
+    from . import enrichment_review_service
+
+    wanted = set(track_ids)
+    grouped: dict[int, list[dict[str, Any]]] = {}
+    # One latest-snapshot read for the whole request. Ignored, applied,
+    # review-later, and superseded snapshots are intentionally not actionable.
+    review = enrichment_review_service.get_review()
+    for entry in review.get("items", []):
+        track_id = entry.get("track_id")
+        if track_id in wanted and entry.get("decision") == "pending":
+            grouped.setdefault(track_id, []).append(entry)
+    return grouped
+
+
+def _preparation_states_for_rows(root: Path, rows: list[sqlite3.Row]) -> dict[int, dict[str, Any]]:
+    """Build authoritative, read-only Inbox preparation state in batch.
+
+    Performance contract: rows and review state are retrieved once, tag-plan
+    items read each file at most once, tag-write history is one bounded DB
+    query, and destination readiness is one pass. No provider/network work,
+    mutation, tag write, move, or background job is triggered here.
+    """
+    track_ids = [int(row["id"]) for row in rows]
+    if not track_ids:
+        return {}
+    plan_by_id = {
+        item["track_id"]: item
+        for item in tag_write_service.build_plan_items_for_rows(rows, root)
+    }
+    reviews_by_id = _active_enrichment_reviews(track_ids)
+    latest_outcomes = tag_write_service.latest_track_outcomes(track_ids)
+    inbox_root = assert_path_under_root(root / "Inbox", root)
+    states: dict[int, dict[str, Any]] = {}
+
+    for row in rows:
+        track_id = int(row["id"])
+        artist = (row["artist"] or "").strip()
+        title = (row["title"] or "").strip()
+        genre = (row["genre"] or "").strip()
+        path = Path(row["filepath"])
+        plan_item = plan_by_id[track_id]
+        pending_fields = [field["field"] for field in plan_item.get("fields", [])]
+
+        write_reasons: list[dict[str, str]] = []
+        attention_reasons: list[dict[str, str]] = []
+        review_entries = reviews_by_id.get(track_id, [])
+        review_reasons = _review_reasons(review_entries)
+        unsaved_reasons = [
+            _reason(
+                f"{field}_unsaved",
+                f"{field.replace('_', ' ').title()} has changes not yet written to file",
+                "unsaved",
+            )
+            for field in pending_fields
+        ]
+
+        source_in_inbox = False
+        try:
+            resolved_path = assert_path_under_root(path, root)
+            resolved_path.relative_to(inbox_root)
+            source_in_inbox = True
+        except (TypeError, ValueError):
+            if not plan_item["blocked"]:
+                write_reasons.append(_reason(
+                    "source_not_in_inbox", "Managed file is not inside Inbox", "blocker",
+                ))
+        if plan_item["blocked"]:
+            write_reasons.append(_write_blocker_reason(row, plan_item.get("blocker")))
+
+        latest = latest_outcomes.get(track_id)
+        active_last_failure = bool(pending_fields and latest and latest.get("failed"))
+        if active_last_failure:
+            write_reasons.append(_reason(
+                "latest_write_failed",
+                "The latest metadata write failed and changes remain unsaved",
+                "blocker",
+            ))
+
+        if not artist:
+            attention_reasons.append(_reason("artist_missing", "Artist is missing", "attention"))
+        if not title:
+            attention_reasons.append(_reason("title_missing", "Title is missing", "attention"))
+        if not genre:
+            attention_reasons.append(_reason("genre_missing", "Genre is missing", "attention"))
+
+        track_issues = set(Track.from_row(row).issues)
+        if "suspicious_artist" in track_issues:
+            attention_reasons.append(_reason(
+                "suspicious_artist", "Artist may contain promotional or junk text", "attention",
+            ))
+        if "suspicious_title" in track_issues:
+            attention_reasons.append(_reason(
+                "suspicious_title", "Title may contain promotional or junk text", "attention",
+            ))
+        if row["status"] == "error":
+            attention_reasons.append(_reason(
+                "current_processing_error", "A current processing error needs attention", "attention",
+            ))
+        elif row["status"] == "needs_review":
+            attention_reasons.append(_reason(
+                "current_preparation_issue", "A current preparation issue needs attention", "attention",
+            ))
+
+        destination: Path | None = None
+        collision: Literal["identical", "conflict"] | None = None
+        if artist and title and genre and source_in_inbox and path.is_file():
+            destination = _destination_for(root, genre, artist, title, path.suffix)
+            if destination.exists():
+                try:
+                    identical = (
+                        destination.stat().st_size == path.stat().st_size
+                        and _sha256(destination) == _sha256(path)
+                    )
+                except OSError:
+                    identical = False
+                collision = "identical" if identical else "conflict"
+                if collision == "identical":
+                    attention_reasons.append(_reason(
+                        "destination_identical",
+                        "This track already exists at the Library destination",
+                        "attention",
+                    ))
+                else:
+                    attention_reasons.append(_reason(
+                        "destination_collision",
+                        "A different file already exists at the Library destination",
+                        "attention",
+                    ))
+
+        warnings: list[dict[str, str]] = []
+        if row["bpm"] is None:
+            warnings.append({"code": "bpm_missing", "label": "BPM is missing"})
+        if not (row["key_camelot"] or row["key_musical"]):
+            warnings.append({"code": "key_missing", "label": "Key is missing"})
+
+        if write_reasons:
+            status = "WRITE_BLOCKED"
+        elif attention_reasons:
+            status = "NEEDS_ATTENTION"
+        elif review_reasons:
+            status = "REVIEW"
+        elif unsaved_reasons:
+            status = "UNSAVED"
+        else:
+            status = "READY"
+        reasons = write_reasons + attention_reasons + review_reasons + unsaved_reasons
+        states[track_id] = {
+            "track_id": track_id,
+            "status": status,
+            "status_label": _PREPARATION_STATUS_LABELS[status],
+            "reasons": reasons,
+            "warnings": warnings,
+            "pending_fields": pending_fields,
+            "review_count": len(review_entries),
+            "write": {
+                "has_unsaved_changes": bool(pending_fields),
+                "blocked": bool(write_reasons),
+                "blocker_code": write_reasons[0]["code"] if write_reasons else None,
+                "last_failure": (
+                    "The latest metadata write did not complete" if active_last_failure else None
+                ),
+            },
+            "promotion": {
+                "ready": status == "READY",
+                "destination": str(destination.relative_to(root)) if destination else None,
+                "collision": collision,
+            },
+        }
+    return states
+
+
+def inbox_preparation_states(
+    root: Path, track_ids: list[int] | None = None,
+) -> dict[int, dict[str, Any]]:
+    """Public read-only projection for Inbox tracks, preserving requested order."""
+    db_path = _require_initialized_db(root)
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        if track_ids is None:
+            rows = conn.execute("SELECT * FROM tracks WHERE storage_zone = 'INBOX'").fetchall()
+        elif not track_ids:
+            rows = []
+        else:
+            placeholders = ",".join("?" * len(track_ids))
+            by_id = {
+                row["id"]: row
+                for row in conn.execute(
+                    f"SELECT * FROM tracks WHERE storage_zone = 'INBOX' AND id IN ({placeholders})",
+                    track_ids,
+                )
+            }
+            rows = [by_id[track_id] for track_id in track_ids if track_id in by_id]
+    return _preparation_states_for_rows(root, rows)
+
+
+def inbox_track_page_projection(
+    root: Path,
+    *,
+    search: str | None = None,
+    preparation_status: str | None = None,
+    sort: str = "artist",
+    order: str = "asc",
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Project, filter, sort, and paginate the authoritative Inbox state once.
+
+    Status counts are scoped to the current search but not the selected status,
+    so the filter chips remain useful while one status is active. All candidate
+    rows share one preparation-state projection; the resulting state objects are
+    reused for counts, filtering, readiness sorting, and response rendering.
+    """
     try:
-        plan = tag_write_service.build_plan([row["id"]])
-        item = plan["items"][0] if plan["items"] else None
+        db_path = _require_initialized_db(root)
     except ValueError:
-        item = None
-    if item is not None:
-        if item["blocked"] and item["blocker"] != "Source file no longer exists.":
-            # Unsupported format etc. is a serious blocker; a missing file is
-            # reported separately below with a clearer message.
-            blockers.append(f"Metadata write verification blocked: {item['blocker']}")
-        elif item["fields"]:
-            blockers.append("Approved metadata has not been written back to the file yet.")
+        return {
+            "items": [],
+            "states": {},
+            "limit": limit,
+            "offset": offset,
+            "total": 0,
+            "status_counts": {"ALL": 0, **{status: 0 for status in _PREPARATION_STATUS_LABELS}},
+            "available_track_ids": [],
+        }
+    where = ["COALESCE(storage_zone, 'LIBRARY') = 'INBOX'"]
+    params: list[object] = []
+    normalized_search = (search or "").strip()
+    if normalized_search:
+        term = f"%{normalized_search}%"
+        where.append("(artist LIKE ? OR title LIKE ? OR filename LIKE ? OR genre LIKE ?)")
+        params.extend([term, term, term, term])
+    where_sql = " AND ".join(where)
+    order_by = track_service.build_order_by(sort, order)
 
-    path = Path(row["filepath"])
-    if not path.is_file():
-        blockers.append("Source file no longer exists in Inbox.")
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        rows = conn.execute(
+            f"SELECT * FROM tracks WHERE {where_sql} ORDER BY {order_by}", params,
+        ).fetchall()
+        available_track_ids = [
+            int(row["id"])
+            for row in conn.execute(
+                "SELECT id FROM tracks WHERE COALESCE(storage_zone, 'LIBRARY') = 'INBOX' ORDER BY id"
+            ).fetchall()
+        ]
 
-    if row["bpm"] is None:
-        warnings.append("Missing BPM.")
-    if not (row["key_camelot"] or row["key_musical"]):
-        warnings.append("Missing key.")
+    states = _preparation_states_for_rows(root, rows)
+    status_counts = {status: 0 for status in _PREPARATION_STATUS_LABELS}
+    for state in states.values():
+        status_counts[state["status"]] += 1
 
-    ext = path.suffix
-    destination = None
-    collision = None
-    if not blockers:
-        destination = _destination_for(root, genre, artist, title, ext)
-        if destination.exists():
-            try:
-                identical = destination.stat().st_size == path.stat().st_size and _sha256(destination) == _sha256(path)
-            except OSError:
-                identical = False
-            collision = "identical" if identical else "conflict"
-            if collision == "conflict":
-                blockers.append("A different file already exists at the destination path.")
+    filtered_rows = (
+        [row for row in rows if states[int(row["id"])]["status"] == preparation_status]
+        if preparation_status else rows
+    )
+    if sort == "readiness":
+        direction = 1 if order == "asc" else -1
+        filtered_rows = sorted(
+            filtered_rows,
+            key=lambda row: (
+                direction * _PREPARATION_STATUS_ORDER[states[int(row["id"])]["status"]],
+                (row["artist"] or "").casefold(),
+                int(row["id"]),
+            ),
+        )
 
+    total = len(filtered_rows)
+    page_rows = filtered_rows[offset:offset + limit]
+    return {
+        "items": [Track.from_row(row) for row in page_rows],
+        "states": states,
+        "limit": limit,
+        "offset": offset,
+        "total": total,
+        "status_counts": {"ALL": len(rows), **status_counts},
+        "available_track_ids": available_track_ids,
+    }
+
+
+def inbox_track_inspection(root: Path, track_id: int) -> tuple[Track, dict[str, Any]] | None:
+    """Return one Inbox track and its authoritative read-only preparation state."""
+    try:
+        db_path = _require_initialized_db(root)
+    except ValueError:
+        return None
+    with sqlite3.connect(db_path) as conn:
+        conn.row_factory = sqlite3.Row
+        row = conn.execute(
+            "SELECT * FROM tracks WHERE id = ? AND COALESCE(storage_zone, 'LIBRARY') = 'INBOX'",
+            (track_id,),
+        ).fetchone()
+    if row is None:
+        return None
+    state = _preparation_states_for_rows(root, [row])[track_id]
+    return Track.from_row(row), state
+
+
+def _legacy_promotion_item(row: sqlite3.Row, state: dict[str, Any]) -> dict[str, Any]:
+    """Keep the established promotion-preview fields while exposing state."""
+    blockers: list[str] = []
+    unsaved_added = False
+    for reason in state["reasons"]:
+        if reason["severity"] == "unsaved":
+            if not unsaved_added:
+                blockers.append("Approved metadata has not been written back to the file yet.")
+                unsaved_added = True
+        else:
+            blockers.append(reason["label"])
+    legacy_warning_labels = {
+        "bpm_missing": "Missing BPM.",
+        "key_missing": "Missing key.",
+    }
     return {
         "track_id": row["id"],
         "filename": row["filename"],
-        "artist": artist or None,
-        "title": title or None,
-        "genre": genre or None,
-        "ready": not blockers,
+        "artist": (row["artist"] or "").strip() or None,
+        "title": (row["title"] or "").strip() or None,
+        "genre": (row["genre"] or "").strip() or None,
+        "ready": state["promotion"]["ready"],
         "blockers": blockers,
-        "warnings": warnings,
-        "destination_relative": str(destination.relative_to(root)) if destination else None,
-        "collision": collision,
+        "warnings": [legacy_warning_labels.get(warning["code"], warning["label"]) for warning in state["warnings"]],
+        "destination_relative": state["promotion"]["destination"],
+        "collision": state["promotion"]["collision"],
+        "preparation_state": state,
     }
 
 
@@ -602,7 +929,8 @@ def promotion_preview(root: Path, track_ids: list[int] | None = None) -> dict[st
         else:
             rows = conn.execute("SELECT * FROM tracks WHERE storage_zone = 'INBOX'").fetchall()
 
-    items = [_promotion_readiness(row, root) for row in rows]
+    states = _preparation_states_for_rows(root, rows)
+    items = [_legacy_promotion_item(row, states[row["id"]]) for row in rows]
     return {
         "library_root": redact_path(root),
         "track_count": len(items),
@@ -634,6 +962,7 @@ def promote_tracks(root: Path, track_ids: list[int], *, confirm: bool) -> dict[s
                 track_ids,
             )
         }
+        states = _preparation_states_for_rows(root, list(rows.values()))
         for track_id in track_ids:
             row = rows.get(track_id)
             if row is None:
@@ -641,7 +970,7 @@ def promote_tracks(root: Path, track_ids: list[int], *, confirm: bool) -> dict[s
                 results.append({"track_id": track_id, "status": "failed", "reason": "Track is not in Inbox."})
                 continue
 
-            readiness = _promotion_readiness(row, root)
+            readiness = _legacy_promotion_item(row, states[track_id])
             if not readiness["ready"]:
                 failed += 1
                 results.append({"track_id": track_id, "status": "failed", "reason": "; ".join(readiness["blockers"])})
@@ -690,7 +1019,7 @@ def promote_tracks(root: Path, track_ids: list[int], *, confirm: bool) -> dict[s
 
 
 # ---------------------------------------------------------------------------
-# Inbox inline editing -- Track/file rename, Artist/Genre single + bulk edit
+# Inbox inline editing -- Track/file rename, Artist/Title/Genre/Album metadata
 # ---------------------------------------------------------------------------
 
 def _require_inbox_row(conn: sqlite3.Connection, track_id: int) -> sqlite3.Row:
@@ -832,20 +1161,24 @@ def _validate_metadata_value(field: str, value: str) -> str:
 
 
 def edit_inbox_track_metadata(
-    root: Path, track_id: int, *, artist: str | None = None, genre: str | None = None,
+    root: Path,
+    track_id: int,
+    *,
+    artist: str | None = None,
+    title: str | None = None,
+    genre: str | None = None,
+    album: str | None = None,
 ) -> dict[str, Any]:
     """
-    Manual single-track Artist/Genre edit for a managed Inbox copy.
+    Manual single-track Artist/Title/Genre/Album edit for a managed Inbox copy.
 
-    Updates the local index (the same "approved value" tag_write_service
-    already treats as authoritative) and then reuses
-    preparation_service.write_tracks -- the exact build_plan -> backup ->
-    write -> re-read -> verify contract Process All's write stage uses -- to
-    push the change into the file. No second, simplified tag writer exists
-    here; this is a thin caller of the same one.
+    Updates only the approved local-index metadata and its provenance. The
+    managed file is intentionally not written here; explicit Save to File UX
+    will later consume the same tracks row through tag_write_service.
     """
-    if artist is None and genre is None:
-        raise ValueError("Provide at least one of artist or genre to update.")
+    requested = {"artist": artist, "title": title, "genre": genre, "album": album}
+    if not any(value is not None for value in requested.values()):
+        raise ValueError("Provide at least one of artist, title, genre, or album to update.")
 
     db_path = _require_initialized_db(root)
     library_setup_service.ensure_storage_zone_column(root)
@@ -855,55 +1188,62 @@ def edit_inbox_track_metadata(
         row = _require_inbox_row(conn, track_id)
 
         updates: dict[str, str] = {}
-        if artist is not None:
-            new_artist = _validate_metadata_value("artist", artist)
-            if new_artist != (row["artist"] or ""):
-                updates["artist"] = new_artist
-        if genre is not None:
-            new_genre = _validate_metadata_value("genre", genre)
-            if new_genre != (row["genre"] or ""):
-                updates["genre"] = new_genre
+        for field, value in requested.items():
+            if value is None:
+                continue
+            normalized = _validate_metadata_value(field, value)
+            if normalized != (row[field] or ""):
+                updates[field] = normalized
 
         if not updates:
-            return {
-                "track_id": track_id, "status": "no_change", "fields_changed": [],
-                "artist": row["artist"], "genre": row["genre"], "tag_write": None,
-            }
+            status = "no_change"
+        else:
+            set_sql = ", ".join(f"{field} = ?" for field in updates)
+            conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
+            for field, value in updates.items():
+                field_provenance_service.record(
+                    track_id, field, value, origin="user", source="manual_edit",
+                    reason="Manual single-track edit (Inbox DB-first edit).", conn=conn,
+                )
+            conn.commit()
+            status = "updated"
 
-        set_sql = ", ".join(f"{field} = ?" for field in updates)
-        conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
-        for field, value in updates.items():
-            field_provenance_service.record(
-                track_id, field, value, origin="user", source="manual_edit",
-                reason="Manual single-track edit (Inbox inline edit).", conn=conn,
-            )
-        conn.commit()
-
-    from . import preparation_service  # local import breaks the module import cycle
-    write_result = preparation_service.write_tracks([track_id])
+    state = inbox_preparation_states(root, [track_id])[track_id]
+    current = {field: updates.get(field, row[field]) for field in requested}
 
     return {
         "track_id": track_id,
-        "status": "updated",
+        "status": status,
         "fields_changed": list(updates),
-        "artist": updates.get("artist", row["artist"]),
-        "genre": updates.get("genre", row["genre"]),
-        "tag_write": write_result,
+        "artist": current["artist"],
+        "title": current["title"],
+        "genre": current["genre"],
+        "album": current["album"],
+        "tag_write": None,
+        "preparation_state": state,
     }
 
 
-def bulk_edit_preview(root: Path, track_ids: list[int], *, artist: str | None, genre: str | None) -> dict[str, Any]:
-    """Read-only preview for bulk Artist/Genre edit. Never writes anything."""
-    if artist is None and genre is None:
-        raise ValueError("Select at least one field (Artist or Genre) to bulk edit.")
+def bulk_edit_preview(
+    root: Path,
+    track_ids: list[int],
+    *,
+    artist: str | None,
+    title: str | None = None,
+    genre: str | None,
+    album: str | None = None,
+) -> dict[str, Any]:
+    """Read-only preview for bulk Artist/Title/Genre/Album edit."""
+    requested = {"artist": artist, "title": title, "genre": genre, "album": album}
+    if not any(value is not None for value in requested.values()):
+        raise ValueError("Select at least one field (Artist, Title, Genre, or Album) to bulk edit.")
     if not track_ids:
         raise ValueError("Select at least one track to bulk edit.")
 
     fields: dict[str, str] = {}
-    if artist is not None:
-        fields["artist"] = _validate_metadata_value("artist", artist)
-    if genre is not None:
-        fields["genre"] = _validate_metadata_value("genre", genre)
+    for field, value in requested.items():
+        if value is not None:
+            fields[field] = _validate_metadata_value(field, value)
 
     db_path = _require_initialized_db(root)
     library_setup_service.ensure_storage_zone_column(root)
@@ -924,7 +1264,7 @@ def bulk_edit_preview(root: Path, track_ids: list[int], *, artist: str | None, g
         current_values = sorted(counts, key=lambda v: (-counts[v], v.lower()))[:10]
         field_previews[field] = {"current_values": current_values, "new_value": new_value}
 
-    eligible = skipped_not_inbox = missing = 0
+    eligible = skipped_not_inbox = missing = changeable = 0
     for track_id in track_ids:
         row = rows.get(track_id)
         if row is None:
@@ -933,10 +1273,13 @@ def bulk_edit_preview(root: Path, track_ids: list[int], *, artist: str | None, g
             skipped_not_inbox += 1
         else:
             eligible += 1
+            if any(value != (row[field] or "") for field, value in fields.items()):
+                changeable += 1
 
     return {
         "selected_count": len(track_ids),
         "eligible_count": eligible,
+        "changeable_count": changeable,
         "skipped_not_inbox": skipped_not_inbox,
         "missing_count": missing,
         "fields": field_previews,
@@ -945,37 +1288,42 @@ def bulk_edit_preview(root: Path, track_ids: list[int], *, artist: str | None, g
 
 
 def bulk_edit_apply(
-    root: Path, track_ids: list[int], *, artist: str | None, genre: str | None, confirm: bool,
+    root: Path,
+    track_ids: list[int],
+    *,
+    artist: str | None,
+    title: str | None = None,
+    genre: str | None,
+    album: str | None = None,
+    confirm: bool,
 ) -> dict[str, Any]:
     """
-    Apply a bulk Artist/Genre edit to every selected managed-Inbox track.
+    Apply a bulk Artist/Title/Genre/Album edit to selected managed-Inbox tracks.
 
     Per track: confirm it still exists and is still storage_zone=INBOX,
     diff against the current DB value (skip real no-ops), update the index,
-    then reuse preparation_service.write_tracks (tag_write_service's exact
-    backup/write/re-read/verify contract) for the changed tracks as one
-    batch. One track's tag-write failure never flips another track's already
-    -successful result, and vice versa -- each track's final status is
-    reported independently and truthfully.
+    record provenance, and return one batched read-only preparation-state
+    projection. No file, backup, or tag-write operation is performed.
     """
     if not confirm:
         raise ValueError("Bulk edit requires confirm=true after reviewing the preview.")
-    if artist is None and genre is None:
-        raise ValueError("Select at least one field (Artist or Genre) to bulk edit.")
+    requested = {"artist": artist, "title": title, "genre": genre, "album": album}
+    if not any(value is not None for value in requested.values()):
+        raise ValueError("Select at least one field (Artist, Title, Genre, or Album) to bulk edit.")
     if not track_ids:
         raise ValueError("Select at least one track to bulk edit.")
 
     fields: dict[str, str] = {}
-    if artist is not None:
-        fields["artist"] = _validate_metadata_value("artist", artist)
-    if genre is not None:
-        fields["genre"] = _validate_metadata_value("genre", genre)
+    for field, value in requested.items():
+        if value is not None:
+            fields[field] = _validate_metadata_value(field, value)
 
     db_path = _require_initialized_db(root)
     library_setup_service.ensure_storage_zone_column(root)
 
     results: dict[int, dict[str, Any]] = {}
     changed_ids: list[int] = []
+    inbox_ids: list[int] = []
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
@@ -990,6 +1338,7 @@ def bulk_edit_apply(
             if (row["storage_zone"] or "LIBRARY") != "INBOX":
                 results[track_id] = {"track_id": track_id, "status": "skipped", "reason": "Track is not in Inbox."}
                 continue
+            inbox_ids.append(track_id)
 
             updates = {f: v for f, v in fields.items() if v != (row[f] or "")}
             if not updates:
@@ -1007,32 +1356,12 @@ def bulk_edit_apply(
             results[track_id] = {"track_id": track_id, "status": "changed", "fields": list(updates)}
         conn.commit()
 
-    from . import preparation_service  # local import breaks the module import cycle
-    write_result = (
-        preparation_service.write_tracks(changed_ids) if changed_ids
-        else {"written_count": 0, "failed_count": 0, "warnings": [], "results": []}
-    )
-    for wr in write_result.get("results", []):
-        entry = results.get(wr.get("track_id"))
-        if entry is None:
-            continue
-        tw_status = wr.get("status")
-        entry["tag_write_status"] = tw_status
-        if tw_status in ("failed", "blocked"):
-            entry["status"] = "failed"
-            entry["reason"] = wr.get("reason") or "Metadata write-back to the file failed."
-        else:
-            # "applied" or "no_op" (approved value already matched the file)
-            # both mean the field is correctly reflected on disk -- success.
-            entry["status"] = "succeeded"
-
-    for track_id, entry in results.items():
+    states = inbox_preparation_states(root, inbox_ids)
+    for track_id in inbox_ids:
+        entry = results[track_id]
+        entry["preparation_state"] = states[track_id]
         if entry["status"] == "changed":
-            # A DB update happened but no matching tag-write result came
-            # back (e.g. build_plan itself failed for the whole chunk) --
-            # do not silently claim success on an unverified write.
-            entry["status"] = "failed"
-            entry.setdefault("reason", "Metadata write-back could not be verified.")
+            entry["status"] = "succeeded"
 
     ordered_results = [results[tid] for tid in track_ids if tid in results]
     return {
@@ -1044,6 +1373,6 @@ def bulk_edit_apply(
         "skipped_count": sum(1 for r in ordered_results if r["status"] == "skipped"),
         "not_found_count": sum(1 for r in ordered_results if r["status"] == "not_found"),
         "results": ordered_results,
-        "tag_write": write_result,
-        "message": "Bulk edit applied to the managed Inbox copies.",
+        "tag_write": None,
+        "message": "Bulk edit applied to approved Inbox metadata only. File tags were not changed.",
     }

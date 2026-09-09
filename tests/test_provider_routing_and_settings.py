@@ -33,6 +33,7 @@ def test_gather_evidence_stops_after_strong_beets_mb_agreement(monkeypatch):
             "confidence": "high",
         }]}
     monkeypatch.setattr(routing.enrichment_review_service, "online_lookup", fake_online_lookup)
+    monkeypatch.setattr(routing.settings_service, "validate_enrichment_source_ids", lambda source_ids=None: ["beets", "musicbrainz", "discogs"])
 
     called_text_search = []
     monkeypatch.setattr(
@@ -54,6 +55,7 @@ def test_gather_evidence_stops_after_strong_beets_mb_agreement(monkeypatch):
 
 def test_gather_evidence_skips_unconfigured_providers(monkeypatch):
     monkeypatch.setattr(routing.enrichment_review_service, "online_lookup", lambda tid, src: {"items": []})
+    monkeypatch.setattr(routing.settings_service, "validate_enrichment_source_ids", lambda source_ids=None: ["deezer"])
 
     called = []
     monkeypatch.setattr(routing.lastfm_client, "search_track", lambda *a, **k: called.append(1) or ProviderResult())
@@ -69,6 +71,7 @@ def test_gather_evidence_skips_unconfigured_providers(monkeypatch):
 
 def test_gather_evidence_tries_acoustid_before_text_search_when_configured(monkeypatch, tmp_path):
     monkeypatch.setattr(routing.enrichment_review_service, "online_lookup", lambda tid, src: {"items": []})
+    monkeypatch.setattr(routing.settings_service, "validate_enrichment_source_ids", lambda source_ids=None: ["acoustid"])
     audio_path = tmp_path / "song.mp3"
     audio_path.write_bytes(b"fake")
 
@@ -89,6 +92,23 @@ def test_gather_evidence_tries_acoustid_before_text_search_when_configured(monke
     assert evidence["acoustid"][0].provider_id == "mbid-1"
 
 
+def test_gather_evidence_uses_selected_sources_as_an_inclusion_gate(monkeypatch):
+    monkeypatch.setattr(routing.settings_service, "validate_enrichment_source_ids", lambda source_ids=None: ["discogs", "deezer"])
+    calls = []
+
+    monkeypatch.setattr(routing.discogs_client, "capability", lambda creds: ProviderCapability(status="ready", message="ok"))
+    monkeypatch.setattr(routing.discogs_client, "search_track", lambda *a, **k: calls.append("discogs") or ProviderResult())
+    monkeypatch.setattr(routing.deezer_client, "search_track", lambda *a, **k: calls.append("deezer") or ProviderResult())
+    monkeypatch.setattr(routing.enrichment_review_service, "online_lookup", lambda tid, src: {"items": []})
+
+    routing.gather_evidence(
+        1, artist="X", title="Y", inbox_copy_path=None,
+        credentials_by_source={}, selected_source_ids=["deezer"],
+    )
+
+    assert calls == ["deezer"]
+
+
 # ---------------------------------------------------------------------------
 # settings_service integration
 # ---------------------------------------------------------------------------
@@ -105,7 +125,8 @@ def test_deezer_reports_ready_without_any_credentials():
     assert sources["deezer"]["requires_credentials"] is False
 
 
-def test_credential_requiring_providers_report_needs_setup_by_default():
+def test_credential_requiring_providers_report_needs_setup_by_default(monkeypatch, tmp_path):
+    monkeypatch.setattr(settings_service, "METADATA_SOURCES_PATH", tmp_path / "metadata_sources.json")
     sources = {s["id"]: s for s in settings_service.get_metadata_sources()["sources"]}
     for source_id in ("acoustid", "discogs", "spotify", "beatport", "lastfm", "youtube"):
         assert sources[source_id]["connection_status"] == "needs_setup", source_id

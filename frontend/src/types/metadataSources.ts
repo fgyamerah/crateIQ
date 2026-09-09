@@ -1,8 +1,11 @@
 export type MetadataSourceCategory = 'local' | 'installed_tool' | 'external_api' | 'external_input'
-export type MetadataConnectionStatus = 'not_tested' | 'unavailable' | 'ready' | 'failed' | 'not_implemented'
+export type MetadataConnectionStatus = 'not_tested' | 'unavailable' | 'ready' | 'failed' | 'not_implemented' | 'needs_setup' | 'misconfigured'
+export type MetadataSourceRole = 'local_input' | 'analysis_only' | 'track_enrichment'
+export type MetadataSourceReadiness = MetadataConnectionStatus | 'needs_setup' | 'misconfigured'
 
 export interface MetadataSource {
-  id: string; label: string; category: MetadataSourceCategory; enabled: boolean; configured: boolean
+  id: string; label: string; category: MetadataSourceCategory; role: MetadataSourceRole
+  enabled: boolean; configured: boolean; needs_setup: boolean; selectable_for_enrichment: boolean
   requires_credentials: boolean; credentials_status: 'not_required' | 'missing' | 'saved' | 'invalid' | 'unknown'
   credential_fields: string[]; saved_credential_fields: string[]; connection_status: MetadataConnectionStatus
   priority: number; best_for: string[]; current_behavior: 'implemented' | 'preview_only' | 'settings_only' | 'planned'

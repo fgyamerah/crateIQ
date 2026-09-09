@@ -8,6 +8,7 @@ import {
   CircleAlert,
   Database,
   FolderCog,
+  FolderOpen,
   HardDrive,
   ListChecks,
   RefreshCw,
@@ -345,6 +346,7 @@ export default function Settings() {
         subtitle="Configure your managed music workspace, metadata sources, analysis tools, and safety preferences."
         actions={(
           <div className="settings-header-actions">
+            <Link className="btn btn--ghost btn--sm" to="/libraries"><FolderOpen size={13} /> Switch Library</Link>
             <Link className="btn btn--ghost btn--sm" to="/">Open Library</Link>
             <Link className="btn btn--ghost btn--sm" to="/jobs">Analysis Jobs</Link>
             <Link className="btn btn--ghost btn--sm" to="/exports">Exports</Link>

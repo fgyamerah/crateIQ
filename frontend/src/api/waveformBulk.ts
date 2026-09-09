@@ -20,8 +20,8 @@ export const startWaveformBulkGenerate = () =>
 export const fetchWaveformBulkHistory = () =>
   apiFetch.get<WaveformBulkHistory>('/waveform-bulk/operations')
 
-export const fetchWaveformBulkOperation = (operationId: string) =>
-  apiFetch.get<WaveformBulkOperation>(`/waveform-bulk/operations/${operationId}`)
+export const fetchWaveformBulkOperation = (operationId: string, signal?: AbortSignal) =>
+  apiFetch.get<WaveformBulkOperation>(`/waveform-bulk/operations/${operationId}`, signal)
 
 export const cancelWaveformBulkOperation = (operationId: string) =>
   apiFetch.post<WaveformBulkOperation>(`/waveform-bulk/operations/${operationId}/cancel`, {})

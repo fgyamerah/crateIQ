@@ -42,6 +42,12 @@ APP_TSX = REPO_ROOT / "frontend" / "src" / "App.tsx"
 
 ROUTE_CONTRACTS: list[dict] = [
     {
+        "route": "/libraries",
+        "purpose": "Rootless Library Launcher and registered-library selection",
+        "access": "dedicated launcher API coverage; filesystem administration remains local-only",
+        "endpoints": [],
+    },
+    {
         "route": "/",
         "purpose": "Library workspace and track browsing",
         "access": "read-only",
@@ -300,7 +306,7 @@ ROUTE_CONTRACTS: list[dict] = [
 
 # Infrastructure endpoints every supported page relies on indirectly.
 INFRA_ENDPOINTS: list[tuple[str, str, tuple[str, ...]]] = [
-    ("/api/health", "dict", ("ok", "library_root", "db_path", "db_exists")),
+    ("/api/health", "dict", ("ok", "db_exists")),
     ("/api/version", "dict", ("backend_version", "toolkit_version", "pipeline_py")),
     ("/api/runtime/readiness", "dict", ("status", "checks")),
 ]

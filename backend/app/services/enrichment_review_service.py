@@ -68,6 +68,30 @@ def get_review():
             try:return _response(conn,_latest(conn))
             except LookupError:return _empty('No multi-source preview is saved. Refresh local suggestions to begin review.')
     except ValueError:return _empty('Initialize and import the local library before refreshing enrichment suggestions.')
+
+
+def get_track_review(track_id: int) -> dict[str, Any]:
+    """Read-only, track-scoped projection of actionable enrichment review.
+
+    Reuses the exact same snapshot + decision queue ``get_review()`` reads;
+    no new persistence, no provider/network work, no tag writes. Only
+    ``pending`` suggestions for the requested track are actionable, matching
+    the ``_active_enrichment_reviews`` filter the Inbox preparation state
+    already applies.
+    """
+    review = get_review()
+    items = [
+        item for item in review.get("items", [])
+        if item.get("track_id") == track_id and item.get("decision") == "pending"
+    ]
+    return {
+        "track_id": track_id,
+        "items": items,
+        "count": len(items),
+        "sources": review.get("sources", []),
+        "safety": review.get("safety", []),
+        "message": review.get("message"),
+    }
 def _local_tag_suggestion(candidate: dict[str, Any], missing: list[str], root: Path) -> dict[str, str]:
     """Read-only: propose a missing field only if the file's own embedded tag already has it. Never writes tags."""
     try:
@@ -218,9 +242,11 @@ def online_lookup(track_id: int, source: str) -> dict[str, Any]:
     Explicit, single-track, bounded online lookup against Beets' real
     distance-scored MusicBrainz matching, or a raw MusicBrainz search.
 
-    Never called automatically; must be triggered per-track by the user.
-    Only proposes values for currently-missing allowed fields -- existing
-    non-empty metadata is never a lookup target or overwrite candidate.
+    Called either by an explicit per-track user action or by Process All's
+    bounded provider-consensus stage. Async callers must keep this synchronous
+    lookup workflow off the event-loop thread. Only proposes values for
+    currently-missing allowed fields -- existing non-empty metadata is never a
+    lookup target or overwrite candidate.
     """
     if source not in _ONLINE_SOURCES:
         raise ValueError(f"Unsupported online source: {source}.")

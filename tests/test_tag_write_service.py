@@ -11,6 +11,7 @@ run ever writes into this repo's real backend/data/ directory.
 """
 from __future__ import annotations
 
+import os
 import shutil
 import sqlite3
 import subprocess
@@ -184,7 +185,10 @@ def test_apply_writes_only_approved_fields_preserves_unrelated_tags_and_audio(en
     operation = svc.get_operation(result["operation_id"])
     assert operation["status"] == "completed"
     manifest = operation["backup_manifest"][0]
-    backup_path = svc.TAG_WRITE_BACKUP_DIR / result["operation_id"] / manifest["backup_filename"]
+    backup_path = (
+        svc.TAG_WRITE_BACKUP_DIR / svc.current_library_key() /
+        result["operation_id"] / manifest["backup_filename"]
+    )
     assert backup_path.is_file()
     assert backup_path.read_bytes() == original_backup_source_bytes, "backup must be byte-for-byte the pre-write file"
     assert svc._sha256(backup_path) == manifest["original_sha256"]
@@ -228,6 +232,27 @@ def test_apply_skips_tracks_with_no_diff_without_creating_backup(env):
     assert operation["backup_manifest"] == []
 
 
+def test_apply_blocks_noop_file_changed_since_preview(env):
+    """A stale no-op preview must not be silently rebased at apply time."""
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    _write_tags(path, artist="Same Artist")
+    track_id = _insert_track(root, filepath=path, artist="Same Artist")
+
+    plan = svc.build_plan([track_id])
+    item = plan["items"][0]
+    stat = path.stat()
+    os.utime(path, ns=(stat.st_atime_ns, stat.st_mtime_ns + 1_000_000))
+    expected = {track_id: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+
+    result = svc.apply_plan([track_id], expected, confirm=True)
+
+    assert result["failed"] == 1 and result["applied"] == 0
+    assert "stale" in result["results"][0]["reason"].lower()
+    assert svc.get_operation(result["operation_id"])["backup_manifest"] == []
+
+
 def test_restore_reverts_file_to_byte_identical_backup(env):
     root = env
     path = root / "library" / "track.mp3"
@@ -266,7 +291,8 @@ def test_recover_interrupted_operations_marks_running_as_failed(env):
     from backend.app.core.db import get_conn
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO tag_write_operations (id, status, track_count, created_at, started_at) VALUES ('stuck-op', 'running', 1, '2026-01-01', '2026-01-01')"
+                "INSERT INTO tag_write_operations (id, status, track_count, created_at, started_at, library_key) VALUES ('stuck-op', 'running', 1, '2026-01-01', '2026-01-01', ?)",
+                (svc.current_library_key(),),
         )
 
     recovered = svc.recover_interrupted_operations()

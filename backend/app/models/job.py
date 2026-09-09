@@ -14,6 +14,7 @@ from typing import List, Optional
 @dataclass
 class Job:
     id:               str
+    library_key:      str
     command:          str
     args:             List[str]   # already deserialized from JSON
     status:           str         # pending | running | succeeded | failed | cancelled
@@ -36,6 +37,7 @@ class Job:
     def from_row(cls, row) -> "Job":
         return cls(
             id               = row["id"],
+            library_key      = row["library_key"],
             command          = row["command"],
             args             = json.loads(row["args_json"] or "[]"),
             status           = row["status"],

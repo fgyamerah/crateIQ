@@ -26,20 +26,23 @@ Multi-provider enrichment (Cycle 11):
 """
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field
 
 from ...core.library_root import selected_library_root
 from ...schemas.track import TrackSummary
 from ...services import (
+    enrichment_review_service,
     preparation_operations_service,
     preparation_service,
     provider_routing_service,
     track_service,
     workspace_service,
 )
+from ...services.operation_admission_gate import LibraryOperationDrainingError
 
 router = APIRouter(tags=["workspace"])
 
@@ -86,6 +89,8 @@ class TrackPageResponse(BaseModel):
     limit: int
     offset: int
     total: int
+    status_counts: Dict[str, int]
+    available_track_ids: List[int]
 
 
 class PromotionPreviewRequest(BaseModel):
@@ -105,16 +110,24 @@ class TrackIdsRequest(BaseModel):
     track_ids: List[int] = Field(min_length=1, max_length=200)
 
 
+class EnrichSelectedRequest(TrackIdsRequest):
+    source_ids: Optional[List[str]] = Field(default=None, max_length=9)
+
+
 class InboxTrackEditRequest(BaseModel):
     filename: Optional[str] = Field(default=None, max_length=255)
     artist: Optional[str] = Field(default=None, max_length=200)
+    title: Optional[str] = Field(default=None, max_length=200)
     genre: Optional[str] = Field(default=None, max_length=200)
+    album: Optional[str] = Field(default=None, max_length=200)
 
 
 class InboxBulkEditRequest(BaseModel):
     track_ids: List[int] = Field(min_length=1, max_length=200)
     artist: Optional[str] = Field(default=None, max_length=200)
+    title: Optional[str] = Field(default=None, max_length=200)
     genre: Optional[str] = Field(default=None, max_length=200)
+    album: Optional[str] = Field(default=None, max_length=200)
 
 
 class InboxBulkEditApplyRequest(InboxBulkEditRequest):
@@ -171,7 +184,10 @@ async def import_to_inbox(body: WorkspaceImportRequest):
 
 @router.get("/workspace/inbox/tracks", response_model=TrackPageResponse)
 async def list_inbox_tracks(
-    search: Optional[str] = Query(default=None, description="Search artist, title, filename"),
+    search: Optional[str] = Query(default=None, description="Search artist, title, genre, filename"),
+    preparation_status: Optional[
+        Literal["WRITE_BLOCKED", "NEEDS_ATTENTION", "REVIEW", "UNSAVED", "READY"]
+    ] = Query(default=None, description="Authoritative Inbox preparation status"),
     sort: str = Query(default="artist", description="Sort key"),
     order: str = Query(default="asc", pattern="^(asc|desc)$"),
     limit: int = Query(default=100, ge=1, le=500),
@@ -182,25 +198,67 @@ async def list_inbox_tracks(
             status_code=422,
             detail=f"Invalid sort key '{sort}'. Allowed: {', '.join(sorted(track_service.VALID_SORT_KEYS))}.",
         )
-    tracks, total = track_service.list_tracks(
-        q=search, storage_zone="INBOX", sort=sort, order=order, limit=limit, offset=offset,
-    )
+    root = _root()
+
+    def _load_page():
+        return workspace_service.inbox_track_page_projection(
+            root,
+            search=search,
+            preparation_status=preparation_status,
+            sort=sort,
+            order=order,
+            limit=limit,
+            offset=offset,
+        )
+
+    # Live tag inspection is bounded but synchronous (mutagen + filesystem).
+    # Keep the consolidated batch projection off the FastAPI event loop.
+    page = await run_in_threadpool(_load_page)
     return TrackPageResponse(
-        items=[TrackSummary.from_track(t) for t in tracks], limit=limit, offset=offset, total=total,
+        items=[
+            TrackSummary.from_track(track, preparation_state=page["states"].get(track.id))
+            for track in page["items"]
+        ],
+        limit=page["limit"],
+        offset=page["offset"],
+        total=page["total"],
+        status_counts=page["status_counts"],
+        available_track_ids=page["available_track_ids"],
     )
+
+
+@router.get("/workspace/inbox/tracks/{track_id}/inspection", response_model=TrackSummary)
+async def inspect_inbox_track(track_id: int) -> TrackSummary:
+    """Read-only Inbox inspector data; never runs providers, analysis, or writes."""
+    result = await run_in_threadpool(workspace_service.inbox_track_inspection, _root(), track_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"Inbox track {track_id} not found.")
+    track, state = result
+    return TrackSummary.from_track(track, preparation_state=state)
+
+
+@router.get("/workspace/inbox/tracks/{track_id}/enrichment-review")
+async def inspect_inbox_track_enrichment_review(track_id: int):
+    """Read-only, track-scoped actionable enrichment suggestions for the Inspector.
+
+    Thin aggregation over the existing enrichment_review_service decision queue --
+    no new review persistence, no provider/network work, no tag writes.
+    """
+    return await run_in_threadpool(enrichment_review_service.get_track_review, track_id)
 
 
 @router.patch("/workspace/inbox/tracks/{track_id}")
 async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
     """
     Single-track Inbox edit: optional filename (managed Inbox rename, basename
-    only -- extension is always locked to the current file), artist, genre.
+    only -- extension is always locked to the current file), or approved
+    Artist/Title/Genre/Album metadata.
     Fields are processed independently so a failure in one never hides a
     success in another; if every requested field fails, the response is a
     422 with all failure reasons joined.
     """
-    if body.filename is None and body.artist is None and body.genre is None:
-        raise HTTPException(status_code=422, detail="Provide at least one of filename, artist, or genre.")
+    if all(value is None for value in (body.filename, body.artist, body.title, body.genre, body.album)):
+        raise HTTPException(status_code=422, detail="Provide at least one of filename, artist, title, genre, or album.")
     root = _root()
     result: dict = {"track_id": track_id, "rename": None, "metadata": None, "errors": []}
 
@@ -210,10 +268,11 @@ async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
         except ValueError as exc:
             result["errors"].append(str(exc))
 
-    if body.artist is not None or body.genre is not None:
+    if any(value is not None for value in (body.artist, body.title, body.genre, body.album)):
         try:
             result["metadata"] = workspace_service.edit_inbox_track_metadata(
-                root, track_id, artist=body.artist, genre=body.genre,
+                root, track_id, artist=body.artist, title=body.title,
+                genre=body.genre, album=body.album,
             )
         except ValueError as exc:
             result["errors"].append(str(exc))
@@ -225,9 +284,12 @@ async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
 
 @router.post("/workspace/inbox/bulk-edit/preview")
 async def preview_inbox_bulk_edit(body: InboxBulkEditRequest):
-    """Read-only: preview a bulk Artist/Genre edit before it is applied."""
+    """Read-only: preview a bulk Artist/Title/Genre/Album edit before it is applied."""
     try:
-        return workspace_service.bulk_edit_preview(_root(), body.track_ids, artist=body.artist, genre=body.genre)
+        return workspace_service.bulk_edit_preview(
+            _root(), body.track_ids, artist=body.artist, title=body.title,
+            genre=body.genre, album=body.album,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -238,7 +300,8 @@ async def apply_inbox_bulk_edit(body: InboxBulkEditApplyRequest):
         raise HTTPException(status_code=422, detail="Bulk edit requires confirm=true after reviewing the preview.")
     try:
         return workspace_service.bulk_edit_apply(
-            _root(), body.track_ids, artist=body.artist, genre=body.genre, confirm=True,
+            _root(), body.track_ids, artist=body.artist, title=body.title,
+            genre=body.genre, album=body.album, confirm=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -247,7 +310,7 @@ async def apply_inbox_bulk_edit(body: InboxBulkEditApplyRequest):
 @router.post("/workspace/promotion/preview")
 async def preview_promotion(body: PromotionPreviewRequest):
     try:
-        return workspace_service.promotion_preview(_root(), body.track_ids)
+        return await run_in_threadpool(workspace_service.promotion_preview, _root(), body.track_ids)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -281,6 +344,8 @@ async def start_prepare(body: ProcessAllRequest):
         raise HTTPException(status_code=422, detail="Process All requires confirm=true after reviewing the preflight preview.")
     try:
         return preparation_service.start_process_all(_root(), confirm=True)
+    except LibraryOperationDrainingError as exc:
+        raise HTTPException(status_code=409, detail="LIBRARY_SWITCH_DRAINING") from exc
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -294,9 +359,14 @@ async def clean_selected(body: TrackIdsRequest):
 
 
 @router.post("/workspace/prepare/enrich")
-async def enrich_selected(body: TrackIdsRequest):
+async def enrich_selected(body: EnrichSelectedRequest):
     try:
-        return preparation_service.enrich_tracks(_root(), body.track_ids)
+        return await run_in_threadpool(
+            preparation_service.enrich_tracks,
+            _root(),
+            body.track_ids,
+            source_ids=body.source_ids,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
 
@@ -340,6 +410,6 @@ async def preview_track_consensus(track_id: int):
     This is why it is a POST, explicit and user-triggered, not a GET.
     """
     try:
-        return provider_routing_service.preview_consensus(_root(), track_id)
+        return await run_in_threadpool(provider_routing_service.preview_consensus, _root(), track_id)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

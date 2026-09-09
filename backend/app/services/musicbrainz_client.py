@@ -17,19 +17,23 @@ machine):
 - Only read-only MusicBrainz search/lookup calls are made. No import,
   write, move, or tagging stage of beets is invoked.
 
-This module makes network calls. It must only be invoked from an
-explicit, user-triggered, single-track lookup -- never from a GET/page
-load and never looped over an entire library.
+This module makes synchronous network calls. It is used by explicit
+single-track lookups and by Process All's bounded provider-consensus stage.
+Async callers must dispatch the surrounding synchronous lookup workflow to a
+worker thread; these functions must never run on the FastAPI event-loop
+thread.
 """
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass
 from typing import Any
 
 log = logging.getLogger(__name__)
 
 _configured = False
+_lookup_lock = threading.Lock()
 
 
 def _ensure_isolated_config() -> None:
@@ -51,6 +55,23 @@ def _plugin():
     return MusicBrainzPlugin()
 
 
+def _close_plugin_session(plugin: Any | None) -> None:
+    """Close beets' pooled HTTP session after every lookup attempt.
+
+    Beets keeps its timeout-enabled session as a process singleton. CrateIQ's
+    lookups are sparse enough that retaining idle provider connections is not
+    useful, and closing the pool here ensures a peer-closed MusicBrainz socket
+    cannot remain as a persistent CLOSE_WAIT descriptor. Cleanup is
+    best-effort and must never replace the lookup's existing result/error.
+    """
+    if plugin is None:
+        return
+    try:
+        plugin.mb_api.session.close()
+    except Exception as exc:  # cleanup failure must not mask provider semantics
+        log.warning("MusicBrainz session cleanup failed: %s", exc.__class__.__name__)
+
+
 @dataclass
 class MusicBrainzError:
     message: str
@@ -63,12 +84,20 @@ def search_recordings(artist: str, title: str, limit: int = 5) -> list[dict[str,
     if not title:
         return []
     limit = max(1, min(limit, 10))
+    plugin = None
     try:
-        plugin = _plugin()
-        filters: dict[str, str] = {"recording": title}
-        if artist:
-            filters["artist"] = artist
-        results = plugin.mb_api.search("recording", filters, limit=limit)
+        # Beets' MusicBrainz API/session and its rate limiter are shared
+        # singletons. Serialize their use while worker-thread callers may run
+        # concurrently, then close the pooled connections in every path.
+        with _lookup_lock:
+            try:
+                plugin = _plugin()
+                filters: dict[str, str] = {"recording": title}
+                if artist:
+                    filters["artist"] = artist
+                results = plugin.mb_api.search("recording", filters, limit=limit)
+            finally:
+                _close_plugin_session(plugin)
     except Exception as exc:  # network/HTTP/parsing failure -- never crash the request
         log.warning("MusicBrainz search failed: %s", exc.__class__.__name__)
         return MusicBrainzError(f"MusicBrainz lookup failed ({exc.__class__.__name__}).")
@@ -102,20 +131,25 @@ def match_track_candidates(artist: str, title: str, limit: int = 5) -> list[dict
     if not title:
         return []
     limit = max(1, min(limit, 10))
+    plugin = None
     try:
-        from beets.autotag import track_distance
-        from beets.library import Item
+        with _lookup_lock:
+            try:
+                from beets.autotag import track_distance
+                from beets.library import Item
 
-        plugin = _plugin()
-        item = Item(artist=artist, title=title)
-        candidates = list(plugin.item_candidates(item, artist, title))
-        scored = sorted(
-            (
-                (track_distance(item, info, incl_artist=bool(artist)).distance, info)
-                for info in candidates
-            ),
-            key=lambda pair: pair[0],
-        )
+                plugin = _plugin()
+                item = Item(artist=artist, title=title)
+                candidates = list(plugin.item_candidates(item, artist, title))
+                scored = sorted(
+                    (
+                        (track_distance(item, info, incl_artist=bool(artist)).distance, info)
+                        for info in candidates
+                    ),
+                    key=lambda pair: pair[0],
+                )
+            finally:
+                _close_plugin_session(plugin)
     except Exception as exc:
         log.warning("Beets/MusicBrainz matching failed: %s", exc.__class__.__name__)
         return MusicBrainzError(f"Beets lookup failed ({exc.__class__.__name__}).")

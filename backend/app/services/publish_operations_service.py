@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from ..core.db import get_conn
+from ..core.library_key import current_library_key
 
 _TERMINAL_STATUSES = ("completed", "failed", "cancelled")
 _MAX_WARNINGS = 50
@@ -60,15 +61,16 @@ def start_operation(
         raise ValueError(f"Unknown operation_type: {operation_type!r}")
     operation_id = uuid.uuid4().hex
     now = _now()
+    library_key = current_library_key()
     with get_conn() as conn:
         conn.execute(
             """INSERT INTO publish_operations
                (id, operation_type, export_target, sync_source, job_id, mode, status,
-                crate_id, crate_name, scope, track_count, created_at, started_at)
-               VALUES (?, ?, ?, ?, ?, 'apply', 'running', ?, ?, ?, ?, ?, ?)""",
+                crate_id, crate_name, scope, track_count, created_at, started_at, library_key)
+               VALUES (?, ?, ?, ?, ?, 'apply', 'running', ?, ?, ?, ?, ?, ?, ?)""",
             (
                 operation_id, operation_type, export_target, sync_source, job_id,
-                crate_id, crate_name, scope, track_count, now, now,
+                crate_id, crate_name, scope, track_count, now, now, library_key,
             ),
         )
     return {"id": operation_id}
@@ -96,11 +98,11 @@ def finish_operation(
                SET status = ?, destination_relative = ?, result = ?,
                    verification_status = ?, verification_details_json = ?,
                    warnings_json = ?, error_reason = ?, finished_at = ?
-               WHERE id = ?""",
+               WHERE id = ? AND library_key = ?""",
             (
                 status, destination_relative, result,
                 verification_status, details_payload,
-                warnings_payload, reason, _now(), operation_id,
+                warnings_payload, reason, _now(), operation_id, current_library_key(),
             ),
         )
 
@@ -108,7 +110,7 @@ def finish_operation(
 def get_operation(operation_id: str) -> Optional[dict[str, Any]]:
     with get_conn() as conn:
         row = conn.execute(
-            "SELECT * FROM publish_operations WHERE id = ?", (operation_id,)
+            "SELECT * FROM publish_operations WHERE id = ? AND library_key = ?", (operation_id, current_library_key())
         ).fetchone()
     return _row_to_dict(row) if row else None
 
@@ -117,14 +119,14 @@ def list_recent(limit: int = 50, operation_type: Optional[str] = None) -> list[d
     with get_conn() as conn:
         if operation_type:
             rows = conn.execute(
-                "SELECT * FROM publish_operations WHERE operation_type = ? "
+                "SELECT * FROM publish_operations WHERE library_key = ? AND operation_type = ? "
                 "ORDER BY created_at DESC, id DESC LIMIT ?",
-                (operation_type, limit),
+                (current_library_key(), operation_type, limit),
             ).fetchall()
         else:
             rows = conn.execute(
-                "SELECT * FROM publish_operations ORDER BY created_at DESC, id DESC LIMIT ?",
-                (limit,),
+                "SELECT * FROM publish_operations WHERE library_key = ? ORDER BY created_at DESC, id DESC LIMIT ?",
+                (current_library_key(), limit),
             ).fetchall()
     return [_row_to_dict(row) for row in rows]
 
@@ -139,13 +141,13 @@ def recover_interrupted_operations() -> int:
     now = _now()
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT id FROM publish_operations WHERE status = 'running'"
+            "SELECT id FROM publish_operations WHERE status = 'running' AND library_key = ?", (current_library_key(),)
         ).fetchall()
         for row in rows:
             conn.execute(
                 """UPDATE publish_operations
                    SET status = 'failed', error_reason = ?, finished_at = ?
-                   WHERE id = ?""",
-                ("backend_restarted", now, row["id"]),
+                   WHERE id = ? AND library_key = ?""",
+                ("backend_restarted", now, row["id"], current_library_key()),
             )
     return len(rows)

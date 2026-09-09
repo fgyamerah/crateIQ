@@ -56,8 +56,10 @@ under one **Managed Root** folder you choose (Settings → Workspace):
 - **Import copies, never moves.** Selecting external files or folders in
   **Inbox** copies them into `Inbox/`; your original source files are never
   modified, renamed, or deleted.
-- **Inbox is crateIQ's working copy.** All metadata writes happen only
-  against managed Inbox copies, never against the external originals.
+- **Inbox is crateIQ's working copy.** Inbox metadata edits first update the
+  approved local index and provenance; they do not write file tags. Explicit
+  tag writes remain a separate controlled operation against managed Inbox
+  copies, never against external originals.
 - **Library contains only explicitly promoted finished tracks** — nothing
   lands there automatically.
 - **Quarantine is never an automatic destination.** No workflow moves files
@@ -96,13 +98,19 @@ explicit confirmation, it runs:
    trusted values.
 
 **Process All does not query every provider for every track.** Evidence
-gathering follows a bounded, staged order (Beets + MusicBrainz first, since
-they need no credentials; AcoustID fingerprinting next if configured; then
-Discogs/Beatport, Spotify/Deezer, Last.fm, and finally YouTube as a
-last-resort corroboration source), stopping early once identity confidence
-is already HIGH. Only providers whose credentials are configured and who
-report themselves ready are queried; an unconfigured provider is silently
-skipped, never an error.
+gathering follows the existing bounded, staged order (Beets + MusicBrainz;
+AcoustID fingerprinting; Discogs/Beatport; Spotify/Deezer; Last.fm; and
+YouTube as a last-resort corroboration source), stopping early once identity
+confidence is already HIGH. Only sources that Settings reports as globally
+enabled, configured, ready, and usable by the router are queried; an
+unavailable source is skipped, never an error.
+
+The provider adapters use bounded synchronous clients, but CrateIQ dispatches
+provider work to backend worker threads. A slow, timed-out, or failed metadata
+source therefore cannot occupy the FastAPI event loop or prevent unrelated
+routes such as `/api/health` from responding. Provider results, priority, and
+fallback behavior are unchanged; MusicBrainz connections are closed after
+each lookup attempt.
 
 Existing non-empty metadata is never silently overwritten. The one
 exception: a field whose *current* value is already a known junk/placeholder
@@ -114,27 +122,88 @@ general no-overwrite rule.
 separate, explicit action (see "Ready and promotion" below).
 
 You can also run **Clean Selected** or **Enrich Selected** on a chosen
-subset instead of the whole Inbox.
+subset instead of the whole Inbox. **Enrich Selected** first opens a
+per-batch source selector showing only currently eligible track-enrichment
+sources. Confirming the selector sends `source_ids` with the selected track
+IDs; selected sources are eligible to be queried, but staged routing may stop
+early after a strong match. If `source_ids` is omitted for backward
+compatibility, the backend uses the globally enabled + ready enrichment
+defaults. Process All continues to use those global defaults and does not
+open this selector.
 
 ### Inline editing and sorting
 
-The Inbox table supports direct editing without leaving the page:
+The Inbox table and Track Inspector support direct editing without leaving the
+page:
 
 - **Track / file** — the managed Inbox *filename* (basename only; the file
   extension is always locked to the current file and can never be changed
   through a rename). Editing it renames only the managed Inbox copy — it
   never changes **Title** metadata, and never touches external originals,
   promoted Library files, or Quarantine.
-- **Artist** and **Genre** — editing either goes through the same
-  preview/stale-check/backup/write/verify write-back path Process All uses;
-  there is no separate, simplified writer. A manually entered non-empty,
-  non-junk value is never silently overwritten by a later Process All run.
-- **Bulk Edit** — select multiple Inbox tracks to set one Artist and/or one
-  Genre across all of them in a single, previewed operation. Bulk edit never
-  renames files.
+- **Artist**, **Title**, and **Genre** — edit inline in the table. **Album** is
+  editable in the Track Inspector and Bulk Edit panel to keep the dense table
+  scannable. Editing any supported metadata field updates approved `tracks`
+  metadata and manual provenance only. The preparation state immediately
+  reports **Unsaved** when the DB value differs from the live file tag; Title
+  edits never rename files.
+- **Bulk Edit** — select multiple Inbox tracks to set one or more of Artist,
+  Title, Genre, and Album across all of them in a concise previewed,
+  explicitly confirmed, DB-first operation. Only checked fields are included;
+  blank enabled fields are rejected. Bulk edit never renames files or writes
+  tags.
+- **Save to File** — after editing, cleaning, or accepting enrichment, select
+  one or more tracks with writable Unsaved changes and open a read-only preview
+  of the exact file-tag differences. One explicit confirmation sends only the
+  managed Inbox copies through the existing backup, stale-check, write, and
+  verification contract. The preview identifies no-ops and blocked formats;
+  external source originals are never modified. The toolbar count is a cheap
+  count of selected unsaved writable tracks when their current state is known;
+  the preview remains authoritative for exact writable/no-op/blocked totals.
+- **Enrich Selected** — opens a source-selection checkpoint before the
+  existing bounded provider-routing and consensus operation. Settings remains
+  authoritative for credentials, enabled state, readiness, and defaults; the
+  Inbox selection applies only to this enrichment batch. Enrichment keeps the
+  existing HIGH auto-apply and MEDIUM/LOW/CONFLICT review behavior and never
+  writes file tags automatically.
+- **Search and preparation filters** run across the server-side Inbox dataset,
+  not just the rendered page. Search covers filename, Artist, Title, and Genre;
+  the five status chips show search-scoped counts from the authoritative
+  preparation-state projection. The **Unsaved** chip counts primary
+  `UNSAVED` states only; a higher-precedence state may still expose pending
+  fields and `has_unsaved_changes` in the Inspector.
+- **Selection** is stored by track ID across sorting, refresh, status filters,
+  and pagination. The UI reports both total and visible selected tracks and
+  provides explicit clear-hidden/clear-all controls. The header checkbox is
+  deliberately labeled **Select visible page**; it never implies a hidden
+  query-wide selection.
 - Every column except the selection checkbox is **sortable** (click to sort
   ascending, click again to reverse); sorting is server-side and combines
   correctly with search and selection.
+- The **Status** column is one read-only preparation contract shared with
+  promotion: **Write Blocked**, **Needs Attention**, **Review**, **Unsaved**,
+  or **Ready**. Hover text and assistive-technology descriptions expose the
+  concrete reasons; missing BPM or key stays a secondary warning and does not
+  demote an otherwise Ready track. This status display does not introduce
+  another writer or change any Inbox action.
+- A row's details chevron opens the **Track Inspector**. Its Metadata, Review,
+  Status, Analysis, and File sections expose current preparation reasons,
+  warnings, pending fields, review/write/promotion state, BPM/key/waveform
+  state, managed path, and destination preview. Metadata edits remain DB-first;
+  when writable changes are pending, the Inspector also provides **Save to
+  File** and keeps itself open after the verified result. The inspector is
+  restored by `/inbox?track=<id>`.
+- **Inline enrichment review** lives in the Inspector's **Review** section. It
+  reads the same shared enrichment decision queue as the specialist Enrichment
+  Review page, so a decision made in either place is reflected in the other.
+  For each actionable suggestion the section shows the current working value
+  versus the proposed value, a text confidence label (HIGH/MEDIUM/LOW/CONFLICT),
+  and source/provider attribution — including per-source disagreement for
+  CONFLICT fields. **Use Suggested** applies the selected field(s) through the
+  existing review apply contract (DB-only, never a tag write); **Keep Current**
+  resolves the proposal without changing metadata. Either decision refreshes the
+  authoritative preparation state, so a track may move between **Review**,
+  **Unsaved**, and **Ready** without leaving the Inspector.
 
 ## Metadata intelligence
 
@@ -201,7 +270,10 @@ A track becomes promotable once:
 - Title is present
 - Genre is present
 - Its approved metadata has been verified written back to the file
-- No unresolved serious errors (e.g. the source file must still exist)
+- No current actionable provider review or unresolved serious error
+- The source is a supported, present managed Inbox file
+- No file already exists at the intended Library destination (identical
+  content also blocks rather than overwriting or silently discarding Inbox)
 
 **Warnings only (do not block promotion):**
 - Missing BPM
@@ -247,10 +319,10 @@ integration is via staged, reviewable artifacts.
   nothing about setup, import, crate building, preview, or export/sync
   touches the source files you imported from.
 - **crateIQ works on managed Inbox copies.** Controlled metadata write-back
-  is a real, supported capability of Process All and Enrich Selected — it is
-  *not* true that "crateIQ never modifies music tags." What's true is that
-  writes are scoped to managed Inbox copies, confidence-gated, and behind
-  explicit confirmation.
+  is a real, supported capability of Process All and the explicit Inbox
+  **Save to File** workflow — it is *not* true that "crateIQ never modifies
+  music tags." What's true is that writes are scoped to managed Inbox copies,
+  confidence/plan-gated, and behind explicit confirmation.
 - Metadata writes go through the existing protections: a preview, a
   stale-check against the file on disk, a backup, an explicit confirmation,
   a post-write re-read verification, and a restore path if verification
@@ -367,9 +439,12 @@ npm --prefix frontend install
 scripts/crateiq-local-services.sh start
 ```
 
-The `start` command asks you to choose a library profile and access mode. For
-the safest first run, choose **Demo library** and **Local only**. Then open
-<http://127.0.0.1:5175>.
+The normal `start` flow now defaults to **Library Launcher**, then asks for the
+existing LAN or local-only access mode. Choose **Library Launcher** and
+**Local only**, then open <http://127.0.0.1:5175>. The long-lived supervisor
+starts a rootless backend without requiring `CRATEIQ_LIBRARY_ROOT` or
+`logs/processed.db`; `/` redirects to `/libraries`, where a registered library
+can be selected.
 
 For a non-interactive demo launch:
 
@@ -378,24 +453,144 @@ For a non-interactive demo launch:
 scripts/crateiq-local-services.sh start-demo-local
 ```
 
-**First-run flow for your own music:**
+For the same rootless launcher bootstrap without the interactive startup-mode
+menu, use:
 
-1. Start crateIQ.
-2. Open **Settings** — Workspace is the first tab. Enter a new folder path
-   (e.g. `~/Music/crateIQ`); Settings validates it and, once you confirm,
-   creates it and saves it as the pending workspace. Restart crateIQ
-   (Settings shows the exact restart command and clearly separates the
-   *current* workspace you're still running on from the *new* one pending
-   restart), then reload Settings and click **Create Managed Workspace**.
-3. Open **Inbox** and **Import Music** — this copies files in from an
+```bash
+scripts/crateiq-local-services.sh start-launcher-local
+```
+
+An interrupted library handoff deliberately leaves the launcher in
+`fail_closed` and blocks later starts. A forced shutdown can also leave an
+orphaned supervisor socket beside an already-`idle` activation record. After
+the services are fully stopped, the operator can request a safety-checked
+recovery and then start rootless:
+
+```bash
+scripts/crateiq-local-services.sh recover-launcher
+scripts/crateiq-local-services.sh start-launcher-local
+```
+
+Recovery is not automatic. It acquires the supervisor and activation locks,
+checks installation-local supervisor/backend processes plus any activation-lock
+PID metadata, and atomically withdraws only the configured socket after a fresh
+probe proves it is not live. Ambiguous ownership, unsafe paths, live processes,
+or malformed state fail closed without deleting the socket. `idle` with no
+socket remains a no-op; `idle` with a proven-stale socket removes only that
+artifact and leaves activation state unchanged. A successful `fail_closed`
+recovery additionally validates registry/saved-root consistency and archives
+the failed activation record. Recovery never updates library recency or
+activates a library.
+
+The launcher registry is local to this installation at
+`.run/local/library_registry.json`. It records at most 16 canonical recent
+roots and shows the latest four; it stores no music, indexes, or credentials.
+The `/libraries` launcher shows up to four recent libraries and uses each
+result's deterministic opaque `library_id`, never a host filesystem path, to
+request an open. Rootless frontend startup redirects to this route; active
+users can reopen it from the sidebar or Settings to switch libraries. `POST
+/api/launcher/activate-library` accepts the request and returns an activation
+ID, while `GET /api/launcher/activation-status` reports the safe final result
+after reconnecting to the stable backend endpoint. This is asynchronous because
+a successful handoff replaces the backend process that accepted the request.
+The supervisor re-resolves and reclassifies the saved registry entry before
+handoff, then updates `last_opened_at` only after verified success (including
+an explicit same-library no-op). A recency-write failure is a bounded warning
+and never rolls back a verified activation. Candidate verification is bounded
+to 15 seconds, while the promoted/rootless backend has a bounded 30-second
+startup window for normal database, cache, tool-readiness, and scheduler work.
+Short authenticated probes require the exact supervisor/backend identity,
+active role, stable port, canonical root/key, verification token, and completed
+application startup. Activation-status IPC remains responsive during handoff
+and does not block the promoted backend's event loop. Worker-requested backend
+processes are created by a supervisor-lifetime launch-owner thread, so Linux
+parent-death protection does not mistake activation-worker completion for
+supervisor exit. If neither the promoted backend nor a verified rollback
+replacement survives, activation remains durably `fail_closed` rather than
+reporting clean idle.
+The backend now provides local-operator-only launcher administration:
+`GET /api/launcher/browse` lists one bounded directory level from safe starting
+roots, `POST /api/launcher/register-library` reclassifies and registers an
+existing managed or strict Legacy Direct library, and `POST
+/api/launcher/create-library` creates and registers a new managed workspace
+from a validated parent plus single-segment name. Browse excludes hidden files,
+does not follow symlinks, returns directories only (plus blocked symlink entries),
+scans at most 512 entries, and returns at most 100 per request. Default starting
+locations are derived from the service user's home/Music locations, standard
+mount parents when present, and parents of already registered libraries; no
+personal home path is hardcoded. Registration is canonical-key unique and does
+not set `last_opened_at`. Create reuses the established managed-workspace
+initializer for `Inbox/`, `Library/`, `Quarantine/`, the workspace marker, and
+the local `logs/processed.db` index; it does not activate, start recovery or
+schedulers, or create rootless runtime `jobs.db` state. In local mode, the
+Browse Libraries dialog navigates only these backend-returned directories,
+registers only backend-selectable libraries, and opens the returned opaque
+`library_id`. Create New Library uses the same safe browser for its parent,
+submits `parent_directory` plus `name`, and also opens only by the returned
+registry ID. Both flows preserve the existing bounded activation polling and
+current-library verification. Over LAN, registered-library ID activation stays
+available, while Browse/Create remain unavailable and expose no host paths.
+It can safely identify a valid managed workspace, a real indexed Legacy Direct
+Library, an empty folder, an external music folder, a missing path, or a
+malformed/unsafe candidate without changing the candidate. Legacy evidence is
+conservative: immutable SQLite inspection must find the historical CrateIQ
+`tracks`, `track_history`, `pipeline_runs`, and `duplicate_groups` schema core,
+including their characteristic pipeline columns; a generic `tracks` table is
+not enough. The local service helper now uses a dedicated non-reload backend
+supervisor, whose process-lifetime-flock-protected owner-only Unix socket is limited to local fixed IPC
+operations. Its internal-only handoff engine verifies a temporary loopback-only
+candidate by generated instance token and canonical root, then uses the active
+backend's admission drain and persisted exact-key switch blockers before it
+can replace the active backend. The candidate is stopped, the old child is
+boundedly reaped, and a fresh root-bound backend is launched on the stable
+endpoint and independently verified before compatibility state is updated.
+Failure returns idle only after one verified rollback backend (or rootless
+backend), no B child, and the exact prior compatibility-root state are proven;
+otherwise it retains owned child references in explicit fail-closed activation
+state. Its activation lock and runtime directory reject
+symlink, non-regular, and multiply-linked paths before mutating a lock inode;
+accepted control requests have bounded reads and
+quiesce before ownership release, and Process All/bulk waveform reserve their
+descendant scopes before durable parent rows so a future drain waits for
+deferred durable work. Normal socket cleanup atomically withdraws its owned
+public and private paths; replacements survive untouched, while ambiguous
+stale recovery fails closed rather than unlink an entry whose ownership cannot
+be atomically proven. Its
+activation state file and
+OS-level lock are local-only, restrictive, and fail closed on malformed/
+incomplete state.
+Candidate host-path classification is available only when the service was
+started in **Local only** mode. LAN startup disables it for every request,
+including requests proxied by Vite over loopback, because CrateIQ has no auth
+and LAN clients must not be given arbitrary server filesystem administration.
+Opening an already-known, revalidated registry ID remains available in LAN
+mode; it accepts no path override and cannot browse, register, or create a
+host directory.
+
+**Normal registered-library flow:**
+
+1. Run `crateiq_start`, choose **Library Launcher** (the default), and choose
+   the desired access mode. Choose **Local only** when filesystem browse,
+   registration, or creation is needed.
+2. Open the frontend; `/` redirects to `/libraries` while rootless.
+3. Select a registered library. Local operators may also browse/register an
+   existing library or create a managed library, then open its returned opaque
+   `library_id` through the same activation endpoint. The verified activation
+   enters the normal workspace.
+4. Open **Inbox** and **Import Music** — this copies files in from an
    external Import Source; your originals are untouched.
-4. Run **Process All**, resolve anything in **Needs Review**, then
+5. Run **Process All**, resolve anything in **Needs Review**, then
    **Move Ready to Library**.
 
-Direct/legacy library setup (scan an existing folder in place, no managed
-Inbox/Library/Quarantine) has moved to **Settings → Advanced → Legacy
-Direct Library** — it still works, but it's no longer the default path new
-users see.
+Browse/register and Create Library are wired end to end in the launcher. The
+create/register API operation itself never activates or switches a library;
+the frontend follows it with the separate opaque-ID activation request.
+
+Explicit configured/Direct Library startup (scan an existing folder in place,
+with no managed Inbox/Library/Quarantine separation) remains available through
+**Settings → Advanced → Legacy Direct Library**. It is an advanced compatibility
+path and still requires an initialized `<root>/logs/processed.db`; it is no
+longer the normal terminal startup selection.
 
 ```bash
 scripts/crateiq-local-services.sh start-library-local
@@ -407,6 +602,13 @@ sourced-shell aliases and restart. This makes the Settings restart command
 apply the saved workspace even when the launching shell still has an older
 `CRATEIQ_LIBRARY_ROOT` export. If no Settings-managed root has been saved,
 `CRATEIQ_LIBRARY_ROOT` remains the startup fallback.
+During rootless launcher startup, only that Settings-managed saved root may be
+added to recents, without moving, initializing, scanning, or altering the
+library. The launcher intentionally clears inherited root variables before it
+boots rootless; inherited `CRATEIQ_LIBRARY_ROOT` remains only a
+configured-library startup fallback. The compatibility file is updated
+atomically only after an internally promoted backend independently verifies on
+the active endpoint; it remains literal data and is never sourced as shell.
 
 Pointing crateIQ directly at an existing library (no managed
 Inbox/Library/Quarantine folders) remains supported, but the managed
@@ -422,7 +624,27 @@ scripts/crateiq-local-services.sh logs
 ```
 
 The helper manages only crateIQ's ports (`8020` and `5175`). It does not stop
-or alter LedgerIQ or opsIQ.
+or alter LedgerIQ or opsIQ. The frontend remains separate from supervisor
+ownership. Checkpoint 1B.2B-1 now gives every root-bound operational write a
+canonical privacy-safe `library_key` (the established waveform identity digest
+of the canonical root). `jobs.db` history/recovery reads are limited to that
+key; terminal legacy NULL rows remain diagnostic-only while active NULL rows
+and known foreign active rows fail closed through persisted blocker inspection.
+Waveform's existing `library_id` column is a compatibility name for the same
+key. Scheduler shutdown, startup/cache maintenance, worker source resolution,
+and generic/background job updates retain that immutable origin; reference
+findings and active waveform track-state blockers use the same exact-key rule.
+Global tag backups and job logs are key-namespaced, and publish
+destinations are per-key; a legacy global destination is retained but is not
+silently assigned. The supervisor handoff/rollback engine, registry-ID
+activation API, and local-only browse/register/create backend contracts are
+implemented. The frontend launcher dialogs still need targeted wiring to those
+new contracts. No in-process root switching is supported.
+The helper-managed backend is intentionally non-reload: after Python backend
+code changes, restart the helper-managed service. Any separately run manual
+development server is outside supervisor ownership and is not a library-switch
+path. The local supervisor and its parent-death guard are Linux-only and fail
+closed on unsupported platforms.
 
 ## Provider setup
 
@@ -449,6 +671,7 @@ Sources for each provider's live status and exact setup steps.
 | Managed workspace (Inbox/Library/Quarantine) | Implemented | Copy-based import, Process All batch preparation, unified Needs Review, explicit Move Ready to Library promotion. Additive to the existing direct-library model; an existing library is never auto-restructured. |
 | Process All batch preparation | Implemented | Deterministic cleanup + staged multi-provider consensus enrichment + verified tag write-back + BPM/key analysis behind one confirmation. Never promotes to Library. |
 | Multi-provider consensus | Implemented, wired into Process All | Field-by-field HIGH/MEDIUM/LOW/CONFLICT evidence aggregation with staged provider routing and genre-authority weighting. HIGH fields auto-apply during Process All/Enrich Selected; MEDIUM/LOW/CONFLICT always go to Needs Review with full provenance. |
+| Per-batch Enrich source selection | Implemented | Explicit Enrich Selected validates server-owned source roles/readiness, sends optional `source_ids` through the existing router as an inclusion gate, and keeps Process All on global enabled/default sources. |
 | Direct per-track provider lookup (Enrichment Review) | Implemented | Manual, explicit Beets/MusicBrainz online lookup for a single track outside of batch consensus. |
 | Local-suggestion enrichment review | Implemented foundation | Compares conservative local suggestions (filename hints, embedded tags) against selected empty local-index fields only; no provider API calls — distinct from multi-provider consensus above. |
 | Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
@@ -466,7 +689,7 @@ Sources for each provider's live status and exact setup steps.
 | Duplicate detection with `rmlint` | Preview + DB-only review | Bounded JSON scan plus local keep/ignore/review-later notes; no delete, move, rename, or quarantine action. |
 | Duplicate resolution plan | Plan only — no files changed | Read-only `/duplicate-resolution-plan` page derives a deterministic keep/candidate/blocked plan from the latest Duplicate Review snapshot and decisions; no apply/execute endpoint exists. See [Duplicate Resolution Spec](docs/architecture/DUPLICATE_RESOLUTION_SPEC.md). |
 | Audio quality probe with `ffprobe` | Probe + DB-only review | Bounded JSON checks plus local review notes; no transcode, remediation, file, or tag writes. |
-| Waveform generation and playback | Implemented | Explicit, demand-driven backend generation with a bounded worker, dedup, cancellation, atomic cache, and a real canvas waveform seek control in the player. Never generated automatically. See [Waveform Architecture](docs/architecture/WAVEFORM_ARCHITECTURE.md) for the full design, safety audit, and measured performance. |
+| Waveform generation and playback | Implemented | One canonical single-mirrored, frequency-tinted canvas waveform used everywhere (bottom player, track inspector, Music Review, Inbox inspector). Backend generation is bounded/dedup'd/cancellable with an atomic cache and now starts automatically the first time a track is opened when no waveform exists (failed/unsupported never auto-retry). See [Waveform Architecture](docs/architecture/WAVEFORM_ARCHITECTURE.md) for the full design, safety audit, and measured performance. |
 | Live Serato/Rekordbox DB writes | Not supported by design | crateIQ stages artifacts only. |
 
 ### Browser playback notes

@@ -84,7 +84,11 @@ def build_artifact_document(
     resolutions: dict[str, Any] = {}
     for name in RESOLUTION_NAMES:
         peaks = list(result.resolutions.get(name, []))
-        resolutions[name] = {"pair_count": len(peaks) // 2, "peaks": peaks}
+        block: dict[str, Any] = {"pair_count": len(peaks) // 2, "peaks": peaks}
+        color_bands = result.color_bands.get(name) if result.color_bands else None
+        if color_bands:
+            block["color_bands"] = list(color_bands)
+        resolutions[name] = block
     return {
         "schema_version": WAVEFORM_SCHEMA_VERSION,
         "algorithm_version": WAVEFORM_ALGORITHM_VERSION,
@@ -161,6 +165,17 @@ def validate_artifact_document(
                 raise WaveformArtifactError(f"artifact resolution {name} has a non-integer peak")
             if value < INT16_MIN or value > INT16_MAX:
                 raise WaveformArtifactError(f"artifact resolution {name} has an out-of-range peak")
+        color_bands = block.get("color_bands")
+        if color_bands is not None:
+            if not isinstance(color_bands, list):
+                raise WaveformArtifactError(f"artifact resolution {name} has invalid color bands")
+            if len(color_bands) != pair_count * 3:
+                raise WaveformArtifactError(f"artifact resolution {name} color band count is inconsistent")
+            for value in color_bands:
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    raise WaveformArtifactError(f"artifact resolution {name} has a non-numeric color band")
+                if value < 0 or value > 1:
+                    raise WaveformArtifactError(f"artifact resolution {name} has an out-of-range color band")
     return document
 
 
@@ -258,3 +273,17 @@ def resolution_payload(document: Mapping[str, Any], resolution: str) -> tuple[in
         raise WaveformArtifactError("unknown waveform resolution")
     block = document["resolutions"][resolution]
     return int(block["pair_count"]), list(block["peaks"])
+
+
+def resolution_color_bands(document: Mapping[str, Any], resolution: str) -> list[float]:
+    """Return the interleaved ``[low, mid, high]`` tint for one resolution.
+
+    Empty when the artifact carries no spectral tint (older artifacts or a
+    source that exceeded the spectral buffer cap); callers treat that as a
+    signal to fall back to amplitude coloring.
+    """
+    if resolution not in _RESOLUTION_LIMITS:
+        raise WaveformArtifactError("unknown waveform resolution")
+    block = document["resolutions"][resolution]
+    value = block.get("color_bands")
+    return list(value) if isinstance(value, list) else []

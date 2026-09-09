@@ -27,11 +27,82 @@ P0 / CRITICAL
 P1 / HIGH
 ----------------------------------------------------------------------
 
-(none currently open)
+[x] Checkpoint 1B.2A — supervisor foundation (including atomic admission,
+    supported child runtime propagation, child reaping, Linux fail-closed
+    parent-death protection, socket ownership, phase validation, candidate
+    port exclusion, and private identity verification) is complete.
 
+[x] Checkpoint 1B.2B-2A — internal supervisor handoff/rollback is implemented:
+    verified loopback candidate, active runtime drain, persisted exact-key
+    blocker check, fresh stable-port promotion, confirmed child reaping,
+    saved-root write ordering, transactional rollback/rootless restoration,
+    durable fail-closed ambiguity reporting, and same-library no-op. It has no
+    HTTP activation endpoint or registry recency mutation.
+
+[x] Checkpoint 1B.2B-2B — launcher/operator activation API and registry
+    recency integration: registry-ID-only activation revalidates saved roots,
+    invokes the supervisor-owned handoff over owner-only IPC, reports safe
+    start/status/current-library state, and updates `last_opened` only after
+    verified success or same-library no-op. LAN activation of known safe IDs is
+    supported; arbitrary host-path administration remains local-only.
+
+[x] Implement the launcher frontend activation UX (recent-library cards,
+    progress/status reconnect handling, and safe blocked/fail-closed messages).
+[x] Implement safe backend mutations for Create Library and explicit local-only
+    browse/register workflows. LAN registered-ID activation remains supported,
+    while arbitrary host-path browse/register/create remains local-operator-only.
+[x] Wire the accepted Browse Libraries and Create New Library frontend dialogs
+    to the new launcher browse/register/create APIs. Keep activation as the
+    existing separate registry-ID request. Local mode now supports bounded
+    browse/register/create; LAN keeps registered-ID activation while filesystem
+    administration remains unavailable.
+[x] Recover forced-shutdown launcher sockets when activation is already idle.
+    The explicit operator command now requires both installation locks, no live
+    installation-local supervisor/backend or activation-lock PID, and a fresh
+    negative socket probe before atomically withdrawing only the configured
+    stale socket; ambiguous ownership remains fail-closed.
 ----------------------------------------------------------------------
 P2 / MEDIUM
 ----------------------------------------------------------------------
+
+[x] Inbox Redesign Checkpoint 3A — unified DB-first single-track editing and
+    expanded bulk backend contracts for Artist, Title, Genre, and Album.
+    File tags remain unchanged until a later explicit Save-to-File UX. Keep
+    Year, clear-field semantics, provider selection, Needs Review, Process All,
+    and mobile UX unchanged.
+
+[x] Inbox Redesign Checkpoint 3B — add the frontend single-track and bulk
+    editing UI on top of the DB-first contracts, including preview/
+    confirmation presentation and clear Unsaved state. Keep explicit
+    Save-to-File UX out of this checkpoint.
+
+[x] Inbox Redesign Checkpoint 4 — explicit Save to File UX using the existing
+    tag_write_service plan/apply contract. Added preview-first exact diffs,
+    one explicit confirmation, selected-track-only operation, verified
+    partial-result handling, stale-plan protection, unsupported-format
+    blockers, 50-track chunking, Inspector save, and authoritative refresh.
+    Provider-source selection, inline enrichment conflict resolution, Needs
+    Review merge, Process All demotion, full mobile redesign, and the final
+    focused Impeccable pass remain deferred.
+
+[x] Inbox Redesign Checkpoint 5 — per-batch metadata source selection for
+    explicit Enrich Selected using the existing provider routing and consensus
+    contracts. Server-side role/readiness validation is authoritative, source
+    selection is an inclusion gate, and Process All continues to use global
+    enabled/default sources. No conflict-resolution UI was added.
+
+[x] Inbox Redesign Checkpoint 6 — inline enrichment review in the Inbox
+    Inspector using the existing Enrichment Review contracts and shared
+    persistence. Field/proposal "Use Suggested"/"Keep Current" decisions are
+    DB-only (never a tag write) and refresh the authoritative preparation
+    state. Needs Review merge/demotion, Process All demotion, full mobile
+    redesign, and the final focused Impeccable pass remain deferred.
+
+[ ] Next Inbox checkpoint — planning-only merge/demote of Needs Review (and
+    Enrichment Review) specialist navigation into Inbox now that normal review
+    is available in the Inspector, preserving specialist capabilities that
+    still add value. Do not implement Process All demotion in the same
+    checkpoint unless the navigation architecture makes that split artificial.
 
 [ ] Two narrow backend reads of the legacy root `config.py` remain after
     the pipeline/config dependency-isolation cycle and are intentionally
@@ -66,6 +137,20 @@ P2 / MEDIUM
     the currently active credential-gated providers once real credentials
     are configured. Keep legacy provider names out of the active set.
 
+----------------------------------------------------------------------
+P3 / LOW
+----------------------------------------------------------------------
+
+[ ] Service-control orphan recovery has a narrow fallback mismatch: when the
+    supervisor PID file is absent/stale, port inspection recognizes the
+    supervised backend module but the PID classifier currently accepts only
+    the supervisor module. Revisit only as an explicitly scoped recovery
+    correction; it is not a 1B.2A activation/switching blocker.
+
+[ ] The bounded launcher audio scan returns once it finds audio, so a later
+    unsafe symlink may not be reported as malformed. Keep this conservative
+    scan-order edge case separate from the classification safety contract.
+
 [ ] Resolve the FastAPI/Starlette `TestClient` HTTP-client deprecation and
     plan the current frontend build-tool upgrade path without changing the
     product contract.
@@ -76,6 +161,19 @@ P2 / MEDIUM
     design is complete in `docs/architecture/DUPLICATE_RESOLUTION_SPEC.md`,
     but the runtime remains read-only/plan-only; do not implement execution
     without a separately approved task and disposable-root acceptance tests.
+
+[ ] Waveform zoom: the unified waveform currently serves compact/player
+    resolution. A future zoomable detail view can reuse the stored detail
+    min/max peaks (and, if needed, a higher-resolution `color_bands` base)
+    without re-decoding audio. Deferred until a zoom UI is actually requested.
+
+[x] Harden bulk waveform operation polling cadence. The Jobs card now uses one
+    visibility-aware chained-timeout stream: 1 second during startup, 2.5
+    seconds through two minutes, then 5 seconds steady-state. Fired timeout IDs
+    are cleared before fetching, only one abortable status request may be in
+    flight, and session invalidation prevents duplicate chains or stale updates
+    after terminal states, errors, supersession, cancellation, or unmount.
+    Focused fake-timer regressions cover the in-flight visibility race.
 
 ----------------------------------------------------------------------
 P3 / LOW

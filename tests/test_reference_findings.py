@@ -30,7 +30,8 @@ def reference_client(tmp_path, monkeypatch):
     monkeypatch.setattr(backend_db, "JOBS_DB_PATH", tmp_path / "jobs.db")
     backend_db.init_db()
     monkeypatch.setattr(backend_main, "init_db", lambda: None)
-    yield TestClient(backend_main.app), root, _db(root), backend_db.JOBS_DB_PATH
+    with TestClient(backend_main.app) as client:
+        yield client, root, _db(root), backend_db.JOBS_DB_PATH
 
 
 def _find(payload, artifact_type, field=None):
@@ -102,8 +103,9 @@ def test_bpm_anomaly_stale_path_uses_same_track_id_evidence(reference_client):
         conn.execute("INSERT INTO tracks VALUES (1, ?, 'new.mp3')", (str(current),))
     with sqlite3.connect(jobs) as conn:
         conn.execute(
-            "INSERT INTO bpm_anomalies (track_id, filepath, reason, detected_at) VALUES (1, ?, 'outlier', 'now')",
-            (str(old),),
+            "INSERT INTO bpm_anomalies (track_id, filepath, reason, detected_at, library_key) "
+            "VALUES (1, ?, 'outlier', 'now', ?)",
+            (str(old), track_source_service.library_identity(root)),
         )
     finding = _find(client.get("/api/reconciliation/reference-findings").json(), "bpm_anomaly", "filepath")
     assert finding["stale_value"] == "Inbox/old.mp3"
@@ -342,13 +344,13 @@ def test_historical_provenance_is_ignore_and_endpoint_is_read_only(reference_cli
 
 
 def test_tag_write_blob_findings_include_the_blob_field_in_their_identity(reference_client):
-    client, _root, _path, jobs = reference_client
+    client, root, _path, jobs = reference_client
     payload = '[{"filepath": "Inbox/missing.mp3"}]'
     with sqlite3.connect(jobs) as conn:
         conn.execute(
-            "INSERT INTO tag_write_operations (id, status, track_count, plan_json, backup_manifest_json, result_json, created_at) "
-            "VALUES ('op-1', 'completed', 1, ?, ?, ?, 'now')",
-            (payload, payload, payload),
+            "INSERT INTO tag_write_operations (id, status, track_count, plan_json, backup_manifest_json, result_json, created_at, library_key) "
+            "VALUES ('op-1', 'completed', 1, ?, ?, ?, 'now', ?)",
+            (payload, payload, payload, track_source_service.library_identity(root)),
         )
     findings = [
         item for item in client.get("/api/reconciliation/reference-findings").json()["findings"]
@@ -359,6 +361,49 @@ def test_tag_write_blob_findings_include_the_blob_field_in_their_identity(refere
     assert {item["artifact_identifier"].split(":")[1] for item in findings} == {
         "plan_json", "backup_manifest_json", "result_json"
     }
+
+
+def test_reference_findings_exclude_foreign_and_legacy_null_operational_rows(
+    reference_client,
+):
+    client, root, path, jobs = reference_client
+    current = root / "Library" / "current.mp3"
+    current.parent.mkdir()
+    current.write_bytes(b"current")
+    with sqlite3.connect(path) as conn:
+        conn.execute("INSERT INTO tracks VALUES (1, ?, 'current.mp3')", (str(current),))
+    library_a = track_source_service.library_identity(root)
+    library_b = "b" * 64
+    payload = '[{"track_id": 404, "filepath": "Inbox/foreign.mp3"}]'
+    with sqlite3.connect(jobs) as conn:
+        conn.executemany(
+            "INSERT INTO bpm_anomalies (track_id, filepath, reason, detected_at, library_key) "
+            "VALUES (?, ?, 'outlier', 'now', ?)",
+            [
+                (404, str(root / "Inbox" / "a.mp3"), library_a),
+                (405, str(root / "Inbox" / "b.mp3"), library_b),
+                (406, str(root / "Inbox" / "legacy.mp3"), None),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO tag_write_operations (id, status, track_count, plan_json, created_at, library_key) "
+            "VALUES (?, 'completed', 1, ?, 'now', ?)",
+            [("a", payload, library_a), ("b", payload, library_b), ("legacy", payload, None)],
+        )
+
+    findings = client.get("/api/reconciliation/reference-findings").json()["findings"]
+    bpm_ids = {
+        item["artifact_identifier"]
+        for item in findings
+        if item["artifact_type"] == "bpm_anomaly"
+    }
+    tag_ids = {
+        item["artifact_identifier"]
+        for item in findings
+        if item["artifact_type"] == "tag_write_operation"
+    }
+    assert bpm_ids == {"bpm_anomalies:1"}
+    assert tag_ids == {"a:plan_json:[0].track_id", "a:plan_json:[0].filepath"}
 
 
 def test_uninitialized_root_skips_crate_and_jobs_references(reference_client):

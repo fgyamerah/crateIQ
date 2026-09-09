@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Disc3,
   Heart,
+  FolderOpen,
   Settings,
   Wrench,
   Inbox as InboxIcon,
@@ -74,6 +75,7 @@ const NAV: NavSection[] = [
   {
     title: 'System',
     items: [
+      { to: '/libraries',   label: 'Switch Library',   Icon: FolderOpen },
       { to: '/settings',    label: 'Settings',    Icon: Settings },
     ],
   },

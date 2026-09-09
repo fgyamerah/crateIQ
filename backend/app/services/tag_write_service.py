@@ -23,10 +23,12 @@ import sqlite3
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Iterable
 
+from ..core import db as backend_db
 from ..core.config import TAG_WRITE_BACKUP_DIR
 from ..core.db import get_conn
+from ..core.library_key import current_library_key
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 
 _WRITABLE_FIELDS = ("artist", "title", "album", "genre")
@@ -121,6 +123,80 @@ def _plan_row(track: sqlite3.Row, root: Path) -> dict[str, Any]:
     }
 
 
+def build_plan_items_for_rows(rows: Iterable[sqlite3.Row], root: Path) -> list[dict[str, Any]]:
+    """Build exact plan items for already-fetched rows in one filesystem pass.
+
+    This is the read-only batch seam used by Inbox preparation-state and
+    promotion preview. It avoids reopening the pipeline database once per
+    track and ensures each managed file's tags are read at most once by a
+    single projection request.
+    """
+    return [_plan_row(row, root) for row in rows]
+
+
+def latest_track_outcomes(track_ids: list[int]) -> dict[int, dict[str, Any]]:
+    """Return each requested track's latest persisted tag-write outcome.
+
+    Historical failures are deliberately not returned when a newer operation
+    has a successful/non-failed result for the same track. Callers must still
+    compare the current live plan before treating a latest failure as active.
+    """
+    wanted = set(track_ids)
+    if not wanted:
+        return {}
+    outcomes: dict[int, dict[str, Any]] = {}
+    jobs_db_path = Path(backend_db.JOBS_DB_PATH)
+    if not jobs_db_path.is_file():
+        return {}
+    try:
+        with sqlite3.connect(f"file:{jobs_db_path}?mode=ro", uri=True) as conn:
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT status, plan_json, result_json, error_reason, created_at "
+                "FROM tag_write_operations WHERE library_key = ? "
+                "ORDER BY created_at DESC, id DESC LIMIT 500",
+                (current_library_key(),),
+            ).fetchall()
+    except sqlite3.Error:
+        return {}
+
+    for row in rows:
+        try:
+            results = json.loads(row["result_json"] or "[]")
+        except (TypeError, ValueError):
+            results = []
+        result_ids: set[int] = set()
+        for result in results:
+            track_id = result.get("track_id")
+            if track_id not in wanted or track_id in outcomes:
+                continue
+            result_ids.add(track_id)
+            outcomes[track_id] = {
+                "status": result.get("status"),
+                "failed": result.get("status") == "failed",
+                "created_at": row["created_at"],
+            }
+
+        # An interrupted/operation-level failure can have no per-track result.
+        # Its saved plan is the bounded source of affected track identities.
+        if row["status"] == "failed" and row["error_reason"]:
+            try:
+                plan_items = json.loads(row["plan_json"] or "[]")
+            except (TypeError, ValueError):
+                plan_items = []
+            for item in plan_items:
+                track_id = item.get("track_id")
+                if track_id in wanted and track_id not in outcomes and track_id not in result_ids:
+                    outcomes[track_id] = {
+                        "status": "failed",
+                        "failed": True,
+                        "created_at": row["created_at"],
+                    }
+        if len(outcomes) == len(wanted):
+            break
+    return outcomes
+
+
 def build_plan(track_ids: list[int]) -> dict[str, Any]:
     """Read-only, side-effect-free exact write plan for the given tracks."""
     if not track_ids:
@@ -163,8 +239,9 @@ def build_plan(track_ids: list[int]) -> dict[str, Any]:
     }
 
 
-def _backup_dir(operation_id: str) -> Path:
-    backup_dir = TAG_WRITE_BACKUP_DIR / operation_id
+def _backup_dir(operation_id: str, library_key: str) -> Path:
+    """Globally stored backups are namespaced by the immutable library key."""
+    backup_dir = TAG_WRITE_BACKUP_DIR / library_key / operation_id
     backup_dir.mkdir(parents=True, exist_ok=True)
     return backup_dir
 
@@ -182,14 +259,15 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
     root = selected_library_root()
     operation_id = uuid.uuid4().hex
     now = _now()
+    library_key = current_library_key()
     with get_conn() as conn:
         conn.execute(
-            "INSERT INTO tag_write_operations (id, status, track_count, plan_json, created_at, started_at) "
-            "VALUES (?, 'running', ?, ?, ?, ?)",
-            (operation_id, len(track_ids), json.dumps(plan["items"]), now, now),
+            "INSERT INTO tag_write_operations (id, status, track_count, plan_json, created_at, started_at, library_key) "
+            "VALUES (?, 'running', ?, ?, ?, ?, ?)",
+            (operation_id, len(track_ids), json.dumps(plan["items"]), now, now, library_key),
         )
 
-    backup_dir = _backup_dir(operation_id)
+    backup_dir = _backup_dir(operation_id, library_key)
     manifest: list[dict[str, Any]] = []
     results: list[dict[str, Any]] = []
     applied = skipped = failed = 0
@@ -201,10 +279,6 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
             if item["blocked"]:
                 skipped += 1
                 results.append({"track_id": track_id, "status": "skipped", "reason": item["blocker"]})
-                continue
-            if not item["fields"]:
-                skipped += 1
-                results.append({"track_id": track_id, "status": "skipped", "reason": "No approved fields differ from the file."})
                 continue
 
             path = assert_path_under_root(root / item["relative_path"], root)
@@ -223,6 +297,11 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
                 failed += 1
                 results.append({"track_id": track_id, "status": "failed",
                                 "reason": "File changed since preview -- stale plan blocked. Re-run preview and try again."})
+                continue
+
+            if not item["fields"]:
+                skipped += 1
+                results.append({"track_id": track_id, "status": "skipped", "reason": "No approved fields differ from the file."})
                 continue
 
             # 1. Backup first -- byte-for-byte, hash-verified, before any mutation.
@@ -271,8 +350,8 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
     with get_conn() as conn:
         conn.execute(
             "UPDATE tag_write_operations SET status = ?, applied_count = ?, skipped_count = ?, failed_count = ?, "
-            "backup_manifest_json = ?, result_json = ?, finished_at = ? WHERE id = ?",
-            (status, applied, skipped, failed, json.dumps(manifest), json.dumps(results), _now(), operation_id),
+            "backup_manifest_json = ?, result_json = ?, finished_at = ? WHERE id = ? AND library_key = ?",
+            (status, applied, skipped, failed, json.dumps(manifest), json.dumps(results), _now(), operation_id, library_key),
         )
     return {"operation_id": operation_id, "status": status, "applied": applied, "skipped": skipped,
             "failed": failed, "results": results}
@@ -295,14 +374,14 @@ def _row_to_operation(row: sqlite3.Row) -> dict[str, Any]:
 def list_operations(limit: int = 20) -> list[dict[str, Any]]:
     with get_conn() as conn:
         rows = conn.execute(
-            "SELECT * FROM tag_write_operations ORDER BY created_at DESC, id DESC LIMIT ?", (limit,)
+            "SELECT * FROM tag_write_operations WHERE library_key = ? ORDER BY created_at DESC, id DESC LIMIT ?", (current_library_key(), limit)
         ).fetchall()
     return [_row_to_operation(row) for row in rows]
 
 
 def get_operation(operation_id: str) -> dict[str, Any] | None:
     with get_conn() as conn:
-        row = conn.execute("SELECT * FROM tag_write_operations WHERE id = ?", (operation_id,)).fetchone()
+        row = conn.execute("SELECT * FROM tag_write_operations WHERE id = ? AND library_key = ?", (operation_id, current_library_key())).fetchone()
     return _row_to_operation(row) if row else None
 
 
@@ -317,7 +396,7 @@ def restore_file(operation_id: str, track_id: int, *, confirm: bool) -> dict[str
     if manifest_entry is None:
         raise LookupError("No backup was recorded for this track in this operation.")
 
-    backup_path = TAG_WRITE_BACKUP_DIR / operation_id / manifest_entry["backup_filename"]
+    backup_path = TAG_WRITE_BACKUP_DIR / current_library_key() / operation_id / manifest_entry["backup_filename"]
     if not backup_path.is_file():
         raise LookupError("Backup file is missing on disk.")
     if _sha256(backup_path) != manifest_entry["original_sha256"]:
@@ -338,7 +417,8 @@ def restore_file(operation_id: str, track_id: int, *, confirm: bool) -> dict[str
     verified = _sha256(target_path) == manifest_entry["original_sha256"]
 
     with get_conn() as conn:
-        row = conn.execute("SELECT result_json, status FROM tag_write_operations WHERE id = ?", (operation_id,)).fetchone()
+        key = current_library_key()
+        row = conn.execute("SELECT result_json, status FROM tag_write_operations WHERE id = ? AND library_key = ?", (operation_id, key)).fetchone()
         results = json.loads(row["result_json"]) if row and row["result_json"] else []
         for result in results:
             if result.get("track_id") == track_id:
@@ -348,8 +428,8 @@ def restore_file(operation_id: str, track_id: int, *, confirm: bool) -> dict[str
         restored_ids = {r["track_id"] for r in results if r.get("restored")}
         new_status = "restored" if applied_ids and applied_ids.issubset(restored_ids) else row["status"]
         conn.execute(
-            "UPDATE tag_write_operations SET result_json = ?, status = ?, restored_at = ? WHERE id = ?",
-            (json.dumps(results), new_status, _now(), operation_id),
+            "UPDATE tag_write_operations SET result_json = ?, status = ?, restored_at = ? WHERE id = ? AND library_key = ?",
+            (json.dumps(results), new_status, _now(), operation_id, key),
         )
     return {"track_id": track_id, "restored": True, "verified": verified, "relative_path": manifest_entry["relative_path"]}
 
@@ -364,10 +444,11 @@ def recover_interrupted_operations() -> int:
     """
     now = _now()
     with get_conn() as conn:
-        rows = conn.execute("SELECT id FROM tag_write_operations WHERE status = 'running'").fetchall()
+        key = current_library_key()
+        rows = conn.execute("SELECT id FROM tag_write_operations WHERE status = 'running' AND library_key = ?", (key,)).fetchall()
         for row in rows:
             conn.execute(
-                "UPDATE tag_write_operations SET status = 'failed', error_reason = ?, finished_at = ? WHERE id = ?",
-                ("backend_restarted", now, row["id"]),
+                "UPDATE tag_write_operations SET status = 'failed', error_reason = ?, finished_at = ? WHERE id = ? AND library_key = ?",
+                ("backend_restarted", now, row["id"], key),
             )
     return len(rows)

@@ -25,6 +25,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException, Query, Request, Response
 
+from ...core.library_key import current_library_key
 from ...models.waveform import (
     WAVEFORM_ALGORITHM_VERSION,
     WAVEFORM_SCHEMA_VERSION,
@@ -55,6 +56,7 @@ from ...services.waveform_readiness_service import (
     resolve_cache_runtime,
 )
 from ...services.waveform_scheduler import get_scheduler
+from ...services.operation_admission_gate import LibraryOperationDrainingError, operation_admission_gate
 
 log = logging.getLogger(__name__)
 router = APIRouter(tags=["waveforms"])
@@ -149,6 +151,7 @@ async def get_waveform(
     try:
         document = waveform_artifact_service.read_artifact(validated_cache, generation_key)
         pair_count, peaks = waveform_artifact_service.resolution_payload(document, resolution)
+        color_bands = waveform_artifact_service.resolution_color_bands(document, resolution)
     except waveform_artifact_service.WaveformArtifactError:
         # Missing or corrupt cache: degrade safely, repair state, never regenerate.
         log.info("waveform artifact unusable track_id=%s reason=cache_invalid", track_id)
@@ -176,6 +179,7 @@ async def get_waveform(
         pair_count=pair_count,
         encoding=_ENCODING,
         peaks=peaks,
+        color_bands=color_bands or None,
         generated_at=state.generated_at,
     )
 
@@ -232,12 +236,29 @@ async def generate_waveform(
 
     generation_key = waveform_identity.compute_generation_key(snapshot)
     scheduler = get_scheduler()
-    result = waveform_job_service.submit_generation_job(
-        snapshot=snapshot,
-        generation_key=generation_key,
-        force=request_body.force,
-        max_queue_size=scheduler.max_queue_size,
-    )
+    try:
+        with operation_admission_gate.admit():
+            result = waveform_job_service.submit_generation_job(
+                snapshot=snapshot,
+                generation_key=generation_key,
+                force=request_body.force,
+                max_queue_size=scheduler.max_queue_size,
+            )
+            job = result.job
+            if result.outcome == "queued":
+                assert job is not None
+                if not scheduler.enqueue(job.id):
+                    waveform_job_service.finish_job_unsuccessfully(
+                        job.id,
+                        job_status=waveform_job_service.WaveformJobStatus.FAILED,
+                        track_status=WaveformArtifactStatus.FAILED,
+                        error_code="WAVEFORM_QUEUE_FULL",
+                    )
+                    raise HTTPException(
+                        status_code=429, detail="WAVEFORM_QUEUE_FULL", headers={"Retry-After": "5"}
+                    )
+    except LibraryOperationDrainingError as exc:
+        raise HTTPException(status_code=409, detail="LIBRARY_SWITCH_DRAINING") from exc
 
     if result.outcome == "queue_full":
         raise HTTPException(
@@ -257,16 +278,6 @@ async def generate_waveform(
     job = result.job
     assert job is not None  # queued/deduplicated always carry a job
     if result.outcome == "queued":
-        if not scheduler.enqueue(job.id):
-            waveform_job_service.finish_job_unsuccessfully(
-                job.id,
-                job_status=waveform_job_service.WaveformJobStatus.FAILED,
-                track_status=WaveformArtifactStatus.FAILED,
-                error_code="WAVEFORM_QUEUE_FULL",
-            )
-            raise HTTPException(
-                status_code=429, detail="WAVEFORM_QUEUE_FULL", headers={"Retry-After": "5"}
-            )
         log.info("waveform generation queued job_id=%s track_id=%s", job.id, track_id)
     else:
         log.info("waveform generation deduplicated job_id=%s track_id=%s", job.id, track_id)
@@ -351,7 +362,9 @@ async def get_waveform_cache_status() -> WaveformCacheStatusResponse:
     status = waveform_cache_service.cache_status(
         validated_cache, max_cache_bytes=config.max_cache_bytes
     )
-    preview = waveform_cache_service.preview_clear_cache(validated_cache)
+    preview = waveform_cache_service.preview_clear_cache(
+        validated_cache, library_key=current_library_key()
+    )
     return WaveformCacheStatusResponse(
         **status, ready_track_count=preview.ready_track_count  # type: ignore[arg-type]
     )
@@ -382,7 +395,9 @@ async def clear_waveform_cache(
     except WaveformRuntimeError as exc:
         raise HTTPException(status_code=503, detail=exc.code) from exc
 
-    outcome = await waveform_cache_service.clear_cache_locked(validated_cache)
+    outcome = await waveform_cache_service.clear_cache_locked(
+        validated_cache, library_key=current_library_key()
+    )
     status = waveform_cache_service.cache_status(
         validated_cache, max_cache_bytes=config.max_cache_bytes
     )

@@ -12,11 +12,17 @@ ever opened) is never touched by CrateIQ.
 """
 from __future__ import annotations
 
+import asyncio
+import threading
 from unittest.mock import MagicMock, patch
 
 import pytest
+import requests
 
+from backend.app.api.routes import health as health_route
 from backend.app.services import musicbrainz_client as mbc
+from backend.app.services import preparation_service
+from tests.conftest import async_test
 
 
 @pytest.fixture(autouse=True)
@@ -127,3 +133,99 @@ def test_match_track_candidates_uses_beets_recommendation_thresholds():
     assert results[0]["confidence"] == "HIGH"
     assert results[1]["mb_recording_id"] == "t2"
     assert results[1]["confidence"] == "LOW"
+
+
+def _stub_process_all_after_enrichment(monkeypatch) -> None:
+    """Keep responsiveness regressions focused on the provider stage."""
+    from backend.app.services import analysis_jobs_service, metadata_repair_queue_service
+
+    monkeypatch.setattr(preparation_service, "clean_tracks", lambda *_args: {"cleaned_count": 0})
+    monkeypatch.setattr(
+        preparation_service, "write_tracks",
+        lambda *_args: {"written_count": 0, "failed_count": 0, "warnings": []},
+    )
+    monkeypatch.setattr(
+        preparation_service.preparation_operations_service,
+        "is_cancel_requested", lambda *_args: False,
+    )
+    monkeypatch.setattr(preparation_service, "_finish", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(analysis_jobs_service, "run", lambda *_args, **_kwargs: {})
+    monkeypatch.setattr(metadata_repair_queue_service, "refresh", lambda: None)
+    monkeypatch.setattr(health_route.read_only_service, "db_exists", lambda: True)
+
+
+async def _exercise_gated_process_all_lookup(monkeypatch, provider_error=None):
+    """Run a real synchronous mbc call behind Process All's async boundary."""
+    provider_started = threading.Event()
+    release_provider = threading.Event()
+    session_closed = threading.Event()
+    observed = []
+
+    class FakeSession:
+        def close(self):
+            session_closed.set()
+
+    class FakeApi:
+        session = FakeSession()
+
+        def search(self, *_args, **_kwargs):
+            provider_started.set()
+            if not release_provider.wait(2):
+                raise TimeoutError("test provider gate was not released")
+            if provider_error is not None:
+                raise provider_error
+            return []
+
+    class FakePlugin:
+        mb_api = FakeApi()
+
+    monkeypatch.setattr(mbc, "_plugin", lambda: FakePlugin())
+
+    def gated_enrich_tracks(*_args):
+        result = mbc.search_recordings("Test Artist", "Test Title")
+        observed.append(result)
+        warnings = [result.message] if isinstance(result, mbc.MusicBrainzError) else []
+        return {"enriched_count": 0, "warnings": warnings}
+
+    monkeypatch.setattr(preparation_service, "enrich_tracks", gated_enrich_tracks)
+    _stub_process_all_after_enrichment(monkeypatch)
+
+    # This timer is only a deadlock guard. With the fixed implementation the
+    # test releases the provider itself after proving the loop stayed live.
+    watchdog = threading.Timer(1.0, release_provider.set)
+    watchdog.start()
+    task = asyncio.create_task(preparation_service.run_process_all("op", None, [1]))
+    try:
+        assert await asyncio.to_thread(provider_started.wait, 0.5)
+        assert not release_provider.is_set(), "the event loop must regain control before the deadlock watchdog fires"
+        assert not task.done(), "Process All must remain pending while MusicBrainz is gated"
+
+        health = await asyncio.wait_for(health_route.health(), timeout=0.2)
+        assert health.ok is True
+        assert not task.done(), "health must complete without releasing the provider operation"
+
+        release_provider.set()
+        await asyncio.wait_for(task, timeout=1.0)
+    finally:
+        release_provider.set()
+        watchdog.cancel()
+        if not task.done():
+            await asyncio.wait_for(task, timeout=1.0)
+
+    assert session_closed.is_set(), "MusicBrainz session must close after every lookup path"
+    return observed[0]
+
+
+@async_test
+async def test_process_all_musicbrainz_wait_keeps_event_loop_and_health_responsive(monkeypatch):
+    result = await _exercise_gated_process_all_lookup(monkeypatch)
+    assert result == []
+
+
+@async_test
+async def test_process_all_musicbrainz_ssl_failure_keeps_loop_responsive_and_closes_session(monkeypatch):
+    result = await _exercise_gated_process_all_lookup(
+        monkeypatch, requests.exceptions.SSLError("controlled TLS failure"),
+    )
+    assert isinstance(result, mbc.MusicBrainzError)
+    assert result.message == "MusicBrainz lookup failed (SSLError)."

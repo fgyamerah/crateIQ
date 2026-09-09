@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import os
 import sqlite3
 import subprocess
 import time
@@ -277,16 +278,14 @@ def client(tmp_path, monkeypatch):
         yield test_client, root
 
 
-def test_health_endpoint_reports_selected_root_and_db(client):
-    test_client, root = client
+def test_health_endpoint_reports_generic_readiness_without_host_paths(client):
+    test_client, _root = client
 
     response = test_client.get("/api/health")
 
     assert response.status_code == 200
     assert response.json() == {
         "ok": True,
-        "library_root": str(root.resolve()),
-        "db_path": str((root / "logs" / "processed.db").resolve()),
         "db_exists": True,
     }
 
@@ -1341,11 +1340,9 @@ def test_compatible_tracks_limit_is_respected(compat_client):
 
 
 def test_compatible_tracks_endpoint_is_read_only(compat_client):
-    root_db = None
-    # Recover the db path via the health endpoint rather than the fixture,
-    # to exercise the same read path the running app uses.
-    health = compat_client.get("/api/health").json()
-    root_db = Path(health["db_path"])
+    # Public health intentionally omits host filesystem paths. The fixture's
+    # selected-library setup remains the test-only source for this path.
+    root_db = Path(os.environ["CRATEIQ_LIBRARY_ROOT"]) / "logs" / "processed.db"
     before = root_db.read_bytes()
 
     anchor_id = _track_id_by_filename(compat_client, "anchor.mp3")
@@ -3678,6 +3675,15 @@ def test_metadata_sources_are_safe_local_settings_and_never_echo_credentials(cli
         "local_tags", "filename_hints", "mixed_in_key", "beets", "musicbrainz",
         "acoustid", "discogs", "spotify", "deezer", "beatport", "lastfm", "youtube",
     } == set(sources)
+    assert len(sources) == 12
+    assert all(source["role"] for source in sources.values())
+    assert all("selectable_for_enrichment" in source for source in sources.values())
+    assert all("display_name" not in source for source in sources.values())
+    assert sources["local_tags"]["role"] == "local_input"
+    assert sources["filename_hints"]["selectable_for_enrichment"] is False
+    assert sources["mixed_in_key"]["selectable_for_enrichment"] is False
+    assert sources["discogs"]["label"] == "Discogs"
+    assert not any("safe-client" in json.dumps(source) for source in sources.values())
     assert sources["spotify"]["enabled"] is False
     assert sources["mixed_in_key"]["credentials_status"] == "not_required"
     assert sources["deezer"]["credentials_status"] == "not_required"

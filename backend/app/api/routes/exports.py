@@ -174,9 +174,13 @@ async def run_export(body: ExportRunRequest) -> ExportRunResponse:
     job = job_service.create_job("rekordbox-export", args)
 
     try:
-        toolkit_runner.create_and_start_job(job.id, job.command, job.args)
+        toolkit_runner.create_and_start_job(
+            job.id, job.command, job.args, library_key=job.library_key
+        )
     except Exception as exc:
-        job_service.mark_finished(job.id, status="failed", exit_code=-1)
+        job_service.mark_finished(
+            job.id, status="failed", exit_code=-1, library_key=job.library_key
+        )
         log.exception("Failed to start rekordbox-export job %s: %s", job.id, exc)
         raise HTTPException(status_code=500, detail=f"Failed to start export job: {exc}")
 

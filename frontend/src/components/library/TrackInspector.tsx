@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { AudioWaveform, Loader2, Pause, Play } from 'lucide-react'
-import EmptyWaveform from '../player/EmptyWaveform'
-import TrackWaveform from '../player/TrackWaveform'
+import UnifiedWaveform from '../player/UnifiedWaveform'
 import { presentWaveformState } from '../player/waveformGeometry'
 import { usePersistentPlayer } from '../player/usePersistentPlayer'
 import { useTrackWaveform } from '../../hooks/useTrackWaveform'
@@ -154,7 +153,6 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
   const waveform = useTrackWaveform(track?.id ?? null)
   const persistentPlayer = usePersistentPlayer()
   const waveformState = track ? waveform.waveform : null
-  const isWaveformReady = waveformState?.status === 'ready'
   const presentation = presentWaveformState(
     (track && (waveform.loading || !waveformState)) ? 'loading' : (waveformState?.status ?? 'not_generated'),
     !waveform.generationUnavailable,
@@ -261,18 +259,16 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
       <section className="lib-inspector-section">
         <h3>Waveform</h3>
         <div className="lib-inspector-waveform">
-          {track && isWaveformReady && waveformState?.status === 'ready' ? (
-            <TrackWaveform
-              peaks={waveformState.peaks}
-              scale={waveformState.scale}
-              currentTime={inspectorCurrentTime}
-              duration={inspectorDuration}
-              inactive={!(isCurrentTrack && isPlaying)}
-              upcomingIntensity={isCurrentTrack && isPlaying ? undefined : 1}
-            />
-          ) : (
-            <EmptyWaveform inactive={!track} />
-          )}
+          <UnifiedWaveform
+            peaks={waveformState?.status === 'ready' ? waveformState.peaks : undefined}
+            colorBands={waveformState?.status === 'ready' ? waveformState.colorBands : null}
+            scale={waveformState?.status === 'ready' ? waveformState.scale : undefined}
+            currentTime={inspectorCurrentTime}
+            duration={inspectorDuration}
+            inactive={!track || !(isCurrentTrack && isPlaying)}
+            variant="standard"
+            status={!track ? 'idle' : waveform.loading || !waveformState ? 'loading' : waveformState.status}
+          />
         </div>
         {showWaveformState && (
           <div

@@ -28,6 +28,8 @@ import Settings from './pages/Settings'
 import Genres from './pages/Genres'
 import MusicReview from './pages/Listening'
 import PersistentPlayerProvider from './components/player/PersistentPlayerProvider'
+import LibraryLauncher from './pages/LibraryLauncher'
+import LibraryRequirement from './components/LibraryRequirement'
 
 function LegacyListeningRedirect() {
   const location = useLocation()
@@ -41,52 +43,53 @@ function LegacyListeningRedirect() {
 
 export default function App() {
   return (
-    <PersistentPlayerProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<Layout />}>
-          <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
-          <Route path="inbox" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
-          <Route path="needs-review" element={<ErrorBoundary><NeedsReview /></ErrorBoundary>} />
-          <Route path="maintenance" element={<ErrorBoundary><Maintenance /></ErrorBoundary>} />
-          <Route path="apply-to-files" element={<ErrorBoundary><ApplyToFiles /></ErrorBoundary>} />
-          <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
-          <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
-          <Route path="beets-review" element={<ErrorBoundary><BeetsReview /></ErrorBoundary>} />
-          <Route path="enrichment-review" element={<ErrorBoundary><EnrichmentReview /></ErrorBoundary>} />
-          <Route path="audit" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
-          <Route path="folders" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
-          <Route path="quality" element={<ErrorBoundary><Quality /></ErrorBoundary>} />
-          <Route path="quality-review" element={<ErrorBoundary><QualityReview /></ErrorBoundary>} />
-          <Route path="metadata-repair" element={<ErrorBoundary><MetadataRepair /></ErrorBoundary>} />
-          <Route path="metadata-sanitation" element={<ErrorBoundary><MetadataSanitation /></ErrorBoundary>} />
-          <Route path="bpm-review" element={<ErrorBoundary><BpmReview /></ErrorBoundary>} />
-          <Route path="jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
-          <Route path="duplicates" element={<ErrorBoundary><Duplicates /></ErrorBoundary>} />
-          <Route path="duplicate-resolution-plan" element={<ErrorBoundary><DuplicateResolutionPlan /></ErrorBoundary>} />
-          <Route path="crates" element={<ErrorBoundary><Crates /></ErrorBoundary>} />
-          <Route path="smart-crates" element={<ErrorBoundary><SmartCrates /></ErrorBoundary>} />
-          <Route path="set-builder" element={<ErrorBoundary><SetBuilder /></ErrorBoundary>} />
-          <Route path="exports" element={<ErrorBoundary><Export /></ErrorBoundary>} />
-          <Route path="sync" element={<ErrorBoundary><SsdSync /></ErrorBoundary>} />
-          <Route path="publish" element={<ErrorBoundary><Publish /></ErrorBoundary>} />
-          <Route path="reconciliation" element={<ErrorBoundary><Reconciliation /></ErrorBoundary>} />
-          <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
-          <Route path="genres" element={<ErrorBoundary><Genres /></ErrorBoundary>} />
-          <Route path="music-review" element={<ErrorBoundary><MusicReview /></ErrorBoundary>} />
-          <Route path="listening" element={<LegacyListeningRedirect />} />
+    <BrowserRouter>
+      <Routes>
+        <Route path="libraries" element={<ErrorBoundary><LibraryLauncher /></ErrorBoundary>} />
+        <Route element={<LibraryRequirement />}>
+          <Route element={<PersistentPlayerProvider><Layout /></PersistentPlayerProvider>}>
+            <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
+            <Route path="inbox" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
+            <Route path="needs-review" element={<ErrorBoundary><NeedsReview /></ErrorBoundary>} />
+            <Route path="maintenance" element={<ErrorBoundary><Maintenance /></ErrorBoundary>} />
+            <Route path="apply-to-files" element={<ErrorBoundary><ApplyToFiles /></ErrorBoundary>} />
+            <Route path="issues" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
+            <Route path="enrichment" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
+            <Route path="beets-review" element={<ErrorBoundary><BeetsReview /></ErrorBoundary>} />
+            <Route path="enrichment-review" element={<ErrorBoundary><EnrichmentReview /></ErrorBoundary>} />
+            <Route path="audit" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
+            <Route path="folders" element={<ErrorBoundary><CrateMind /></ErrorBoundary>} />
+            <Route path="quality" element={<ErrorBoundary><Quality /></ErrorBoundary>} />
+            <Route path="quality-review" element={<ErrorBoundary><QualityReview /></ErrorBoundary>} />
+            <Route path="metadata-repair" element={<ErrorBoundary><MetadataRepair /></ErrorBoundary>} />
+            <Route path="metadata-sanitation" element={<ErrorBoundary><MetadataSanitation /></ErrorBoundary>} />
+            <Route path="bpm-review" element={<ErrorBoundary><BpmReview /></ErrorBoundary>} />
+            <Route path="jobs" element={<ErrorBoundary><Jobs /></ErrorBoundary>} />
+            <Route path="duplicates" element={<ErrorBoundary><Duplicates /></ErrorBoundary>} />
+            <Route path="duplicate-resolution-plan" element={<ErrorBoundary><DuplicateResolutionPlan /></ErrorBoundary>} />
+            <Route path="crates" element={<ErrorBoundary><Crates /></ErrorBoundary>} />
+            <Route path="smart-crates" element={<ErrorBoundary><SmartCrates /></ErrorBoundary>} />
+            <Route path="set-builder" element={<ErrorBoundary><SetBuilder /></ErrorBoundary>} />
+            <Route path="exports" element={<ErrorBoundary><Export /></ErrorBoundary>} />
+            <Route path="sync" element={<ErrorBoundary><SsdSync /></ErrorBoundary>} />
+            <Route path="publish" element={<ErrorBoundary><Publish /></ErrorBoundary>} />
+            <Route path="reconciliation" element={<ErrorBoundary><Reconciliation /></ErrorBoundary>} />
+            <Route path="settings" element={<ErrorBoundary><Settings /></ErrorBoundary>} />
+            <Route path="genres" element={<ErrorBoundary><Genres /></ErrorBoundary>} />
+            <Route path="music-review" element={<ErrorBoundary><MusicReview /></ErrorBoundary>} />
+            <Route path="listening" element={<LegacyListeningRedirect />} />
 
-          <Route path="dashboard" element={<Navigate to="/" replace />} />
-          <Route path="collection" element={<Navigate to="/" replace />} />
-          <Route path="tracks" element={<Navigate to="/" replace />} />
-          <Route path="export" element={<Navigate to="/exports" replace />} />
-          <Route path="ssd-sync" element={<Navigate to="/sync" replace />} />
-          {/* Library Prep's workflow is absorbed by Inbox (Cycle 12) -- deep links redirect rather than duplicating a competing main workflow. */}
-          <Route path="library-prep" element={<Navigate to="/inbox" replace />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="dashboard" element={<Navigate to="/" replace />} />
+            <Route path="collection" element={<Navigate to="/" replace />} />
+            <Route path="tracks" element={<Navigate to="/" replace />} />
+            <Route path="export" element={<Navigate to="/exports" replace />} />
+            <Route path="ssd-sync" element={<Navigate to="/sync" replace />} />
+            {/* Library Prep's workflow is absorbed by Inbox (Cycle 12) -- deep links redirect rather than duplicating a competing main workflow. */}
+            <Route path="library-prep" element={<Navigate to="/inbox" replace />} />
+            <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
-        </Routes>
-      </BrowserRouter>
-    </PersistentPlayerProvider>
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }

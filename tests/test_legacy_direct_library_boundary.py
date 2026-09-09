@@ -127,44 +127,38 @@ def test_no_unexplained_music_literal_in_current_backend():
     )
 
 
-def test_launch_script_bridges_dj_music_root_to_selected_library_root():
+def test_launch_script_passes_selected_library_root_to_supervisor():
     """
     pipeline.py subcommands launched as backend job subprocesses
     (toolkit_runner.build_command) receive no --root argument; they resolve
     their own root from config.MUSIC_ROOT (env DJ_MUSIC_ROOT), inherited
-    from the backend process's environment. scripts/crateiq-local-services.sh
-    is the only place that starts the backend for real use, and it must keep
-    exporting DJ_MUSIC_ROOT equal to CRATEIQ_LIBRARY_ROOT in that command, or
-    backend-launched legacy jobs would silently fall back to pipeline.py's
-    own /music default instead of the selected library.
+    from the supervised backend process's environment. The launch script must
+    pass the selected canonical root to the supervisor; supervisor child-
+    environment coverage separately locks the CRATEIQ_LIBRARY_ROOT and
+    DJ_MUSIC_ROOT bridge for the backend it owns.
     """
     script = (REPO_ROOT / "scripts" / "crateiq-local-services.sh").read_text(encoding="utf-8")
-    backend_start_lines = [
+    active_supervisor_lines = [
         line for line in script.splitlines()
-        if "uvicorn backend.app.main:app" in line
+        if '"${supervisor_args[@]}" --active-role active' in line
     ]
-    # There must be exactly one code path that starts the real backend
-    # (uvicorn backend.app.main:app): the one that bridges DJ_MUSIC_ROOT.
-    # A second, unbridged start path (removed in Phase 7 as dead code with
-    # zero callers -- _crateiq_start) would silently reintroduce the
-    # ambiguous middle path this boundary rules out.
-    assert len(backend_start_lines) == 1, (
-        f"expected exactly one backend start command, found {len(backend_start_lines)}: "
-        f"{backend_start_lines}"
+    assert len(active_supervisor_lines) == 1, (
+        f"expected exactly one active supervisor start command, found {len(active_supervisor_lines)}: "
+        f"{active_supervisor_lines}"
     )
-    line = backend_start_lines[0]
-    assert re.search(r'CRATEIQ_LIBRARY_ROOT="\$CRATEIQ_LIBRARY_ROOT"', line), line
-    assert re.search(r'DJ_MUSIC_ROOT="\$CRATEIQ_LIBRARY_ROOT"', line), (
-        "backend start command must export DJ_MUSIC_ROOT=$CRATEIQ_LIBRARY_ROOT "
-        f"so legacy subprocess jobs do not fall back to /music: {line}"
+    line = active_supervisor_lines[0]
+    assert re.search(r'--library-root "\$CRATEIQ_LIBRARY_ROOT"', line), (
+        "active supervisor start must receive the selected library root so its "
+        f"owned backend and legacy subprocess jobs do not fall back to /music: {line}"
     )
+    assert "uvicorn backend.app.main:app" not in script
 
 
 def test_toolkit_runner_never_passes_root_flag_to_legacy_commands():
     """
     Locks in the documented boundary: toolkit_runner's allowlisted value
     flags never include --root. If a --root flag is ever added here, the
-    DJ_MUSIC_ROOT environment bridge this test suite also guards becomes
+    supervisor-owned DJ_MUSIC_ROOT environment bridge becomes
     dead code, and the two must be reconciled deliberately, not silently.
     """
     from backend.app.services import toolkit_runner

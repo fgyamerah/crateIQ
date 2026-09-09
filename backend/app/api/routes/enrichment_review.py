@@ -1,4 +1,5 @@
 from fastapi import APIRouter, HTTPException, Path
+from fastapi.concurrency import run_in_threadpool
 from ...schemas.enrichment_review import ApplyRequest, ApplyResult, OnlineLookupRequest, ReviewResponse, SuggestionUpdate
 from ...services import enrichment_review_service as service
 router=APIRouter(tags=['enrichment'])
@@ -20,6 +21,6 @@ async def apply(body:ApplyRequest):
 @router.post('/enrichment/review/tracks/{track_id}/online-lookup',response_model=ReviewResponse)
 async def online_lookup(body:OnlineLookupRequest,track_id:int=Path(ge=1)):
     """Explicit, single-track, bounded lookup against Beets or MusicBrainz. Never triggered automatically."""
-    try:return ReviewResponse(**service.online_lookup(track_id,body.source))
+    try:return ReviewResponse(**await run_in_threadpool(service.online_lookup,track_id,body.source))
     except LookupError as exc: raise HTTPException(status_code=404,detail=str(exc))
     except ValueError as exc: raise HTTPException(status_code=422,detail=str(exc))
