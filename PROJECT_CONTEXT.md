@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-09-03
+**Updated:** 2026-09-06
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -242,8 +242,13 @@ job, with backend dedup as the cross-tab safety net.
   only while holding both installation locks and after proving no owned
   supervisor/backend survives, atomically withdrawing any proven-stale socket,
   validating registry/saved-root consistency, and archiving the failed state.
-  Recovery preserves registry recency and compatibility-root bytes and never
-  activates the requested library.
+  The same command also repairs an `idle` state left beside a crash-stale
+  supervisor socket: it holds both locks, validates prior activation-lock PID
+  metadata, scans installation-local supervisor/backend ownership, and uses
+  the same fresh socket probe plus atomic withdrawal. `idle` with no socket is
+  a clean no-op; live, malformed, or ambiguous ownership leaves the pathname
+  untouched. Recovery preserves registry recency and compatibility-root bytes
+  and never activates the requested library.
 * Frontend: <http://127.0.0.1:5175>; backend health:
   <http://127.0.0.1:8020/api/health>; runtime readiness:
   <http://127.0.0.1:8020/api/runtime/readiness>
@@ -381,6 +386,14 @@ Service map (`backend/app/services/`), current primary surfaces:
   exposes "Retry BPM now" and, only while paused, "Resume automatic
   retries" -- separate from `BpmReview.tsx`'s unrelated anomaly-review
   `Queue` action.
+* `WaveformGenerationCard` observes an active bulk waveform operation through
+  one adaptive chained-timeout stream (1 second during startup, 2.5 seconds
+  through two minutes, then 5 seconds steady-state). The timeout ref represents
+  only a callback that has not fired, while a separate abortable request slot
+  represents the sole in-flight status read. Visibility resume polls
+  immediately only when that request slot is idle; terminal states and request
+  errors stop the stream, and a monotonically invalidated session prevents old
+  callbacks from rescheduling or updating state after supersession or unmount.
 * `publish_export_service`, `publish_sync_service` — guarded crate export
   and SSD sync (validate -> preview -> confirm -> execute -> verify)
 * `sync_destination_service` — Publish/SSD Sync source and destination

@@ -40,6 +40,16 @@ def _fail_closed(paths: dict[str, Path], requested_root: Path, *, old_instance_i
     supervisor.ActivationStateStore(paths["state_path"]).write(state)
 
 
+def _idle(paths: dict[str, Path]) -> None:
+    supervisor.ActivationStateStore(paths["state_path"]).write(supervisor.ActivationStateStore.empty())
+
+
+def _stale_socket(path: Path) -> None:
+    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    stale.bind(str(path))
+    stale.close()
+
+
 def _registry(paths: dict[str, Path], requested_root: Path) -> bytes:
     data = (
         json.dumps({
@@ -157,9 +167,7 @@ def test_proven_stale_socket_is_removed_during_recovery(tmp_path):
     _fail_closed(paths, requested_root)
     _registry(paths, requested_root)
     paths["proc_root"].mkdir()
-    stale = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    stale.bind(str(paths["socket_path"]))
-    stale.close()
+    _stale_socket(paths["socket_path"])
 
     result = _recover(tmp_path, paths)
 
@@ -185,7 +193,7 @@ def test_saved_root_advanced_to_requested_root_is_ambiguous(tmp_path):
 
 def test_recovery_is_idempotent_for_already_idle_state(tmp_path):
     paths = _paths(tmp_path)
-    supervisor.ActivationStateStore(paths["state_path"]).write(supervisor.ActivationStateStore.empty())
+    _idle(paths)
 
     result = launcher_recovery.recover_launcher(
         repo_root=tmp_path,
@@ -195,6 +203,146 @@ def test_recovery_is_idempotent_for_already_idle_state(tmp_path):
 
     assert result == {"status": "already_idle", "archive": None, "stale_socket_removed": False}
     assert supervisor.ActivationStateStore(paths["state_path"]).read()["phase"] == "idle"
+
+
+def test_idle_stale_socket_is_safely_recovered_and_recovery_is_idempotent(tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    _stale_socket(paths["socket_path"])
+
+    first = _recover(tmp_path, paths)
+    second = _recover(tmp_path, paths)
+
+    assert first == {"status": "recovered_idle_socket", "archive": None, "stale_socket_removed": True}
+    assert second == {"status": "already_idle", "archive": None, "stale_socket_removed": False}
+    assert not paths["socket_path"].exists()
+    assert supervisor.ActivationStateStore(paths["state_path"]).read()["phase"] == "idle"
+
+
+def test_idle_live_supervisor_socket_and_lifetime_lock_are_not_disturbed(tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(paths["socket_path"]))
+    listener.listen(1)
+    lifetime_lock = supervisor.SupervisorLock(paths["supervisor_lock_path"])
+    lifetime_lock.acquire()
+    try:
+        with pytest.raises(launcher_recovery.LauncherRecoveryError, match="lifetime-lock ownership"):
+            _recover(tmp_path, paths)
+        assert paths["socket_path"].exists()
+    finally:
+        lifetime_lock.release()
+        listener.close()
+
+
+def test_idle_ambiguous_socket_path_is_not_deleted(tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    paths["socket_path"].write_text("not a socket", encoding="utf-8")
+
+    with pytest.raises(launcher_recovery.LauncherRecoveryError, match="socket ownership is ambiguous"):
+        _recover(tmp_path, paths)
+
+    assert paths["socket_path"].read_text(encoding="utf-8") == "not a socket"
+
+
+def test_active_healthy_supervisor_is_not_disturbed(tmp_path):
+    paths = _paths(tmp_path)
+    requested_root = tmp_path / "DJ TEST"
+    requested_root.mkdir()
+    state = supervisor.ActivationStateStore.empty()
+    state.update({
+        "activation_id": "activation-test",
+        "phase": "preparing",
+        "requested_root": str(requested_root.resolve()),
+        "requested_library_key": library_key_for_root(requested_root.resolve()),
+    })
+    supervisor.ActivationStateStore(paths["state_path"]).write(state)
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    listener.bind(str(paths["socket_path"]))
+    listener.listen(1)
+    try:
+        with pytest.raises(launcher_recovery.LauncherRecoveryError, match="activation is in progress"):
+            _recover(tmp_path, paths)
+        assert paths["socket_path"].exists()
+    finally:
+        listener.close()
+
+
+def test_idle_stale_socket_accepts_dead_activation_lock_pid_and_clears_metadata(tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    paths["activation_lock_path"].write_text(
+        '{"pid": 42420, "acquired_at": "2026-09-04T00:24:34Z"}\n', encoding="utf-8",
+    )
+    _stale_socket(paths["socket_path"])
+
+    result = _recover(tmp_path, paths)
+
+    assert result["status"] == "recovered_idle_socket"
+    assert paths["activation_lock_path"].read_bytes() == b""
+
+
+def test_idle_stale_socket_refuses_live_activation_lock_pid(tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    (paths["proc_root"] / "42420").mkdir()
+    paths["activation_lock_path"].write_text(
+        '{"pid": 42420, "acquired_at": "2026-09-04T00:24:34Z"}\n', encoding="utf-8",
+    )
+    _stale_socket(paths["socket_path"])
+
+    with pytest.raises(launcher_recovery.LauncherRecoveryError, match="references a live process"):
+        _recover(tmp_path, paths)
+
+    assert paths["socket_path"].exists()
+
+
+def test_idle_recovery_removes_only_the_configured_supervisor_socket(tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    unrelated_path = paths["socket_path"].with_name("unrelated.sock")
+    _stale_socket(paths["socket_path"])
+    _stale_socket(unrelated_path)
+
+    result = _recover(tmp_path, paths)
+
+    assert result["status"] == "recovered_idle_socket"
+    assert not paths["socket_path"].exists()
+    assert unrelated_path.exists()
+
+
+def test_rootless_supervisor_start_is_admitted_after_idle_socket_recovery(monkeypatch, tmp_path):
+    paths = _paths(tmp_path)
+    _idle(paths)
+    paths["proc_root"].mkdir()
+    _stale_socket(paths["socket_path"])
+    _recover(tmp_path, paths)
+    calls: list[str] = []
+    monkeypatch.setattr(supervisor.LocalSupervisor, "bind_control_socket", lambda self: calls.append("bind"))
+    monkeypatch.setattr(supervisor.LocalSupervisor, "start_active", lambda self, **kwargs: calls.append(kwargs["role"]))
+    monkeypatch.setattr(supervisor.LocalSupervisor, "cleanup", lambda self: calls.append("cleanup"))
+    monkeypatch.setattr(supervisor, "serve", lambda local: calls.append("serve"))
+
+    result = supervisor.main([
+        "--socket", str(paths["socket_path"]),
+        "--state", str(paths["state_path"]),
+        "--lock", str(paths["activation_lock_path"]),
+        "--active-role", "rootless",
+        "--port", "8020",
+        "--bind-host", "127.0.0.1",
+        "--access-mode", "local",
+    ])
+
+    assert result == 0
+    assert calls == ["bind", "rootless", "serve", "cleanup"]
 
 
 def test_rootless_supervisor_start_is_admitted_after_recovery(monkeypatch, tmp_path):

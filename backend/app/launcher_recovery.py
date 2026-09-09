@@ -1,13 +1,15 @@
-"""Explicit fail-closed recovery for a stopped local CrateIQ launcher.
+"""Explicit stale-artifact recovery for a stopped local CrateIQ launcher.
 
 Recovery is intentionally outside the supervisor IPC and activation APIs.  It
-can only turn a valid, persisted ``fail_closed`` record into ``idle`` after
-exclusive lifetime/activation locks and process/socket ownership checks prove
-that no supervisor-owned backend survived.
+can turn a valid, persisted ``fail_closed`` record into ``idle`` or withdraw a
+stale socket left beside an already-idle record. Both paths require exclusive
+lifetime/activation locks and process/socket ownership checks proving that no
+supervisor-owned process survived.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import stat
 import sys
@@ -40,6 +42,12 @@ class OwnedBackendProcess:
     port: int
 
 
+@dataclass(frozen=True)
+class OwnedLauncherProcesses:
+    supervisor_pids: tuple[int, ...]
+    backends: tuple[OwnedBackendProcess, ...]
+
+
 def _decode_environ(data: bytes) -> dict[str, str]:
     result: dict[str, str] = {}
     for item in data.split(b"\0"):
@@ -53,16 +61,17 @@ def _decode_environ(data: bytes) -> dict[str, str]:
     return result
 
 
-def inspect_owned_backend_processes(
+def inspect_owned_launcher_processes(
     repo_root: Path, *, proc_root: Path = Path("/proc"), persisted_ids: Iterable[str | None] = (),
-) -> list[OwnedBackendProcess]:
-    """Find live children by the fixed wrapper and private ownership metadata.
+) -> OwnedLauncherProcesses:
+    """Find live supervisors and children by fixed commands and ownership metadata.
 
-    Any installation-local wrapper process with missing or contradictory
-    metadata is ambiguous and therefore blocks recovery.
+    Any installation-local launcher process with missing or contradictory
+    ownership is ambiguous and therefore blocks recovery.
     """
     canonical_repo = repo_root.resolve()
     expected_ids = {value for value in persisted_ids if value}
+    supervisor_pids: list[int] = []
     owned: list[OwnedBackendProcess] = []
     try:
         entries = tuple(proc_root.iterdir())
@@ -89,21 +98,24 @@ def inspect_owned_backend_processes(
                 ) from exc
             continue
 
+        supervisor_command = "backend.app.supervisor" in cmdline
         wrapper_command = "backend.app.supervised_backend" in cmdline
         try:
             cwd = (entry / "cwd").resolve(strict=True)
         except FileNotFoundError as exc:
-            if wrapper_command and entry.exists():
+            if (supervisor_command or wrapper_command) and entry.exists():
                 raise LauncherRecoveryError(
-                    "operator intervention required: backend process ownership is ambiguous"
+                    "operator intervention required: launcher process ownership is ambiguous"
                 ) from exc
             continue
         except OSError as exc:
-            if wrapper_command:
+            if supervisor_command or wrapper_command:
                 raise LauncherRecoveryError(
-                    "operator intervention required: backend process ownership is ambiguous"
+                    "operator intervention required: launcher process ownership is ambiguous"
                 ) from exc
             continue
+        if supervisor_command and cwd == canonical_repo:
+            supervisor_pids.append(int(entry.name))
         wrapper_in_repo = wrapper_command and cwd == canonical_repo
         try:
             environment = _decode_environ((entry / "environ").read_bytes())
@@ -145,7 +157,105 @@ def inspect_owned_backend_processes(
             role=role,
             port=int(port_text),
         ))
-    return owned
+    return OwnedLauncherProcesses(tuple(supervisor_pids), tuple(owned))
+
+
+def inspect_owned_backend_processes(
+    repo_root: Path, *, proc_root: Path = Path("/proc"), persisted_ids: Iterable[str | None] = (),
+) -> list[OwnedBackendProcess]:
+    """Compatibility wrapper for focused ownership callers and tests."""
+    return list(inspect_owned_launcher_processes(
+        repo_root, proc_root=proc_root, persisted_ids=persisted_ids,
+    ).backends)
+
+
+def _activation_lock_pid(metadata: bytes | None) -> int | None:
+    if not metadata or not metadata.strip():
+        return None
+    if len(metadata) > 4096:
+        raise LauncherRecoveryError(
+            "operator intervention required: activation lock metadata is oversized"
+        )
+    try:
+        value = json.loads(metadata.decode("utf-8"))
+    except (UnicodeError, ValueError) as exc:
+        raise LauncherRecoveryError(
+            "operator intervention required: activation lock metadata is malformed"
+        ) from exc
+    if (
+        not isinstance(value, dict)
+        or set(value) != {"pid", "acquired_at"}
+        or not isinstance(value.get("pid"), int)
+        or isinstance(value.get("pid"), bool)
+        or value["pid"] <= 0
+        or not isinstance(value.get("acquired_at"), str)
+        or not value["acquired_at"].endswith("Z")
+    ):
+        raise LauncherRecoveryError(
+            "operator intervention required: activation lock metadata is malformed"
+        )
+    return int(value["pid"])
+
+
+def _assert_no_live_launcher_processes(
+    *,
+    repo_root: Path,
+    proc_root: Path,
+    persisted_ids: tuple[object, object, object],
+    backend_port: int,
+    candidate_port: object,
+    activation_lock_metadata: bytes | None,
+) -> None:
+    processes = inspect_owned_launcher_processes(
+        repo_root, proc_root=proc_root, persisted_ids=persisted_ids,
+    )
+    if processes.supervisor_pids:
+        raise LauncherRecoveryError(
+            "operator intervention required: a CrateIQ supervisor process is still alive"
+        )
+    if processes.backends:
+        matching = {item.instance_id for item in processes.backends} & {
+            str(item) for item in persisted_ids if item
+        }
+        if matching:
+            raise LauncherRecoveryError(
+                "operator intervention required: a backend matching persisted activation ownership is alive"
+            )
+        relevant_ports = {backend_port}
+        if candidate_port is not None:
+            relevant_ports.add(int(candidate_port))
+        if any(item.port in relevant_ports for item in processes.backends):
+            raise LauncherRecoveryError(
+                "operator intervention required: a CrateIQ-owned backend still owns an activation port"
+            )
+        raise LauncherRecoveryError(
+            "operator intervention required: a CrateIQ-owned backend process is still alive"
+        )
+
+    metadata_pid = _activation_lock_pid(activation_lock_metadata)
+    if metadata_pid is not None:
+        try:
+            metadata_process_exists = (proc_root / str(metadata_pid)).exists()
+        except OSError as exc:
+            raise LauncherRecoveryError(
+                "operator intervention required: activation lock PID ownership cannot be inspected"
+            ) from exc
+        if metadata_process_exists:
+            raise LauncherRecoveryError(
+                "operator intervention required: activation lock metadata references a live process"
+            )
+
+
+def _socket_entry_exists(path: Path) -> bool:
+    try:
+        path.lstat()
+        return True
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        raise LauncherRecoveryError(
+            "operator intervention required: supervisor socket pathname cannot be inspected"
+        ) from exc
 
 
 def _saved_compatibility_root(path: Path) -> str | None:
@@ -211,14 +321,14 @@ def recover_launcher(
     backend_port: int,
     proc_root: Path = Path("/proc"),
 ) -> dict[str, object]:
-    """Recover one provably stale fail-closed activation into rootless idle."""
+    """Recover provably stale fail-closed state or an idle supervisor socket."""
     store = supervisor.ActivationStateStore(state_path)
     state = store.read()
-    if state["phase"] == "idle":
+    if state["phase"] == "idle" and not _socket_entry_exists(socket_path):
         return {"status": "already_idle", "archive": None, "stale_socket_removed": False}
-    if state["phase"] != "fail_closed":
+    if state["phase"] not in {"idle", "fail_closed"}:
         raise LauncherRecoveryError(
-            "operator intervention required: only a valid fail_closed activation can be recovered"
+            "operator intervention required: an activation is in progress and cannot be recovered"
         )
 
     lifetime_lock = supervisor.SupervisorLock(supervisor_lock_path)
@@ -232,7 +342,7 @@ def recover_launcher(
     activation_lock = supervisor.ActivationLock(activation_lock_path)
     try:
         try:
-            activation_lock.acquire()
+            activation_lock.acquire(write_metadata=False)
         except supervisor.ActivationLockUnavailable as exc:
             raise LauncherRecoveryError(
                 "operator intervention required: activation lock ownership is ambiguous"
@@ -241,9 +351,7 @@ def recover_launcher(
         # Re-read only after both locks are held so no activation state can
         # change between the proof and the atomic reset.
         state = store.read()
-        if state["phase"] == "idle":
-            return {"status": "already_idle", "archive": None, "stale_socket_removed": False}
-        if state["phase"] != "fail_closed":
+        if state["phase"] not in {"idle", "fail_closed"}:
             raise LauncherRecoveryError(
                 "operator intervention required: activation state changed during recovery"
             )
@@ -253,34 +361,32 @@ def recover_launcher(
             state.get("candidate_instance_id"),
             state.get("old_instance_id"),
         )
-        owned = inspect_owned_backend_processes(
-            repo_root, proc_root=proc_root, persisted_ids=persisted_ids,
+        _assert_no_live_launcher_processes(
+            repo_root=repo_root,
+            proc_root=proc_root,
+            persisted_ids=persisted_ids,
+            backend_port=backend_port,
+            candidate_port=state.get("candidate_port"),
+            activation_lock_metadata=activation_lock.previous_metadata,
         )
-        if owned:
-            matching = {item.instance_id for item in owned} & {item for item in persisted_ids if item}
-            if matching:
-                raise LauncherRecoveryError(
-                    "operator intervention required: a backend matching persisted activation ownership is alive"
-                )
-            relevant_ports = {backend_port}
-            if state.get("candidate_port") is not None:
-                relevant_ports.add(int(state["candidate_port"]))
-            if any(item.port in relevant_ports for item in owned):
-                raise LauncherRecoveryError(
-                    "operator intervention required: a CrateIQ-owned backend still owns an activation port"
-                )
-            raise LauncherRecoveryError(
-                "operator intervention required: a CrateIQ-owned backend process is still alive"
-            )
-
-        library_registry_service.validate_registry_state(registry_path)
-        _validate_compatibility_state(state, local_env_path)
+        if state["phase"] == "fail_closed":
+            library_registry_service.validate_registry_state(registry_path)
+            _validate_compatibility_state(state, local_env_path)
         try:
             stale_socket_removed = supervisor.recover_stale_socket(socket_path)
         except (supervisor.SupervisorError, OSError) as exc:
             raise LauncherRecoveryError(
                 "operator intervention required: supervisor socket ownership is ambiguous"
             ) from exc
+        if state["phase"] == "idle":
+            if not stale_socket_removed:
+                return {"status": "already_idle", "archive": None, "stale_socket_removed": False}
+            activation_lock.clear_metadata()
+            return {
+                "status": "recovered_idle_socket",
+                "archive": None,
+                "stale_socket_removed": True,
+            }
         archive = _archive_activation_state(store, state)
         activation_lock.clear_metadata()
         store.write(store.empty())
@@ -322,6 +428,8 @@ def main(argv: list[str] | None = None) -> int:
     )
     if result["status"] == "already_idle":
         print("CrateIQ launcher recovery: activation state is already idle; no changes made.")
+    elif result["status"] == "recovered_idle_socket":
+        print("CrateIQ launcher recovery: verified stale supervisor socket removed; activation state remains idle.")
     else:
         print(f"CrateIQ launcher recovery: stale fail-closed state archived at {result['archive']}")
         print("CrateIQ launcher recovery: state reset to rootless idle; no library was activated.")

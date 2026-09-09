@@ -444,8 +444,9 @@ class ActivationLock:
         self._handle: Any | None = None
         self._descriptor: int | None = None
         self._directory_fd: int | None = None
+        self.previous_metadata: bytes | None = None
 
-    def acquire(self) -> None:
+    def acquire(self, *, write_metadata: bool = True) -> None:
         try:
             descriptor, directory_fd = _safe_open_lock(self.path)
         except SupervisorError as exc:
@@ -458,9 +459,15 @@ class ActivationLock:
             raise ActivationLockUnavailable("another activation preparation is already in progress") from exc
         try:
             os.lseek(descriptor, 0, os.SEEK_SET)
-            os.ftruncate(descriptor, 0)
-            os.write(descriptor, (json.dumps({"pid": os.getpid(), "acquired_at": _utc_now()}) + "\n").encode("utf-8"))
-            os.fsync(descriptor)
+            self.previous_metadata = os.read(descriptor, 4097)
+            if write_metadata:
+                os.lseek(descriptor, 0, os.SEEK_SET)
+                os.ftruncate(descriptor, 0)
+                os.write(
+                    descriptor,
+                    (json.dumps({"pid": os.getpid(), "acquired_at": _utc_now()}) + "\n").encode("utf-8"),
+                )
+                os.fsync(descriptor)
         except Exception:
             fcntl.flock(descriptor, fcntl.LOCK_UN)
             os.close(descriptor)

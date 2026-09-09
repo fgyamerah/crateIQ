@@ -461,19 +461,26 @@ scripts/crateiq-local-services.sh start-launcher-local
 ```
 
 An interrupted library handoff deliberately leaves the launcher in
-`fail_closed` and blocks later starts. After the services are fully stopped,
-the operator can request a safety-checked recovery and then start rootless:
+`fail_closed` and blocks later starts. A forced shutdown can also leave an
+orphaned supervisor socket beside an already-`idle` activation record. After
+the services are fully stopped, the operator can request a safety-checked
+recovery and then start rootless:
 
 ```bash
 scripts/crateiq-local-services.sh recover-launcher
 scripts/crateiq-local-services.sh start-launcher-local
 ```
 
-Recovery is not automatic. It refuses unless the supervisor/activation locks,
-supervisor socket, supervised-backend process metadata, relevant backend ports,
-registry, and saved compatibility root are unambiguous. A successful recovery
-archives the failed activation record, preserves the registry and saved root,
-does not update library recency, and does not activate a library.
+Recovery is not automatic. It acquires the supervisor and activation locks,
+checks installation-local supervisor/backend processes plus any activation-lock
+PID metadata, and atomically withdraws only the configured socket after a fresh
+probe proves it is not live. Ambiguous ownership, unsafe paths, live processes,
+or malformed state fail closed without deleting the socket. `idle` with no
+socket remains a no-op; `idle` with a proven-stale socket removes only that
+artifact and leaves activation state unchanged. A successful `fail_closed`
+recovery additionally validates registry/saved-root consistency and archives
+the failed activation record. Recovery never updates library recency or
+activates a library.
 
 The launcher registry is local to this installation at
 `.run/local/library_registry.json`. It records at most 16 canonical recent

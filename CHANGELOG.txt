@@ -2,6 +2,47 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-06] — Recover stale idle launcher sockets safely
+
+- Extended the explicit `recover-launcher` command to handle an `idle`
+  activation record paired with a forced-shutdown supervisor socket; idle
+  state with no socket remains a zero-write no-op.
+- Recovery now holds both installation locks, validates prior activation-lock
+  PID metadata, rejects live installation-local supervisor/backend processes,
+  freshly probes the fixed socket, and uses the existing atomic withdrawal
+  primitive. Live, malformed, unsafe, raced, or otherwise ambiguous ownership
+  remains fail-closed and no unrelated pathname is removed.
+- Added focused coverage for idle/no-socket, idle/stale, live and ambiguous
+  ownership, active-state refusal, stale/live PID metadata, idempotency,
+  unrelated socket preservation, and admitted startup after recovery.
+- Files affected: launcher recovery, activation-lock metadata capture,
+  launcher recovery tests, and current launcher documentation. Migration
+  notes: none; run the documented recovery command only after services stop.
+
+[2026-09-06] — Harden bulk waveform operation polling
+
+- Replaced the Jobs page's fixed 2-second bulk-waveform status interval with
+  one adaptive chained-timeout stream: 1 second during startup, 2.5 seconds
+  through two minutes, then 5 seconds for long-running generation.
+- Made timer and request ownership explicit. A fired timeout clears its ref
+  before fetching; one abortable request slot prevents overlap; visibility
+  resume never forks the chain; and terminal states, request errors,
+  supersession, cancellation, and unmount invalidate the polling session.
+- Guarded preview/history/action completions so stale async work cannot update
+  an unmounted card or replace a newly started operation with older history.
+- Added focused Vitest regression coverage for cadence, terminal/error stops,
+  hidden/visible transitions (including visibility change during an unresolved
+  request), single-stream scheduling, cancel ordering, stale completion, and
+  cleanup. Files affected: waveform bulk frontend API/card/tests and current
+  project docs. Migration notes: none; backend routes and data are unchanged.
+- Disposable-library browser verification passed with non-blocking findings:
+  22 status reads completed with zero overlaps or duplicate chains, observed
+  the 1-second and 2.5-second phases, resumed from one visibility pause without
+  a burst, and stopped cleanly at completion. The run finished before the
+  5-second phase; the true in-flight visibility race, cancellation, and unmount
+  paths remain covered by the focused automated regressions rather than that
+  browser run.
+
 [2026-09-03] — Unified single-mirrored waveform + first-open auto-generation
 
 - Replaced every waveform surface (bottom player, Library Track Inspector,

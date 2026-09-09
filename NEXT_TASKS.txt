@@ -56,6 +56,11 @@ P1 / HIGH
     existing separate registry-ID request. Local mode now supports bounded
     browse/register/create; LAN keeps registered-ID activation while filesystem
     administration remains unavailable.
+[x] Recover forced-shutdown launcher sockets when activation is already idle.
+    The explicit operator command now requires both installation locks, no live
+    installation-local supervisor/backend or activation-lock PID, and a fresh
+    negative socket probe before atomically withdrawing only the configured
+    stale socket; ambiguous ownership remains fail-closed.
 ----------------------------------------------------------------------
 P2 / MEDIUM
 ----------------------------------------------------------------------
@@ -162,12 +167,13 @@ P3 / LOW
     min/max peaks (and, if needed, a higher-resolution `color_bands` base)
     without re-decoding audio. Deferred until a zoom UI is actually requested.
 
-[ ] Review bulk waveform operation polling cadence. Browser verification of a
-    long-running bulk generation showed `GET /api/waveform-bulk/operations/{id}`
-    polled roughly every 1–2 seconds, producing ~500 requests over ~13 minutes.
-    Consider adaptive backoff, a slower steady-state interval, server-sent
-    progress/events, or another low-complexity approach. Non-blocking; recorded
-    during the unified-waveform closure and deliberately not implemented there.
+[x] Harden bulk waveform operation polling cadence. The Jobs card now uses one
+    visibility-aware chained-timeout stream: 1 second during startup, 2.5
+    seconds through two minutes, then 5 seconds steady-state. Fired timeout IDs
+    are cleared before fetching, only one abortable status request may be in
+    flight, and session invalidation prevents duplicate chains or stale updates
+    after terminal states, errors, supersession, cancellation, or unmount.
+    Focused fake-timer regressions cover the in-flight visibility race.
 
 ----------------------------------------------------------------------
 P3 / LOW
