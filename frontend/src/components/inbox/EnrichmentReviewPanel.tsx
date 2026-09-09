@@ -295,4 +295,3 @@ export default function EnrichmentReviewPanel({ trackId, onDecision }: Props) {
     </div>
   )
 }
-

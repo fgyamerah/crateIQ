@@ -168,4 +168,3 @@ def test_lan_cannot_create_library(monkeypatch, tmp_path):
         response = _create(client, parent)
     assert response.status_code == 403
     assert list(parent.iterdir()) == []
-

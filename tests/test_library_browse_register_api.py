@@ -235,4 +235,3 @@ def test_lan_denies_filesystem_admin_but_registered_id_activation_still_works(mo
         )
     assert browse.status_code == register.status_code == create.status_code == 403
     assert activate.status_code == 202
-
