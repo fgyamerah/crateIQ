@@ -31,6 +31,7 @@ function plan(items: TagWritePlanItem[]): TagWritePlan {
     blocked_count: items.filter((entry) => entry.blocked).length,
     additions: 0,
     replacements: items.filter((entry) => entry.fields.length).length,
+    clears: 0,
     backup_space_estimate_bytes: 100,
     writable_fields: ['artist', 'title', 'album', 'genre'],
     supported_formats: ['.flac', '.mp3'],

@@ -2,6 +2,7 @@ interface Props {
   selectedCount: number
   visibleSelectedCount: number
   hiddenSelectedCount: number
+  bulkLimit?: number
   onClear: () => void
   onClearHidden: () => void
 }
@@ -10,6 +11,7 @@ export default function InboxSelectionBar({
   selectedCount,
   visibleSelectedCount,
   hiddenSelectedCount,
+  bulkLimit,
   onClear,
   onClearHidden,
 }: Props) {
@@ -17,6 +19,7 @@ export default function InboxSelectionBar({
   return (
     <div className="inbox-selection-bar" role="status" aria-live="polite">
       <strong>{selectedCount} selected · {visibleSelectedCount} visible</strong>
+      {bulkLimit && <span>Bulk Review and Edit Metadata: max {bulkLimit}</span>}
       {hiddenSelectedCount > 0 && (
         <>
           <span>{hiddenSelectedCount} selected outside this page or filter</span>

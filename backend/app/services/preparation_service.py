@@ -340,7 +340,7 @@ def enrich_tracks(
 # Write stage -- reuses tag_write_service exactly, chunked to its own cap
 # ---------------------------------------------------------------------------
 
-def write_tracks(track_ids: list[int]) -> dict[str, Any]:
+def write_tracks(track_ids: list[int], *, allowed_fields: set[str] | None = None) -> dict[str, Any]:
     """
     Reuses tag_write_service's exact build_plan -> apply_plan contract,
     chunked to its own per-request cap. `results` carries a per-track outcome
@@ -352,10 +352,11 @@ def write_tracks(track_ids: list[int]) -> dict[str, Any]:
     written = failed = 0
     warnings: list[str] = []
     results: list[dict[str, Any]] = []
+    operation_ids: list[str] = []
     for start in range(0, len(track_ids), _WRITE_CHUNK_SIZE):
         chunk = track_ids[start:start + _WRITE_CHUNK_SIZE]
         try:
-            plan = tag_write_service.build_plan(chunk)
+            plan = tag_write_service.build_plan(chunk, allowed_fields=allowed_fields)
         except ValueError as exc:
             warnings.append(str(exc))
             continue
@@ -378,14 +379,30 @@ def write_tracks(track_ids: list[int]) -> dict[str, Any]:
         }
         if not expected:
             continue
-        result = tag_write_service.apply_plan(chunk, expected, confirm=True)
+        try:
+            result = tag_write_service.apply_plan(
+                chunk, expected, confirm=True, allowed_fields=allowed_fields,
+            )
+        except Exception as exc:  # noqa: BLE001 - isolate an operation-level writer failure to this chunk
+            reason = f"Tag-write operation failed: {exc}. Working metadata remains unsaved."
+            failed += len(expected)
+            warnings.append(reason)
+            results.extend(
+                {"track_id": track_id, "status": "failed", "reason": reason}
+                for track_id in expected
+            )
+            continue
+        operation_ids.append(result["operation_id"])
         written += result["applied"]
         failed += result["failed"]
         # apply_plan recomputes its own plan over the whole chunk and would
         # re-report the blocked/no-field tracks above (as "skipped") -- keep
         # only the entries for tracks that were actually changeable here.
         results.extend(r for r in result["results"] if r["track_id"] in expected)
-    return {"written_count": written, "failed_count": failed, "warnings": warnings, "results": results}
+    return {
+        "written_count": written, "failed_count": failed, "warnings": warnings,
+        "results": results, "operation_ids": operation_ids,
+    }
 
 
 # ---------------------------------------------------------------------------

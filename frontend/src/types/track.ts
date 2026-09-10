@@ -31,6 +31,7 @@ export type InboxPreparationStatus =
   | 'READY'
 
 export type InboxEditableMetadataField = 'artist' | 'title' | 'genre' | 'album'
+export type InboxBulkMetadataField = 'genre' | 'comment' | 'label'
 
 export interface InboxPreparationReason {
   code: string
@@ -73,6 +74,8 @@ export interface TrackSummary {
   title:        string | null
   album?:       string | null
   genre:        string | null
+  comment?:     string | null
+  label?:       string | null
   bpm:          number | null
   key_camelot:  string | null
   key_musical:  string | null

@@ -1,5 +1,10 @@
 export type EnrichmentDecision = 'pending' | 'applied' | 'ignored' | 'review_later'
 export interface EnrichmentSuggestion { suggestion_id:string; track_id:number; source_id:string; confidence:string; reason:string; filename:string; relative_path:string|null; current_fields:Record<string,string|null>; suggested_fields:Record<string,string>; allowed_fields:string[]; decision:EnrichmentDecision; note:string; selected_fields:Record<string,string>; evidence?:Record<string,string[]> }
 export interface EnrichmentReview { summary:Record<string,number>; items:EnrichmentSuggestion[]; sources:Array<{id:string;label:string;category:string;enabled:boolean;configured:boolean;connection_status:string;current_behavior:string}>; safety:string[]; warnings:string[]; latest_preview_at:string|null; message:string|null }
-export interface EnrichmentApplyResult { applied:number; skipped:number; failed:number; warnings:string[]; review:EnrichmentReview }
+export interface EnrichmentApplyResult { applied:number; skipped:number; failed:number; warnings:string[]; results?:Array<Record<string,unknown>>; review:EnrichmentReview }
 export interface InboxTrackEnrichmentReview { track_id:number; items:EnrichmentSuggestion[]; count:number; sources:EnrichmentReview['sources']; safety:string[]; message:string|null }
+export type BulkEnrichmentState = 'safe' | 'exception' | 'no_suggestion'
+export interface BulkEnrichmentRow { track_id:number; filename:string; artist:string|null; title:string|null; genre:string|null; review_state:BulkEnrichmentState; confidence:string|null; conflicts:string[]; suggestion_count:number; reason:string }
+export interface BulkEnrichmentSummary { selected_count:number; safe_count:number; exception_count:number; no_suggestion_count:number; rows:BulkEnrichmentRow[]; message:string }
+export interface BulkEnrichmentActionItem { track_id:number; suggestion_id:string; status:string; reason?:string }
+export interface BulkEnrichmentActionResult { selected_count:number; applied?:number; skipped?:number; failed?:number; kept_track_count?:number; suggestions_ignored?:number; warnings?:string[]; results?:BulkEnrichmentActionItem[]; summary:BulkEnrichmentSummary }

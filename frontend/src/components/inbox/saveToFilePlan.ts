@@ -25,6 +25,7 @@ export function mergeTagWritePlans(plans: TagWritePlan[]): TagWritePlan {
     blocked_count: plans.reduce((total, plan) => total + plan.blocked_count, 0),
     additions: plans.reduce((total, plan) => total + plan.additions, 0),
     replacements: plans.reduce((total, plan) => total + plan.replacements, 0),
+    clears: plans.reduce((total, plan) => total + plan.clears, 0),
     backup_space_estimate_bytes: plans.reduce((total, plan) => total + plan.backup_space_estimate_bytes, 0),
     writable_fields: plans[0]?.writable_fields ?? [],
     supported_formats: plans[0]?.supported_formats ?? [],

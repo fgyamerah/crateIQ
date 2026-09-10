@@ -36,6 +36,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     title           TEXT,
     album           TEXT,
     genre           TEXT,
+    comment         TEXT,
+    label           TEXT,
     bpm             REAL,
     key_musical     TEXT,
     key_camelot     TEXT,
@@ -180,6 +182,8 @@ def init_db() -> None:
         # OperationalError "duplicate column name" so we suppress it).
         for migration in [
             "ALTER TABLE tracks ADD COLUMN album TEXT",
+            "ALTER TABLE tracks ADD COLUMN comment TEXT",
+            "ALTER TABLE tracks ADD COLUMN label TEXT",
             "ALTER TABLE tracks ADD COLUMN quality_tier TEXT",
             "ALTER TABLE tracks ADD COLUMN parse_confidence TEXT",
         ]:

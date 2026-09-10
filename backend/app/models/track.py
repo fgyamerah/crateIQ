@@ -24,6 +24,8 @@ class Track:
     title:          Optional[str]
     album:          Optional[str]
     genre:          Optional[str]
+    comment:        Optional[str]
+    label:          Optional[str]
     bpm:            Optional[float]
     key_musical:    Optional[str]
     key_camelot:    Optional[str]
@@ -54,6 +56,8 @@ class Track:
             title=_get("title"),
             album=_get("album"),
             genre=_get("genre"),
+            comment=_get("comment"),
+            label=_get("label"),
             bpm=_get("bpm"),
             key_musical=_get("key_musical"),
             key_camelot=_get("key_camelot"),

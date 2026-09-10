@@ -67,6 +67,14 @@ _RESERVED_WINDOWS_STEMS = {
     "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9",
 }
 _MAX_METADATA_FIELD_LENGTH = 200
+_MAX_COMMENT_LENGTH = 1000
+_MAX_BULK_EDIT_TRACKS = 200
+_BULK_METADATA_OPERATIONS = {
+    "genre": {"leave", "set", "clear"},
+    "comment": {"leave", "set", "append", "clear"},
+    "label": {"leave", "set", "clear"},
+}
+_BULK_FORBIDDEN_IDENTITY_FIELDS = {"artist", "title", "filename"}
 
 
 def safe_path_segment(value: str | None, fallback: str) -> str:
@@ -469,16 +477,15 @@ def import_sources(root: Path, source_paths: list[str], *, confirm: bool) -> dic
                     failed.append({"source_filename": source_file.name, "reason": "copy verification failed"})
                     continue
 
-                tags = library_setup_service._embedded_tags(dest)
-                artist, title, album, genre, confidence, _tags_present = library_setup_service._track_metadata(dest)
+                artist, title, album, genre, comment, label, confidence, _tags_present = library_setup_service._track_metadata(dest)
                 conn.execute(
                     """
-                    INSERT INTO tracks (filepath, filename, artist, title, album, genre,
+                    INSERT INTO tracks (filepath, filename, artist, title, album, genre, comment, label,
                                          filesize_bytes, status, processed_at, pipeline_ver,
                                          parse_confidence, storage_zone)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'workspace-import-v1', ?, 'INBOX')
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'workspace-import-v1', ?, 'INBOX')
                     """,
-                    (str(dest), dest.name, artist, title, album, genre,
+                    (str(dest), dest.name, artist, title, album, genre, comment, label,
                      dest.stat().st_size, now, confidence),
                 )
                 copied.append({"source_filename": source_file.name, "inbox_filename": dest.name})
@@ -1153,8 +1160,9 @@ def _validate_metadata_value(field: str, value: str) -> str:
     text = unicodedata.normalize("NFC", value or "").strip()
     if not text:
         raise ValueError(f"{field.capitalize()} cannot be empty.")
-    if len(text) > _MAX_METADATA_FIELD_LENGTH:
-        raise ValueError(f"{field.capitalize()} is too long (max {_MAX_METADATA_FIELD_LENGTH} characters).")
+    limit = _MAX_COMMENT_LENGTH if field == "comment" else _MAX_METADATA_FIELD_LENGTH
+    if len(text) > limit:
+        raise ValueError(f"{field.capitalize()} is too long (max {limit} characters).")
     if _CONTROL_CHAR_RE.search(text):
         raise ValueError(f"{field.capitalize()} contains an unsafe control character.")
     return text
@@ -1224,66 +1232,133 @@ def edit_inbox_track_metadata(
     }
 
 
-def bulk_edit_preview(
-    root: Path,
-    track_ids: list[int],
-    *,
-    artist: str | None,
-    title: str | None = None,
-    genre: str | None,
-    album: str | None = None,
-) -> dict[str, Any]:
-    """Read-only preview for bulk Artist/Title/Genre/Album edit."""
-    requested = {"artist": artist, "title": title, "genre": genre, "album": album}
-    if not any(value is not None for value in requested.values()):
-        raise ValueError("Select at least one field (Artist, Title, Genre, or Album) to bulk edit.")
+def _validate_bulk_operations(operations: dict[str, dict[str, Any]]) -> dict[str, dict[str, str | None]]:
+    forbidden = set(operations).intersection(_BULK_FORBIDDEN_IDENTITY_FIELDS)
+    if forbidden:
+        field = sorted(forbidden)[0]
+        raise ValueError(f"Bulk {field.capitalize()} editing is prohibited; edit identity fields one track at a time.")
+    unsupported = set(operations) - set(_BULK_METADATA_OPERATIONS)
+    if unsupported:
+        raise ValueError(f"Unsupported bulk metadata field: {sorted(unsupported)[0]}.")
+
+    validated: dict[str, dict[str, str | None]] = {}
+    for field, raw in operations.items():
+        operation = str(raw.get("operation") or "").lower()
+        if operation not in _BULK_METADATA_OPERATIONS[field]:
+            raise ValueError(f"{operation or 'Missing'} is not valid for {field.capitalize()}.")
+        value = raw.get("value")
+        if operation in {"set", "append"}:
+            if not isinstance(value, str):
+                raise ValueError(f"{field.capitalize()} {operation} requires a value.")
+            value = _validate_metadata_value(field, value)
+        elif value not in (None, ""):
+            raise ValueError(f"{field.capitalize()} {operation} does not accept a value.")
+        validated[field] = {"operation": operation, "value": value if isinstance(value, str) else None}
+
+    if not any(item["operation"] != "leave" for item in validated.values()):
+        raise ValueError("Choose at least one metadata change before previewing.")
+    return validated
+
+
+def _bulk_result_value(current: str, operation: dict[str, str | None]) -> str:
+    action = operation["operation"]
+    value = operation.get("value") or ""
+    if action == "set":
+        return value
+    if action == "clear":
+        return ""
+    if action == "append":
+        existing_lines = [line.strip() for line in current.splitlines() if line.strip()]
+        return current if value in existing_lines else (f"{current}\n{value}" if current else value)
+    return current
+
+
+def _bulk_write_capability(track_ids: list[int]) -> dict[int, dict[str, Any]]:
+    items: dict[int, dict[str, Any]] = {}
+    for start in range(0, len(track_ids), 50):
+        plan = tag_write_service.build_plan(track_ids[start:start + 50])
+        items.update({int(item["track_id"]): item for item in plan["items"]})
+    return items
+
+
+def bulk_edit_preview(root: Path, track_ids: list[int], *, operations: dict[str, dict[str, Any]]) -> dict[str, Any]:
+    """Preview explicit Genre/Comment/Label operations and file-write capability."""
     if not track_ids:
         raise ValueError("Select at least one track to bulk edit.")
-
-    fields: dict[str, str] = {}
-    for field, value in requested.items():
-        if value is not None:
-            fields[field] = _validate_metadata_value(field, value)
-
+    if len(track_ids) > _MAX_BULK_EDIT_TRACKS:
+        raise ValueError(f"Bulk edit is limited to {_MAX_BULK_EDIT_TRACKS} tracks at a time.")
+    if len(set(track_ids)) != len(track_ids):
+        raise ValueError("Bulk edit track IDs must be unique.")
+    validated = _validate_bulk_operations(operations)
     db_path = _require_initialized_db(root)
-    library_setup_service.ensure_storage_zone_column(root)
+    library_setup_service.ensure_editable_metadata_columns(root)
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         placeholders = ",".join("?" * len(track_ids))
         rows = {r["id"]: r for r in conn.execute(f"SELECT * FROM tracks WHERE id IN ({placeholders})", track_ids)}
 
-    field_previews: dict[str, Any] = {}
-    for field, new_value in fields.items():
-        counts: dict[str, int] = {}
-        for track_id in track_ids:
-            row = rows.get(track_id)
-            if row is None:
-                continue
-            current = (row[field] or "").strip() or "Unknown"
-            counts[current] = counts.get(current, 0) + 1
-        current_values = sorted(counts, key=lambda v: (-counts[v], v.lower()))[:10]
-        field_previews[field] = {"current_values": current_values, "new_value": new_value}
+    inbox_ids = [track_id for track_id in track_ids if track_id in rows and (rows[track_id]["storage_zone"] or "LIBRARY") == "INBOX"]
+    capabilities = _bulk_write_capability(inbox_ids) if inbox_ids else {}
+    unsupported_ids = {track_id for track_id, item in capabilities.items() if item["blocked"]}
+    missing = sum(1 for track_id in track_ids if track_id not in rows)
+    skipped_not_inbox = sum(
+        1 for track_id in track_ids
+        if track_id in rows and (rows[track_id]["storage_zone"] or "LIBRARY") != "INBOX"
+    )
+    eligible_ids = [track_id for track_id in inbox_ids if track_id not in unsupported_ids]
 
-    eligible = skipped_not_inbox = missing = changeable = 0
-    for track_id in track_ids:
-        row = rows.get(track_id)
-        if row is None:
-            missing += 1
-        elif (row["storage_zone"] or "LIBRARY") != "INBOX":
-            skipped_not_inbox += 1
-        else:
-            eligible += 1
-            if any(value != (row[field] or "") for field, value in fields.items()):
-                changeable += 1
+    field_previews: dict[str, Any] = {}
+    changeable_ids: set[int] = set()
+    for field, operation in validated.items():
+        if operation["operation"] == "leave":
+            continue
+        counts: dict[str, int] = {}
+        affected = already_matching = 0
+        for track_id in eligible_ids:
+            current = str(rows[track_id][field] or "").strip()
+            display = current or "Blank"
+            counts[display] = counts.get(display, 0) + 1
+            next_value = _bulk_result_value(current, operation)
+            if next_value == current:
+                already_matching += 1
+            else:
+                affected += 1
+                changeable_ids.add(track_id)
+        current_values = sorted(counts, key=lambda value: (-counts[value], value.lower()))[:10]
+        field_previews[field] = {
+            "operation": operation["operation"],
+            "value": operation.get("value"),
+            "current_values": current_values,
+            "mixed": len(counts) > 1,
+            "affected_count": affected,
+            "already_matching_count": already_matching,
+            "skipped_count": missing + skipped_not_inbox + len(unsupported_ids),
+        }
 
     return {
         "selected_count": len(track_ids),
-        "eligible_count": eligible,
-        "changeable_count": changeable,
+        "eligible_count": len(eligible_ids),
+        "changeable_count": len(changeable_ids),
         "skipped_not_inbox": skipped_not_inbox,
         "missing_count": missing,
+        "unsupported_count": len(unsupported_ids),
         "fields": field_previews,
-        "message": "Preview only. No metadata or files were changed.",
+        "items": [
+            {
+                "track_id": track_id,
+                "filename": rows[track_id]["filename"] if track_id in rows else None,
+                "status": "not_found" if track_id not in rows else (
+                    "not_inbox" if track_id not in inbox_ids else (
+                        "unsupported" if track_id in unsupported_ids else (
+                            "change" if track_id in changeable_ids else "unchanged"
+                        )
+                    )
+                ),
+                "reason": capabilities.get(track_id, {}).get("blocker"),
+            }
+            for track_id in track_ids
+        ],
+        "message": "Preview only. No metadata, tags, backups, or files were changed.",
     }
 
 
@@ -1291,88 +1366,124 @@ def bulk_edit_apply(
     root: Path,
     track_ids: list[int],
     *,
-    artist: str | None,
-    title: str | None = None,
-    genre: str | None,
-    album: str | None = None,
+    operations: dict[str, dict[str, Any]],
     confirm: bool,
 ) -> dict[str, Any]:
-    """
-    Apply a bulk Artist/Title/Genre/Album edit to selected managed-Inbox tracks.
-
-    Per track: confirm it still exists and is still storage_zone=INBOX,
-    diff against the current DB value (skip real no-ops), update the index,
-    record provenance, and return one batched read-only preparation-state
-    projection. No file, backup, or tag-write operation is performed.
-    """
+    """Apply reviewed shared metadata, then use the existing verified tag writer."""
     if not confirm:
         raise ValueError("Bulk edit requires confirm=true after reviewing the preview.")
-    requested = {"artist": artist, "title": title, "genre": genre, "album": album}
-    if not any(value is not None for value in requested.values()):
-        raise ValueError("Select at least one field (Artist, Title, Genre, or Album) to bulk edit.")
-    if not track_ids:
-        raise ValueError("Select at least one track to bulk edit.")
-
-    fields: dict[str, str] = {}
-    for field, value in requested.items():
-        if value is not None:
-            fields[field] = _validate_metadata_value(field, value)
-
+    preview = bulk_edit_preview(root, track_ids, operations=operations)
+    if preview["missing_count"]:
+        raise ValueError("Every selected track must belong to the active library.")
+    validated = _validate_bulk_operations(operations)
     db_path = _require_initialized_db(root)
-    library_setup_service.ensure_storage_zone_column(root)
-
+    blocked_by_id = {
+        item["track_id"]: item for item in preview["items"]
+        if item["status"] in {"not_found", "not_inbox", "unsupported"}
+    }
     results: dict[int, dict[str, Any]] = {}
     changed_ids: list[int] = []
-    inbox_ids: list[int] = []
 
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
         placeholders = ",".join("?" * len(track_ids))
         rows = {r["id"]: r for r in conn.execute(f"SELECT * FROM tracks WHERE id IN ({placeholders})", track_ids)}
-
         for track_id in track_ids:
-            row = rows.get(track_id)
-            if row is None:
-                results[track_id] = {"track_id": track_id, "status": "not_found", "reason": "Track not found."}
+            blocked = blocked_by_id.get(track_id)
+            if blocked:
+                status = "not_found" if blocked["status"] == "not_found" else "skipped"
+                reason = blocked.get("reason") or ("Track is not in Inbox." if blocked["status"] == "not_inbox" else "Track cannot be written safely.")
+                results[track_id] = {"track_id": track_id, "status": status, "reason": reason, "metadata_updated": False}
                 continue
-            if (row["storage_zone"] or "LIBRARY") != "INBOX":
-                results[track_id] = {"track_id": track_id, "status": "skipped", "reason": "Track is not in Inbox."}
-                continue
-            inbox_ids.append(track_id)
 
-            updates = {f: v for f, v in fields.items() if v != (row[f] or "")}
+            row = rows[track_id]
+            updates: dict[str, str | None] = {}
+            for field, operation in validated.items():
+                if operation["operation"] == "leave":
+                    continue
+                current = str(row[field] or "").strip()
+                next_value = _bulk_result_value(current, operation)
+                if next_value != current:
+                    updates[field] = next_value or None
             if not updates:
-                results[track_id] = {"track_id": track_id, "status": "unchanged"}
+                results[track_id] = {"track_id": track_id, "status": "unchanged", "metadata_updated": False}
                 continue
 
-            set_sql = ", ".join(f"{f} = ?" for f in updates)
-            conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
-            for field, value in updates.items():
-                field_provenance_service.record(
-                    track_id, field, value, origin="user", source="bulk_edit",
-                    reason="Manual bulk Inbox edit.", conn=conn,
-                )
-            changed_ids.append(track_id)
-            results[track_id] = {"track_id": track_id, "status": "changed", "fields": list(updates)}
+            savepoint = f"bulk_track_{track_id}"
+            conn.execute(f"SAVEPOINT {savepoint}")
+            try:
+                set_sql = ", ".join(f"{field} = ?" for field in updates)
+                conn.execute(f"UPDATE tracks SET {set_sql} WHERE id = ?", (*updates.values(), track_id))
+                for field, value in updates.items():
+                    field_provenance_service.record(
+                        track_id, field, value, origin="user", source="bulk_edit",
+                        reason=f"Manual bulk Inbox {validated[field]['operation']} operation.", conn=conn,
+                    )
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                changed_ids.append(track_id)
+                results[track_id] = {
+                    "track_id": track_id, "status": "pending_write", "fields": list(updates),
+                    "metadata_updated": True,
+                }
+            except Exception as exc:  # noqa: BLE001 - isolate one track's DB failure
+                conn.execute(f"ROLLBACK TO SAVEPOINT {savepoint}")
+                conn.execute(f"RELEASE SAVEPOINT {savepoint}")
+                results[track_id] = {
+                    "track_id": track_id, "status": "failed", "reason": f"Working metadata update failed: {exc}",
+                    "metadata_updated": False,
+                }
         conn.commit()
 
+    write_results: dict[int, dict[str, Any]] = {}
+    write_operation_ids: list[str] = []
+    if changed_ids:
+        from . import preparation_service
+        active_fields = {
+            field for field, operation in validated.items()
+            if operation["operation"] != "leave"
+        }
+        try:
+            write_result = preparation_service.write_tracks(changed_ids, allowed_fields=active_fields)
+        except Exception as exc:  # noqa: BLE001 - return truthful per-track failures after committed working edits
+            reason = f"Tag-write operation failed: {exc}. Working metadata remains unsaved."
+            write_result = {
+                "operation_ids": [],
+                "results": [
+                    {"track_id": track_id, "status": "failed", "reason": reason}
+                    for track_id in changed_ids
+                ],
+            }
+        write_results = {int(item["track_id"]): item for item in write_result["results"]}
+        write_operation_ids = list(write_result.get("operation_ids", []))
+
+    for track_id in changed_ids:
+        entry = results[track_id]
+        write = write_results.get(track_id)
+        entry["write_status"] = write.get("status") if write else "failed"
+        if write and write.get("status") in {"applied", "no_op"}:
+            entry["status"] = "succeeded"
+        else:
+            entry["status"] = "failed"
+            entry["reason"] = (write or {}).get("reason") or "No tag-write result was returned. Working metadata remains unsaved."
+
+    inbox_ids = [
+        track_id for track_id in track_ids
+        if track_id in rows and (rows[track_id]["storage_zone"] or "LIBRARY") == "INBOX"
+    ]
     states = inbox_preparation_states(root, inbox_ids)
     for track_id in inbox_ids:
-        entry = results[track_id]
-        entry["preparation_state"] = states[track_id]
-        if entry["status"] == "changed":
-            entry["status"] = "succeeded"
+        results[track_id]["preparation_state"] = states[track_id]
 
-    ordered_results = [results[tid] for tid in track_ids if tid in results]
+    ordered_results = [results[track_id] for track_id in track_ids]
     return {
         "selected_count": len(track_ids),
         "changed_count": len(changed_ids),
-        "unchanged_count": sum(1 for r in ordered_results if r["status"] == "unchanged"),
-        "succeeded_count": sum(1 for r in ordered_results if r["status"] == "succeeded"),
-        "failed_count": sum(1 for r in ordered_results if r["status"] == "failed"),
-        "skipped_count": sum(1 for r in ordered_results if r["status"] == "skipped"),
-        "not_found_count": sum(1 for r in ordered_results if r["status"] == "not_found"),
+        "unchanged_count": sum(1 for item in ordered_results if item["status"] == "unchanged"),
+        "succeeded_count": sum(1 for item in ordered_results if item["status"] == "succeeded"),
+        "failed_count": sum(1 for item in ordered_results if item["status"] == "failed"),
+        "skipped_count": sum(1 for item in ordered_results if item["status"] == "skipped"),
+        "not_found_count": sum(1 for item in ordered_results if item["status"] == "not_found"),
         "results": ordered_results,
-        "tag_write": None,
-        "message": "Bulk edit applied to approved Inbox metadata only. File tags were not changed.",
+        "tag_write": {"operation_ids": write_operation_ids, "used_verified_writer": True},
+        "message": "Bulk metadata was applied through the existing backup, write, re-read, and verify path.",
     }

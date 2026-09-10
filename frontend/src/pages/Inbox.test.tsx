@@ -195,7 +195,8 @@ describe('Inbox preparation status', () => {
     expect(screen.getByRole('button', { name: 'Process All' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Clean Selected (0)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enrich Selected (0)' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk Edit (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Bulk Review (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Metadata (0)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Save to File (0)' })).toBeDisabled()
     expect(screen.getByRole('link', { name: 'Open Needs Review' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move Ready to Library (1)' })).toBeInTheDocument()
@@ -363,7 +364,8 @@ describe('Inbox filtering, selection, and inspector', () => {
     await screen.findByRole('button', { name: 'Process All' })
     expect(screen.getByRole('button', { name: 'Clean Selected (0)' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Enrich Selected (0)' })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: 'Bulk Edit (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Bulk Review (0)' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Metadata (0)' })).toBeInTheDocument()
     expect(screen.getByRole('link', { name: 'Open Needs Review' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Move Ready to Library (1)' })).toBeInTheDocument()
   })
@@ -515,83 +517,87 @@ describe('Inbox filtering, selection, and inspector', () => {
     expect(within(inspector).getByRole('button', { name: 'Save to File' })).toBeInTheDocument()
   })
 
-  it('bulk edits all four fields with opt-in validation, preview, and confirmation', async () => {
+  it('bulk edits Genre, Comment, and Label with explicit operations, preview, and confirmation', async () => {
     vi.mocked(workspaceApi.previewInboxBulkEdit).mockResolvedValue({
       selected_count: 3,
       eligible_count: 3,
       changeable_count: 3,
       skipped_not_inbox: 0,
       missing_count: 0,
+      unsupported_count: 0,
       fields: {
-        artist: { current_values: ['Artist'], new_value: 'Shared Artist' },
-        title: { current_values: ['Title 1', 'Title 2'], new_value: 'Shared Title' },
-        genre: { current_values: ['House'], new_value: 'Techno' },
-        album: { current_values: ['Unknown'], new_value: 'Shared Album' },
+        genre: { operation: 'set', value: 'Afro House', current_values: ['House'], mixed: false, affected_count: 3, already_matching_count: 0, skipped_count: 0 },
+        comment: { operation: 'append', value: 'Warm-up', current_values: ['Blank'], mixed: false, affected_count: 3, already_matching_count: 0, skipped_count: 0 },
+        label: { operation: 'set', value: 'Soulistic', current_values: ['Blank'], mixed: false, affected_count: 3, already_matching_count: 0, skipped_count: 0 },
       },
-      message: 'Preview only. No metadata or files were changed.',
+      items: [],
+      message: 'Preview only. No metadata, tags, backups, or files were changed.',
     })
     vi.mocked(workspaceApi.applyInboxBulkEdit).mockResolvedValue({
       selected_count: 3, changed_count: 3, unchanged_count: 0, succeeded_count: 3,
-      failed_count: 0, skipped_count: 0, not_found_count: 0, results: [], tag_write: null,
-      message: 'Bulk edit applied to approved Inbox metadata only. File tags were not changed.',
+      failed_count: 0, skipped_count: 0, not_found_count: 0, results: [],
+      tag_write: { operation_ids: ['op-1'], used_verified_writer: true },
+      message: 'Bulk metadata was applied through the existing backup, write, re-read, and verify path.',
     })
     render(<MemoryRouter><Inbox /></MemoryRouter>)
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Select visible page (3 tracks)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Bulk Edit (3)' }))
-
-    for (const field of ['Artist', 'Title', 'Genre', 'Album']) {
-      fireEvent.click(screen.getByRole('checkbox', { name: field }))
-      fireEvent.change(screen.getByRole('textbox', { name: `New ${field.toLowerCase()} value for bulk edit` }), { target: { value: `Shared ${field}` } })
-    }
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
-    await screen.findByText('3 eligible tracks will change across 4 fields.')
-    expect(screen.getByText('Current values include: Artist')).toBeInTheDocument()
-    expect(screen.getByText('Shared Album')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Metadata (3)' }))
+    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'set' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Genre bulk value' }), { target: { value: 'Afro House' } })
+    fireEvent.change(screen.getByLabelText('Comment'), { target: { value: 'append' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Comment bulk value' }), { target: { value: 'Warm-up' } })
+    fireEvent.change(screen.getByLabelText('Label'), { target: { value: 'set' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Label bulk value' }), { target: { value: 'Soulistic' } })
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Artist')).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Preview changes' }))
+    await screen.findByText(/3 selected · 3 affected/)
+    expect(screen.getByText('3 will append “Warm-up”')).toBeInTheDocument()
     expect(workspaceApi.applyInboxBulkEdit).not.toHaveBeenCalled()
 
     fireEvent.click(screen.getByRole('button', { name: 'Review & apply' }))
-    expect(screen.getByRole('alertdialog', { name: 'Confirm working metadata changes' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: 'Confirm apply' }))
+    expect(screen.getByRole('group', { name: 'Apply metadata to 3 tracks?' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: 'Apply changes' }))
     await waitFor(() => expect(workspaceApi.applyInboxBulkEdit).toHaveBeenCalledWith([1, 2, 3], {
-      artist: 'Shared Artist', title: 'Shared Title', genre: 'Shared Genre', album: 'Shared Album',
+      genre: { operation: 'set', value: 'Afro House' },
+      comment: { operation: 'append', value: 'Warm-up' },
+      label: { operation: 'set', value: 'Soulistic' },
     }))
-    expect(screen.getByText(/3 succeeded, 0 unchanged/)).toBeInTheDocument()
+    expect(screen.getByText(/3 written and verified/)).toBeInTheDocument()
   })
 
   it.each([
     {
       name: 'some selected tracks already match',
       preview: { selected_count: 3, eligible_count: 3, changeable_count: 1, skipped_not_inbox: 0, missing_count: 0 },
-      expected: '3 selected · 3 eligible · 1 will change · 2 already match.',
+      expected: /3 selected · 1 affected · 2 unchanged across selected operations/,
     },
     {
       name: 'no selected tracks would change',
       preview: { selected_count: 3, eligible_count: 3, changeable_count: 0, skipped_not_inbox: 0, missing_count: 0 },
-      expected: '3 selected · 3 eligible · 0 will change · 3 already match.',
+      expected: /3 selected · 0 affected · 3 unchanged across selected operations/,
     },
     {
       name: 'skips ineligible tracks',
       preview: { selected_count: 3, eligible_count: 2, changeable_count: 1, skipped_not_inbox: 1, missing_count: 0 },
-      expected: '3 selected · 2 eligible · 1 will change · 1 already match · 1 skipped (not in Inbox).',
+      expected: /3 selected · 1 affected · 1 unchanged across selected operations · 1 outside Inbox/,
     },
   ])('renders truthful bulk-preview counts when $name', async ({ preview, expected }) => {
     vi.mocked(workspaceApi.previewInboxBulkEdit).mockResolvedValue({
       ...preview,
-      fields: { artist: { current_values: ['Artist'], new_value: 'Shared Artist' } },
-      message: 'Preview only. No metadata or files were changed.',
+      unsupported_count: 0,
+      fields: { genre: { operation: 'set', value: 'Afro House', current_values: ['House'], mixed: false, affected_count: preview.changeable_count, already_matching_count: preview.eligible_count - preview.changeable_count, skipped_count: preview.skipped_not_inbox } },
+      items: [],
+      message: 'Preview only. No metadata, tags, backups, or files were changed.',
     })
     render(<MemoryRouter><Inbox /></MemoryRouter>)
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Select visible page (3 tracks)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Bulk Edit (3)' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Artist' }))
-    fireEvent.change(screen.getByRole('textbox', { name: 'New artist value for bulk edit' }), { target: { value: 'Shared Artist' } })
-    fireEvent.click(screen.getByRole('button', { name: 'Preview' }))
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Metadata (3)' }))
+    fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'set' } })
+    fireEvent.change(screen.getByRole('textbox', { name: 'Genre bulk value' }), { target: { value: 'Afro House' } })
+    fireEvent.click(screen.getByRole('button', { name: 'Preview changes' }))
 
     expect(await screen.findByText(expected)).toBeInTheDocument()
-    if (preview.changeable_count === 0 && preview.eligible_count > 0) {
-      expect(screen.getByText('No eligible selected Inbox tracks will change; 3 already match the proposed values.')).toBeInTheDocument()
-      expect(screen.queryByText('No selected Inbox tracks need a change.')).not.toBeInTheDocument()
-    }
   })
 
   it('refreshes authoritative preparation state and primary Unsaved count after inline metadata edit', async () => {
@@ -645,13 +651,15 @@ describe('Inbox filtering, selection, and inspector', () => {
     expect(within(inspector).getByText('Yes')).toBeInTheDocument()
   })
 
-  it('rejects an enabled blank bulk field and omits unchecked fields', async () => {
+  it('keeps Title and Artist out of bulk editing while single-track Title remains available', async () => {
     render(<MemoryRouter><Inbox /></MemoryRouter>)
     fireEvent.click(await screen.findByRole('checkbox', { name: 'Select visible page (3 tracks)' }))
-    fireEvent.click(screen.getByRole('button', { name: 'Bulk Edit (3)' }))
-    fireEvent.click(screen.getByRole('checkbox', { name: 'Artist' }))
-    expect(screen.getByRole('alert')).toHaveTextContent('Artist cannot be empty.')
-    expect(screen.getByRole('button', { name: 'Preview' })).toBeDisabled()
+    fireEvent.click(screen.getByRole('button', { name: 'Edit Metadata (3)' }))
+    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument()
+    expect(screen.queryByLabelText('Artist')).not.toBeInTheDocument()
+    expect(screen.getByText('Title, Artist, and Filename stay track-specific and cannot be edited in bulk.')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Preview changes' })).toBeDisabled()
+    expect(screen.getByRole('button', { name: 'Edit Title for track-1.mp3' })).toBeInTheDocument()
     expect(workspaceApi.previewInboxBulkEdit).not.toHaveBeenCalled()
   })
 })

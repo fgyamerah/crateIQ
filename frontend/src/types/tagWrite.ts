@@ -1,4 +1,4 @@
-export type TagWriteAction = 'ADD' | 'REPLACE'
+export type TagWriteAction = 'ADD' | 'REPLACE' | 'CLEAR'
 
 export interface TagWritePlanField {
   field: string
@@ -27,6 +27,7 @@ export interface TagWritePlan {
   blocked_count: number
   additions: number
   replacements: number
+  clears: number
   backup_space_estimate_bytes: number
   writable_fields: string[]
   supported_formats: string[]

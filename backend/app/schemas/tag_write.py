@@ -17,6 +17,7 @@ class TagWritePlanResponse(BaseModel):
     blocked_count: int = 0
     additions: int = 0
     replacements: int = 0
+    clears: int = 0
     backup_space_estimate_bytes: int = 0
     writable_fields: list[str] = Field(default_factory=list)
     supported_formats: list[str] = Field(default_factory=list)

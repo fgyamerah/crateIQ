@@ -29,8 +29,11 @@ vi.mock('../api/workspace', () => ({
 vi.mock('../api/metadataSources', () => ({ fetchMetadataSources: vi.fn() }))
 
 vi.mock('../api/enrichmentReview', () => ({
+  acceptSafeEnrichmentSuggestions: vi.fn(),
   applyEnrichmentSuggestion: vi.fn(),
+  fetchBulkEnrichmentSummary: vi.fn(),
   fetchInboxTrackEnrichmentReview: vi.fn(),
+  keepCurrentBulkEnrichment: vi.fn(),
   updateEnrichmentSuggestion: vi.fn(),
 }))
 
