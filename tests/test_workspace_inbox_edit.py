@@ -736,6 +736,21 @@ def test_bulk_edit_route_rejects_more_than_maximum_selection():
     assert body["detail"][0]["type"] == "too_long"
 
 
+@pytest.mark.parametrize(
+    "payload,error_type",
+    [
+        ({"track_ids": [0], "operations": _set("genre", "Afro House")}, "greater_than"),
+        ({"track_ids": [1], "operations": _set("genre", "Afro House"), "unexpected": True}, "extra_forbidden"),
+        ({"track_ids": [1], "operations": {"genre": {"operation": "set", "value": "Afro House", "unexpected": True}}}, "extra_forbidden"),
+        ({"track_ids": [1], "operations": {"genre": {"operation": "merge", "value": "Afro House"}}}, "literal_error"),
+    ],
+)
+def test_bulk_edit_route_rejects_invalid_request_shapes(payload, error_type):
+    status, body = _api_request("POST", "/api/workspace/inbox/bulk-edit/preview", payload)
+    assert status == 422
+    assert body["detail"][0]["type"] == error_type
+
+
 # ---------------------------------------------------------------------------
 # Manual-edit precedence regression (section 9)
 # ---------------------------------------------------------------------------

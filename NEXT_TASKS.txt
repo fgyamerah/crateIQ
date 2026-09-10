@@ -104,7 +104,10 @@ P2 / MEDIUM
     with explicit operations and preview/confirmation; reject Artist, Title,
     Filename, unsupported fields, and malformed operations server-side. Apply
     through the existing backup/write/re-read/verify tag writer with per-track
-    outcomes. Single-track Title editing remains supported.
+    outcomes. Single-track Title editing remains supported. Browser verification
+    passed; safe-accept mutation and unsupported/partial-failure outcomes were
+    not available in the live fixture and remain covered by focused automated
+    tests alongside Comment Append and mixed-value behavior.
 
 [ ] Ratings + Favorites phase — design the selected-track Inbox experience on
     top of the existing DB-only `track_reviews` rating/favorite model. Keep it

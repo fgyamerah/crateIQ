@@ -1,6 +1,6 @@
 from __future__ import annotations
 from typing import Literal
-from pydantic import BaseModel, Field, PositiveInt
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
 Decision = Literal['pending', 'applied', 'ignored', 'review_later']
 
@@ -39,6 +39,8 @@ class ApplyResult(BaseModel):
     review: ReviewResponse
 
 class BulkReviewRequest(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+
     track_ids: list[PositiveInt] = Field(min_length=1, max_length=200)
 
 class BulkReviewActionRequest(BulkReviewRequest):

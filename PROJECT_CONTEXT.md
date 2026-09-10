@@ -773,6 +773,12 @@ surface comprises the three `POST /api/workspace/inbox/enrichment-review/`
 `summary`, `accept-safe`, and `keep-current` endpoints, plus the existing single-track
 `GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` projection.
 
+The phase passed browser verification at desktop, tablet, and narrow widths.
+The live fixture contained no safe suggestions, so Accept Safe mutation was not
+performed manually; unsupported and partial-failure live outcomes were also not
+forced. Focused automated tests cover those paths, Comment Append, and true
+mixed-value presentation.
+
 The existing Save to File dialog still uses `tag_write_service` plan/apply with
 50-track request chunking, exact diffs, managed-copy confirmation, stale-plan
 rejection, and verified per-track outcomes. Ratings and Favorites remain the

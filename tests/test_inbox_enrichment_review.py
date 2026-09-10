@@ -473,6 +473,22 @@ def test_bulk_summary_and_confirmation_are_enforced_by_production_routes(env):
         assert "confirm=true" in body["detail"]
 
 
+@pytest.mark.parametrize(
+    "payload,error_type",
+    [
+        ({"track_ids": [0]}, "greater_than"),
+        ({"track_ids": list(range(1, 202))}, "too_long"),
+        ({"track_ids": [1], "unexpected": True}, "extra_forbidden"),
+    ],
+)
+def test_bulk_summary_route_rejects_invalid_request_shapes(payload, error_type):
+    status, body = _api_request(
+        "POST", "/api/workspace/inbox/enrichment-review/summary", payload,
+    )
+    assert status == 422
+    assert body["detail"][0]["type"] == error_type
+
+
 def test_bulk_high_confidence_identity_addition_stays_in_single_track_review(env):
     track_id = _seed(env, filename="identity.mp3", artist=None, title="Title", genre="House")
     _queue_review(

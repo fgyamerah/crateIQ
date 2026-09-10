@@ -29,6 +29,8 @@ describe('BulkMetadataEditor', () => {
     expect(screen.getAllByText('Current: Mixed')).toHaveLength(3)
     expect(screen.queryByLabelText('Title')).not.toBeInTheDocument()
     expect(screen.queryByLabelText('Artist')).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: 'Genre bulk value' })).toHaveAttribute('id', 'bulk-genre-value')
+    expect(screen.getByRole('textbox', { name: 'Genre bulk value' })).toHaveAttribute('name', 'bulk-genre-value')
     fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'set' } })
     expect(screen.getByText('Enter a value to use set.')).toBeInTheDocument()
     expect(screen.getByLabelText('Genre')).toHaveAttribute('aria-describedby', 'bulk-genre-current')

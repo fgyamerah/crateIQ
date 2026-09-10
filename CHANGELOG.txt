@@ -17,6 +17,11 @@ CRATEIQ — CHANGELOG
   Label. Bulk apply scopes that writer to only the previewed bulk fields,
   retains backup -> write -> re-read -> verify behavior, and reports per-track
   partial failures without stopping independent tracks.
+- Browser verification passed across desktop, tablet, and narrow layouts. The
+  test library had no safe suggestions, so safe-accept mutation was verified by
+  automated coverage; automated tests also cover Comment Append, mixed values,
+  unsupported tracks, and partial failures. Added stable identifiers to the new
+  bulk value inputs after reviewing the browser's form-control warning.
 - Files affected: workspace/enrichment/tag-write services and schemas, track
   model/schema, Inbox bulk UI and API types, focused tests, and current docs.
   Migration notes: existing indexes gain nullable `comment` and `label`

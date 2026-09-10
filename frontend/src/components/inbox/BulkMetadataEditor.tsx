@@ -149,6 +149,8 @@ export default function BulkMetadataEditor({ trackIds, tracks, onApplied, onClos
                 {field.operations.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
               </select>
               <input
+                id={`bulk-${field.id}-value`}
+                name={`bulk-${field.id}-value`}
                 className="form-input"
                 type="text"
                 value={operation.value ?? ''}
