@@ -30,9 +30,10 @@ from typing import Dict, List, Literal, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, PositiveInt
 
 from ...core.library_root import selected_library_root
+from ...schemas.enrichment_review import BulkReviewActionRequest, BulkReviewRequest, BulkReviewSummary
 from ...schemas.track import TrackSummary
 from ...services import (
     enrichment_review_service,
@@ -122,12 +123,18 @@ class InboxTrackEditRequest(BaseModel):
     album: Optional[str] = Field(default=None, max_length=200)
 
 
+class InboxBulkMetadataOperation(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    operation: Literal["leave", "set", "append", "clear"]
+    value: Optional[str] = Field(default=None, max_length=1000)
+
+
 class InboxBulkEditRequest(BaseModel):
-    track_ids: List[int] = Field(min_length=1, max_length=200)
-    artist: Optional[str] = Field(default=None, max_length=200)
-    title: Optional[str] = Field(default=None, max_length=200)
-    genre: Optional[str] = Field(default=None, max_length=200)
-    album: Optional[str] = Field(default=None, max_length=200)
+    model_config = ConfigDict(extra="forbid")
+
+    track_ids: List[PositiveInt] = Field(min_length=1, max_length=200)
+    operations: Dict[str, InboxBulkMetadataOperation] = Field(min_length=1, max_length=3)
 
 
 class InboxBulkEditApplyRequest(InboxBulkEditRequest):
@@ -247,6 +254,35 @@ async def inspect_inbox_track_enrichment_review(track_id: int):
     return await run_in_threadpool(enrichment_review_service.get_track_review, track_id)
 
 
+@router.post("/workspace/inbox/enrichment-review/summary", response_model=BulkReviewSummary)
+async def summarize_inbox_enrichment_review(body: BulkReviewRequest) -> BulkReviewSummary:
+    try:
+        result = await run_in_threadpool(enrichment_review_service.bulk_review_summary, body.track_ids)
+        return BulkReviewSummary(**result)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/inbox/enrichment-review/accept-safe")
+async def accept_safe_inbox_enrichment(body: BulkReviewActionRequest):
+    try:
+        return await run_in_threadpool(
+            enrichment_review_service.bulk_accept_safe, body.track_ids, confirm=body.confirm,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
+@router.post("/workspace/inbox/enrichment-review/keep-current")
+async def keep_current_inbox_enrichment(body: BulkReviewActionRequest):
+    try:
+        return await run_in_threadpool(
+            enrichment_review_service.bulk_keep_current, body.track_ids, confirm=body.confirm,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc))
+
+
 @router.patch("/workspace/inbox/tracks/{track_id}")
 async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
     """
@@ -284,11 +320,12 @@ async def edit_inbox_track(track_id: int, body: InboxTrackEditRequest):
 
 @router.post("/workspace/inbox/bulk-edit/preview")
 async def preview_inbox_bulk_edit(body: InboxBulkEditRequest):
-    """Read-only: preview a bulk Artist/Title/Genre/Album edit before it is applied."""
+    """Preview explicit shared metadata operations and write capability."""
     try:
-        return workspace_service.bulk_edit_preview(
-            _root(), body.track_ids, artist=body.artist, title=body.title,
-            genre=body.genre, album=body.album,
+        return await run_in_threadpool(
+            workspace_service.bulk_edit_preview,
+            _root(), body.track_ids,
+            operations={field: item.model_dump() for field, item in body.operations.items()},
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))
@@ -299,9 +336,11 @@ async def apply_inbox_bulk_edit(body: InboxBulkEditApplyRequest):
     if not body.confirm:
         raise HTTPException(status_code=422, detail="Bulk edit requires confirm=true after reviewing the preview.")
     try:
-        return workspace_service.bulk_edit_apply(
-            _root(), body.track_ids, artist=body.artist, title=body.title,
-            genre=body.genre, album=body.album, confirm=True,
+        return await run_in_threadpool(
+            workspace_service.bulk_edit_apply,
+            _root(), body.track_ids,
+            operations={field: item.model_dump() for field, item in body.operations.items()},
+            confirm=True,
         )
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc))

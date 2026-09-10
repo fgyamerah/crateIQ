@@ -25,6 +25,8 @@ CREATE TABLE IF NOT EXISTS tracks (
     title TEXT,
     album TEXT,
     genre TEXT,
+    comment TEXT,
+    label TEXT,
     bpm REAL,
     key_musical TEXT,
     key_camelot TEXT,
@@ -104,6 +106,19 @@ def ensure_storage_zone_column(root: Path) -> None:
                 raise
 
 
+def ensure_editable_metadata_columns(root: Path) -> None:
+    """Add the optional Comment and Label fields to older local indexes."""
+    ensure_storage_zone_column(root)
+    db_path = _db_path(root)
+    if not db_path.is_file():
+        return
+    with sqlite3.connect(db_path) as conn:
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
+        for name in ("comment", "label"):
+            if name not in columns:
+                conn.execute(f"ALTER TABLE tracks ADD COLUMN {name} TEXT")
+
+
 def library_status(library_root: str | None = None) -> dict[str, Any]:
     root = _target_root(library_root)
     db_path = _db_path(root)
@@ -124,7 +139,7 @@ def initialize_library(library_root: str | None = None) -> dict[str, Any]:
     db_path = _db_path(root)
     with sqlite3.connect(db_path) as conn:
         conn.executescript(_TRACKS_SCHEMA)
-    ensure_storage_zone_column(root)
+    ensure_editable_metadata_columns(root)
     return {
         "library_root": redact_path(root),
         "initialized": True,
@@ -232,17 +247,30 @@ def _embedded_tags(path: Path) -> dict[str, str]:
         if audio is None:
             return {}
         get = lambda key: (audio.get(key) or [''])[0].strip()
-        return {
+        result = {
             "artist": get("artist"),
             "title": get("title"),
             "album": get("album"),
             "genre": get("genre"),
+            "comment": get("comment"),
+            "label": get("organization"),
         }
+        if path.suffix.lower() == ".mp3" and not result["comment"]:
+            full = MFile(str(path))
+            if full is not None and full.tags is not None:
+                for key in full.tags.keys():
+                    if key.startswith("COMM") and getattr(full.tags[key], "text", None):
+                        result["comment"] = str(full.tags[key].text[0]).strip()
+                        break
+        return result
     except Exception:
         return {}
 
 
-def _track_metadata(path: Path) -> tuple[str | None, str | None, str | None, str | None, str, bool]:
+def _track_metadata(path: Path) -> tuple[
+    str | None, str | None, str | None, str | None,
+    str | None, str | None, str, bool,
+]:
     """
     Resolve artist/title/album/genre for a discovered file.
 
@@ -255,16 +283,18 @@ def _track_metadata(path: Path) -> tuple[str | None, str | None, str | None, str
     embedded_title = tags.get("title") or None
     album = tags.get("album") or None
     genre = tags.get("genre") or None
+    comment = tags.get("comment") or None
+    label = tags.get("label") or None
 
     if embedded_artist and embedded_title:
-        return embedded_artist, embedded_title, album, genre, "HIGH", True
+        return embedded_artist, embedded_title, album, genre, comment, label, "HIGH", True
 
     fallback_artist, fallback_title, fallback_confidence = _filename_metadata(path)
     artist = embedded_artist or fallback_artist
     title = embedded_title or fallback_title
     confidence = "MEDIUM" if (embedded_artist or embedded_title) else fallback_confidence
-    tags_present = bool(embedded_artist or embedded_title or album or genre)
-    return artist, title, album, genre, confidence, tags_present
+    tags_present = bool(embedded_artist or embedded_title or album or genre or comment or label)
+    return artist, title, album, genre, comment, label, confidence, tags_present
 
 
 def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
@@ -283,20 +313,21 @@ def import_previewed_library(library_root: str | None = None) -> dict[str, Any]:
         tags_read_count = 0
         for path in scan["track_paths"]:
             safe_path = assert_path_under_root(path, root)
-            artist, title, album, genre, confidence, tags_present = _track_metadata(safe_path)
+            artist, title, album, genre, comment, label, confidence, tags_present = _track_metadata(safe_path)
             if tags_present:
                 tags_read_count += 1
             if str(safe_path) not in existing_paths:
                 imported_count += 1
             conn.execute(
                 """
-                INSERT INTO tracks (filepath, filename, artist, title, album, genre, filesize_bytes, status, processed_at, pipeline_ver, parse_confidence)
-                VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'library-import-v1', ?)
+                INSERT INTO tracks (filepath, filename, artist, title, album, genre, comment, label, filesize_bytes, status, processed_at, pipeline_ver, parse_confidence)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending', ?, 'library-import-v1', ?)
                 ON CONFLICT(filepath) DO UPDATE SET
                     filename = excluded.filename,
                     filesize_bytes = excluded.filesize_bytes
                 """,
-                (str(safe_path), safe_path.name, artist, title, album, genre, safe_path.stat().st_size, now, confidence),
+                (str(safe_path), safe_path.name, artist, title, album, genre, comment, label,
+                 safe_path.stat().st_size, now, confidence),
             )
         total_indexed_count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
     scan.pop("track_paths")

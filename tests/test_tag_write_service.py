@@ -21,6 +21,7 @@ import pytest
 
 from backend.app.core import db as backend_db
 from backend.app.services import tag_write_service as svc
+from backend.app.services import field_provenance_service
 
 pytestmark = pytest.mark.skipif(shutil.which("ffmpeg") is None, reason="ffmpeg not available")
 
@@ -63,18 +64,18 @@ def env(tmp_path, monkeypatch):
     conn = sqlite3.connect(db_path)
     conn.execute(
         "CREATE TABLE tracks (id INTEGER PRIMARY KEY AUTOINCREMENT, filepath TEXT NOT NULL UNIQUE, "
-        "filename TEXT NOT NULL, artist TEXT, title TEXT, album TEXT, genre TEXT)"
+        "filename TEXT NOT NULL, artist TEXT, title TEXT, album TEXT, genre TEXT, comment TEXT, label TEXT)"
     )
     conn.commit()
     conn.close()
     return root
 
 
-def _insert_track(root: Path, *, filepath: Path, artist=None, title=None, album=None, genre=None) -> int:
+def _insert_track(root: Path, *, filepath: Path, artist=None, title=None, album=None, genre=None, comment=None, label=None) -> int:
     with sqlite3.connect(root / "logs" / "processed.db") as conn:
         cursor = conn.execute(
-            "INSERT INTO tracks (filepath, filename, artist, title, album, genre) VALUES (?, ?, ?, ?, ?, ?)",
-            (str(filepath), filepath.name, artist, title, album, genre),
+            "INSERT INTO tracks (filepath, filename, artist, title, album, genre, comment, label) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            (str(filepath), filepath.name, artist, title, album, genre, comment, label),
         )
         return cursor.lastrowid
 
@@ -192,6 +193,71 @@ def test_apply_writes_only_approved_fields_preserves_unrelated_tags_and_audio(en
     assert backup_path.is_file()
     assert backup_path.read_bytes() == original_backup_source_bytes, "backup must be byte-for-byte the pre-write file"
     assert svc._sha256(backup_path) == manifest["original_sha256"]
+
+
+def test_scoped_plan_and_apply_never_write_pending_fields_outside_scope(env):
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    _write_tags(path, title="File Title", genre="Dance")
+    track_id = _insert_track(root, filepath=path, title="Working Title", genre="Afro House")
+
+    plan = svc.build_plan([track_id], allowed_fields={"genre"})
+    item = plan["items"][0]
+    assert plan["writable_fields"] == ["genre"]
+    assert [field["field"] for field in item["fields"]] == ["genre"]
+    expected = {track_id: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+
+    result = svc.apply_plan([track_id], expected, confirm=True, allowed_fields={"genre"})
+
+    assert result["applied"] == 1
+    written = _read_tags(path)
+    assert written["genre"] == "Afro House"
+    assert written["title"] == "File Title"
+
+
+def test_apply_writes_comment_and_label_through_existing_verified_path(env):
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    track_id = _insert_track(root, filepath=path, comment="Warm-up", label="Soulistic")
+
+    plan = svc.build_plan([track_id])
+    item = plan["items"][0]
+    fields = {field["field"]: field for field in item["fields"]}
+    assert fields["comment"]["action"] == "ADD"
+    assert fields["label"]["action"] == "ADD"
+    expected = {track_id: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+
+    result = svc.apply_plan([track_id], expected, confirm=True)
+
+    assert result["applied"] == 1
+    written = svc._read_file_tags(path)
+    assert written["comment"] == "Warm-up"
+    assert written["label"] == "Soulistic"
+    assert svc.get_operation(result["operation_id"])["backup_manifest"], "verified writes must retain a backup"
+
+
+def test_explicit_user_clear_removes_comment_and_label(env):
+    root = env
+    path = root / "library" / "track.mp3"
+    _make_audio(path)
+    svc._write_easy_tags(path, {"comment": "Old note", "label": "Old Label"})
+    track_id = _insert_track(root, filepath=path, comment=None, label=None)
+    field_provenance_service.record(track_id, "comment", None, origin="user", source="bulk_edit", reason="clear")
+    field_provenance_service.record(track_id, "label", None, origin="user", source="bulk_edit", reason="clear")
+
+    plan = svc.build_plan([track_id])
+    item = plan["items"][0]
+    assert plan["clears"] == 2
+    assert {field["action"] for field in item["fields"]} == {"CLEAR"}
+    expected = {track_id: {"expected_size": item["expected_size"], "expected_mtime_ns": item["expected_mtime_ns"]}}
+
+    result = svc.apply_plan([track_id], expected, confirm=True)
+
+    assert result["applied"] == 1
+    assert svc._read_file_tags(path)["comment"] == ""
+    assert svc._read_file_tags(path)["label"] == ""
 
 
 def test_apply_blocks_stale_file_changed_since_preview(env):

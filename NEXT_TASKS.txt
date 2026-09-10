@@ -98,6 +98,23 @@ P2 / MEDIUM
     state. Needs Review merge/demotion, Process All demotion, full mobile
     redesign, and the final focused Impeccable pass remain deferred.
 
+[x] Bulk Enrichment Review + Multi-track Metadata Editing — add selected-track
+    HIGH-confidence safe-accept triage, Keep Current, and an Inspector-backed
+    exception queue. Narrow multi-track metadata to Genre, Comment, and Label
+    with explicit operations and preview/confirmation; reject Artist, Title,
+    Filename, unsupported fields, and malformed operations server-side. Apply
+    through the existing backup/write/re-read/verify tag writer with per-track
+    outcomes. Single-track Title editing remains supported. Browser verification
+    passed; safe-accept mutation and unsupported/partial-failure outcomes were
+    not available in the live fixture and remain covered by focused automated
+    tests alongside Comment Append and mixed-value behavior.
+
+[ ] Ratings + Favorites phase — design the selected-track Inbox experience on
+    top of the existing DB-only `track_reviews` rating/favorite model. Keep it
+    separate from file-tag metadata writes, preserve per-track review history,
+    and define explicit set/clear semantics and preview counts before adding
+    bulk actions.
+
 [ ] Next Inbox checkpoint — planning-only merge/demote of Needs Review (and
     Enrichment Review) specialist navigation into Inbox now that normal review
     is available in the Inspector, preserving specialist capabilities that

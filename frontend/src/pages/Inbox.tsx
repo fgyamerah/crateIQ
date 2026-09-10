@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router-dom'
-import { ChevronRight, FileCheck2, FolderInput, Inbox as InboxIcon, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
+import { ChevronRight, FileCheck2, FolderInput, Inbox as InboxIcon, ListChecks, Loader2, Pencil, RefreshCw, ShieldCheck, Sparkles, Upload, Wand2 } from 'lucide-react'
 import { ApiError } from '../api/client'
 import {
-  applyInboxBulkEdit,
   applyPromotion,
   cancelPrepareOperation,
   cleanSelected,
@@ -15,12 +14,11 @@ import {
   fetchWorkspaceStatus,
   importToInbox,
   patchInboxTrack,
-  previewInboxBulkEdit,
   previewPromotion,
   startProcessAll,
 } from '../api/workspace'
 import type {
-  InboxBulkEditApplyResult, InboxBulkEditPreview, InboxSortKey, InboxTrackMetadataEditResult, InboxTrackPage,
+  InboxSortKey, InboxTrackMetadataEditResult, InboxTrackPage,
   PreparationOperation, PreparePreflight, PromotionPreview, SortOrder,
   WorkspaceImportResult, WorkspaceStatus,
 } from '../api/workspace'
@@ -38,6 +36,10 @@ import EditableMetadataCell from '../components/inbox/EditableMetadataCell'
 import { useInboxSelection } from '../hooks/useInboxSelection'
 import SaveToFileDialog from '../components/inbox/SaveToFileDialog'
 import EnrichmentSourceDialog from '../components/inbox/EnrichmentSourceDialog'
+import BulkEnrichmentReview from '../components/inbox/BulkEnrichmentReview'
+import BulkMetadataEditor from '../components/inbox/BulkMetadataEditor'
+import type { BulkEnrichmentSummary } from '../types/enrichmentReview'
+import { fetchBulkEnrichmentSummary } from '../api/enrichmentReview'
 
 function messageFor(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.displayMessage
@@ -46,6 +48,7 @@ function messageFor(error: unknown, fallback: string) {
 }
 
 const POLL_INTERVAL_MS = 1500
+const BULK_SELECTION_LIMIT = 200
 
 interface SortState {
   key: InboxSortKey
@@ -117,27 +120,22 @@ export default function Inbox() {
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const loadRequestRef = useRef(0)
   const inspectorTriggerRef = useRef<HTMLElement | null>(null)
+  const bulkPanelRef = useRef<HTMLDivElement | null>(null)
 
   const visibleIds = useMemo(() => tracks?.items.map((track) => track.id) ?? [], [tracks])
   const availableIds = useMemo(() => tracks?.available_track_ids ?? null, [tracks])
   const selection = useInboxSelection(visibleIds, availableIds)
   const { selectedIds, selectedCount, visibleSelectedCount, hiddenSelectedCount } = selection
+  const selectedTrackIds = useMemo(() => Array.from(selectedIds), [selectedIds])
   const inspectedParam = searchParams.get('track')
   const inspectedId = inspectedParam && /^\d+$/.test(inspectedParam) ? Number(inspectedParam) : null
 
-  // Bulk edit
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
-  const [bulkFieldsState, setBulkFieldsState] = useState<Record<InboxEditableMetadataField, { enabled: boolean; value: string }>>({
-    artist: { enabled: false, value: '' },
-    title: { enabled: false, value: '' },
-    genre: { enabled: false, value: '' },
-    album: { enabled: false, value: '' },
-  })
-  const [bulkPreview, setBulkPreview] = useState<InboxBulkEditPreview | null>(null)
-  const [bulkPreviewing, setBulkPreviewing] = useState(false)
-  const [bulkConfirming, setBulkConfirming] = useState(false)
-  const [bulkApplying, setBulkApplying] = useState(false)
-  const [bulkResult, setBulkResult] = useState<InboxBulkEditApplyResult | null>(null)
+  const [bulkReviewOpen, setBulkReviewOpen] = useState(false)
+  const [bulkReviewRefreshKey, setBulkReviewRefreshKey] = useState(0)
+  const [exceptionTrackIds, setExceptionTrackIds] = useState<number[]>([])
+  const [inspectorInitialTab, setInspectorInitialTab] = useState<'status' | 'review'>('status')
+  const bulkSelectionTooLarge = selectedCount > BULK_SELECTION_LIMIT
 
   const load = useCallback(async () => {
     const requestId = ++loadRequestRef.current
@@ -183,7 +181,18 @@ export default function Inbox() {
 
   useEffect(() => { void load() }, [load])
   useEffect(() => () => { if (pollRef.current) clearTimeout(pollRef.current) }, [])
-  useEffect(() => { if (selectedCount === 0) setBulkEditOpen(false) }, [selectedCount])
+  useEffect(() => {
+    if (selectedCount === 0 || bulkSelectionTooLarge) {
+      setBulkEditOpen(false)
+      setBulkReviewOpen(false)
+      setExceptionTrackIds([])
+    }
+  }, [bulkSelectionTooLarge, selectedCount])
+  useEffect(() => {
+    if (!bulkEditOpen && !bulkReviewOpen) return
+    const timer = window.setTimeout(() => bulkPanelRef.current?.scrollIntoView?.({ block: 'nearest' }), 0)
+    return () => window.clearTimeout(timer)
+  }, [bulkEditOpen, bulkReviewOpen])
   useEffect(() => {
     const timer = window.setTimeout(() => {
       setSearch(searchDraft.trim())
@@ -199,11 +208,14 @@ export default function Inbox() {
       return next
     })
     setInspectedTrack(null)
+    setExceptionTrackIds([])
     window.setTimeout(() => inspectorTriggerRef.current?.focus(), 0)
   }, [setSearchParams])
 
   const openInspector = useCallback((track: TrackSummary, trigger: HTMLElement) => {
     inspectorTriggerRef.current = trigger
+    setInspectorInitialTab('status')
+    setExceptionTrackIds([])
     setInspectedTrack(track)
     setSearchParams((current) => {
       const next = new URLSearchParams(current)
@@ -317,7 +329,7 @@ export default function Inbox() {
     setBatchBusy('clean')
     setError(null)
     try {
-      await cleanSelected(Array.from(selectedIds))
+      await cleanSelected(selectedTrackIds)
       await load()
     } catch (err) {
       setError(messageFor(err, 'Clean Selected failed.'))
@@ -337,7 +349,7 @@ export default function Inbox() {
     setBatchBusy('enrich')
     setError(null)
     try {
-      await enrichSelected(Array.from(selectedIds), sourceIds)
+      await enrichSelected(selectedTrackIds, sourceIds)
       await load()
     } catch (err) {
       setError(messageFor(err, 'Enrich Selected failed.'))
@@ -423,86 +435,61 @@ export default function Inbox() {
     setOffset(0)
   }
 
-  const bulkFields = Object.fromEntries(
-    (Object.entries(bulkFieldsState) as Array<[InboxEditableMetadataField, { enabled: boolean; value: string }]> )
-      .filter(([, state]) => state.enabled && state.value.normalize('NFC').trim().length > 0)
-      .map(([field, state]) => [field, state.value.normalize('NFC').trim()]),
-  ) as Partial<Record<InboxEditableMetadataField, string>>
-  const bulkFieldErrors = Object.fromEntries(
-    (Object.entries(bulkFieldsState) as Array<[InboxEditableMetadataField, { enabled: boolean; value: string }]> )
-      .filter(([, state]) => state.enabled)
-      .map(([field, state]) => {
-        const value = state.value.normalize('NFC').trim()
-        const label = field[0].toUpperCase() + field.slice(1)
-        const error = !value
-          ? `${label} cannot be empty.`
-          : value.length > 200
-            ? `${label} is too long (max 200 characters).`
-            : /[\u0000-\u001f]/.test(value)
-              ? `${label} contains an unsafe control character.`
-              : null
-        return [field, error]
-      }),
-  ) as Partial<Record<InboxEditableMetadataField, string | null>>
-  const bulkEnabledCount = Object.values(bulkFieldsState).filter((state) => state.enabled).length
-  const bulkFieldsValid = bulkEnabledCount > 0 && Object.values(bulkFieldErrors).every((error) => !error)
-
-  const resetBulkResults = () => { setBulkPreview(null); setBulkResult(null); setBulkConfirming(false) }
-
-  const doBulkPreview = async () => {
-    if (!bulkFieldsValid || !selectedCount) return
-    setBulkPreviewing(true)
-    setError(null)
-    try {
-      const result = await previewInboxBulkEdit(Array.from(selectedIds), bulkFields)
-      setBulkPreview(result)
-      setBulkResult(null)
-    } catch (err) {
-      setError(messageFor(err, 'Bulk edit preview failed.'))
-    } finally {
-      setBulkPreviewing(false)
-    }
-  }
-
-  const doBulkApply = async () => {
-    if (!bulkFieldsValid || !selectedCount) return
-    setBulkApplying(true)
-    setError(null)
-    try {
-      const result = await applyInboxBulkEdit(Array.from(selectedIds), bulkFields)
-      setBulkResult(result)
-      setBulkConfirming(false)
-      await fetchCurrentInboxData()
-    } catch (err) {
-      setError(messageFor(err, 'Bulk edit apply failed.'))
-    } finally {
-      setBulkApplying(false)
-    }
-  }
-
   const readyCount = preview?.ready_count ?? 0
   const blockedCount = preview?.blocked_count ?? 0
-  const saveSelectionKnown = Array.from(selectedIds).every((trackId) => Boolean(knownTracks[trackId]?.preparation_state))
-  const selectedUnsavedWritableCount = Array.from(selectedIds).filter((trackId) => {
+  const saveSelectionKnown = selectedTrackIds.every((trackId) => Boolean(knownTracks[trackId]?.preparation_state))
+  const selectedUnsavedWritableCount = selectedTrackIds.filter((trackId) => {
     const preparation = knownTracks[trackId]?.preparation_state
     return Boolean(preparation?.write.has_unsaved_changes && !preparation.write.blocked)
   }).length
   const saveToFileLabel = saveSelectionKnown ? `Save to File (${selectedUnsavedWritableCount})` : 'Save to File'
   const isProcessing = operation?.status === 'running'
-  const inspectedVisibleIndex = inspectedId === null ? -1 : visibleIds.indexOf(inspectedId)
-  const previousVisibleTrack = inspectedVisibleIndex > 0 ? tracks?.items[inspectedVisibleIndex - 1] : undefined
-  const nextVisibleTrack = inspectedVisibleIndex >= 0 && inspectedVisibleIndex < visibleIds.length - 1
-    ? tracks?.items[inspectedVisibleIndex + 1]
-    : undefined
-  const navigateInspector = (track: TrackSummary) => {
-    setInspectedTrack(track)
-    setSearchParams((current) => {
-      const next = new URLSearchParams(current)
-      next.set('track', String(track.id))
-      return next
-    })
+  const openInspectorById = async (trackId: number) => {
+    try {
+      const track = knownTracks[trackId] ?? await fetchInboxTrackInspection(trackId)
+      setInspectedTrack(track)
+      setSearchParams((current) => {
+        const next = new URLSearchParams(current)
+        next.set('track', String(trackId))
+        return next
+      })
+    } catch (err) {
+      setError(messageFor(err, 'Could not open the selected review exception.'))
+    }
   }
-
+  const openExceptionReview = (trackIds: number[]) => {
+    if (!trackIds.length) return
+    inspectorTriggerRef.current = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    setExceptionTrackIds(trackIds)
+    setInspectorInitialTab('review')
+    void openInspectorById(trackIds[0])
+  }
+  const afterBulkReview = async (summary: BulkEnrichmentSummary) => {
+    setExceptionTrackIds(summary.rows.filter((row) => row.review_state === 'exception').map((row) => row.track_id))
+    setBulkReviewRefreshKey((value) => value + 1)
+    await fetchCurrentInboxData()
+  }
+  const afterInspectorReviewDecision = async () => {
+    await fetchCurrentInboxData()
+    if (!exceptionTrackIds.length) return
+    try {
+      const summary = await fetchBulkEnrichmentSummary(selectedTrackIds)
+      const remaining = summary.rows.filter((row) => row.review_state === 'exception').map((row) => row.track_id)
+      setExceptionTrackIds(remaining)
+      setBulkReviewRefreshKey((value) => value + 1)
+      if (inspectedId !== null && !remaining.includes(inspectedId) && remaining.length) {
+        await openInspectorById(remaining[0])
+      }
+    } catch (err) {
+      setError(messageFor(err, 'Could not refresh the exception queue.'))
+    }
+  }
+  const inspectorQueueIds = exceptionTrackIds.length ? exceptionTrackIds : visibleIds
+  const inspectedQueueIndex = inspectedId === null ? -1 : inspectorQueueIds.indexOf(inspectedId)
+  const previousInspectorId = inspectedQueueIndex > 0 ? inspectorQueueIds[inspectedQueueIndex - 1] : undefined
+  const nextInspectorId = inspectedQueueIndex >= 0 && inspectedQueueIndex < inspectorQueueIds.length - 1
+    ? inspectorQueueIds[inspectedQueueIndex + 1]
+    : undefined
   return (
     <main className="page inbox-page">
       <PageHeader
@@ -634,6 +621,7 @@ export default function Inbox() {
             selectedCount={selectedCount}
             visibleSelectedCount={visibleSelectedCount}
             hiddenSelectedCount={hiddenSelectedCount}
+            bulkLimit={BULK_SELECTION_LIMIT}
             onClear={selection.clear}
             onClearHidden={selection.clearHidden}
           />
@@ -648,7 +636,7 @@ export default function Inbox() {
             />
           ) : (
             <>
-              <div className="settings-actions">
+              <div className={`settings-actions inbox-bulk-action-bar${selectedCount ? ' is-active' : ''}`}>
                 <button className="btn btn--ghost btn--sm" disabled={!selectedCount || batchBusy !== null} onClick={() => void doCleanSelected()}>
                   {batchBusy === 'clean' ? 'Cleaning…' : `Clean Selected (${selectedCount})`}
                 </button>
@@ -657,16 +645,26 @@ export default function Inbox() {
                 </button>
                 <button
                   className="btn btn--ghost btn--sm"
-                  disabled={!selectedCount}
-                  onClick={() => setBulkEditOpen((open) => !open)}
+                  disabled={!selectedCount || bulkSelectionTooLarge}
+                  title={bulkSelectionTooLarge ? `Bulk Review supports at most ${BULK_SELECTION_LIMIT} tracks.` : undefined}
+                  onClick={() => { setBulkReviewOpen((open) => !open); setBulkEditOpen(false) }}
+                  aria-expanded={bulkReviewOpen}
+                >
+                  <ListChecks size={14} /> Bulk Review ({selectedCount})
+                </button>
+                <button
+                  className="btn btn--ghost btn--sm"
+                  disabled={!selectedCount || bulkSelectionTooLarge}
+                  title={bulkSelectionTooLarge ? `Edit Metadata supports at most ${BULK_SELECTION_LIMIT} tracks.` : undefined}
+                  onClick={() => { setBulkEditOpen((open) => !open); setBulkReviewOpen(false) }}
                   aria-expanded={bulkEditOpen}
                 >
-                  <Pencil size={14} /> Bulk Edit ({selectedCount})
+                  <Pencil size={14} /> Edit Metadata ({selectedCount})
                 </button>
                 <button
                   className="btn btn--primary btn--sm"
                   disabled={!selectedCount || (saveSelectionKnown && selectedUnsavedWritableCount === 0) || batchBusy !== null}
-                  onClick={() => setSaveTrackIds(Array.from(selectedIds))}
+                  onClick={() => setSaveTrackIds(selectedTrackIds)}
                   title={selectedCount && saveSelectionKnown && selectedUnsavedWritableCount === 0 ? 'No selected tracks have current unsaved writable metadata.' : undefined}
                 >
                   <FileCheck2 size={14} /> {saveToFileLabel}
@@ -674,132 +672,31 @@ export default function Inbox() {
                 <Link className="btn btn--ghost btn--sm" to="/needs-review">Open Needs Review</Link>
               </div>
 
-              {bulkEditOpen && (
-                <div className="card settings-card inbox-bulk-edit">
-                  <h2 className="card-title"><Pencil size={16} /> Bulk Edit — {selectedCount} selected track{selectedCount === 1 ? '' : 's'}</h2>
-                  <p className="muted inbox-bulk-edit-note">Changes apply to CrateIQ working metadata only. File tags are not changed.</p>
-                  <div className="inbox-bulk-edit-fields">
-                    {(['artist', 'title', 'genre', 'album'] as InboxEditableMetadataField[]).map((field) => {
-                      const fieldState = bulkFieldsState[field]
-                      const label = field[0].toUpperCase() + field.slice(1)
-                      const fieldError = bulkFieldErrors[field]
-                      return (
-                        <div className="inbox-bulk-edit-field" key={field}>
-                          <label className="inbox-bulk-edit-toggle">
-                            <input
-                              type="checkbox"
-                              checked={fieldState.enabled}
-                              onChange={(event) => {
-                                setBulkFieldsState((current) => ({ ...current, [field]: { ...current[field], enabled: event.target.checked } }))
-                                resetBulkResults()
-                              }}
-                            />
-                            <span>{label}</span>
-                          </label>
-                          <input
-                            className="form-input"
-                            type="text"
-                            value={fieldState.value}
-                            disabled={!fieldState.enabled || bulkApplying || bulkConfirming}
-                            maxLength={200}
-                            onChange={(event) => {
-                              setBulkFieldsState((current) => ({ ...current, [field]: { ...current[field], value: event.target.value } }))
-                              resetBulkResults()
-                            }}
-                            placeholder={`New ${field.toLowerCase()}`}
-                            aria-label={`New ${field} value for bulk edit`}
-                            aria-invalid={Boolean(fieldError)}
-                            aria-describedby={fieldError ? `bulk-${field}-error` : undefined}
-                          />
-                          {fieldError && <span id={`bulk-${field}-error`} className="inbox-cell-error" role="alert">{fieldError}</span>}
-                        </div>
-                      )
-                    })}
-                  </div>
-                  <div className="settings-actions">
-                    <button className="btn btn--ghost btn--sm" disabled={bulkPreviewing || !bulkFieldsValid} onClick={() => void doBulkPreview()}>
-                      {bulkPreviewing ? 'Loading preview…' : 'Preview'}
-                    </button>
-                    <button
-                      className="btn btn--ghost btn--sm"
-                      onClick={() => { setBulkEditOpen(false); resetBulkResults() }}
-                    >
-                      Close
-                    </button>
-                  </div>
+              {bulkSelectionTooLarge && (
+                <StatusStrip tone="warn">
+                  Bulk Review and Edit Metadata support up to {BULK_SELECTION_LIMIT} tracks. Narrow or clear the selection to continue.
+                </StatusStrip>
+              )}
 
-                  {bulkPreview && (
-                    <div className="inbox-bulk-edit-preview">
-                      <p className="muted">
-                        {bulkPreview.selected_count} selected track{bulkPreview.selected_count === 1 ? '' : 's'}
-                        {bulkPreview.skipped_not_inbox ? ` — ${bulkPreview.skipped_not_inbox} not in Inbox will be skipped` : ''}
-                      </p>
-                      {bulkPreview.fields.artist && (
-                        <div className="inbox-bulk-edit-preview-field">
-                          <strong>Artist</strong>
-                          <p className="muted">Current values include: {bulkPreview.fields.artist.current_values.join(', ')}</p>
-                          <p>New value: <strong>{bulkPreview.fields.artist.new_value}</strong></p>
-                        </div>
-                      )}
-                      {bulkPreview.fields.title && (
-                        <div className="inbox-bulk-edit-preview-field">
-                          <strong>Title</strong>
-                          <p className="muted">Current values include: {bulkPreview.fields.title.current_values.join(', ')}</p>
-                          <p>New value: <strong>{bulkPreview.fields.title.new_value}</strong></p>
-                        </div>
-                      )}
-                      {bulkPreview.fields.genre && (
-                        <div className="inbox-bulk-edit-preview-field">
-                          <strong>Genre</strong>
-                          <p className="muted">Current values include: {bulkPreview.fields.genre.current_values.join(', ')}</p>
-                          <p>New value: <strong>{bulkPreview.fields.genre.new_value}</strong></p>
-                        </div>
-                      )}
-                      {bulkPreview.fields.album && (
-                        <div className="inbox-bulk-edit-preview-field">
-                          <strong>Album</strong>
-                          <p className="muted">Current values include: {bulkPreview.fields.album.current_values.join(', ')}</p>
-                          <p>New value: <strong>{bulkPreview.fields.album.new_value}</strong></p>
-                        </div>
-                      )}
-                      <p className="inbox-bulk-edit-impact">
-                        {bulkPreview.selected_count} selected · {bulkPreview.eligible_count} eligible · {bulkPreview.changeable_count} will change · {Math.max(0, bulkPreview.eligible_count - bulkPreview.changeable_count)} already match
-                        {bulkPreview.skipped_not_inbox ? ` · ${bulkPreview.skipped_not_inbox} skipped (not in Inbox)` : ''}
-                        {bulkPreview.missing_count ? ` · ${bulkPreview.missing_count} not found` : ''}.
-                      </p>
-                      <p className="muted">
-                        {bulkPreview.changeable_count
-                          ? `${bulkPreview.changeable_count} eligible track${bulkPreview.changeable_count === 1 ? '' : 's'} will change across ${Object.keys(bulkPreview.fields).length} field${Object.keys(bulkPreview.fields).length === 1 ? '' : 's'}.`
-                          : bulkPreview.eligible_count
-                            ? `No eligible selected Inbox tracks will change; ${bulkPreview.eligible_count} already match the proposed value${bulkPreview.eligible_count === 1 ? '' : 's'}.`
-                            : 'No selected tracks are eligible for this Inbox edit.'}
-                      </p>
-                      <div className="settings-actions">
-                        <button className="btn btn--primary btn--sm" disabled={bulkApplying || !bulkPreview.changeable_count} onClick={() => setBulkConfirming(true)}>
-                          Review & apply
-                        </button>
-                      </div>
-                      {bulkConfirming && (
-                        <div className="inbox-bulk-confirm" role="alertdialog" aria-labelledby="inbox-bulk-confirm-title" aria-describedby="inbox-bulk-confirm-description">
-                          <h3 id="inbox-bulk-confirm-title">Confirm working metadata changes</h3>
-                          <p id="inbox-bulk-confirm-description">Apply the proposed values to {bulkPreview.changeable_count} selected Inbox track{bulkPreview.changeable_count === 1 ? '' : 's'} in CrateIQ working metadata. File tags will not change.</p>
-                          <div className="settings-actions">
-                            <button className="btn btn--primary btn--sm" disabled={bulkApplying} onClick={() => void doBulkApply()}>
-                              {bulkApplying ? 'Applying…' : 'Confirm apply'}
-                            </button>
-                            <button className="btn btn--ghost btn--sm" disabled={bulkApplying} onClick={() => setBulkConfirming(false)}>Cancel</button>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+              {(bulkReviewOpen || bulkEditOpen) && (
+                <div ref={bulkPanelRef}>
+                  {bulkReviewOpen && (
+                    <BulkEnrichmentReview
+                      trackIds={selectedTrackIds}
+                      refreshKey={bulkReviewRefreshKey}
+                      onReviewExceptions={openExceptionReview}
+                      onResolved={afterBulkReview}
+                      onClose={() => setBulkReviewOpen(false)}
+                    />
                   )}
-
-                  {bulkResult && (
-                    <StatusStrip tone={bulkResult.failed_count ? 'warn' : 'good'}>
-                      {bulkResult.succeeded_count} succeeded, {bulkResult.unchanged_count} unchanged
-                      {bulkResult.skipped_count ? `, ${bulkResult.skipped_count} skipped` : ''}
-                      {bulkResult.failed_count ? `, ${bulkResult.failed_count} failed` : ''}.
-                    </StatusStrip>
+                  {bulkEditOpen && (
+                    <BulkMetadataEditor
+                      key={selectedTrackIds.join(',')}
+                      trackIds={selectedTrackIds}
+                      tracks={selectedTrackIds.map((trackId) => knownTracks[trackId]).filter(Boolean)}
+                      onApplied={fetchCurrentInboxData}
+                      onClose={() => setBulkEditOpen(false)}
+                    />
                   )}
                 </div>
               )}
@@ -957,11 +854,13 @@ export default function Inbox() {
               track={inspectedTrack}
               loading={inspectorLoading}
               onClose={closeInspector}
-              onPrevious={previousVisibleTrack ? () => navigateInspector(previousVisibleTrack) : undefined}
-              onNext={nextVisibleTrack ? () => navigateInspector(nextVisibleTrack) : undefined}
+              initialTab={inspectorInitialTab}
+              navigationLabel={exceptionTrackIds.length && inspectedQueueIndex >= 0 ? `Exception ${inspectedQueueIndex + 1} of ${exceptionTrackIds.length}` : undefined}
+              onPrevious={previousInspectorId ? () => void openInspectorById(previousInspectorId) : undefined}
+              onNext={nextInspectorId ? () => void openInspectorById(nextInspectorId) : undefined}
               onMetadataSave={(field, value) => inspectedId === null ? Promise.resolve() : saveMetadata(inspectedId, field, value)}
               onSaveToFile={() => inspectedId !== null && setSaveTrackIds([inspectedId])}
-              onReviewDecision={() => fetchCurrentInboxData()}
+              onReviewDecision={afterInspectorReviewDecision}
             />
           )}
           {saveTrackIds && (

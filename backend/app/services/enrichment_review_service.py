@@ -92,6 +92,216 @@ def get_track_review(track_id: int) -> dict[str, Any]:
         "safety": review.get("safety", []),
         "message": review.get("message"),
     }
+
+
+def _bulk_track_ids(track_ids: list[int]) -> list[int]:
+    if not track_ids:
+        raise ValueError("Select at least one track for bulk enrichment review.")
+    if len(track_ids) > 200:
+        raise ValueError("Select at most 200 tracks for bulk enrichment review.")
+    if len(set(track_ids)) != len(track_ids):
+        raise ValueError("Bulk enrichment track IDs must be unique.")
+    return track_ids
+
+
+def _bulk_review_projection(conn: sqlite3.Connection, track_ids: list[int]) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    """Classify selected Inbox tracks using the existing confidence verdicts."""
+    track_ids = _bulk_track_ids(track_ids)
+    placeholders = ",".join("?" * len(track_ids))
+    columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
+    if "storage_zone" not in columns:
+        raise ValueError("Bulk enrichment review is available only in a managed Inbox workspace.")
+    rows = {
+        int(row["id"]): row
+        for row in conn.execute(
+            f"SELECT id, filename, artist, title, genre, storage_zone FROM tracks WHERE id IN ({placeholders})",
+            track_ids,
+        )
+    }
+    missing = [track_id for track_id in track_ids if track_id not in rows]
+    if missing:
+        raise ValueError("Every selected track must belong to the active library.")
+    if any((rows[track_id]["storage_zone"] or "LIBRARY") != "INBOX" for track_id in track_ids):
+        raise ValueError("Bulk enrichment review only accepts tracks in the active Inbox.")
+
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "enrichment_review_snapshots" not in tables:
+        review_items: list[dict[str, Any]] = []
+    else:
+        try:
+            snapshot = _latest(conn)
+            review_items = _response(conn, snapshot)["items"]
+        except LookupError:
+            review_items = []
+    pending_by_track: dict[int, list[dict[str, Any]]] = {track_id: [] for track_id in track_ids}
+    for item in review_items:
+        track_id = item.get("track_id")
+        if track_id in pending_by_track and item.get("decision") == "pending":
+            pending_by_track[track_id].append(item)
+
+    safe_requests: list[dict[str, Any]] = []
+    projected_rows: list[dict[str, Any]] = []
+    for track_id in track_ids:
+        row = rows[track_id]
+        items = pending_by_track[track_id]
+        reasons: list[str] = []
+        conflict_fields: set[str] = set()
+        proposed_by_field: dict[str, set[str]] = {}
+        track_requests: list[dict[str, Any]] = []
+
+        for item in items:
+            suggested = item.get("suggested_fields") or {}
+            allowed = set(item.get("allowed_fields") or [])
+            evidence = item.get("evidence") or {}
+            confidence = str(item.get("confidence") or "").upper()
+            unresolved = set(evidence) - set(suggested)
+            conflict_fields.update(unresolved)
+            if confidence == "CONFLICT":
+                conflict_fields.update(set(evidence) | set(suggested))
+
+            if confidence != "HIGH":
+                reasons.append(f"{confidence or 'UNKNOWN'} confidence suggestion")
+            if not suggested:
+                reasons.append("No resolved value")
+            invalid_fields = set(suggested) - set(_ALLOWED)
+            if invalid_fields or not set(suggested).issubset(allowed):
+                reasons.append("Unsupported or unresolved fields")
+            if unresolved:
+                reasons.append("Providers disagree")
+
+            fields: dict[str, str] = {}
+            for field, raw_value in suggested.items():
+                value = str(raw_value or "").strip()
+                if not value:
+                    reasons.append(f"{field.capitalize()} has no usable value")
+                    continue
+                proposed_by_field.setdefault(field, set()).add(value.casefold())
+                if field in row.keys() and str(row[field] or "").strip():
+                    reasons.append(f"{field.capitalize()} would overwrite the current value")
+                if field in {"artist", "title"}:
+                    reasons.append(f"{field.capitalize()} requires single-track review")
+                fields[field] = value
+            if fields:
+                track_requests.append({
+                    "track_id": track_id,
+                    "suggestion_id": item["suggestion_id"],
+                    "fields": fields,
+                })
+
+        competing = {field for field, values in proposed_by_field.items() if len(values) > 1}
+        if competing:
+            conflict_fields.update(competing)
+            reasons.append("Multiple suggestions compete without a clear winner")
+
+        if not items:
+            state = "no_suggestion"
+            reason = "No useful pending suggestion"
+        elif reasons:
+            state = "exception"
+            reason = "; ".join(dict.fromkeys(reasons))
+        else:
+            state = "safe"
+            reason = "HIGH-confidence additions only; no current value is overwritten"
+            safe_requests.extend(track_requests)
+
+        confidences = sorted({str(item.get("confidence") or "UNKNOWN").upper() for item in items})
+        projected_rows.append({
+            "track_id": track_id,
+            "filename": row["filename"],
+            "artist": row["artist"],
+            "title": row["title"],
+            "genre": row["genre"],
+            "review_state": state,
+            "confidence": ", ".join(confidences) if confidences else None,
+            "conflicts": sorted(conflict_fields),
+            "suggestion_count": len(items),
+            "reason": reason,
+        })
+
+    summary = {
+        "selected_count": len(track_ids),
+        "safe_count": sum(1 for row in projected_rows if row["review_state"] == "safe"),
+        "exception_count": sum(1 for row in projected_rows if row["review_state"] == "exception"),
+        "no_suggestion_count": sum(1 for row in projected_rows if row["review_state"] == "no_suggestion"),
+        "rows": projected_rows,
+        "message": "Safe means existing HIGH-confidence additions only. Identity conflicts and overwrites remain exceptions.",
+    }
+    return summary, safe_requests
+
+
+def bulk_review_summary(track_ids: list[int]) -> dict[str, Any]:
+    with sqlite3.connect(_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        summary, _ = _bulk_review_projection(conn, track_ids)
+        return summary
+
+
+def bulk_accept_safe(track_ids: list[int], *, confirm: bool) -> dict[str, Any]:
+    if not confirm:
+        raise ValueError("Accepting safe suggestions requires confirm=true after reviewing the summary.")
+    with sqlite3.connect(_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure(conn)
+        summary, requests = _bulk_review_projection(conn, track_ids)
+        if requests:
+            snapshot = _latest(conn)
+            now = _now()
+            for request in requests:
+                conn.execute(
+                    "INSERT INTO enrichment_review_decisions "
+                    "(snapshot_id,suggestion_id,track_id,decision,note,selected_fields_json,updated_at) "
+                    "VALUES(?,?,?,?,?,?,?) ON CONFLICT(snapshot_id,suggestion_id) DO UPDATE SET "
+                    "decision=excluded.decision,note=excluded.note,selected_fields_json=excluded.selected_fields_json,updated_at=excluded.updated_at",
+                    (snapshot["id"], request["suggestion_id"], request["track_id"], "pending", "Bulk safe acceptance.", json.dumps(request["fields"]), now),
+                )
+            conn.commit()
+
+    result = apply_selected(requests, confirm=True) if requests else {
+        "applied": 0, "skipped": 0, "failed": 0, "warnings": [], "results": [], "review": get_review(),
+    }
+    return {
+        "selected_count": summary["selected_count"],
+        "safe_track_count": summary["safe_count"],
+        "applied": result["applied"],
+        "skipped": result["skipped"],
+        "failed": result["failed"],
+        "warnings": result["warnings"],
+        "results": result.get("results", []),
+        "summary": bulk_review_summary(track_ids),
+    }
+
+
+def bulk_keep_current(track_ids: list[int], *, confirm: bool) -> dict[str, Any]:
+    if not confirm:
+        raise ValueError("Keeping current metadata requires confirm=true after reviewing the selection.")
+    with sqlite3.connect(_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        _ensure(conn)
+        before, _ = _bulk_review_projection(conn, track_ids)
+        try:
+            snapshot = _latest(conn)
+            pending = [
+                item for item in _response(conn, snapshot)["items"]
+                if item.get("track_id") in set(track_ids) and item.get("decision") == "pending"
+            ]
+        except LookupError:
+            pending = []
+        now = _now()
+        for item in pending:
+            conn.execute(
+                "INSERT INTO enrichment_review_decisions "
+                "(snapshot_id,suggestion_id,track_id,decision,note,selected_fields_json,updated_at) "
+                "VALUES(?,?,?,?,?,?,?) ON CONFLICT(snapshot_id,suggestion_id) DO UPDATE SET "
+                "decision='ignored',note=excluded.note,selected_fields_json='{}',updated_at=excluded.updated_at",
+                (snapshot["id"], item["suggestion_id"], item["track_id"], "ignored", "Bulk keep current.", "{}", now),
+            )
+        conn.commit()
+    return {
+        "selected_count": before["selected_count"],
+        "kept_track_count": len({item["track_id"] for item in pending}),
+        "suggestions_ignored": len(pending),
+        "summary": bulk_review_summary(track_ids),
+    }
 def _local_tag_suggestion(candidate: dict[str, Any], missing: list[str], root: Path) -> dict[str, str]:
     """Read-only: propose a missing field only if the file's own embedded tag already has it. Never writes tags."""
     try:
@@ -137,19 +347,34 @@ def update_suggestion(track_id:int,suggestion_id:str,decision:str,note:str,field
 def apply_selected(items:list[dict[str,Any]],confirm:bool):
     if not confirm: raise ValueError('Applying enrichment requires confirm=true after review.')
     if not items: raise ValueError('Select at least one saved suggestion.')
-    applied=skipped=failed=0; warnings=[]
+    applied=skipped=failed=0; warnings=[]; results=[]
     with sqlite3.connect(_path()) as conn:
         conn.row_factory=sqlite3.Row; _ensure(conn); snapshot=_latest(conn); snapshot_items={item['suggestion_id']:item for item in json.loads(snapshot['items_json'])}; now=_now()
         for request in items:
             item=snapshot_items.get(request.get('suggestion_id'))
-            if not item or item['track_id']!=request.get('track_id'): failed+=1; warnings.append('Suggestion was not found in the latest preview.'); continue
+            if not item or item['track_id']!=request.get('track_id'):
+                failed+=1; warnings.append('Suggestion was not found in the latest preview.')
+                results.append({'track_id': request.get('track_id'), 'suggestion_id': request.get('suggestion_id'), 'status': 'failed', 'reason': warnings[-1]})
+                continue
             try: fields=_valid(request.get('fields'),set(item['allowed_fields']))
-            except ValueError as exc: failed+=1; warnings.append(str(exc)); continue
+            except ValueError as exc:
+                failed+=1; warnings.append(str(exc))
+                results.append({'track_id': item['track_id'], 'suggestion_id': item['suggestion_id'], 'status': 'failed', 'reason': str(exc)})
+                continue
             saved=conn.execute('SELECT selected_fields_json FROM enrichment_review_decisions WHERE snapshot_id=? AND suggestion_id=?',(snapshot['id'],item['suggestion_id'])).fetchone()
-            if not saved or json.loads(saved['selected_fields_json'])!=fields: failed+=1; warnings.append('Save selected fields before applying.'); continue
+            if not saved or json.loads(saved['selected_fields_json'])!=fields:
+                failed+=1; warnings.append('Save selected fields before applying.')
+                results.append({'track_id': item['track_id'], 'suggestion_id': item['suggestion_id'], 'status': 'failed', 'reason': warnings[-1]})
+                continue
             row=conn.execute('SELECT artist,title,genre FROM tracks WHERE id=?',(item['track_id'],)).fetchone()
-            if not row: failed+=1; warnings.append('Track no longer exists.'); continue
-            if any(row[field] for field in fields): skipped+=1; warnings.append('Existing non-empty metadata is never overwritten.'); continue
+            if not row:
+                failed+=1; warnings.append('Track no longer exists.')
+                results.append({'track_id': item['track_id'], 'suggestion_id': item['suggestion_id'], 'status': 'failed', 'reason': warnings[-1]})
+                continue
+            if any(row[field] for field in fields):
+                skipped+=1; warnings.append('Existing non-empty metadata is never overwritten.')
+                results.append({'track_id': item['track_id'], 'suggestion_id': item['suggestion_id'], 'status': 'skipped', 'reason': warnings[-1]})
+                continue
             conn.execute(f"UPDATE tracks SET {', '.join(f'{field}=?' for field in fields)}, enrichment_source=?, enrichment_updated_at=?, enrichment_reviewed_at=? WHERE id=?",(*fields.values(),item['source_id'],now,now,item['track_id']))
             conn.execute("UPDATE enrichment_review_decisions SET decision='applied',updated_at=?,applied_at=? WHERE snapshot_id=? AND suggestion_id=?",(now,now,snapshot['id'],item['suggestion_id']))
             provenance_confidence = _provenance_confidence(item.get('confidence'))
@@ -164,8 +389,9 @@ def apply_selected(items:list[dict[str,Any]],confirm:bool):
                     conn=conn,
                 )
             applied+=1
+            results.append({'track_id': item['track_id'], 'suggestion_id': item['suggestion_id'], 'status': 'applied', 'fields': list(fields)})
         review=_response(conn,snapshot)
-    return {'applied':applied,'skipped':skipped,'failed':failed,'warnings':warnings,'review':review}
+    return {'applied':applied,'skipped':skipped,'failed':failed,'warnings':warnings,'results':results,'review':review}
 
 
 def _cache_key(artist: str | None, title: str | None) -> str:

@@ -17,13 +17,15 @@ workspace_service._preparation_states_for_rows):
 """
 from __future__ import annotations
 
+import asyncio
+import json
 import sqlite3
 from pathlib import Path
 
 import pytest
-from fastapi.testclient import TestClient
+from fastapi import FastAPI
 
-import backend.app.main as backend_main
+from backend.app.api.routes import workspace as workspace_routes
 from backend.app.core import db as backend_db
 from backend.app.services import (
     enrichment_review_service,
@@ -104,6 +106,62 @@ def _db_row(env, track_id: int) -> sqlite3.Row:
         return conn.execute("SELECT * FROM tracks WHERE id = ?", (track_id,)).fetchone()
 
 
+def _api_request(method: str, path: str, payload: dict | None = None) -> tuple[int, dict]:
+    """Send a real ASGI request through the production workspace router.
+
+    The installed Starlette TestClient/httpx integration hangs in this
+    environment. This keeps endpoint coverage at the HTTP/ASGI layer without
+    falling back to a direct route-function call.
+    """
+    app = FastAPI()
+    app.include_router(workspace_routes.router, prefix="/api")
+    request_body = json.dumps(payload).encode("utf-8") if payload is not None else b""
+    messages: list[dict] = []
+
+    async def invoke() -> None:
+        received = False
+
+        async def receive() -> dict:
+            nonlocal received
+            if not received:
+                received = True
+                return {"type": "http.request", "body": request_body, "more_body": False}
+            return {"type": "http.disconnect"}
+
+        async def send(message: dict) -> None:
+            messages.append(message)
+
+        await app(
+            {
+                "type": "http",
+                "asgi": {"version": "3.0", "spec_version": "2.3"},
+                "http_version": "1.1",
+                "method": method,
+                "scheme": "http",
+                "path": path,
+                "raw_path": path.encode("ascii"),
+                "query_string": b"",
+                "headers": [
+                    (b"host", b"testserver"),
+                    (b"content-type", b"application/json"),
+                    (b"content-length", str(len(request_body)).encode("ascii")),
+                ],
+                "client": ("127.0.0.1", 12345),
+                "server": ("testserver", 80),
+                "root_path": "",
+            },
+            receive,
+            send,
+        )
+
+    asyncio.run(invoke())
+    status = next(message["status"] for message in messages if message["type"] == "http.response.start")
+    response_body = b"".join(
+        message.get("body", b"") for message in messages if message["type"] == "http.response.body"
+    )
+    return status, json.loads(response_body or b"{}")
+
+
 # ---------------------------------------------------------------------------
 # Read surface: shared persistence, actionable-only
 # ---------------------------------------------------------------------------
@@ -112,10 +170,8 @@ def _db_row(env, track_id: int) -> sqlite3.Row:
 def test_inbox_reads_track_review_from_shared_persistence(env):
     track_id = _seed(env, genre=None)
     _queue_review(env, track_id, suggestion_id="sug-1")
-    with TestClient(backend_main.app) as client:
-        response = client.get(f"/api/workspace/inbox/tracks/{track_id}/enrichment-review")
-    assert response.status_code == 200
-    body = response.json()
+    status, body = _api_request("GET", f"/api/workspace/inbox/tracks/{track_id}/enrichment-review")
+    assert status == 200
     assert body["track_id"] == track_id
     assert body["count"] == 1
     assert body["items"][0]["suggestion_id"] == "sug-1"
@@ -357,6 +413,160 @@ def test_inbox_sees_decisions_made_by_specialist_workflow(env):
     enrichment_review_service.update_suggestion(track_id, suggestion_id, "ignored", "", {})
     body = enrichment_review_service.get_track_review(track_id)
     assert body["count"] == 0
+
+
+# ---------------------------------------------------------------------------
+# Selected-track bulk triage and actions
+# ---------------------------------------------------------------------------
+
+
+def test_bulk_summary_classifies_safe_exception_and_no_suggestion(env):
+    safe_id = _seed(env, filename="safe.mp3", genre=None)
+    conflict_id = _seed(env, filename="conflict.mp3", genre="House")
+    none_id = _seed(env, filename="none.mp3", genre="Techno")
+    _queue_review(
+        env, safe_id, suggestion_id="safe", confidence="HIGH",
+        suggested_fields={"genre": "Deep House"}, allowed_fields=["genre"],
+        evidence={"genre": [
+            "beatport: Deep-House -> Deep House",
+            "discogs: Deep House -> Deep House",
+        ]},
+    )
+    _queue_review(
+        env, conflict_id, suggestion_id="conflict", source_id="discogs", confidence="CONFLICT",
+        suggested_fields={}, allowed_fields=[],
+        evidence={"artist": ["discogs: Artist A", "beets: Artist B"]},
+    )
+
+    summary = enrichment_review_service.bulk_review_summary([safe_id, conflict_id, none_id])
+
+    assert summary["selected_count"] == 3
+    assert summary["safe_count"] == 1
+    assert summary["exception_count"] == 1
+    assert summary["no_suggestion_count"] == 1
+    by_id = {row["track_id"]: row for row in summary["rows"]}
+    assert by_id[safe_id]["review_state"] == "safe"
+    assert by_id[conflict_id]["review_state"] == "exception"
+    assert by_id[conflict_id]["conflicts"] == ["artist"]
+    assert by_id[none_id]["review_state"] == "no_suggestion"
+
+
+def test_bulk_summary_and_confirmation_are_enforced_by_production_routes(env):
+    track_id = _seed(env, filename="safe.mp3", genre=None)
+    _queue_review(
+        env, track_id, suggestion_id="safe", confidence="HIGH",
+        suggested_fields={"genre": "Deep House"}, allowed_fields=["genre"],
+        evidence={"genre": ["local_tags: Deep House"]},
+    )
+
+    status, body = _api_request(
+        "POST", "/api/workspace/inbox/enrichment-review/summary", {"track_ids": [track_id]},
+    )
+    assert status == 200
+    assert body["safe_count"] == 1
+
+    for endpoint in ("accept-safe", "keep-current"):
+        status, body = _api_request(
+            "POST", f"/api/workspace/inbox/enrichment-review/{endpoint}", {"track_ids": [track_id]},
+        )
+        assert status == 422
+        assert "confirm=true" in body["detail"]
+
+
+@pytest.mark.parametrize(
+    "payload,error_type",
+    [
+        ({"track_ids": [0]}, "greater_than"),
+        ({"track_ids": list(range(1, 202))}, "too_long"),
+        ({"track_ids": [1], "unexpected": True}, "extra_forbidden"),
+    ],
+)
+def test_bulk_summary_route_rejects_invalid_request_shapes(payload, error_type):
+    status, body = _api_request(
+        "POST", "/api/workspace/inbox/enrichment-review/summary", payload,
+    )
+    assert status == 422
+    assert body["detail"][0]["type"] == error_type
+
+
+def test_bulk_high_confidence_identity_addition_stays_in_single_track_review(env):
+    track_id = _seed(env, filename="identity.mp3", artist=None, title="Title", genre="House")
+    _queue_review(
+        env, track_id, suggestion_id="identity", source_id="musicbrainz", confidence="HIGH",
+        suggested_fields={"artist": "Candidate Artist"}, allowed_fields=["artist"],
+        evidence={"artist": ["musicbrainz: Candidate Artist"]},
+    )
+
+    summary = enrichment_review_service.bulk_review_summary([track_id])
+
+    assert summary["safe_count"] == 0
+    assert summary["exception_count"] == 1
+    assert "single-track review" in summary["rows"][0]["reason"]
+
+
+def test_bulk_accept_safe_applies_only_safe_selected_suggestions(env):
+    safe_id = _seed(env, filename="safe.mp3", genre=None)
+    conflict_id = _seed(env, filename="conflict.mp3", genre=None)
+    unselected_id = _seed(env, filename="unselected.mp3", genre=None)
+    _queue_review(
+        env, safe_id, suggestion_id="safe", confidence="HIGH",
+        suggested_fields={"genre": "Deep House"}, allowed_fields=["genre"],
+        evidence={"genre": ["beets: Deep House"]},
+    )
+    _queue_review(
+        env, conflict_id, suggestion_id="conflict", source_id="discogs", confidence="CONFLICT",
+        suggested_fields={}, allowed_fields=[],
+        evidence={"genre": ["discogs: Afro House", "beets: Deep House"]},
+    )
+    _queue_review(
+        env, unselected_id, suggestion_id="unselected", source_id="local_tags", confidence="HIGH",
+        suggested_fields={"genre": "Amapiano"}, allowed_fields=["genre"],
+        evidence={"genre": ["local_tags: Amapiano"]},
+    )
+
+    result = enrichment_review_service.bulk_accept_safe([safe_id, conflict_id], confirm=True)
+
+    assert result["safe_track_count"] == 1
+    assert result["applied"] == 1
+    assert _db_row(env, safe_id)["genre"] == "Deep House"
+    assert _db_row(env, conflict_id)["genre"] is None
+    assert _db_row(env, unselected_id)["genre"] is None
+    pending = enrichment_review_service.get_review()["items"]
+    assert next(item for item in pending if item["suggestion_id"] == "conflict")["decision"] == "pending"
+    assert next(item for item in pending if item["suggestion_id"] == "unselected")["decision"] == "pending"
+
+
+def test_bulk_keep_current_resolves_only_selected_tracks_without_metadata_changes(env):
+    first = _seed(env, filename="first.mp3", genre="House")
+    second = _seed(env, filename="second.mp3", genre="Techno")
+    unselected = _seed(env, filename="third.mp3", genre="Amapiano")
+    for track_id, suggestion_id in ((first, "first"), (second, "second"), (unselected, "third")):
+        _queue_review(
+            env, track_id, suggestion_id=suggestion_id, source_id=f"source-{suggestion_id}",
+            confidence="MEDIUM", suggested_fields={"genre": "Afro House"}, allowed_fields=["genre"],
+            evidence={"genre": ["provider: Afro House"]},
+        )
+
+    result = enrichment_review_service.bulk_keep_current([first, second], confirm=True)
+
+    assert result["selected_count"] == 2
+    assert result["kept_track_count"] == 2
+    assert result["suggestions_ignored"] == 2
+    assert _db_row(env, first)["genre"] == "House"
+    assert _db_row(env, second)["genre"] == "Techno"
+    review = enrichment_review_service.get_review()["items"]
+    decisions = {item["suggestion_id"]: item["decision"] for item in review}
+    assert decisions == {"first": "ignored", "second": "ignored", "third": "pending"}
+
+
+def test_bulk_review_rejects_tracks_outside_active_inbox(env):
+    track_id = _seed(env)
+    with sqlite3.connect(env[0] / "logs" / "processed.db") as conn:
+        conn.execute("UPDATE tracks SET storage_zone = 'LIBRARY' WHERE id = ?", (track_id,))
+    with pytest.raises(ValueError, match="active Inbox"):
+        enrichment_review_service.bulk_review_summary([track_id])
+    with pytest.raises(ValueError, match="active library"):
+        enrichment_review_service.bulk_review_summary([999999])
 
 
 def test_review_read_and_apply_make_no_network_calls(env, monkeypatch):

@@ -123,13 +123,13 @@ async def lifespan(app: FastAPI):
 
     init_db()
 
-    # Cycle 9: backfill the storage_zone column on a pre-existing processed.db
-    # so managed-workspace queries never fail closed on an un-migrated DB.
-    # Existing rows default to 'LIBRARY' -- their visibility is unchanged.
+    # Backfill managed-workspace and optional editable metadata columns on a
+    # pre-existing processed.db. Existing rows retain their current values;
+    # storage_zone still defaults to LIBRARY for compatibility.
     try:
-        library_setup_service.ensure_storage_zone_column(selected_library_root())
+        library_setup_service.ensure_editable_metadata_columns(selected_library_root())
     except Exception:  # pragma: no cover - migration must never block startup
-        log.exception("storage_zone column migration skipped")
+        log.exception("workspace metadata column migration skipped")
 
     # Close out waveform jobs left active by a previous process. A restart
     # must never silently resume music-library analysis, so interrupted work

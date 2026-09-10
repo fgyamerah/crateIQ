@@ -70,6 +70,8 @@ class TrackSummary(BaseModel):
     title:        Optional[str] = None
     album:        Optional[str] = None
     genre:        Optional[str] = None
+    comment:      Optional[str] = None
+    label:        Optional[str] = None
     bpm:          Optional[float] = None
     key_camelot:  Optional[str] = None
     key_musical:  Optional[str] = None
@@ -97,6 +99,8 @@ class TrackSummary(BaseModel):
             title=t.title,
             album=t.album,
             genre=t.genre,
+            comment=t.comment,
+            label=t.label,
             bpm=t.bpm,
             key_camelot=t.key_camelot,
             key_musical=t.key_musical,
@@ -123,6 +127,8 @@ class TrackDetail(BaseModel):
     title:          Optional[str] = None
     album:          Optional[str] = None
     genre:          Optional[str] = None
+    comment:        Optional[str] = None
+    label:          Optional[str] = None
     bpm:            Optional[float] = None
     key_camelot:    Optional[str] = None
     key_musical:    Optional[str] = None
@@ -161,6 +167,8 @@ class TrackDetail(BaseModel):
             title=t.title,
             album=t.album,
             genre=t.genre,
+            comment=t.comment,
+            label=t.label,
             bpm=t.bpm,
             key_camelot=t.key_camelot,
             key_musical=t.key_musical,

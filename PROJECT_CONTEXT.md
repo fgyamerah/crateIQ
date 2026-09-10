@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-09-06
+**Updated:** 2026-09-10
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -735,31 +735,54 @@ DB-first metadata editing remains separate from the explicit Save to File
 action, which is enabled only for pending writable changes and keeps the
 Inspector open while the verified result is shown.
 
-Checkpoint 3A is complete: Inbox single-track and bulk metadata editing for
-Artist/Title/Genre/Album is DB-first, records existing manual provenance, and
-refreshes the authoritative preparation state without writing file tags.
-Checkpoint 3B is complete: the frontend provides inline Artist/Title/Genre
-editing in the dense Inbox table, Album editing in the Track Inspector and
-Bulk Edit panel, four-field opt-in bulk preview/confirmation, local validation,
-targeted refreshes, selection/filter/sort preservation, and clear Unsaved
-pending-field presentation. Bulk preview reports selected, eligible,
-changeable, already-matching, skipped, and missing tracks explicitly. Unsaved
-filter counts are primary-status counts; a higher-precedence state may still
-have `pending_fields` and `write.has_unsaved_changes`. These controls still
-update approved working metadata only; they never call tag-write APIs or imply
-that file tags changed. The Save to File checkpoint is complete: the frontend
-uses the existing tag_write_service plan/apply contract with 50-track request
-chunking, a concise exact-diff preview, managed-copy confirmation wording,
-verified per-track result reporting, stale-plan rejection, no-op/blocked
-handling, and authoritative Inbox refresh after apply. It does not add a new
-writer or a permanent SAVED preparation state. Per-batch provider-source
-selection is complete for explicit Enrich Selected. Inline enrichment review
-is complete: the Inbox Track Inspector now exposes a Review section that reads
-the shared enrichment_review_service decision queue (no new review store) and
-supports field/proposal "Use Suggested" (DB-only apply) and "Keep Current"
-(ignored) decisions that refresh the authoritative preparation state.
-`GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` is a thin
-read-only track-scoped aggregation of actionable (pending) suggestions.
+Single-track Inbox editing remains DB-first for Artist, Title, Genre, and
+Album, records manual provenance, and leaves file writes to explicit safe
+workflows. Title and filename remain editable one track at a time. Multi-track
+identity editing is prohibited: the Inbox exposes no Artist, Title, or Filename
+bulk control, and `workspace_service.bulk_edit_preview()` / `bulk_edit_apply()`
+reject those fields and every unsupported operation server-side. The supported
+bulk fields are Genre (leave/set/clear), Comment (leave/set/append/clear), and
+Label (leave/set/clear). Nullable `comment` and `label` columns are additively
+migrated into older track indexes and populated from supported embedded tags on
+new imports. Mixed current values remain explicit until an operation is chosen.
+Preview reports selected, eligible, affected, already-matching, unsupported,
+outside-Inbox, and missing counts before a second confirmation. Apply uses the
+existing `preparation_service.write_tracks()` -> `tag_write_service` path, so
+each supported managed copy receives the existing byte backup, bounded write,
+re-read verification, and restore-on-failure behavior. The writer is scoped to
+the active bulk fields, so unrelated pending single-track identity changes are
+not silently flushed by a Genre, Comment, or Label apply. Results remain
+per-track; a failed or unsupported file does not stop independent tracks, and
+failed desired working metadata remains visibly Unsaved rather than being
+reported as written.
+
+Selected-track bulk enrichment review also lives in Inbox. Its summary reads
+the existing `enrichment_review_service` snapshot/decision store and reuses the
+existing HIGH/MEDIUM/LOW/CONFLICT verdicts; it does not introduce a confidence
+model or review database. A track is safe only when every pending suggestion is
+HIGH confidence, resolves to supported non-empty fields, has no competing
+suggestion value or CONFLICT verdict, and fills an empty current value.
+Pending Artist/Title suggestions always remain exceptions because older
+single-provider review items do not retain enough ambiguity evidence for safe
+bulk identity acceptance. Identity conflicts and overwrites therefore remain exceptions. Accept Safe Suggestions applies
+only the classified safe subset through the existing DB-only
+`apply_selected()` contract; Keep Current marks pending suggestions for the
+selected tracks ignored without changing metadata. Review Exceptions opens the
+normal Track Inspector Review tab as a focused previous/next queue. The API
+surface comprises the three `POST /api/workspace/inbox/enrichment-review/`
+`summary`, `accept-safe`, and `keep-current` endpoints, plus the existing single-track
+`GET /api/workspace/inbox/tracks/{track_id}/enrichment-review` projection.
+
+The phase passed browser verification at desktop, tablet, and narrow widths.
+The live fixture contained no safe suggestions, so Accept Safe mutation was not
+performed manually; unsupported and partial-failure live outcomes were also not
+forced. Focused automated tests cover those paths, Comment Append, and true
+mixed-value presentation.
+
+The existing Save to File dialog still uses `tag_write_service` plan/apply with
+50-track request chunking, exact diffs, managed-copy confirmation, stale-plan
+rejection, and verified per-track outcomes. Ratings and Favorites remain the
+separate DB-only `track_reviews` concern and were not added to bulk metadata.
 Needs Review merge/demotion, Process All demotion, the full mobile redesign,
 and the final focused Impeccable pass remain deferred.
 
@@ -768,7 +791,8 @@ and the final focused Impeccable pass remain deferred.
 * Managed workspace (music files) under the configured root:
   `Inbox/`, `Library/`, `Quarantine/`
 * Pipeline/index DB (compatibility): `<root>/logs/processed.db` — also
-  hosts the additive `field_provenance` and `track_fingerprints` tables
+  hosts nullable `comment`/`label` track fields and the additive
+  `field_provenance` and `track_fingerprints` tables
   (see Field Provenance / Track Identity above), created lazily on first
   write
 * Backend jobs/operations DB: `backend/data/jobs.db` (job history, analysis/

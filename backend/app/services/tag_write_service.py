@@ -4,9 +4,9 @@ Controlled metadata write-back (Cycle 7).
 Exact write plan -> mandatory byte-for-byte backup outside the scanned
 music tree -> explicit confirm -> write -> re-read verify -> restore.
 
-Write surface is deliberately conservative: only the four fields the local
-index already models reliably through Cycles 5-6's review flow (artist,
-title, album, genre). Never written: BPM, key, Camelot, cue points,
+Write surface is deliberately conservative: only the six fields the local
+index models through its explicit review/edit flows (artist, title, album,
+genre, comment, label). Never written: BPM, key, Camelot, cue points,
 artwork, ReplayGain, or any other tag -- writing uses mutagen's easy-tag
 interface (mutagen.File(path, easy=True)) and only ever touches the keys
 explicitly listed below, so every other frame/field in the file is left
@@ -31,9 +31,25 @@ from ..core.db import get_conn
 from ..core.library_key import current_library_key
 from ..core.library_root import assert_path_under_root, library_db_path, selected_library_root
 
-_WRITABLE_FIELDS = ("artist", "title", "album", "genre")
+_WRITABLE_FIELDS = ("artist", "title", "album", "genre", "comment", "label")
+_EASY_TAG_KEYS = {"label": "organization"}
 _SUPPORTED_EXTENSIONS = {".mp3", ".flac"}
 _MAX_TRACKS_PER_REQUEST = 50
+
+
+def _scoped_writable_fields(allowed_fields: Iterable[str] | None) -> tuple[str, ...]:
+    """Return a canonical safe field scope for an existing writer operation."""
+    if allowed_fields is None:
+        return _WRITABLE_FIELDS
+    if isinstance(allowed_fields, str):
+        raise ValueError("Tag-write field scope must be a collection of field names.")
+    requested = set(allowed_fields)
+    unsupported = requested - set(_WRITABLE_FIELDS)
+    if unsupported:
+        raise ValueError(f"Unsupported tag-write field: {sorted(unsupported)[0]}.")
+    if not requested:
+        raise ValueError("Select at least one tag-write field.")
+    return tuple(field for field in _WRITABLE_FIELDS if field in requested)
 
 
 def _now() -> str:
@@ -63,8 +79,21 @@ def _read_file_tags(path: Path) -> dict[str, str]:
         audio = MFile(str(path), easy=True)
         if audio is None:
             return {}
-        get = lambda key: (audio.get(key) or [""])[0]
-        return {field: get(field) for field in _WRITABLE_FIELDS}
+        get = lambda key: str((audio.get(key) or [""])[0])
+        result = {
+            field: get(_EASY_TAG_KEYS.get(field, field))
+            for field in _WRITABLE_FIELDS
+        }
+        if path.suffix.lower() == ".mp3" and not result["comment"]:
+            full = MFile(str(path))
+            if full is not None and full.tags is not None:
+                for key in full.tags.keys():
+                    if key.startswith("COMM"):
+                        frame = full.tags[key]
+                        if getattr(frame, "text", None):
+                            result["comment"] = str(frame.text[0])
+                            break
+        return result
     except Exception:
         return {}
 
@@ -75,12 +104,55 @@ def _write_easy_tags(path: Path, fields: dict[str, str]) -> None:
     audio = MFile(str(path), easy=True)
     if audio is None:
         raise RuntimeError("File could not be opened for tag writing.")
-    for field, value in fields.items():
-        audio[field] = [value]
-    audio.save()
+    mp3_comment = fields.get("comment") if path.suffix.lower() == ".mp3" else None
+    easy_fields = {field: value for field, value in fields.items() if not (field == "comment" and mp3_comment is not None)}
+    for field, value in easy_fields.items():
+        key = _EASY_TAG_KEYS.get(field, field)
+        if value:
+            audio[key] = [value]
+        elif key in audio:
+            del audio[key]
+    if easy_fields:
+        audio.save()
+
+    if mp3_comment is not None:
+        from mutagen.id3 import COMM, ID3, ID3NoHeaderError
+        try:
+            tags = ID3(str(path))
+        except ID3NoHeaderError:
+            tags = ID3()
+        tags.delall("COMM")
+        if mp3_comment:
+            tags.add(COMM(encoding=3, lang="eng", desc="", text=[mp3_comment]))
+        tags.save(str(path))
 
 
-def _plan_row(track: sqlite3.Row, root: Path) -> dict[str, Any]:
+def _clear_intents(conn: sqlite3.Connection, track_ids: list[int]) -> dict[int, set[str]]:
+    """Return explicit current user clears; absent metadata is never inferred as a clear."""
+    if not track_ids:
+        return {}
+    tables = {row[0] for row in conn.execute("SELECT name FROM sqlite_master WHERE type = 'table'")}
+    if "field_provenance" not in tables:
+        return {}
+    placeholders = ",".join("?" * len(track_ids))
+    rows = conn.execute(
+        f"SELECT track_id, field_name FROM field_provenance "
+        f"WHERE track_id IN ({placeholders}) AND is_current = 1 AND origin = 'user' "
+        "AND (value IS NULL OR TRIM(value) = '')",
+        track_ids,
+    ).fetchall()
+    result: dict[int, set[str]] = {}
+    for row in rows:
+        result.setdefault(int(row["track_id"]), set()).add(str(row["field_name"]))
+    return result
+
+
+def _plan_row(
+    track: sqlite3.Row,
+    root: Path,
+    clear_fields: set[str] | None = None,
+    writable_fields: Iterable[str] = _WRITABLE_FIELDS,
+) -> dict[str, Any]:
     """Build one track's write plan row. Side-effect free."""
     filename = track["filename"]
     try:
@@ -100,16 +172,20 @@ def _plan_row(track: sqlite3.Row, root: Path) -> dict[str, Any]:
 
     file_tags = _read_file_tags(path)
     fields: list[dict[str, Any]] = []
-    for field in _WRITABLE_FIELDS:
-        approved = (track[field] or "").strip()
+    clear_fields = clear_fields or set()
+    row_keys = set(track.keys())
+    for field in writable_fields:
+        approved = (track[field] or "").strip() if field in row_keys else ""
         current_file_value = (file_tags.get(field) or "").strip()
-        if not approved or approved == current_file_value:
+        if approved == current_file_value:
+            continue
+        if not approved and field not in clear_fields:
             continue
         fields.append({
             "field": field,
             "current_file_value": current_file_value or None,
             "approved_value": approved,
-            "action": "ADD" if not current_file_value else "REPLACE",
+            "action": "CLEAR" if not approved else ("ADD" if not current_file_value else "REPLACE"),
         })
     stat = path.stat()
     return {
@@ -131,7 +207,13 @@ def build_plan_items_for_rows(rows: Iterable[sqlite3.Row], root: Path) -> list[d
     track and ensures each managed file's tags are read at most once by a
     single projection request.
     """
-    return [_plan_row(row, root) for row in rows]
+    materialized = list(rows)
+    if not materialized:
+        return []
+    with sqlite3.connect(_db_path()) as conn:
+        conn.row_factory = sqlite3.Row
+        clear_by_track = _clear_intents(conn, [int(row["id"]) for row in materialized])
+    return [_plan_row(row, root, clear_by_track.get(int(row["id"]))) for row in materialized]
 
 
 def latest_track_outcomes(track_ids: list[int]) -> dict[int, dict[str, Any]]:
@@ -197,23 +279,27 @@ def latest_track_outcomes(track_ids: list[int]) -> dict[int, dict[str, Any]]:
     return outcomes
 
 
-def build_plan(track_ids: list[int]) -> dict[str, Any]:
+def build_plan(track_ids: list[int], *, allowed_fields: Iterable[str] | None = None) -> dict[str, Any]:
     """Read-only, side-effect-free exact write plan for the given tracks."""
     if not track_ids:
         raise ValueError("Select at least one track.")
     if len(track_ids) > _MAX_TRACKS_PER_REQUEST:
         raise ValueError(f"Select at most {_MAX_TRACKS_PER_REQUEST} tracks per write-back plan.")
+    writable_fields = _scoped_writable_fields(allowed_fields)
     root = selected_library_root()
     placeholders = ",".join("?" * len(track_ids))
     with sqlite3.connect(_db_path()) as conn:
         conn.row_factory = sqlite3.Row
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
+        field_select = [field if field in columns else f"NULL AS {field}" for field in _WRITABLE_FIELDS]
         rows = {
             row["id"]: row
             for row in conn.execute(
-                f"SELECT id, filepath, filename, {', '.join(_WRITABLE_FIELDS)} FROM tracks WHERE id IN ({placeholders})",
+                f"SELECT id, filepath, filename, {', '.join(field_select)} FROM tracks WHERE id IN ({placeholders})",
                 track_ids,
             )
         }
+        clear_by_track = _clear_intents(conn, track_ids)
     items: list[dict[str, Any]] = []
     for track_id in track_ids:
         row = rows.get(track_id)
@@ -221,7 +307,7 @@ def build_plan(track_ids: list[int]) -> dict[str, Any]:
             items.append({"track_id": track_id, "filename": None, "relative_path": None,
                           "blocked": True, "blocker": "Track no longer exists in the local index.", "fields": []})
             continue
-        items.append(_plan_row(row, root))
+        items.append(_plan_row(row, root, clear_by_track.get(track_id), writable_fields))
 
     changeable = [item for item in items if not item["blocked"] and item["fields"]]
     return {
@@ -232,8 +318,9 @@ def build_plan(track_ids: list[int]) -> dict[str, Any]:
         "blocked_count": sum(1 for item in items if item["blocked"]),
         "additions": sum(1 for item in items for f in item["fields"] if f["action"] == "ADD"),
         "replacements": sum(1 for item in items for f in item["fields"] if f["action"] == "REPLACE"),
+        "clears": sum(1 for item in items for f in item["fields"] if f["action"] == "CLEAR"),
         "backup_space_estimate_bytes": sum(item.get("expected_size") or 0 for item in changeable),
-        "writable_fields": list(_WRITABLE_FIELDS),
+        "writable_fields": list(writable_fields),
         "supported_formats": sorted(_SUPPORTED_EXTENSIONS),
         "message": "Preview only. No file, backup, or local index changes were made.",
     }
@@ -246,7 +333,13 @@ def _backup_dir(operation_id: str, library_key: str) -> Path:
     return backup_dir
 
 
-def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, confirm: bool) -> dict[str, Any]:
+def apply_plan(
+    track_ids: list[int],
+    expected: dict[int, dict[str, int]],
+    *,
+    confirm: bool,
+    allowed_fields: Iterable[str] | None = None,
+) -> dict[str, Any]:
     """
     expected: {track_id: {"expected_size": int, "expected_mtime_ns": int}}, echoed
     back by the client from its own most recent build_plan() call. A file whose
@@ -255,7 +348,7 @@ def apply_plan(track_ids: list[int], expected: dict[int, dict[str, int]], *, con
     """
     if not confirm:
         raise ValueError("Applying tag write-back requires confirm=true after reviewing the exact plan.")
-    plan = build_plan(track_ids)
+    plan = build_plan(track_ids, allowed_fields=allowed_fields)
     root = selected_library_root()
     operation_id = uuid.uuid4().hex
     now = _now()

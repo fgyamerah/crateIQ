@@ -2,6 +2,32 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-10] — Add safe bulk enrichment review and multi-track metadata editing
+
+- Added selected-track enrichment triage in Inbox with conservative reuse of
+  existing HIGH/MEDIUM/LOW/CONFLICT verdicts, safe-only acceptance, bulk Keep
+  Current, and an exception queue that opens the existing Track Inspector.
+- Replaced identity-field bulk editing with explicit Genre, Comment, and Label
+  operations and mixed-value, affected, matching, skipped, missing, and
+  unsupported preview counts before confirmation.
+- Enforced the bulk safety boundary in both layers: Title and Filename bulk
+  requests are rejected by the backend, Artist is excluded and rejected, and
+  single-track Title editing is unchanged.
+- Extended the existing metadata model and verified tag writer for Comment and
+  Label. Bulk apply scopes that writer to only the previewed bulk fields,
+  retains backup -> write -> re-read -> verify behavior, and reports per-track
+  partial failures without stopping independent tracks.
+- Browser verification passed across desktop, tablet, and narrow layouts. The
+  test library had no safe suggestions, so safe-accept mutation was verified by
+  automated coverage; automated tests also cover Comment Append, mixed values,
+  unsupported tracks, and partial failures. Added stable identifiers to the new
+  bulk value inputs after reviewing the browser's form-control warning.
+- Files affected: workspace/enrichment/tag-write services and schemas, track
+  model/schema, Inbox bulk UI and API types, focused tests, and current docs.
+  Migration notes: existing indexes gain nullable `comment` and `label`
+  columns additively; no existing metadata is overwritten. Ratings and
+  Favorites are unchanged.
+
 [2026-09-10] — Keep Inbox Track Inspector actions above the fold
 
 - Bounded the fixed Inbox Track Inspector to the usable dynamic viewport and

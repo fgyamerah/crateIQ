@@ -19,6 +19,8 @@ interface Props {
   onMetadataSave?: (field: InboxEditableMetadataField, value: string) => Promise<void>
   onSaveToFile?: () => void
   onReviewDecision?: () => Promise<void> | void
+  initialTab?: InspectorTab
+  navigationLabel?: string
 }
 
 function value(value: string | number | null | undefined) {
@@ -32,8 +34,8 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${remainder}`
 }
 
-export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision }: Props) {
-  const [tab, setTab] = useState<InspectorTab>('status')
+export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision, initialTab = 'status', navigationLabel }: Props) {
+  const [tab, setTab] = useState<InspectorTab>(initialTab)
   const closeRef = useRef<HTMLButtonElement>(null)
   const waveform = useTrackWaveform(track?.id ?? null)
   const preparation = track?.preparation_state
@@ -49,6 +51,8 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [onClose])
+
+  useEffect(() => { setTab(initialTab) }, [initialTab, track?.id])
 
   const extension = track?.filename.includes('.') ? track.filename.split('.').pop()?.toUpperCase() : null
   const blocker = preparation?.reasons.find((reason) => reason.severity === 'blocker')?.label
@@ -73,6 +77,7 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
         <button type="button" className="btn btn--ghost btn--sm" onClick={onNext} disabled={!onNext}>
           Next <ChevronRight size={14} />
         </button>
+        {navigationLabel && <span className="inbox-inspector-queue-position">{navigationLabel}</span>}
       </div>
 
       <div className="inbox-inspector-tabs" role="tablist" aria-label="Track inspector sections">

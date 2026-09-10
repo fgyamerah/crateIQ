@@ -1,5 +1,5 @@
 import { apiFetch } from './client'
-import type { InboxEditableMetadataField, InboxPreparationState, InboxPreparationStatus, TrackSummary } from '../types/track'
+import type { InboxBulkMetadataField, InboxPreparationState, InboxPreparationStatus, TrackSummary } from '../types/track'
 
 export interface WorkspaceStatus {
   state:            'managed_workspace' | 'legacy_direct_library' | 'not_configured'
@@ -159,9 +159,20 @@ export function patchInboxTrack(
   return apiFetch.patch<InboxTrackEditResponse>(`/workspace/inbox/tracks/${trackId}`, fields)
 }
 
+export type InboxBulkEditOperationName = 'leave' | 'set' | 'append' | 'clear'
+export interface InboxBulkEditOperation {
+  operation: InboxBulkEditOperationName
+  value?: string
+}
+
 export interface InboxBulkEditFieldPreview {
+  operation: Exclude<InboxBulkEditOperationName, 'leave'>
   current_values: string[]
-  new_value: string
+  value: string | null
+  mixed: boolean
+  affected_count: number
+  already_matching_count: number
+  skipped_count: number
 }
 
 export interface InboxBulkEditPreview {
@@ -170,12 +181,14 @@ export interface InboxBulkEditPreview {
   changeable_count: number
   skipped_not_inbox: number
   missing_count: number
-  fields: Partial<Record<InboxEditableMetadataField, InboxBulkEditFieldPreview>>
+  unsupported_count: number
+  fields: Partial<Record<InboxBulkMetadataField, InboxBulkEditFieldPreview>>
+  items: Array<{ track_id:number; filename:string|null; status:'change'|'unchanged'|'unsupported'|'not_inbox'|'not_found'; reason:string|null }>
   message: string
 }
 
-export function previewInboxBulkEdit(trackIds: number[], fields: Partial<Record<InboxEditableMetadataField, string>>): Promise<InboxBulkEditPreview> {
-  return apiFetch.post<InboxBulkEditPreview>('/workspace/inbox/bulk-edit/preview', { track_ids: trackIds, ...fields })
+export function previewInboxBulkEdit(trackIds: number[], operations: Partial<Record<InboxBulkMetadataField, InboxBulkEditOperation>>): Promise<InboxBulkEditPreview> {
+  return apiFetch.post<InboxBulkEditPreview>('/workspace/inbox/bulk-edit/preview', { track_ids: trackIds, operations })
 }
 
 export interface InboxBulkEditResultItem {
@@ -184,6 +197,8 @@ export interface InboxBulkEditResultItem {
   fields?: string[]
   reason?: string
   preparation_state?: InboxPreparationState
+  metadata_updated?: boolean
+  write_status?: string
 }
 
 export interface InboxBulkEditApplyResult {
@@ -196,11 +211,11 @@ export interface InboxBulkEditApplyResult {
   not_found_count: number
   results: InboxBulkEditResultItem[]
   message: string
-  tag_write: null
+  tag_write: { operation_ids: string[]; used_verified_writer: true }
 }
 
-export function applyInboxBulkEdit(trackIds: number[], fields: Partial<Record<InboxEditableMetadataField, string>>): Promise<InboxBulkEditApplyResult> {
-  return apiFetch.post<InboxBulkEditApplyResult>('/workspace/inbox/bulk-edit/apply', { track_ids: trackIds, ...fields, confirm: true })
+export function applyInboxBulkEdit(trackIds: number[], operations: Partial<Record<InboxBulkMetadataField, InboxBulkEditOperation>>): Promise<InboxBulkEditApplyResult> {
+  return apiFetch.post<InboxBulkEditApplyResult>('/workspace/inbox/bulk-edit/apply', { track_ids: trackIds, operations, confirm: true })
 }
 
 export function previewPromotion(trackIds?: number[]): Promise<PromotionPreview> {

@@ -33,7 +33,9 @@ def test_initialize_library_creates_schema_without_scanning(tmp_path):
     assert db_path.is_file()
     with sqlite3.connect(db_path) as conn:
         count = conn.execute("SELECT COUNT(*) FROM tracks").fetchone()[0]
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(tracks)")}
     assert count == 0, "initialize must not scan or index any files"
+    assert {"comment", "label"} <= columns
 
 
 def test_scan_preview_requires_initialization(tmp_path):
@@ -72,7 +74,10 @@ def test_import_reads_embedded_tags_over_filename(tmp_path, monkeypatch):
 
     def fake_tags(path: Path) -> dict[str, str]:
         if path == track:
-            return {"artist": "Real Artist", "title": "Real Title", "album": "Real Album", "genre": "House"}
+            return {
+                "artist": "Real Artist", "title": "Real Title", "album": "Real Album", "genre": "House",
+                "comment": "Warm-up", "label": "Soulistic",
+            }
         return {}
 
     monkeypatch.setattr(svc, "_embedded_tags", fake_tags)
@@ -83,8 +88,8 @@ def test_import_reads_embedded_tags_over_filename(tmp_path, monkeypatch):
     assert result["tags_read_count"] == 1
     db_path = root / "logs" / "processed.db"
     with sqlite3.connect(db_path) as conn:
-        row = conn.execute("SELECT artist, title, album, genre, parse_confidence FROM tracks").fetchone()
-    assert row == ("Real Artist", "Real Title", "Real Album", "House", "HIGH")
+        row = conn.execute("SELECT artist, title, album, genre, comment, label, parse_confidence FROM tracks").fetchone()
+    assert row == ("Real Artist", "Real Title", "Real Album", "House", "Warm-up", "Soulistic", "HIGH")
 
 
 def test_import_falls_back_to_filename_when_no_tags(tmp_path, monkeypatch):
