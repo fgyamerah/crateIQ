@@ -115,6 +115,24 @@ describe('EnrichmentReviewPanel', () => {
     expect(screen.getAllByRole('checkbox')).toHaveLength(2)
   })
 
+  it('keeps primary actions before and outside the scrollable review details', async () => {
+    vi.mocked(fetchInboxTrackEnrichmentReview).mockResolvedValue(review([suggestion({
+      evidence: {
+        genre: ['Discogs: Afro Tech', 'Beets: Afro Tech', 'Beatport: Afro Tech'],
+      },
+    })]))
+    render(<EnrichmentReviewPanel trackId={1} />)
+
+    const useSuggested = await screen.findByRole('button', { name: 'Use Suggested (1)' })
+    const actionArea = screen.getByLabelText('Primary review actions')
+    const details = screen.getByLabelText('Review evidence and field details')
+
+    expect(actionArea).toContainElement(useSuggested)
+    expect(details).not.toContainElement(useSuggested)
+    expect(actionArea.compareDocumentPosition(details) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(details).toContainElement(screen.getByText('3 sources agree'))
+  })
+
   it('Use Suggested saves the selection then applies, and refreshes', async () => {
     const onDecision = vi.fn()
     const item = suggestion()

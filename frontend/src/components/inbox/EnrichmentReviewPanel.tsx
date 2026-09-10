@@ -177,121 +177,137 @@ export default function EnrichmentReviewPanel({ trackId, onDecision }: Props) {
         </div>
       )}
 
-      {items.map((item) => {
-        const fields = fieldNames(item)
-        const conflictFields = fields.filter((field) => item.suggested_fields?.[field] === undefined)
-        const selectable = fields.filter((field) => item.suggested_fields?.[field] !== undefined)
-        const chosen = selected[item.suggestion_id] ?? {}
-        const canApply = selectable.length > 0 && Object.keys(chosen).length > 0 && busy !== item.suggestion_id
-        const itemBusy = busy === item.suggestion_id
-        return (
-          <section className="inbox-review-card" key={item.suggestion_id} aria-label={`Enrichment suggestion from ${sourceLabel(item.source_id, review?.sources ?? [])}`}>
-            <header className="inbox-review-card-head">
-              <div>
-                <strong>{sourceLabel(item.source_id, review?.sources ?? [])}</strong>
-                <Badge tone={confidenceTone(item.confidence)}>{item.confidence.toUpperCase()}</Badge>
-              </div>
-              <small className="lib-muted">{item.reason}</small>
-            </header>
-
-            <div className="inbox-review-fields">
-              {fields.map((field) => {
-                const suggested = item.suggested_fields?.[field]
-                const evidence = item.evidence?.[field] ?? []
-                const isConflict = suggested === undefined && evidence.length > 0
-                const fieldLabel = field[0].toUpperCase() + field.slice(1)
-                return (
-                  <div className="inbox-review-field" key={field}>
-                    <div className="inbox-review-field-head">
-                      <span>{fieldLabel}</span>
-                      {isConflict && <Badge tone="failed">CONFLICT</Badge>}
-                    </div>
-                    <dl className="inbox-review-values">
-                      <dt>Current</dt>
-                      <dd>{display(item.current_fields?.[field])}</dd>
-                      {suggested !== undefined && (
-                        <>
-                          <dt>Suggested</dt>
-                          <dd className="inbox-review-suggested">{suggested}</dd>
-                        </>
-                      )}
-                    </dl>
-                    {isConflict && evidence.length > 0 && (
-                      <ul className="inbox-review-evidence" aria-label={`Conflicting source values for ${fieldLabel}`}>
-                        {evidence.map((line) => {
-                          const separator = line.indexOf(': ')
-                          const provider = separator > 0 ? line.slice(0, separator) : line
-                          const value = separator > 0 ? line.slice(separator + 2) : line
-                          return (
-                            <li key={line}>
-                              <span className="lib-muted">{provider}</span> {value}
-                            </li>
-                          )
-                        })}
-                      </ul>
-                    )}
-                    {!isConflict && evidence.length > 0 && (
-                      <p className="inbox-review-evidence-note lib-muted">
-                        {evidence.length} source{evidence.length === 1 ? '' : 's'} agree
-                      </p>
-                    )}
-                    {suggested !== undefined && (
-                      <label className="inbox-review-pick">
-                        <input
-                          type="checkbox"
-                          checked={chosen[field] === suggested}
-                          disabled={itemBusy}
-                          onChange={(event) => toggleField(item.suggestion_id, field, suggested, event.target.checked)}
-                        />
-                        <span>Use suggested {fieldLabel.toLowerCase()}</span>
-                      </label>
-                    )}
+      {items.length > 0 && (
+        <div className="inbox-review-action-area" aria-label="Primary review actions">
+          {items.map((item) => {
+            const fields = fieldNames(item)
+            const selectable = fields.filter((field) => item.suggested_fields?.[field] !== undefined)
+            const chosen = selected[item.suggestion_id] ?? {}
+            const canApply = selectable.length > 0 && Object.keys(chosen).length > 0 && busy !== item.suggestion_id
+            const itemBusy = busy === item.suggestion_id
+            return (
+              <div className="inbox-review-action-item" key={item.suggestion_id}>
+                <div className="inbox-review-action-context">
+                  <strong>{sourceLabel(item.source_id, review?.sources ?? [])}</strong>
+                  <Badge tone={confidenceTone(item.confidence)}>{item.confidence.toUpperCase()}</Badge>
+                </div>
+                <div className="inbox-review-actions">
+                  <button
+                    type="button"
+                    className="btn btn--primary btn--sm"
+                    disabled={!canApply}
+                    onClick={() => void useSuggested(item)}
+                    ref={(node) => {
+                      if (node) actionRefs.current.set(item.suggestion_id, node)
+                      else actionRefs.current.delete(item.suggestion_id)
+                    }}
+                  >
+                    {itemBusy ? <Loader2 size={13} className="spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
+                    Use Suggested{selectable.length ? ` (${selectable.length})` : ''}
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn--ghost btn--sm"
+                    disabled={itemBusy}
+                    onClick={() => void keepCurrent(item)}
+                  >
+                    Keep Current
+                  </button>
+                </div>
+                {itemErrors[item.suggestion_id] && (
+                  <div className="inbox-review-error" role="alert">
+                    <AlertTriangle size={14} aria-hidden="true" /> {itemErrors[item.suggestion_id]}
                   </div>
-                )
-              })}
-            </div>
-
-            {conflictFields.length > 0 && (
-              <p className="inbox-review-conflict-note lib-muted">
-                {conflictFields.map((field) => field[0].toUpperCase() + field.slice(1)).join(', ')}: sources
-                disagree, so no single value is proposed. Resolve here by keeping the current value, or edit it in
-                Metadata.
-              </p>
-            )}
-
-            {itemErrors[item.suggestion_id] && (
-              <div className="inbox-review-error" role="alert">
-                <AlertTriangle size={14} aria-hidden="true" /> {itemErrors[item.suggestion_id]}
+                )}
               </div>
-            )}
+            )
+          })}
+        </div>
+      )}
 
-            <div className="inbox-review-actions">
-              <button
-                type="button"
-                className="btn btn--primary btn--sm"
-                disabled={!canApply}
-                onClick={() => void useSuggested(item)}
-                ref={(node) => {
-                  if (node) actionRefs.current.set(item.suggestion_id, node)
-                  else actionRefs.current.delete(item.suggestion_id)
-                }}
-              >
-                {itemBusy ? <Loader2 size={13} className="spin" aria-hidden="true" /> : <Check size={13} aria-hidden="true" />}
-                Use Suggested{selectable.length ? ` (${selectable.length})` : ''}
-              </button>
-              <button
-                type="button"
-                className="btn btn--ghost btn--sm"
-                disabled={itemBusy}
-                onClick={() => void keepCurrent(item)}
-              >
-                Keep Current
-              </button>
-            </div>
+      {items.length > 0 && (
+        <div className="inbox-review-details" aria-label="Review evidence and field details">
+          {items.map((item) => {
+            const fields = fieldNames(item)
+            const conflictFields = fields.filter((field) => item.suggested_fields?.[field] === undefined)
+            const chosen = selected[item.suggestion_id] ?? {}
+            const itemBusy = busy === item.suggestion_id
+            return (
+              <section className="inbox-review-card" key={item.suggestion_id} aria-label={`Enrichment suggestion from ${sourceLabel(item.source_id, review?.sources ?? [])}`}>
+                <header className="inbox-review-card-head">
+                  <strong>{sourceLabel(item.source_id, review?.sources ?? [])} evidence</strong>
+                  <small className="lib-muted">{item.reason}</small>
+                </header>
 
-          </section>
-        )
-      })}
+                <div className="inbox-review-fields">
+                  {fields.map((field) => {
+                    const suggested = item.suggested_fields?.[field]
+                    const evidence = item.evidence?.[field] ?? []
+                    const isConflict = suggested === undefined && evidence.length > 0
+                    const fieldLabel = field[0].toUpperCase() + field.slice(1)
+                    return (
+                      <div className="inbox-review-field" key={field}>
+                        <div className="inbox-review-field-head">
+                          <span>{fieldLabel}</span>
+                          {isConflict && <Badge tone="failed">CONFLICT</Badge>}
+                        </div>
+                        <dl className="inbox-review-values">
+                          <dt>Current</dt>
+                          <dd>{display(item.current_fields?.[field])}</dd>
+                          {suggested !== undefined && (
+                            <>
+                              <dt>Suggested</dt>
+                              <dd className="inbox-review-suggested">{suggested}</dd>
+                            </>
+                          )}
+                        </dl>
+                        {isConflict && evidence.length > 0 && (
+                          <ul className="inbox-review-evidence" aria-label={`Conflicting source values for ${fieldLabel}`}>
+                            {evidence.map((line) => {
+                              const separator = line.indexOf(': ')
+                              const provider = separator > 0 ? line.slice(0, separator) : line
+                              const value = separator > 0 ? line.slice(separator + 2) : line
+                              return (
+                                <li key={line}>
+                                  <span className="lib-muted">{provider}</span> {value}
+                                </li>
+                              )
+                            })}
+                          </ul>
+                        )}
+                        {!isConflict && evidence.length > 0 && (
+                          <p className="inbox-review-evidence-note lib-muted">
+                            {evidence.length} source{evidence.length === 1 ? '' : 's'} agree
+                          </p>
+                        )}
+                        {suggested !== undefined && (
+                          <label className="inbox-review-pick">
+                            <input
+                              type="checkbox"
+                              checked={chosen[field] === suggested}
+                              disabled={itemBusy}
+                              onChange={(event) => toggleField(item.suggestion_id, field, suggested, event.target.checked)}
+                            />
+                            <span>Use suggested {fieldLabel.toLowerCase()}</span>
+                          </label>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+
+                {conflictFields.length > 0 && (
+                  <p className="inbox-review-conflict-note lib-muted">
+                    {conflictFields.map((field) => field[0].toUpperCase() + field.slice(1)).join(', ')}: sources
+                    disagree, so no single value is proposed. Resolve here by keeping the current value, or edit it in
+                    Metadata.
+                  </p>
+                )}
+              </section>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }

@@ -92,7 +92,7 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
         ))}
       </div>
 
-      <div className="inbox-inspector-body">
+      <div className={`inbox-inspector-body${tab === 'review' ? ' inbox-inspector-body--review' : ''}`}>
         {loading && <p className="muted"><Loader2 size={14} className="spin" /> Loading track details…</p>}
         {!loading && track && tab === 'overview' && (
           <section id="inbox-inspector-panel-overview" role="tabpanel" aria-labelledby="inbox-inspector-tab-overview">
@@ -116,7 +116,7 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
           </section>
         )}
         {!loading && track && tab === 'review' && (
-          <section id="inbox-inspector-panel-review" role="tabpanel" aria-labelledby="inbox-inspector-tab-review">
+          <section className="inbox-inspector-review-tab" id="inbox-inspector-panel-review" role="tabpanel" aria-labelledby="inbox-inspector-tab-review">
             <h3>Review suggestions</h3>
             <EnrichmentReviewPanel trackId={track.id} onDecision={onReviewDecision} />
           </section>

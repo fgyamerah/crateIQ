@@ -2,6 +2,24 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-10] — Keep Inbox Track Inspector actions above the fold
+
+- Bounded the fixed Inbox Track Inspector to the usable dynamic viewport and
+  the shared expanded, minimized, and mobile persistent-player clearance, so
+  the panel no longer extends underneath the bottom audio controls.
+- Converted the inspector to a fixed-chrome flex layout: header, track
+  navigation, and tabs remain visible; ordinary tab content scrolls inside
+  the panel; and Review keeps its suggestion summary and per-suggestion
+  actions above an independently scrollable evidence region.
+- Added focused frontend coverage for Review action/detail DOM order, scroll
+  containment, tab presence, and Previous/Next presence without changing
+  review, metadata, provider-consensus, or waveform/player behavior.
+- Files affected: Inbox Track Inspector and enrichment-review components,
+  shared frontend layout styles, focused frontend tests, and this changelog.
+  Migration notes: none. Browser verification passed across the targeted
+  desktop and mobile viewports; persistent-player overlap was not exercised
+  because the player was not rendered in that browser state.
+
 [2026-09-06] — Recover stale idle launcher sockets safely
 
 - Extended the explicit `recover-launcher` command to handle an `idle`

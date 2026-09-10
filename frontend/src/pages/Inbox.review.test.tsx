@@ -158,10 +158,14 @@ describe('Inbox inline enrichment review integration', () => {
 
     fireEvent.click(screen.getByRole('button', { name: 'Inspect track-1.mp3' }))
     const inspector = await screen.findByRole('dialog', { name: 'Inbox Track Inspector' })
+    expect(within(inspector).getByRole('button', { name: 'Previous' })).toBeInTheDocument()
+    expect(within(inspector).getByRole('button', { name: 'Next' })).toBeInTheDocument()
+    expect(within(inspector).getAllByRole('tab')).toHaveLength(5)
     fireEvent.click(within(inspector).getByRole('tab', { name: 'Review' }))
 
     expect(await within(inspector).findByText('1 suggestion need review')).toBeInTheDocument()
     expect(within(inspector).getByText('Afro Tech')).toBeInTheDocument()
+    expect(inspector.querySelector('.inbox-inspector-body--review')).not.toBeNull()
 
     const fetchCount = vi.mocked(workspaceApi.fetchInboxTracks).mock.calls.length
     fireEvent.click(within(inspector).getByRole('button', { name: 'Use Suggested (1)' }))
