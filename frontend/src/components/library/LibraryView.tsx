@@ -2,8 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, ChevronDown, ChevronUp, RefreshCw } from 'lucide-react'
 import { fetchLibraryOverview } from '../../api/library'
-import { fetchReviewSummary } from '../../api/reviews'
-import type { ReviewSummary } from '../../api/reviews'
+import { updateTrackReview } from '../../api/reviews'
 import type { LibraryOverview } from '../../api/library'
 import { fetchTrack, fetchTrackIssues, fetchTrackPage } from '../../api/tracks'
 import type {
@@ -89,7 +88,7 @@ function LibraryStatusStrip({
   )
 }
 
-export default function LibraryView() {
+export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: boolean }) {
   const navigate = useNavigate()
   const persistentPlayer = usePersistentPlayer()
   const [ui, setUi] = useState<LibraryUiState>(() => loadUiState())
@@ -100,7 +99,6 @@ export default function LibraryView() {
   const [issues, setIssues] = useState<TrackIssueCounts | null>(null)
   const [trackPage, setTrackPage] = useState<TrackPage | null>(null)
   const [selectedDetail, setSelectedDetail] = useState<TrackDetail | null>(null)
-  const [reviewSummary, setReviewSummary] = useState<ReviewSummary>({})
   const [detailLoading, setDetailLoading] = useState(false)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -153,11 +151,13 @@ export default function LibraryView() {
     bpm_min: ui.bpmMinFilter ? Number(ui.bpmMinFilter) : undefined,
     bpm_max: ui.bpmMaxFilter ? Number(ui.bpmMaxFilter) : undefined,
     has_key: ui.hasKeyFilter ? ui.hasKeyFilter === 'yes' : undefined,
+    rating_filter: ui.ratingFilter || undefined,
+    favorite_only: favoriteOnly || undefined,
     sort: ui.sort,
     order: ui.order,
     limit: LIMIT,
     offset: ui.offset,
-  }), [ui.search, ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter, ui.sort, ui.order, ui.offset])
+  }), [ui.search, ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter, ui.ratingFilter, ui.sort, ui.order, ui.offset, favoriteOnly])
 
   const loadMain = useCallback(async () => {
     setLoading(true)
@@ -250,19 +250,17 @@ export default function LibraryView() {
 
   const total = trackPage?.total ?? 0
   const issueTotal = issues ? Object.values(issues).reduce((sum, n) => sum + (n || 0), 0) : 0
-  const activeFilterCount = [ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter].filter(Boolean).length
+  const activeFilterCount = [ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter, ui.ratingFilter].filter(Boolean).length
 
-  useEffect(() => {
-    let cancelled = false
-    fetchReviewSummary(items.map((track) => track.id))
-      .then((response) => {
-        if (!cancelled) setReviewSummary(response.reviews)
-      })
-      .catch(() => {
-        if (!cancelled) setReviewSummary({})
-      })
-    return () => { cancelled = true }
-  }, [trackPage])
+  const updateReview = useCallback(async (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => {
+    const next = await updateTrackReview(trackId, patch)
+    setTrackPage((current) => current && {
+      ...current,
+      items: current.items.map((track) => track.id === trackId ? { ...track, rating: next.rating, favorite: next.favorite } : track),
+    })
+    setSelectedDetail((current) => current && current.id === trackId ? { ...current, rating: next.rating, favorite: next.favorite } : current)
+    if (favoriteOnly && patch.favorite === false) await loadMain()
+  }, [favoriteOnly, loadMain])
 
   const selectTrack = (id: number) => {
     setUi((current) => ({ ...current, selectedId: id }))
@@ -282,6 +280,13 @@ export default function LibraryView() {
 
   return (
     <div className="lib-workspace">
+      <div className="lib-view-heading">
+        <div>
+          <strong>{favoriteOnly ? 'Favorites' : 'Library'}</strong>
+          <span>{favoriteOnly ? 'A smart collection of tracks you marked to keep close.' : 'Browse, inspect, and prepare your active library.'}</span>
+        </div>
+      </div>
+
       <LibraryToolbar
         searchDraft={ui.searchDraft}
         searchRef={searchRef}
@@ -336,7 +341,6 @@ export default function LibraryView() {
             sort={ui.sort}
             order={ui.order}
             density={ui.density}
-            reviews={reviewSummary}
             playingTrackId={persistentPlayer.playing ? persistentPlayer.currentTrack?.id ?? null : null}
             onSort={(key) => handleSort(key)}
             onSelect={selectTrack}
@@ -344,6 +348,7 @@ export default function LibraryView() {
             onPrevPage={() => setUi((current) => ({ ...current, offset: Math.max(0, current.offset - LIMIT) }))}
             onNextPage={() => setUi((current) => ({ ...current, offset: current.offset + LIMIT }))}
             onOpenImportWizard={() => navigate('/settings#library-setup-import')}
+            onReviewChange={updateReview}
           />
 
           <TrackInspector
@@ -352,6 +357,7 @@ export default function LibraryView() {
             isCurrentTrack={Boolean(selectedDetail && persistentPlayer.currentTrack?.id === selectedDetail.id)}
             isPlaying={persistentPlayer.playing && persistentPlayer.currentTrack?.id === selectedDetail?.id}
             onPlay={() => selectedDetail && playTrack(selectedDetail.id)}
+            onReviewChange={updateReview}
           />
         </div>
       </div>

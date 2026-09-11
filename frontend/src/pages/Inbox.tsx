@@ -17,6 +17,7 @@ import {
   previewPromotion,
   startProcessAll,
 } from '../api/workspace'
+import { updateTrackReview } from '../api/reviews'
 import type {
   InboxSortKey, InboxTrackMetadataEditResult, InboxTrackPage,
   PreparationOperation, PreparePreflight, PromotionPreview, SortOrder,
@@ -40,6 +41,8 @@ import BulkEnrichmentReview from '../components/inbox/BulkEnrichmentReview'
 import BulkMetadataEditor from '../components/inbox/BulkMetadataEditor'
 import type { BulkEnrichmentSummary } from '../types/enrichmentReview'
 import { fetchBulkEnrichmentSummary } from '../api/enrichmentReview'
+import RatingFavoriteControls from '../components/reviews/RatingFavoriteControls'
+import BulkRatingFavoriteEditor from '../components/inbox/BulkRatingFavoriteEditor'
 
 function messageFor(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.displayMessage
@@ -131,6 +134,7 @@ export default function Inbox() {
   const inspectedId = inspectedParam && /^\d+$/.test(inspectedParam) ? Number(inspectedParam) : null
 
   const [bulkEditOpen, setBulkEditOpen] = useState(false)
+  const [bulkSignalsOpen, setBulkSignalsOpen] = useState(false)
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false)
   const [bulkReviewRefreshKey, setBulkReviewRefreshKey] = useState(0)
   const [exceptionTrackIds, setExceptionTrackIds] = useState<number[]>([])
@@ -422,6 +426,16 @@ export default function Inbox() {
     await fetchCurrentInboxData()
   }, [fetchCurrentInboxData])
 
+  const saveReviewSignal = useCallback(async (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => {
+    const next = await updateTrackReview(trackId, patch)
+    const apply = (track: TrackSummary) => track.id === trackId
+      ? { ...track, rating: next.rating, favorite: next.favorite }
+      : track
+    setTracks((current) => current ? { ...current, items: current.items.map(apply) } : current)
+    setKnownTracks((current) => current[trackId] ? { ...current, [trackId]: apply(current[trackId]) } : current)
+    setInspectedTrack((current) => current ? apply(current) : current)
+  }, [])
+
   const onSort = (key: InboxSortKey) => {
     if (activeEditCount > 0) {
       setError('Finish or cancel the open edit before changing the sort order.')
@@ -655,6 +669,15 @@ export default function Inbox() {
                 <button
                   className="btn btn--ghost btn--sm"
                   disabled={!selectedCount || bulkSelectionTooLarge}
+                  title={bulkSelectionTooLarge ? `Rating and Favorites support at most ${BULK_SELECTION_LIMIT} tracks.` : undefined}
+                  onClick={() => { setBulkSignalsOpen((open) => !open); setBulkReviewOpen(false); setBulkEditOpen(false) }}
+                  aria-expanded={bulkSignalsOpen}
+                >
+                  <span aria-hidden="true">★</span> Rate / Favorite ({selectedCount})
+                </button>
+                <button
+                  className="btn btn--ghost btn--sm"
+                  disabled={!selectedCount || bulkSelectionTooLarge}
                   title={bulkSelectionTooLarge ? `Edit Metadata supports at most ${BULK_SELECTION_LIMIT} tracks.` : undefined}
                   onClick={() => { setBulkEditOpen((open) => !open); setBulkReviewOpen(false) }}
                   aria-expanded={bulkEditOpen}
@@ -678,7 +701,7 @@ export default function Inbox() {
                 </StatusStrip>
               )}
 
-              {(bulkReviewOpen || bulkEditOpen) && (
+              {(bulkReviewOpen || bulkEditOpen || bulkSignalsOpen) && (
                 <div ref={bulkPanelRef}>
                   {bulkReviewOpen && (
                     <BulkEnrichmentReview
@@ -696,6 +719,15 @@ export default function Inbox() {
                       tracks={selectedTrackIds.map((trackId) => knownTracks[trackId]).filter(Boolean)}
                       onApplied={fetchCurrentInboxData}
                       onClose={() => setBulkEditOpen(false)}
+                    />
+                  )}
+                  {bulkSignalsOpen && (
+                    <BulkRatingFavoriteEditor
+                      key={selectedTrackIds.join(',')}
+                      trackIds={selectedTrackIds}
+                      tracks={selectedTrackIds.map((trackId) => knownTracks[trackId]).filter(Boolean)}
+                      onApplied={fetchCurrentInboxData}
+                      onClose={() => setBulkSignalsOpen(false)}
                     />
                   )}
                 </div>
@@ -720,6 +752,8 @@ export default function Inbox() {
                       <SortTh label="Genre" sortKey="genre" sort={sort} onSort={onSort} />
                       <SortTh label="BPM" sortKey="bpm" sort={sort} onSort={onSort} />
                       <SortTh label="Key" sortKey="key" sort={sort} onSort={onSort} />
+                      <SortTh label="Rating" sortKey="rating" sort={sort} onSort={onSort} title="Unrated tracks stay last in either direction" />
+                      <SortTh label="Favorite" sortKey="favorite" sort={sort} onSort={onSort} />
                       <SortTh label="Status" sortKey="readiness" sort={sort} onSort={onSort} />
                       <th><span className="lib-visually-hidden">Track details</span></th>
                     </tr>
@@ -773,6 +807,26 @@ export default function Inbox() {
                           </td>
                           <td>{track.bpm ?? '—'}</td>
                           <td>{track.key_camelot || track.key_musical || '—'}</td>
+                          <td>
+                            <RatingFavoriteControls
+                              rating={track.rating}
+                              favorite={track.favorite}
+                              compact
+                              showFavorite={false}
+                              onRatingChange={(rating) => saveReviewSignal(track.id, { rating })}
+                              onFavoriteChange={(favorite) => saveReviewSignal(track.id, { favorite })}
+                            />
+                          </td>
+                          <td>
+                            <RatingFavoriteControls
+                              rating={track.rating}
+                              favorite={track.favorite}
+                              compact
+                              showRating={false}
+                              onRatingChange={(rating) => saveReviewSignal(track.id, { rating })}
+                              onFavoriteChange={(favorite) => saveReviewSignal(track.id, { favorite })}
+                            />
+                          </td>
                           <td>
                             <PreparationStatusBadge state={track.preparation_state} />
                             {track.preparation_state?.review_count ? (
@@ -861,6 +915,7 @@ export default function Inbox() {
               onMetadataSave={(field, value) => inspectedId === null ? Promise.resolve() : saveMetadata(inspectedId, field, value)}
               onSaveToFile={() => inspectedId !== null && setSaveTrackIds([inspectedId])}
               onReviewDecision={afterInspectorReviewDecision}
+              onReviewChange={(patch) => inspectedId === null ? Promise.resolve() : saveReviewSignal(inspectedId, patch)}
             />
           )}
           {saveTrackIds && (

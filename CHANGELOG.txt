@@ -2,6 +2,30 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-11] — Add ratings and Favorites signals
+
+- Added independent user-controlled 1–5 star ratings with an explicit unrated
+  state and a binary Favorite flag in the existing `track_reviews` database
+  model. Review status, notes, play history, and prior review information are
+  preserved; these signals are never inferred by enrichment.
+- Added quick Inspector, Inbox, Library, and Favorites-view controls plus
+  accessible direct table actions, rating filters/sorts, Favorites-only
+  filtering, and a built-in dynamic Favorites smart collection. Favorites
+  never copies, moves, duplicates, or retags audio files.
+- Added explicit preview-first Inbox bulk actions for set/clear rating and
+  add/remove Favorites, including mixed-state reporting and affected versus
+  already-matching counts. Backend validation enforces active-library scope,
+  unique bounded selections, strict values, and confirmation before apply.
+- Added batched review-signal reads for list/detail projections to avoid
+  per-track review queries. Focused backend and frontend coverage protects
+  signal independence, isolation, bulk safety, table interactions, preview
+  counts, accessibility labels, and Favorites empty-state behavior.
+- Files affected: review signal service/routes, track/workspace projections,
+  Library and Inbox UI, Favorites route/navigation, focused tests, and current
+  docs. Migration notes: `track_reviews.favorite` is added additively and
+  legacy `review_status='favorite'` values are carried forward. Ratings and
+  Favorites remain database/library-review state and are not audio tag writes.
+
 [2026-09-10] — Add safe bulk enrichment review and multi-track metadata editing
 
 - Added selected-track enrichment triage in Inbox with conservative reuse of

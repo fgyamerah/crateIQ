@@ -84,6 +84,9 @@ export default function LibraryToolbar({
           <option value="title:desc">Title Z→A</option>
           <option value="bpm:asc">BPM low→high</option>
           <option value="bpm:desc">BPM high→low</option>
+          <option value="rating:desc">Rating high→low</option>
+          <option value="rating:asc">Rating low→high</option>
+          <option value="favorite:desc">Favorites first</option>
         </select>
       </label>
 

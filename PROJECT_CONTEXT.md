@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-09-10
+**Updated:** 2026-09-11
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -257,7 +257,7 @@ job, with backend dedup as the cross-tab safety net.
 
 Current primary navigation (`frontend/src/components/Sidebar.tsx`):
 
-* **LIBRARY** — Inbox, Library, Needs Review
+* **LIBRARY** — Inbox, Library, Favorites, Needs Review
 * **DJ** — Crates, Set Builder, Publish
 * **TOOLS** — Jobs, Maintenance (hub linking to Quality, Duplicates,
   Reconciliation, Folders, Audit)
@@ -283,6 +283,13 @@ Service map (`backend/app/services/`), current primary surfaces:
   network or mutation, and exposes `preparation_state` on
   `GET /api/workspace/inbox/tracks`; promotion preview/apply reuse the same
   result rather than maintaining a second readiness interpretation.
+* `track_review_service` — additive, DB-only user signals in the selected
+  library's `track_reviews` table: integer rating `1..5` or `NULL` for
+  unrated, and independent boolean `favorite`. It preserves existing review
+  status, notes, play history, and timestamps; it never writes audio tags or
+  files. Library/Inbox list projections read signals in batches, and the
+  built-in Favorites view is a live smart collection of `favorite=true`
+  tracks rather than a duplicated playlist or audio asset set.
 * `preparation_service` — Process All orchestration (clean -> enrich ->
   write-back), background operation tracking
 * `needs_review_service` — read-only aggregation across enrichment,

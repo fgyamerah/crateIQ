@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import type { QualityTier } from '../../types/track'
 
-export type SortKey = 'artist' | 'title' | 'bpm' | 'filename'
+export type SortKey = 'artist' | 'title' | 'bpm' | 'filename' | 'rating' | 'favorite'
 export type SortOrder = 'asc' | 'desc'
 export type Density = 'comfortable' | 'compact'
 
@@ -27,6 +27,7 @@ export interface LibraryUiState {
   bpmMinFilter: string
   bpmMaxFilter: string
   hasKeyFilter: '' | 'yes' | 'no'
+  ratingFilter: '' | 'unrated' | '1plus' | '2plus' | '3plus' | '4plus' | '5'
   density: Density
   filtersExpanded: boolean
   statusStripCollapsed: boolean
@@ -43,6 +44,7 @@ export const DEFAULT_UI_STATE: LibraryUiState = {
   bpmMinFilter: '',
   bpmMaxFilter: '',
   hasKeyFilter: '',
+  ratingFilter: '',
   density: 'comfortable',
   filtersExpanded: true,
   statusStripCollapsed: false,
@@ -58,6 +60,7 @@ function safeNumber(value: unknown, fallback = 0): number {
 
 function isSortKey(value: unknown): value is SortKey {
   return value === 'artist' || value === 'title' || value === 'bpm' || value === 'filename'
+    || value === 'rating' || value === 'favorite'
 }
 
 export function loadUiState(): LibraryUiState {
@@ -79,6 +82,7 @@ export function loadUiState(): LibraryUiState {
       bpmMinFilter: safeString(input.bpmMinFilter, ''),
       bpmMaxFilter: safeString(input.bpmMaxFilter, ''),
       hasKeyFilter: input.hasKeyFilter === 'yes' || input.hasKeyFilter === 'no' ? input.hasKeyFilter : '',
+      ratingFilter: input.ratingFilter === 'unrated' || input.ratingFilter === '1plus' || input.ratingFilter === '2plus' || input.ratingFilter === '3plus' || input.ratingFilter === '4plus' || input.ratingFilter === '5' ? input.ratingFilter : '',
       density: input.density === 'compact' ? 'compact' : 'comfortable',
       filtersExpanded: typeof input.filtersExpanded === 'boolean' ? input.filtersExpanded : true,
       statusStripCollapsed: typeof input.statusStripCollapsed === 'boolean' ? input.statusStripCollapsed : false,

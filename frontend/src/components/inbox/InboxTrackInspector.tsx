@@ -7,6 +7,7 @@ import EditableMetadataCell from './EditableMetadataCell'
 import PreparationStatusBadge from './PreparationStatusBadge'
 import EnrichmentReviewPanel from './EnrichmentReviewPanel'
 import type { InboxEditableMetadataField } from '../../types/track'
+import RatingFavoriteControls from '../reviews/RatingFavoriteControls'
 
 type InspectorTab = 'overview' | 'review' | 'status' | 'analysis' | 'file'
 
@@ -21,6 +22,7 @@ interface Props {
   onReviewDecision?: () => Promise<void> | void
   initialTab?: InspectorTab
   navigationLabel?: string
+  onReviewChange?: (patch: { rating?: number | null; favorite?: boolean }) => Promise<void> | void
 }
 
 function value(value: string | number | null | undefined) {
@@ -34,7 +36,7 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${remainder}`
 }
 
-export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision, initialTab = 'status', navigationLabel }: Props) {
+export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision, initialTab = 'status', navigationLabel, onReviewChange }: Props) {
   const [tab, setTab] = useState<InspectorTab>(initialTab)
   const closeRef = useRef<HTMLButtonElement>(null)
   const waveform = useTrackWaveform(track?.id ?? null)
@@ -78,6 +80,18 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
           Next <ChevronRight size={14} />
         </button>
         {navigationLabel && <span className="inbox-inspector-queue-position">{navigationLabel}</span>}
+      </div>
+
+      <div className="inbox-inspector-signals">
+        <span>Your signals</span>
+        <RatingFavoriteControls
+          rating={track?.rating}
+          favorite={track?.favorite}
+          compact
+          disabled={!track || loading || !onReviewChange}
+          onRatingChange={(rating) => onReviewChange?.({ rating })}
+          onFavoriteChange={(favorite) => onReviewChange?.({ favorite })}
+        />
       </div>
 
       <div className="inbox-inspector-tabs" role="tablist" aria-label="Track inspector sections">

@@ -41,10 +41,21 @@ export default function LibraryFilters({ overview, ui, expanded, onChange, onTog
       onClear: () => onChange((c) => ({ ...c, hasKeyFilter: '', offset: 0 })),
     })
   }
+  if (ui.ratingFilter) {
+    const labels: Record<Exclude<NonNullable<LibraryUiState['ratingFilter']>, ''>, string> = {
+      unrated: 'Rating: Unrated', '1plus': 'Rating: 1+', '2plus': 'Rating: 2+',
+      '3plus': 'Rating: 3+', '4plus': 'Rating: 4+', '5': 'Rating: 5 only',
+    }
+    activePills.push({
+      key: 'rating',
+      label: labels[ui.ratingFilter],
+      onClear: () => onChange((c) => ({ ...c, ratingFilter: '', offset: 0 })),
+    })
+  }
   const hasAnyFilter = activePills.length > 0
 
   function clearAll() {
-    onChange((c) => ({ ...c, genreFilter: '', bpmMinFilter: '', bpmMaxFilter: '', hasKeyFilter: '', offset: 0 }))
+    onChange((c) => ({ ...c, genreFilter: '', bpmMinFilter: '', bpmMaxFilter: '', hasKeyFilter: '', ratingFilter: '', offset: 0 }))
   }
 
   return (
@@ -116,6 +127,22 @@ export default function LibraryFilters({ overview, ui, expanded, onChange, onTog
             >
               Missing key
             </button>
+          </div>
+          <div className="lib-filter-group">
+            <span className="lib-filter-group-label">Rating</span>
+            {([
+              ['unrated', 'Unrated'], ['1plus', '1+'], ['2plus', '2+'],
+              ['3plus', '3+'], ['4plus', '4+'], ['5', '5 only'],
+            ] as const).map(([value, label]) => (
+              <button
+                key={value}
+                type="button"
+                className={`lib-chip${ui.ratingFilter === value ? ' lib-chip--active' : ''}`}
+                onClick={() => onChange((c) => ({ ...c, ratingFilter: c.ratingFilter === value ? '' : value, offset: 0 }))}
+              >
+                {label}
+              </button>
+            ))}
           </div>
         </div>
       )}

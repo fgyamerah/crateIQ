@@ -88,6 +88,9 @@ export interface TrackSummary {
   issues:       TrackIssue[]
   recommended_action?: string | null
   recommended_route?: string | null
+  rating?:      number | null
+  favorite?:    boolean
+  review_status?: string
   preparation_state?: InboxPreparationState | null
 }
 
@@ -140,9 +143,11 @@ export interface TrackListParams {
   has_key?:      boolean
   issue?:        TrackIssue | string
   parse_confidence?: ParseConfidence | string
+  rating_filter?: 'unrated' | '1plus' | '2plus' | '3plus' | '4plus' | '5'
+  favorite_only?: boolean
   /** Managed storage zone. Defaults server-side to 'library' (promoted tracks only). */
   zone?:         'library' | 'inbox' | 'quarantine' | 'all'
-  sort?:         'artist' | 'title' | 'bpm' | 'processed_at' | 'filename'
+  sort?:         'artist' | 'title' | 'bpm' | 'processed_at' | 'filename' | 'rating' | 'favorite'
   order?:        'asc' | 'desc'
   limit?:        number
   offset?:       number

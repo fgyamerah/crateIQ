@@ -21,9 +21,11 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from ...schemas.track import CompatibleTracksResponse, TrackDetail, TrackStats, TrackSummary
+from ...core.library_root import selected_library_root
 from ...services import read_only as read_only_service
 from ...services import track_identity_service
 from ...services import track_service
+from ...services import track_review_service
 from ...services import track_source_service
 
 log = logging.getLogger(__name__)
@@ -134,6 +136,8 @@ async def list_tracks(
     issue: Optional[str] = Query(default=None, description="Filter by issue flag"),
     bpm_min: Optional[float] = Query(default=None, ge=0),
     bpm_max: Optional[float] = Query(default=None, ge=0),
+    rating_filter: Optional[str] = Query(default=None, pattern="^(unrated|1plus|2plus|3plus|4plus|5)$"),
+    favorite_only: bool = Query(default=False),
     has_key: Optional[bool] = Query(default=None, description="Filter tracks with or without a key"),
     genre: Optional[str] = Query(default=None, description="Case-insensitive genre filter"),
     parse_confidence: Optional[str] = Query(default=None, description="Filter by filename parse confidence"),
@@ -162,6 +166,8 @@ async def list_tracks(
         issue=issue,
         bpm_min=bpm_min,
         bpm_max=bpm_max,
+        rating_filter=rating_filter,
+        favorite_only=favorite_only,
         has_key=has_key,
         genre=genre,
         parse_confidence=parse_confidence,
@@ -171,8 +177,9 @@ async def list_tracks(
         limit=limit,
         offset=offset,
     )
+    reviews = track_review_service.summaries(selected_library_root(), [t.id for t in tracks])
     return TrackPageResponse(
-        items=[TrackSummary.from_track(t) for t in tracks],
+        items=[TrackSummary.from_track(t, review=reviews.get(t.id)) for t in tracks],
         limit=limit,
         offset=offset,
         total=_total,
@@ -216,8 +223,9 @@ async def get_track(track_id: int) -> TrackDetail:
         raise HTTPException(status_code=404, detail=f"Track {track_id} not found.")
     queue_item = read_only_service.lookup_enrichment_queue_item(track.filepath)
     extras = track_service.get_track_identity_and_provenance(track_id)
+    review = track_review_service.summaries(selected_library_root(), [track_id]).get(track_id)
     return TrackDetail.from_track(
-        track, enrichment_queue_item=queue_item,
+        track, enrichment_queue_item=queue_item, review=review,
         identity=extras["identity"], provenance=extras["provenance"],
     )
 

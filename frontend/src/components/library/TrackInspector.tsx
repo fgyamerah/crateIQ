@@ -10,6 +10,7 @@ import { fetchCompatibleTracks } from '../../api/tracks'
 import { ApiError } from '../../api/client'
 import CamelotWheel from './CamelotWheel'
 import { camelotHeroStyle, camelotStyle, displayValue } from './libraryUtils'
+import RatingFavoriteControls from '../reviews/RatingFavoriteControls'
 
 interface Props {
   track: TrackDetail | null
@@ -17,6 +18,7 @@ interface Props {
   isCurrentTrack: boolean
   isPlaying: boolean
   onPlay: () => void
+  onReviewChange: (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => Promise<void> | void
 }
 
 function compatInitials(item: CompatibleTrack): string {
@@ -137,7 +139,7 @@ function CompatibleTracksSection({
  * layout rather than swapping in a bare "select a track" box, so the right
  * rail never collapses to an empty panel.
  */
-export default function TrackInspector({ track, loading, isCurrentTrack, isPlaying, onPlay }: Props) {
+export default function TrackInspector({ track, loading, isCurrentTrack, isPlaying, onPlay, onReviewChange }: Props) {
   const heroTitle = loading ? 'Loading…' : (track ? (track.title || track.filename) : 'Select a track')
   const heroSubtitle = loading ? '' : (track ? (track.artist || '(no artist)') : 'Nothing selected yet')
   const placeholder = !track
@@ -198,6 +200,17 @@ export default function TrackInspector({ track, loading, isCurrentTrack, isPlayi
           {!track ? 'Select a track to play' : isPlaying ? 'Pause player' : isCurrentTrack ? 'Play current track' : 'Play in bottom player'}
         </button>
         <span>Browser preview only · no tags or audio files are changed</span>
+      </div>
+
+      <div className="lib-inspector-signals">
+        <span className="lib-inspector-signal-label">Your signals</span>
+        <RatingFavoriteControls
+          rating={track?.rating}
+          favorite={track?.favorite}
+          disabled={!track || loading}
+          onRatingChange={(rating) => { if (track) return onReviewChange(track.id, { rating }) }}
+          onFavoriteChange={(favorite) => { if (track) return onReviewChange(track.id, { favorite }) }}
+        />
       </div>
 
       <div className="lib-inspector-stats">

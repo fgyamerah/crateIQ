@@ -84,11 +84,15 @@ class TrackSummary(BaseModel):
     issues:       List[str] = []
     recommended_action: Optional[str] = None
     recommended_route: Optional[str] = None
+    rating: Optional[int] = None
+    favorite: bool = False
+    review_status: str = "unreviewed"
     preparation_state: Optional[InboxPreparationState] = None
 
     @classmethod
     def from_track(
         cls, t: Track, *, preparation_state: Optional[Dict[str, Any]] = None,
+        review: Optional[Dict[str, Any]] = None,
     ) -> "TrackSummary":
         recommended_action, recommended_route = _recommended_issue_route(t.issues)
         return cls(
@@ -113,6 +117,9 @@ class TrackSummary(BaseModel):
             issues=t.issues,
             recommended_action=recommended_action,
             recommended_route=recommended_route,
+            rating=(review or {}).get("rating"),
+            favorite=bool((review or {}).get("favorite", False)),
+            review_status=(review or {}).get("review_status", "unreviewed"),
             preparation_state=preparation_state,
         )
 
@@ -146,6 +153,9 @@ class TrackDetail(BaseModel):
     issues:         List[str] = []
     recommended_action: Optional[str] = None
     recommended_route: Optional[str] = None
+    rating: Optional[int] = None
+    favorite: bool = False
+    review_status: str = "unreviewed"
     identity:       Optional[Dict[str, Any]] = None
     provenance:     Dict[str, Any] = {}
 
@@ -157,6 +167,7 @@ class TrackDetail(BaseModel):
         enrichment_queue_item: Optional[Dict[str, Any]] = None,
         identity: Optional[Dict[str, Any]] = None,
         provenance: Optional[Dict[str, Any]] = None,
+        review: Optional[Dict[str, Any]] = None,
     ) -> "TrackDetail":
         recommended_action, recommended_route = _recommended_issue_route(t.issues)
         return cls(
@@ -186,6 +197,9 @@ class TrackDetail(BaseModel):
             issues=t.issues,
             recommended_action=recommended_action,
             recommended_route=recommended_route,
+            rating=(review or {}).get("rating"),
+            favorite=bool((review or {}).get("favorite", False)),
+            review_status=(review or {}).get("review_status", "unreviewed"),
             identity=identity,
             provenance=provenance or {},
         )
