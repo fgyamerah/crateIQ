@@ -31,6 +31,7 @@ interface Props {
   onNextPage: () => void
   onOpenImportWizard: () => void
   onReviewChange: (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => Promise<void> | void
+  emptyState?: { title: string; description: string }
 }
 
 // Below this width the fixed 10-column desktop table cannot show readable
@@ -87,6 +88,7 @@ export default function TrackTable({
   onNextPage,
   onOpenImportWizard,
   onReviewChange,
+  emptyState,
 }: Props) {
   const [scrollTop, setScrollTop] = useState(0)
   const [isCardView, setIsCardView] = useState(() => window.matchMedia(CARD_VIEW_QUERY).matches)
@@ -312,7 +314,13 @@ export default function TrackTable({
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={12} className="lib-empty">
-                  {total === 0 ? <div className="lib-empty-import"><strong>No tracks imported yet</strong><span>Set up the library, run a read-only scan preview, then import tracks into CrateIQ’s local index.</span><button className="lib-btn lib-btn--primary lib-btn--sm" type="button" onClick={onOpenImportWizard}>Open Library Setup &amp; Import</button></div> : 'No tracks match the current filters.'}
+                  {total === 0 ? (
+                    <div className="lib-empty-import">
+                      <strong>{emptyState?.title ?? 'No tracks imported yet'}</strong>
+                      <span>{emptyState?.description ?? 'Set up the library, run a read-only scan preview, then import tracks into CrateIQ’s local index.'}</span>
+                      {!emptyState && <button className="lib-btn lib-btn--primary lib-btn--sm" type="button" onClick={onOpenImportWizard}>Open Library Setup &amp; Import</button>}
+                    </div>
+                  ) : 'No tracks match the current filters.'}
                 </td>
               </tr>
             )}

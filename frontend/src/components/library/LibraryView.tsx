@@ -349,6 +349,7 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
             onNextPage={() => setUi((current) => ({ ...current, offset: current.offset + LIMIT }))}
             onOpenImportWizard={() => navigate('/settings#library-setup-import')}
             onReviewChange={updateReview}
+            emptyState={favoriteOnly ? { title: 'No favorites yet', description: 'Heart tracks you want to keep close.' } : undefined}
           />
 
           <TrackInspector
