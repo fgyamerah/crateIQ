@@ -714,10 +714,14 @@ def test_bulk_edit_apply_route_requires_confirm(managed_root):
     assert "confirm=true" in body["detail"]
 
 
-def test_bulk_edit_apply_route_rejects_bulk_title_and_filename(managed_root):
+def test_bulk_edit_apply_route_rejects_bulk_identity_fields(managed_root):
     ids = [_seed_track(managed_root, f"t{i}.mp3", artist="Old") for i in range(3)]
 
-    for field, value in (("title", "Duplicate title"), ("filename", "same.mp3")):
+    for field, value in (
+        ("title", "Duplicate title"),
+        ("filename", "same.mp3"),
+        ("artist", "Shared artist"),
+    ):
         status, body = _api_request(
             "POST", "/api/workspace/inbox/bulk-edit/apply",
             {"track_ids": ids, "operations": _set(field, value), "confirm": True},

@@ -41,6 +41,7 @@ from ...services import (
     preparation_service,
     provider_routing_service,
     track_service,
+    track_review_service,
     workspace_service,
 )
 from ...services.operation_admission_gate import LibraryOperationDrainingError
@@ -221,9 +222,10 @@ async def list_inbox_tracks(
     # Live tag inspection is bounded but synchronous (mutagen + filesystem).
     # Keep the consolidated batch projection off the FastAPI event loop.
     page = await run_in_threadpool(_load_page)
+    reviews = track_review_service.summaries(root, [track.id for track in page["items"]])
     return TrackPageResponse(
         items=[
-            TrackSummary.from_track(track, preparation_state=page["states"].get(track.id))
+            TrackSummary.from_track(track, preparation_state=page["states"].get(track.id), review=reviews.get(track.id))
             for track in page["items"]
         ],
         limit=page["limit"],
@@ -241,7 +243,8 @@ async def inspect_inbox_track(track_id: int) -> TrackSummary:
     if result is None:
         raise HTTPException(status_code=404, detail=f"Inbox track {track_id} not found.")
     track, state = result
-    return TrackSummary.from_track(track, preparation_state=state)
+    reviews = track_review_service.summaries(_root(), [track.id])
+    return TrackSummary.from_track(track, preparation_state=state, review=reviews.get(track.id))
 
 
 @router.get("/workspace/inbox/tracks/{track_id}/enrichment-review")

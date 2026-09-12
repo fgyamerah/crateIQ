@@ -13,7 +13,9 @@ vi.mock('./components/LibraryRequirement', async () => {
   const { Outlet } = await import('react-router-dom')
   return { default: Outlet }
 })
-vi.mock('./components/library/LibraryView', () => ({ default: () => 'Library destination' }))
+vi.mock('./components/library/LibraryView', () => ({
+  default: ({ favoriteOnly = false }: { favoriteOnly?: boolean }) => favoriteOnly ? 'Favorites destination' : 'Library destination',
+}))
 vi.mock('./pages/Inbox', () => ({ default: () => 'Inbox destination' }))
 vi.mock('./pages/Listening', async () => {
   const { useLocation } = await import('react-router-dom')
@@ -32,6 +34,7 @@ describe('legacy route redirects', () => {
     ['/dashboard', 'Library destination'],
     ['/collection', 'Library destination'],
     ['/tracks', 'Library destination'],
+    ['/favorites', 'Favorites destination'],
     ['/library-prep', 'Inbox destination'],
     ['/listening?tab=queue#now', 'Music review destination: /music-review?tab=queue#now'],
   ])('redirects %s to its supported destination', async (source, destination) => {

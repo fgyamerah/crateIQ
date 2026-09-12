@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { CheckCircle2, AlertTriangle, Pause, Play } from 'lucide-react'
 import type { TrackSummary } from '../../types/track'
-import type { ReviewSummary } from '../../api/reviews'
 import ReviewStatusBadge from '../reviews/ReviewStatusBadge'
+import RatingFavoriteControls from '../reviews/RatingFavoriteControls'
 import type { Density, QualityTierValue, SortKey, SortOrder } from './libraryUtils'
 import {
   ROW_HEIGHT,
@@ -23,7 +23,6 @@ interface Props {
   sort: SortKey
   order: SortOrder
   density: Density
-  reviews: ReviewSummary
   playingTrackId: number | null
   onSort: (key: SortKey) => void
   onSelect: (id: number) => void
@@ -31,6 +30,8 @@ interface Props {
   onPrevPage: () => void
   onNextPage: () => void
   onOpenImportWizard: () => void
+  onReviewChange: (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => Promise<void> | void
+  emptyState?: { title: string; description: string }
 }
 
 // Below this width the fixed 10-column desktop table cannot show readable
@@ -79,7 +80,6 @@ export default function TrackTable({
   sort,
   order,
   density,
-  reviews,
   playingTrackId,
   onSort,
   onSelect,
@@ -87,6 +87,8 @@ export default function TrackTable({
   onPrevPage,
   onNextPage,
   onOpenImportWizard,
+  onReviewChange,
+  emptyState,
 }: Props) {
   const [scrollTop, setScrollTop] = useState(0)
   const [isCardView, setIsCardView] = useState(() => window.matchMedia(CARD_VIEW_QUERY).matches)
@@ -158,10 +160,17 @@ export default function TrackTable({
                     ? <span className="lib-camelot-chip lib-camelot-chip--sm" style={camelotStyle(track.key_camelot)}>{track.key_camelot}</span>
                     : null}
                   <QualityMeter tier={track.quality_tier} />
+                  <RatingFavoriteControls
+                    rating={track.rating}
+                    favorite={track.favorite}
+                    compact
+                    onRatingChange={(rating) => onReviewChange(track.id, { rating })}
+                    onFavoriteChange={(favorite) => onReviewChange(track.id, { favorite })}
+                  />
                   <ReviewStatusBadge
                     trackId={track.id}
-                    status={reviews[String(track.id)]?.review_status}
-                    rating={reviews[String(track.id)]?.rating}
+                    status={track.review_status}
+                    rating={track.rating}
                   />
                   <span className="lib-status-cell">
                     {track.issues.length === 0
@@ -201,6 +210,8 @@ export default function TrackTable({
               <th>Camelot</th>
               <th>Genre</th>
               <th>Quality</th>
+              <th className="lib-th-sortable" onClick={() => onSort('rating')}>Rating {sort === 'rating' && (order === 'asc' ? '▲' : '▼')}</th>
+              <th className="lib-th-sortable" onClick={() => onSort('favorite')}>Favorite {sort === 'favorite' && (order === 'asc' ? '▲' : '▼')}</th>
               <th>Review</th>
               <th>Status</th>
             </tr>
@@ -209,12 +220,12 @@ export default function TrackTable({
             {loading && items.length === 0 && (
               Array.from({ length: 8 }).map((_, idx) => (
                 <tr key={`lib-skeleton-${idx}`} className="lib-row-skeleton">
-                  <td colSpan={10}><span /></td>
+                  <td colSpan={12}><span /></td>
                 </tr>
               ))
             )}
             {virtualTopPad > 0 && (
-              <tr aria-hidden="true"><td colSpan={10} style={{ height: virtualTopPad, padding: 0, border: 0 }} /></tr>
+              <tr aria-hidden="true"><td colSpan={12} style={{ height: virtualTopPad, padding: 0, border: 0 }} /></tr>
             )}
             {virtualRows.map((track, rowIdx) => (
               <tr
@@ -261,10 +272,30 @@ export default function TrackTable({
                 <td>{displayValue(track.genre)}</td>
                 <td><QualityMeter tier={track.quality_tier} /></td>
                 <td>
+                  <RatingFavoriteControls
+                    rating={track.rating}
+                    favorite={track.favorite}
+                    compact
+                    showFavorite={false}
+                    onRatingChange={(rating) => onReviewChange(track.id, { rating })}
+                    onFavoriteChange={(favorite) => onReviewChange(track.id, { favorite })}
+                  />
+                </td>
+                <td>
+                  <RatingFavoriteControls
+                    rating={track.rating}
+                    favorite={track.favorite}
+                    compact
+                    showRating={false}
+                    onRatingChange={(rating) => onReviewChange(track.id, { rating })}
+                    onFavoriteChange={(favorite) => onReviewChange(track.id, { favorite })}
+                  />
+                </td>
+                <td>
                   <ReviewStatusBadge
                     trackId={track.id}
-                    status={reviews[String(track.id)]?.review_status}
-                    rating={reviews[String(track.id)]?.rating}
+                    status={track.review_status}
+                    rating={track.rating}
                   />
                 </td>
                 <td>
@@ -278,12 +309,18 @@ export default function TrackTable({
               </tr>
             ))}
             {virtualBottomPad > 0 && (
-              <tr aria-hidden="true"><td colSpan={10} style={{ height: virtualBottomPad, padding: 0, border: 0 }} /></tr>
+              <tr aria-hidden="true"><td colSpan={12} style={{ height: virtualBottomPad, padding: 0, border: 0 }} /></tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={10} className="lib-empty">
-                  {total === 0 ? <div className="lib-empty-import"><strong>No tracks imported yet</strong><span>Set up the library, run a read-only scan preview, then import tracks into CrateIQ’s local index.</span><button className="lib-btn lib-btn--primary lib-btn--sm" type="button" onClick={onOpenImportWizard}>Open Library Setup &amp; Import</button></div> : 'No tracks match the current filters.'}
+                <td colSpan={12} className="lib-empty">
+                  {total === 0 ? (
+                    <div className="lib-empty-import">
+                      <strong>{emptyState?.title ?? 'No tracks imported yet'}</strong>
+                      <span>{emptyState?.description ?? 'Set up the library, run a read-only scan preview, then import tracks into CrateIQ’s local index.'}</span>
+                      {!emptyState && <button className="lib-btn lib-btn--primary lib-btn--sm" type="button" onClick={onOpenImportWizard}>Open Library Setup &amp; Import</button>}
+                    </div>
+                  ) : 'No tracks match the current filters.'}
                 </td>
               </tr>
             )}

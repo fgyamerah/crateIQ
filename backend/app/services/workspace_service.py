@@ -824,10 +824,11 @@ def inbox_track_page_projection(
         where.append("(artist LIKE ? OR title LIKE ? OR filename LIKE ? OR genre LIKE ?)")
         params.extend([term, term, term, term])
     where_sql = " AND ".join(where)
-    order_by = track_service.build_order_by(sort, order)
-
     with sqlite3.connect(db_path) as conn:
         conn.row_factory = sqlite3.Row
+        review_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(track_reviews)")}
+        review_table_exists = bool(review_columns)
+        order_by = track_service.build_order_by(sort, order, review_table_exists=review_table_exists, review_favorite_exists='favorite' in review_columns)
         rows = conn.execute(
             f"SELECT * FROM tracks WHERE {where_sql} ORDER BY {order_by}", params,
         ).fetchall()

@@ -109,11 +109,17 @@ P2 / MEDIUM
     not available in the live fixture and remain covered by focused automated
     tests alongside Comment Append and mixed-value behavior.
 
-[ ] Ratings + Favorites phase — design the selected-track Inbox experience on
-    top of the existing DB-only `track_reviews` rating/favorite model. Keep it
-    separate from file-tag metadata writes, preserve per-track review history,
-    and define explicit set/clear semantics and preview counts before adding
-    bulk actions.
+[x] Ratings + Favorites phase — added independent 1–5/unrated ratings and a
+    binary Favorite flag to the DB-only `track_reviews` model, with Inspector,
+    Inbox, Library, Favorites smart-view, sorting/filtering, and explicit
+    preview-first bulk set/clear/add/remove actions. File tags, audio files,
+    review history, and enrichment behavior remain unchanged. Favorites span
+    active managed Library and Inbox tracks, and successful table mutations
+    reconcile the visible query state without a page reload.
+
+[ ] Favorites follow-up — consider optional rating-based crates and M3U/M3U8
+    export only as explicit future workflows; do not turn the built-in
+    Favorites smart collection into a manually maintained playlist.
 
 [ ] Next Inbox checkpoint — planning-only merge/demote of Needs Review (and
     Enrichment Review) specialist navigation into Inbox now that normal review

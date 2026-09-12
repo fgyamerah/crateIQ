@@ -63,11 +63,11 @@ _READINESS_SORT_EXPR = (
 )
 _DEFAULT_SORT = "artist"
 VALID_SORT_KEYS = frozenset(
-    set(_TEXT_SORT_COLUMNS) | set(_NUMERIC_SORT_COLUMNS) | set(_RAW_SORT_COLUMNS) | {"key", "readiness"}
+    set(_TEXT_SORT_COLUMNS) | set(_NUMERIC_SORT_COLUMNS) | set(_RAW_SORT_COLUMNS) | {"key", "readiness", "rating", "favorite"}
 )
 
 
-def _build_order_by(sort: str, order: str) -> str:
+def _build_order_by(sort: str, order: str, *, review_table_exists: bool = True, review_favorite_exists: bool = True) -> str:
     """
     Build a validated ORDER BY body (no "ORDER BY" prefix). `sort` must
     already be a key of VALID_SORT_KEYS -- callers that accept sort from a
@@ -77,6 +77,14 @@ def _build_order_by(sort: str, order: str) -> str:
     """
     order_dir = "ASC" if order.lower() != "desc" else "DESC"
     key = sort if sort in VALID_SORT_KEYS else _DEFAULT_SORT
+
+    if key in {"rating", "favorite"}:
+        if not review_table_exists:
+            return "1 ASC, id ASC"
+        favorite_column = "favorite" if review_favorite_exists else "CASE WHEN review_status='favorite' THEN 1 ELSE 0 END"
+        value_expr = f"(SELECT {'rating' if key == 'rating' else favorite_column} FROM track_reviews WHERE track_reviews.track_id=tracks.id)"
+        blank = f"({value_expr}) IS NULL" if key == "rating" else "0"
+        return f"(CASE WHEN {blank} THEN 1 ELSE 0 END) ASC, {value_expr} {order_dir}, id ASC"
 
     if key == "readiness":
         return f"{_READINESS_SORT_EXPR} {order_dir}, LOWER(COALESCE(artist, '')) ASC, id ASC"
@@ -110,9 +118,9 @@ def _build_order_by(sort: str, order: str) -> str:
     return f"(CASE WHEN {blank} THEN 1 ELSE 0 END) ASC, {value_expr} {order_dir}{secondary}, id ASC"
 
 
-def build_order_by(sort: str, order: str) -> str:
+def build_order_by(sort: str, order: str, *, review_table_exists: bool = True, review_favorite_exists: bool = True) -> str:
     """Public validated ordering helper for read-only workspace projections."""
-    return _build_order_by(sort, order)
+    return _build_order_by(sort, order, review_table_exists=review_table_exists, review_favorite_exists=review_favorite_exists)
 _KNOWN_ISSUES = {
     "missing_bpm",
     "missing_key",
@@ -206,6 +214,8 @@ def list_tracks(
     quality_tier: Optional[str] = None,
     bpm_min: Optional[float] = None,
     bpm_max: Optional[float] = None,
+    rating_filter: Optional[str] = None,
+    favorite_only: bool = False,
     has_key: Optional[bool] = None,
     issue: Optional[str] = None,
     parse_confidence: Optional[str] = None,
@@ -274,7 +284,10 @@ def list_tracks(
         where_clauses.append("UPPER(COALESCE(parse_confidence,'')) = ?")
         params.append(parse_confidence.upper())
 
-    if storage_zone:
+    # Favorites is a smart collection across every managed zone in the active
+    # library. The general tracks route defaults to the promoted Library zone,
+    # but that default must never hide a favorited Inbox track.
+    if storage_zone and not favorite_only:
         # Pre-Cycle-9 DBs may not have this column yet; ensure it exists
         # (idempotent, defaults existing rows to 'LIBRARY') rather than
         # letting the filtered query silently fail closed to empty results.
@@ -313,10 +326,40 @@ def list_tracks(
 
     where_sql = ("WHERE " + " AND ".join(where_clauses)) if where_clauses else ""
 
-    order_by_sql = _build_order_by(sort, order)
+    review_table_exists = False
 
     try:
         with get_pipeline_conn() as conn:
+            review_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(track_reviews)")}
+            review_table_exists = bool(review_columns)
+            if rating_filter:
+                if not review_table_exists:
+                    if favorite_only:
+                        return [], 0
+                    return [], 0 if rating_filter != "unrated" else int(conn.execute(f"SELECT COUNT(*) FROM tracks {where_sql}", params).fetchone()[0])
+                rating_clauses = {
+                    "unrated": "(SELECT rating FROM track_reviews WHERE track_reviews.track_id=tracks.id) IS NULL",
+                    "1plus": "(SELECT rating FROM track_reviews WHERE track_reviews.track_id=tracks.id) >= 1",
+                    "2plus": "(SELECT rating FROM track_reviews WHERE track_reviews.track_id=tracks.id) >= 2",
+                    "3plus": "(SELECT rating FROM track_reviews WHERE track_reviews.track_id=tracks.id) >= 3",
+                    "4plus": "(SELECT rating FROM track_reviews WHERE track_reviews.track_id=tracks.id) >= 4",
+                    "5": "(SELECT rating FROM track_reviews WHERE track_reviews.track_id=tracks.id) = 5",
+                }
+                if rating_filter not in rating_clauses:
+                    return [], 0
+                where_sql = f"{where_sql} AND {rating_clauses[rating_filter]}" if where_sql else f"WHERE {rating_clauses[rating_filter]}"
+            if favorite_only:
+                if not review_table_exists:
+                    return [], 0
+                track_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+                if "storage_zone" in track_columns:
+                    # Favorites is an active managed-library projection: both
+                    # promoted Library rows and Inbox rows are eligible, while
+                    # Quarantine remains reserved and excluded.
+                    where_sql = f"{where_sql} AND COALESCE(storage_zone, 'LIBRARY') IN ('LIBRARY', 'INBOX')" if where_sql else "WHERE COALESCE(storage_zone, 'LIBRARY') IN ('LIBRARY', 'INBOX')"
+                favorite_clause = "EXISTS (SELECT 1 FROM track_reviews WHERE track_reviews.track_id=tracks.id AND " + ("favorite=1" if "favorite" in review_columns else "review_status='favorite'") + ")"
+                where_sql = f"{where_sql} AND {favorite_clause}" if where_sql else f"WHERE {favorite_clause}"
+            order_by_sql = _build_order_by(sort, order, review_table_exists=review_table_exists, review_favorite_exists='favorite' in review_columns)
             if post_filter_issue:
                 base_rows = conn.execute(
                     f"""SELECT * FROM tracks {where_sql}

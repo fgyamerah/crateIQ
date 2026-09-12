@@ -49,6 +49,7 @@ export default function App() {
         <Route element={<LibraryRequirement />}>
           <Route element={<PersistentPlayerProvider><Layout /></PersistentPlayerProvider>}>
             <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
+            <Route path="favorites" element={<ErrorBoundary><LibraryView favoriteOnly /></ErrorBoundary>} />
             <Route path="inbox" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
             <Route path="needs-review" element={<ErrorBoundary><NeedsReview /></ErrorBoundary>} />
             <Route path="maintenance" element={<ErrorBoundary><Maintenance /></ErrorBoundary>} />

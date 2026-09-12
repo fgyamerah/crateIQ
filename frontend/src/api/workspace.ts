@@ -34,7 +34,7 @@ export interface InboxTrackPage {
   available_track_ids: number[]
 }
 
-export type InboxSortKey = 'artist' | 'title' | 'filename' | 'genre' | 'bpm' | 'key' | 'readiness'
+export type InboxSortKey = 'artist' | 'title' | 'filename' | 'genre' | 'bpm' | 'key' | 'readiness' | 'rating' | 'favorite'
 export type SortOrder = 'asc' | 'desc'
 
 export interface PromotionPreviewItem {
