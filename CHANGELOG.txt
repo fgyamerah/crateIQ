@@ -2,6 +2,20 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-12] — Fix Favorites coverage and rating UI regressions
+
+- Kept multi-track metadata editing limited to Genre, Comment, and Label;
+  strengthened frontend coverage against Title, Artist, and Filename field
+  fallbacks while preserving single-track Title editing and backend rejection.
+- Made Favorites include favorited tracks in Inbox as well as promoted Library
+  tracks within the active managed library, without moving, copying, or
+  duplicating rows; unfavorite only removes the signal from the smart view.
+- Reconciled rating/favorite list queries after successful mutations while
+  updating the visible row immediately, keeping table, Inspector, and
+  Favorites membership consistent.
+- Files affected: track service, Library/Inbox state synchronization, focused
+  frontend/backend tests, and current project documentation.
+
 [2026-09-11] — Add ratings and Favorites signals
 
 - Added independent user-controlled 1–5 star ratings with an explicit unrated

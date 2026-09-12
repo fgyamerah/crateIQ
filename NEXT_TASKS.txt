@@ -113,7 +113,9 @@ P2 / MEDIUM
     binary Favorite flag to the DB-only `track_reviews` model, with Inspector,
     Inbox, Library, Favorites smart-view, sorting/filtering, and explicit
     preview-first bulk set/clear/add/remove actions. File tags, audio files,
-    review history, and enrichment behavior remain unchanged.
+    review history, and enrichment behavior remain unchanged. Favorites span
+    active managed Library and Inbox tracks, and successful table mutations
+    reconcile the visible query state without a page reload.
 
 [ ] Favorites follow-up — consider optional rating-based crates and M3U/M3U8
     export only as explicit future workflows; do not turn the built-in

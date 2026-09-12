@@ -104,6 +104,7 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const loadRequestRef = useRef(0)
 
   const setUiPatch = useCallback((updater: (current: LibraryUiState) => LibraryUiState) => {
     setUi((current) => updater(current))
@@ -160,6 +161,7 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
   }), [ui.search, ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter, ui.ratingFilter, ui.sort, ui.order, ui.offset, favoriteOnly])
 
   const loadMain = useCallback(async () => {
+    const requestId = ++loadRequestRef.current
     setLoading(true)
     try {
       const [overviewData, issueData, pageData] = await Promise.all([
@@ -167,15 +169,17 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
         fetchTrackIssues(),
         fetchTrackPage(params),
       ])
+      if (requestId !== loadRequestRef.current) return
       setOverview(overviewData)
       setIssues(issueData)
       setTrackPage(pageData)
       setError(null)
       setLastRefreshed(new Date())
     } catch (e) {
+      if (requestId !== loadRequestRef.current) return
       setError(e instanceof Error ? e.message : 'Failed to load library data')
     } finally {
-      setLoading(false)
+      if (requestId === loadRequestRef.current) setLoading(false)
     }
   }, [params])
 
@@ -253,14 +257,21 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
   const activeFilterCount = [ui.genreFilter, ui.bpmMinFilter, ui.bpmMaxFilter, ui.hasKeyFilter, ui.ratingFilter].filter(Boolean).length
 
   const updateReview = useCallback(async (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => {
+    // Invalidate any list request that started before the mutation. Its
+    // response may contain the previous signal and must not overwrite the
+    // immediately updated row.
+    loadRequestRef.current += 1
     const next = await updateTrackReview(trackId, patch)
     setTrackPage((current) => current && {
       ...current,
       items: current.items.map((track) => track.id === trackId ? { ...track, rating: next.rating, favorite: next.favorite } : track),
     })
     setSelectedDetail((current) => current && current.id === trackId ? { ...current, rating: next.rating, favorite: next.favorite } : current)
-    if (favoriteOnly && patch.favorite === false) await loadMain()
-  }, [favoriteOnly, loadMain])
+    // Reconcile the complete query after the local update so filtering,
+    // sorting, Favorites membership, the Inspector, and the table share the
+    // authoritative server projection without a full-page reload.
+    void loadMain()
+  }, [loadMain])
 
   const selectTrack = (id: number) => {
     setUi((current) => ({ ...current, selectedId: id }))

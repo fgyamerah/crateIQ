@@ -284,7 +284,10 @@ def list_tracks(
         where_clauses.append("UPPER(COALESCE(parse_confidence,'')) = ?")
         params.append(parse_confidence.upper())
 
-    if storage_zone:
+    # Favorites is a smart collection across every managed zone in the active
+    # library. The general tracks route defaults to the promoted Library zone,
+    # but that default must never hide a favorited Inbox track.
+    if storage_zone and not favorite_only:
         # Pre-Cycle-9 DBs may not have this column yet; ensure it exists
         # (idempotent, defaults existing rows to 'LIBRARY') rather than
         # letting the filtered query silently fail closed to empty results.

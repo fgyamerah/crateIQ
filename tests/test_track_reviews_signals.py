@@ -23,6 +23,64 @@ def _root(tmp_path, name: str):
     return root
 
 
+def _add_track(root, track_id: int, *, zone: str):
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        conn.execute(
+            """INSERT INTO tracks(
+                id, filepath, filename, artist, title, status, storage_zone
+            ) VALUES (?, ?, ?, ?, ?, 'ok', ?)""",
+            (
+                track_id,
+                str(root / zone.title() / f"{track_id}.mp3"),
+                f"{track_id}.mp3",
+                "Inbox Artist",
+                "Inbox Title",
+                zone,
+            ),
+        )
+
+
+def test_favorites_include_inbox_tracks_and_unfavorite_without_removing_them(tmp_path, monkeypatch):
+    root = _root(tmp_path, "library")
+    _add_track(root, 3, zone="INBOX")
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
+
+    track_review_service.update(root, 1, favorite=True)
+    track_review_service.update(root, 3, favorite=True)
+    favorites, total = track_service.list_tracks(favorite_only=True, sort="favorite", order="desc")
+
+    assert total == 2
+    assert [track.id for track in favorites] == [1, 3]
+    assert len({track.id for track in favorites}) == 2
+    assert next(track for track in favorites if track.id == 3).storage_zone == "INBOX"
+
+    track_review_service.update(root, 3, favorite=False)
+    remaining, remaining_total = track_service.list_tracks(favorite_only=True)
+    assert remaining_total == 1
+    assert [track.id for track in remaining] == [1]
+    with sqlite3.connect(root / "logs" / "processed.db") as conn:
+        row = conn.execute("SELECT storage_zone FROM tracks WHERE id=3").fetchone()
+    assert row == ("INBOX",)
+
+
+def test_favorites_are_isolated_to_the_active_library_root(tmp_path, monkeypatch):
+    first = _root(tmp_path, "first")
+    second = _root(tmp_path, "second")
+    _add_track(first, 3, zone="INBOX")
+    track_review_service.update(first, 1, favorite=True)
+    track_review_service.update(first, 3, favorite=True)
+
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(first))
+    first_items, first_total = track_service.list_tracks(favorite_only=True)
+    assert first_total == 2
+    assert {track.id for track in first_items} == {1, 3}
+
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(second))
+    second_items, second_total = track_service.list_tracks(favorite_only=True)
+    assert second_total == 0
+    assert second_items == []
+
+
 def test_single_signals_are_independent_and_history_is_preserved(tmp_path):
     root = _root(tmp_path, "library")
     saved = track_review_service.update(root, 1, review_status="reviewed", notes="Keep this note")

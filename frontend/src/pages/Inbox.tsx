@@ -427,6 +427,10 @@ export default function Inbox() {
   }, [fetchCurrentInboxData])
 
   const saveReviewSignal = useCallback(async (trackId: number, patch: { rating?: number | null; favorite?: boolean }) => {
+    // Prevent an older Inbox projection from restoring stale signal props
+    // while this mutation is in flight; the local patch below keeps the row
+    // responsive before the authoritative refresh completes.
+    loadRequestRef.current += 1
     const next = await updateTrackReview(trackId, patch)
     const apply = (track: TrackSummary) => track.id === trackId
       ? { ...track, rating: next.rating, favorite: next.favorite }
@@ -434,7 +438,8 @@ export default function Inbox() {
     setTracks((current) => current ? { ...current, items: current.items.map(apply) } : current)
     setKnownTracks((current) => current[trackId] ? { ...current, [trackId]: apply(current[trackId]) } : current)
     setInspectedTrack((current) => current ? apply(current) : current)
-  }, [])
+    void fetchCurrentInboxData()
+  }, [fetchCurrentInboxData])
 
   const onSort = (key: InboxSortKey) => {
     if (activeEditCount > 0) {

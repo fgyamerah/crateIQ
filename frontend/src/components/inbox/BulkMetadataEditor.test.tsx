@@ -1,6 +1,7 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import * as workspaceApi from '../../api/workspace'
+import type { InboxBulkEditPreview } from '../../api/workspace'
 import type { TrackSummary } from '../../types/track'
 import BulkMetadataEditor from './BulkMetadataEditor'
 
@@ -16,19 +17,24 @@ const track = (id: number, genre: string, label: string | null): TrackSummary =>
 describe('BulkMetadataEditor', () => {
   beforeEach(() => { vi.resetAllMocks() })
 
-  it('shows mixed values, excludes identity fields, and sends explicit leave/set/append/clear semantics', async () => {
+  it('shows only Genre/Comment/Label, ignores identity-field fallbacks, and sends explicit semantics', async () => {
     vi.mocked(workspaceApi.previewInboxBulkEdit).mockResolvedValue({
       selected_count: 2, eligible_count: 2, changeable_count: 2, skipped_not_inbox: 0, missing_count: 0, unsupported_count: 0,
       fields: {
+        title: { operation: 'set', value: 'Unsafe shared title', current_values: ['Title 1', 'Title 2'], mixed: true, affected_count: 2, already_matching_count: 0, skipped_count: 0 },
         genre: { operation: 'set', value: 'Afro House', current_values: ['House', 'Techno'], mixed: true, affected_count: 2, already_matching_count: 0, skipped_count: 0 },
         comment: { operation: 'append', value: 'Warm-up', current_values: ['Intro', 'Closing'], mixed: true, affected_count: 2, already_matching_count: 0, skipped_count: 0 },
         label: { operation: 'clear', value: null, current_values: ['Soulistic', 'Blank'], mixed: true, affected_count: 1, already_matching_count: 1, skipped_count: 0 },
-      }, items: [], message: 'Preview only',
+      } as unknown as InboxBulkEditPreview['fields'], items: [], message: 'Preview only',
     })
     render(<BulkMetadataEditor trackIds={[1, 2]} tracks={[track(1, 'House', 'Soulistic'), track(2, 'Techno', null)]} onApplied={vi.fn()} onClose={vi.fn()} />)
     expect(screen.getAllByText('Current: Mixed')).toHaveLength(3)
-    expect(screen.queryByLabelText('Title')).not.toBeInTheDocument()
-    expect(screen.queryByLabelText('Artist')).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /Title/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /Artist/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('textbox', { name: /Filename/i })).not.toBeInTheDocument()
+    expect(screen.getByLabelText('Genre')).toBeInTheDocument()
+    expect(screen.getByLabelText('Comment')).toBeInTheDocument()
+    expect(screen.getByLabelText('Label')).toBeInTheDocument()
     expect(screen.getByRole('textbox', { name: 'Genre bulk value' })).toHaveAttribute('id', 'bulk-genre-value')
     expect(screen.getByRole('textbox', { name: 'Genre bulk value' })).toHaveAttribute('name', 'bulk-genre-value')
     fireEvent.change(screen.getByLabelText('Genre'), { target: { value: 'set' } })
@@ -44,6 +50,7 @@ describe('BulkMetadataEditor', () => {
       comment: { operation: 'append', value: 'Warm-up' },
       label: { operation: 'clear', value: undefined },
     }))
+    expect(screen.queryByText('Unsafe shared title')).not.toBeInTheDocument()
     expect(screen.getByText('1 will clear')).toBeInTheDocument()
   })
 
