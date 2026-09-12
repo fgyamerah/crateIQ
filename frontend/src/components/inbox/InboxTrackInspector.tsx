@@ -23,6 +23,7 @@ interface Props {
   initialTab?: InspectorTab
   navigationLabel?: string
   onReviewChange?: (patch: { rating?: number | null; favorite?: boolean }) => Promise<void> | void
+  onAddToPlaylist?: () => void
 }
 
 function value(value: string | number | null | undefined) {
@@ -36,7 +37,7 @@ function formatDuration(seconds: number | null) {
   return `${minutes}:${remainder}`
 }
 
-export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision, initialTab = 'status', navigationLabel, onReviewChange }: Props) {
+export default function InboxTrackInspector({ track, loading, onClose, onPrevious, onNext, onMetadataSave, onSaveToFile, onReviewDecision, initialTab = 'status', navigationLabel, onReviewChange, onAddToPlaylist }: Props) {
   const [tab, setTab] = useState<InspectorTab>(initialTab)
   const closeRef = useRef<HTMLButtonElement>(null)
   const waveform = useTrackWaveform(track?.id ?? null)
@@ -93,6 +94,7 @@ export default function InboxTrackInspector({ track, loading, onClose, onPreviou
           onFavoriteChange={(favorite) => onReviewChange?.({ favorite })}
         />
       </div>
+      {track && onAddToPlaylist && <button type="button" className="btn btn--ghost btn--sm inbox-inspector-add-playlist" onClick={onAddToPlaylist}>Add to Playlist</button>}
 
       <div className="inbox-inspector-tabs" role="tablist" aria-label="Track inspector sections">
         {(['overview', 'review', 'status', 'analysis', 'file'] as InspectorTab[]).map((item) => (

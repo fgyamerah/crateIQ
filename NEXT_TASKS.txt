@@ -117,9 +117,21 @@ P2 / MEDIUM
     active managed Library and Inbox tracks, and successful table mutations
     reconcile the visible query state without a page reload.
 
+[x] User-created Playlists phase — added active-library-scoped manual playlists
+    with unique names, optional descriptions, reference-only membership, bulk
+    add preview/apply, duplicate prevention, safe removal, persisted manual
+    order, Inbox/Library/Inspector entry points, rating/Favorites projection,
+    and responsive accessible index/detail views. Legacy set-builder playlists,
+    Manual Crates, Favorites, audio files, tags, and track identity remain
+    separate.
+
 [ ] Favorites follow-up — consider optional rating-based crates and M3U/M3U8
     export only as explicit future workflows; do not turn the built-in
     Favorites smart collection into a manually maintained playlist.
+
+[ ] User Playlists follow-ups — M3U/M3U8 export, smart playlists beyond
+    Favorites, rating-based crates, playlist duplication/templates, and
+    sequential/context-aware playback remain future workflows.
 
 [ ] Next Inbox checkpoint — planning-only merge/demote of Needs Review (and
     Enrichment Review) specialist navigation into Inbox now that normal review

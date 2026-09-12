@@ -1,6 +1,6 @@
 # crateIQ Project Context
 
-**Updated:** 2026-09-11
+**Updated:** 2026-09-12
 
 **Purpose:** Read this to understand what crateIQ is NOW — a concise,
 low-token current-state engineering context. It is not a chronological log.
@@ -257,7 +257,7 @@ job, with backend dedup as the cross-tab safety net.
 
 Current primary navigation (`frontend/src/components/Sidebar.tsx`):
 
-* **LIBRARY** — Inbox, Library, Favorites, Needs Review
+* **LIBRARY** — Inbox, Library, Favorites, Playlists, Needs Review
 * **DJ** — Crates, Set Builder, Publish
 * **TOOLS** — Jobs, Maintenance (hub linking to Quality, Duplicates,
   Reconciliation, Folders, Audit)
@@ -294,6 +294,15 @@ Service map (`backend/app/services/`), current primary surfaces:
   Library-only track listing; Quarantine remains excluded. It is not a duplicated playlist
   or audio asset set. Rating/favorite mutations update the
   visible row locally and then reconcile the active query projection.
+* `user_playlist_service` — active-library-scoped manual playlist CRUD and
+  ordered track references in the app-owned `logs/manual_crates.db` state
+  store. `user_playlists` and `user_playlist_tracks` are distinct from the
+  legacy set-builder records exposed by `/api/playlists` and from Favorites.
+  Track metadata and rating/Favorite state are read in batches from the active
+  library; playlist writes never copy, move, rename, retag, or delete audio or
+  track rows. Bulk membership changes use a preview/apply contract, reject
+  tracks outside the active library, prevent duplicate membership, and keep
+  stored manual order separate from temporary search/sort views.
 * `preparation_service` — Process All orchestration (clean -> enrich ->
   write-back), background operation tracking
 * `needs_review_service` — read-only aggregation across enrichment,
@@ -511,7 +520,7 @@ Route groups: `/api/workspace*`, `/api/tracks*`, `/api/library*`,
 `/api/tag-write*`, `/api/beets-review*`, `/api/enrichment-review*`,
 `/api/metadata-repair*`, `/api/metadata-sanitation*`,
 `/api/quality-review*`, `/api/duplicates*`, `/api/crates*`,
-`/api/smart-crates*`, `/api/playlists*`, `/api/exports*`, `/api/sync*`,
+`/api/smart-crates*`, `/api/playlists*`, `/api/user-playlists*`, `/api/exports*`, `/api/sync*`,
 `/api/publish*`, `/api/reconciliation*`. See `AGENTS.md` Section 4.2 for
 the full current list.
 

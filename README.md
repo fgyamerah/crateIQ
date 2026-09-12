@@ -48,7 +48,11 @@ across active managed track rows, including Library and Inbox (requested as the
 all-zone Favorites projection); it does not copy audio,
 duplicate track rows, or write tags. Inbox bulk actions
 show a preview before setting/clearing ratings or adding/removing Favorites.
-General manually ordered playlists remain future work.
+User-created Playlists are separate manual collections: they store references
+to existing active-library tracks, support multiple playlist memberships and
+persisted manual order, and never copy audio, tags, or track rows. Deleting a
+playlist or removing membership leaves the track in CrateIQ. Advanced playlist
+export and context-aware sequential playback remain future work.
 
 ### Managed workspace
 
@@ -302,9 +306,13 @@ Inbox.
 Once tracks are in Library:
 
 ```
-Library → Crates → Set Builder → Publish
+Library → Favorites / Playlists → Crates → Set Builder → Publish
 ```
 
+- **Favorites** — built-in smart collection of tracks marked `favorite=true`;
+  it is not a manually maintained playlist.
+- **User Playlists** — named, manually curated active-library collections with
+  optional descriptions, duplicate-safe membership, and persisted manual order.
 - **Manual Crates** — create, edit, reorder, and save ordered DJ working
   lists from Library tracks.
 - **Smart Crates** — deterministic suggestions from existing local metadata,
@@ -357,6 +365,8 @@ integration is via staged, reviewable artifacts.
 LIBRARY
   Inbox
   Library
+  Favorites
+  Playlists
   Needs Review
 
 DJ
@@ -685,6 +695,7 @@ Sources for each provider's live status and exact setup steps.
 | Local-suggestion enrichment review | Implemented foundation | Compares conservative local suggestions (filename hints, embedded tags) against selected empty local-index fields only; no provider API calls — distinct from multi-provider consensus above. |
 | Library setup and import | Implemented | Explicit initialize → scan preview → import flow; writes CrateIQ's local index only. |
 | Manual Crates | Implemented | Create, edit, reorder, and save local DJ working lists. |
+| User Playlists | Implemented | Create, rename, delete, search, sort, preview-first membership changes, ratings/Favorites projection, and persisted manual order; references only, no audio duplication. |
 | Smart Crates | Implemented | Deterministic suggestions from existing local metadata; save as Manual Crates. |
 | Persistent audio preview | Implemented | App-shell bottom player with Library/Music Review queues, route persistence, seek, volume, and safe unavailable states. |
 | Portable exports | Implemented | CSV, JSON, M3U, and M3U8, with safe staged output paths. |

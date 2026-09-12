@@ -17,6 +17,7 @@ import LibraryOverviewCards from './LibraryOverview'
 import LibraryFilters from './LibraryFilters'
 import TrackTable from './TrackTable'
 import TrackInspector from './TrackInspector'
+import AddToPlaylistDialog from '../playlists/AddToPlaylistDialog'
 import { usePersistentPlayer } from '../player/usePersistentPlayer'
 import type { PersistentPlayerTrack } from '../player/usePersistentPlayer'
 import type { LibraryUiState, SortKey, SortOrder } from './libraryUtils'
@@ -104,6 +105,7 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
   const [error, setError] = useState<string | null>(null)
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
   const [moreMenuOpen, setMoreMenuOpen] = useState(false)
+  const [playlistTrackIds, setPlaylistTrackIds] = useState<number[] | null>(null)
   const loadRequestRef = useRef(0)
 
   const setUiPatch = useCallback((updater: (current: LibraryUiState) => LibraryUiState) => {
@@ -371,9 +373,11 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
             isPlaying={persistentPlayer.playing && persistentPlayer.currentTrack?.id === selectedDetail?.id}
             onPlay={() => selectedDetail && playTrack(selectedDetail.id)}
             onReviewChange={updateReview}
+            onAddToPlaylist={() => selectedDetail && setPlaylistTrackIds([selectedDetail.id])}
           />
         </div>
       </div>
+      {playlistTrackIds && <AddToPlaylistDialog trackIds={playlistTrackIds} onClose={() => setPlaylistTrackIds(null)} />}
     </div>
   )
 }

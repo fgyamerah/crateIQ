@@ -2,6 +2,26 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-12] — Add user-created Playlists
+
+- Added library-scoped user playlists with unique names, optional descriptions,
+  ordered many-to-many track references, create/rename/delete, safe membership
+  add/remove, and persisted Move Up/Move Down ordering.
+- Added preview-first bulk Add to Playlist with explicit already-present counts,
+  duplicate prevention, active-library validation, and no file/tag/audio
+  mutations. Playlist deletion and membership removal preserve tracks,
+  ratings, Favorites, and Inbox/Library membership.
+- Added Playlists navigation, index/detail views, search/sort/Favorites-only
+  filtering, rating/Favorite controls, playback, Track Inspector access,
+  Inbox multi-select add, Library/Inspector add, and accessible responsive
+  dialogs/actions.
+- Files affected: playlist state schema/service/router, React playlist surface,
+  navigation, Inbox/Library Inspectors, focused backend/frontend tests, and
+  current documentation.
+- Migration notes: `user_playlists` and `user_playlist_tracks` are additive
+  tables in the active library's app-owned `logs/manual_crates.db`; legacy
+  set-builder `/api/playlists` records and Manual Crates remain separate.
+
 [2026-09-12] — Include Inbox tracks in Favorites view
 
 - Made the Favorites page request the explicit all-zone Favorites projection,

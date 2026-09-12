@@ -43,6 +43,7 @@ import type { BulkEnrichmentSummary } from '../types/enrichmentReview'
 import { fetchBulkEnrichmentSummary } from '../api/enrichmentReview'
 import RatingFavoriteControls from '../components/reviews/RatingFavoriteControls'
 import BulkRatingFavoriteEditor from '../components/inbox/BulkRatingFavoriteEditor'
+import AddToPlaylistDialog from '../components/playlists/AddToPlaylistDialog'
 
 function messageFor(error: unknown, fallback: string) {
   if (error instanceof ApiError) return error.displayMessage
@@ -137,6 +138,7 @@ export default function Inbox() {
   const [bulkSignalsOpen, setBulkSignalsOpen] = useState(false)
   const [bulkReviewOpen, setBulkReviewOpen] = useState(false)
   const [bulkReviewRefreshKey, setBulkReviewRefreshKey] = useState(0)
+  const [playlistTrackIds, setPlaylistTrackIds] = useState<number[] | null>(null)
   const [exceptionTrackIds, setExceptionTrackIds] = useState<number[]>([])
   const [inspectorInitialTab, setInspectorInitialTab] = useState<'status' | 'review'>('status')
   const bulkSelectionTooLarge = selectedCount > BULK_SELECTION_LIMIT
@@ -643,6 +645,7 @@ export default function Inbox() {
             bulkLimit={BULK_SELECTION_LIMIT}
             onClear={selection.clear}
             onClearHidden={selection.clearHidden}
+            onAddToPlaylist={() => setPlaylistTrackIds(selectedTrackIds)}
           />
 
           {!tracks?.items.length ? (
@@ -921,6 +924,7 @@ export default function Inbox() {
               onSaveToFile={() => inspectedId !== null && setSaveTrackIds([inspectedId])}
               onReviewDecision={afterInspectorReviewDecision}
               onReviewChange={(patch) => inspectedId === null ? Promise.resolve() : saveReviewSignal(inspectedId, patch)}
+              onAddToPlaylist={() => inspectedId !== null && setPlaylistTrackIds([inspectedId])}
             />
           )}
           {saveTrackIds && (
@@ -937,6 +941,7 @@ export default function Inbox() {
               onConfirm={doEnrichSelected}
             />
           )}
+          {playlistTrackIds && <AddToPlaylistDialog trackIds={playlistTrackIds} onClose={() => setPlaylistTrackIds(null)} />}
         </>
       )}
     </main>

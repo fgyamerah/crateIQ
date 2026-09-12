@@ -71,6 +71,15 @@ ROUTE_CONTRACTS: list[dict] = [
         ],
     },
     {
+        "route": "/favorites",
+        "purpose": "Built-in Favorite smart collection",
+        "access": "read-only track projection with DB-only signal updates",
+        "endpoints": [
+            ("/api/tracks?favorite_only=true&zone=all", "dict", ("items", "total")),
+            ("/api/reviews/summary?track_ids=1", "dict", ("reviews", "safety")),
+        ],
+    },
+    {
         "route": "/needs-review",
         "purpose": "Unified read-only aggregation across metadata/identity/genre/analysis/quality review queues",
         "access": "read-only",
@@ -240,6 +249,22 @@ ROUTE_CONTRACTS: list[dict] = [
         "access": "read-only list; crate editing deferred",
         "endpoints": [
             ("/api/crates", "list", ()),
+        ],
+    },
+    {
+        "route": "/playlists",
+        "purpose": "User-created manual playlists",
+        "access": "library-local references with explicit membership mutations",
+        "endpoints": [
+            ("/api/user-playlists", "list", ()),
+        ],
+    },
+    {
+        "route": "/playlists/:playlistId",
+        "purpose": "User-created manual playlist detail",
+        "access": "library-local ordered track references",
+        "endpoints": [
+            ("/api/user-playlists", "list", ()),
         ],
     },
     {

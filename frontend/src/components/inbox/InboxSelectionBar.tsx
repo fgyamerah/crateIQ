@@ -5,6 +5,7 @@ interface Props {
   bulkLimit?: number
   onClear: () => void
   onClearHidden: () => void
+  onAddToPlaylist?: () => void
 }
 
 export default function InboxSelectionBar({
@@ -14,6 +15,7 @@ export default function InboxSelectionBar({
   bulkLimit,
   onClear,
   onClearHidden,
+  onAddToPlaylist,
 }: Props) {
   if (!selectedCount) return null
   return (
@@ -26,6 +28,7 @@ export default function InboxSelectionBar({
           <button type="button" className="btn btn--ghost btn--sm" onClick={onClearHidden}>Clear hidden</button>
         </>
       )}
+      {onAddToPlaylist && <button type="button" className="btn btn--primary btn--sm" onClick={onAddToPlaylist}>Add to Playlist</button>}
       <button type="button" className="btn btn--ghost btn--sm" onClick={onClear}>Clear selection</button>
     </div>
   )

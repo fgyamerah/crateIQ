@@ -55,6 +55,7 @@ const NAV: NavSection[] = [
       { to: '/inbox',        label: 'Inbox',            Icon: InboxIcon },
       { to: '/',             label: 'Library',          Icon: Library,       end: true },
       { to: '/favorites',    label: 'Favorites',        Icon: Heart },
+      { to: '/playlists',    label: 'Playlists',        Icon: ListMusic },
       { to: '/needs-review', label: 'Needs Review',     Icon: AlertTriangle, badgeKey: 'needsReview' },
     ],
   },

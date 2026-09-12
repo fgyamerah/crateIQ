@@ -1424,6 +1424,104 @@ def test_manual_crates_create_list_and_detail(client):
     assert detail.json()["tracks"] == []
 
 
+def test_user_playlists_crud_membership_order_and_track_safety(client):
+    test_client, _root = client
+    first_id = test_client.get("/api/tracks", params={"search": "alpha"}).json()["items"][0]["id"]
+    second_id = test_client.get("/api/tracks", params={"search": "beta"}).json()["items"][0]["id"]
+
+    assert test_client.post("/api/user-playlists", json={"name": "   "}).status_code == 422
+    created = test_client.post(
+        "/api/user-playlists", json={"name": "Warm Up", "description": "First hour"}
+    )
+    assert created.status_code == 201
+    playlist = created.json()
+    assert playlist["track_count"] == 0
+    duplicate = test_client.post("/api/user-playlists", json={"name": " warm up "})
+    assert duplicate.status_code == 409
+    assert test_client.post("/api/user-playlists", json={"name": "Peak", "unexpected": True}).status_code == 422
+
+    one = test_client.post(f"/api/user-playlists/{playlist['id']}/tracks", json={"track_ids": [first_id]})
+    assert one.status_code == 201
+    assert one.json()["added_count"] == 1
+    assert test_client.post(
+        f"/api/user-playlists/{playlist['id']}/tracks", json={"track_ids": [first_id, second_id]}
+    ).status_code == 409
+    assert test_client.post(
+        f"/api/user-playlists/{playlist['id']}/tracks/preview", json={"track_ids": [first_id, second_id]}
+    ).json() == {
+        "playlist_id": playlist["id"],
+        "selected_count": 2,
+        "will_add_count": 1,
+        "already_present_count": 1,
+        "missing_count": 0,
+        "track_ids": [first_id, second_id],
+        "message": "1 will be added · 1 already present",
+    }
+    bulk = test_client.post(
+        f"/api/user-playlists/{playlist['id']}/tracks",
+        json={"track_ids": [first_id, second_id], "confirm": True},
+    )
+    assert bulk.status_code == 201
+    assert bulk.json()["added_count"] == 1
+    assert bulk.json()["already_present_count"] == 1
+
+    second_playlist = test_client.post("/api/user-playlists", json={"name": "Peak"}).json()
+    assert test_client.post(
+        f"/api/user-playlists/{second_playlist['id']}/tracks", json={"track_ids": [second_id]}
+    ).status_code == 201
+    detail = test_client.get(f"/api/user-playlists/{playlist['id']}").json()
+    assert [track["track_id"] for track in detail["tracks"]] == [first_id, second_id]
+
+    renamed = test_client.patch(
+        f"/api/user-playlists/{playlist['id']}", json={"name": "Friday Warm Up", "description": None}
+    )
+    assert renamed.status_code == 200
+    assert renamed.json()["name"] == "Friday Warm Up"
+    assert renamed.json()["description"] is None
+    reordered = test_client.patch(
+        f"/api/user-playlists/{playlist['id']}/tracks/reorder", json={"track_ids": [second_id, first_id]}
+    )
+    assert reordered.status_code == 200
+    assert [(track["track_id"], track["position"]) for track in reordered.json()["tracks"]] == [(second_id, 1), (first_id, 2)]
+
+    removed = test_client.delete(f"/api/user-playlists/{playlist['id']}/tracks/{first_id}")
+    assert removed.status_code == 200
+    assert [track["track_id"] for track in removed.json()["tracks"]] == [second_id]
+    assert test_client.get(f"/api/tracks/{first_id}").status_code == 200
+    assert test_client.get(f"/api/tracks/{second_id}").status_code == 200
+
+    assert test_client.delete(f"/api/user-playlists/{playlist['id']}").status_code == 204
+    assert test_client.get(f"/api/user-playlists/{playlist['id']}").status_code == 404
+    assert test_client.get(f"/api/tracks/{first_id}").status_code == 200
+
+
+def test_user_playlists_isolate_active_library_and_reject_malformed_bulk_ids(client, tmp_path, monkeypatch):
+    test_client, _root = client
+    playlist = test_client.post("/api/user-playlists", json={"name": "Isolated"}).json()
+    track_id = test_client.get("/api/tracks", params={"search": "alpha"}).json()["items"][0]["id"]
+    other_root = tmp_path / "other-library"
+    _create_tracks_db(other_root)
+    with sqlite3.connect(other_root / "logs" / "processed.db") as conn:
+        conn.execute("DELETE FROM tracks")
+    monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(other_root))
+
+    assert test_client.get("/api/user-playlists").json() == []
+    assert test_client.get(f"/api/user-playlists/{playlist['id']}").status_code == 404
+    other_playlist = test_client.post("/api/user-playlists", json={"name": "Other"}).json()
+    missing_track = test_client.post(
+        f"/api/user-playlists/{other_playlist['id']}/tracks", json={"track_ids": [track_id]}
+    )
+    assert missing_track.status_code == 404
+    malformed = test_client.post(
+        f"/api/user-playlists/{other_playlist['id']}/tracks/preview", json={"track_ids": ["bad"]}
+    )
+    assert malformed.status_code == 422
+    duplicate_ids = test_client.post(
+        f"/api/user-playlists/{other_playlist['id']}/tracks/preview", json={"track_ids": [1, 1]}
+    )
+    assert duplicate_ids.status_code == 422
+
+
 def test_manual_crates_add_prevent_duplicate_remove_reorder_and_delete(client):
     test_client, _root = client
     crate = test_client.post("/api/crates", json={"name": "Peak Time Amapiano"}).json()

@@ -2,6 +2,7 @@ import { BrowserRouter, Navigate, Routes, Route, useLocation } from 'react-route
 import Layout from './components/Layout'
 import CrateMind from './pages/CrateMind'
 import Crates from './pages/Crates'
+import Playlists from './pages/Playlists'
 import Duplicates from './pages/Duplicates'
 import DuplicateResolutionPlan from './pages/DuplicateResolutionPlan'
 import SmartCrates from './pages/SmartCrates'
@@ -50,6 +51,8 @@ export default function App() {
           <Route element={<PersistentPlayerProvider><Layout /></PersistentPlayerProvider>}>
             <Route index element={<ErrorBoundary><LibraryView /></ErrorBoundary>} />
             <Route path="favorites" element={<ErrorBoundary><LibraryView favoriteOnly /></ErrorBoundary>} />
+            <Route path="playlists" element={<ErrorBoundary><Playlists /></ErrorBoundary>} />
+            <Route path="playlists/:playlistId" element={<ErrorBoundary><Playlists /></ErrorBoundary>} />
             <Route path="inbox" element={<ErrorBoundary><Inbox /></ErrorBoundary>} />
             <Route path="needs-review" element={<ErrorBoundary><NeedsReview /></ErrorBoundary>} />
             <Route path="maintenance" element={<ErrorBoundary><Maintenance /></ErrorBoundary>} />

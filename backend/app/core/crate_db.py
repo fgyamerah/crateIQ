@@ -18,8 +18,25 @@ CREATE TABLE IF NOT EXISTS manual_crate_tracks (
     track_id INTEGER NOT NULL, position INTEGER NOT NULL, added_at TEXT NOT NULL, note TEXT,
     PRIMARY KEY (crate_id, track_id), UNIQUE (crate_id, position)
 );
+CREATE TABLE IF NOT EXISTS user_playlists (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    description TEXT,
+    created_at TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS user_playlist_tracks (
+    playlist_id INTEGER NOT NULL REFERENCES user_playlists(id) ON DELETE CASCADE,
+    track_id INTEGER NOT NULL,
+    position INTEGER NOT NULL,
+    added_at TEXT NOT NULL,
+    PRIMARY KEY (playlist_id, track_id),
+    UNIQUE (playlist_id, position)
+);
 CREATE INDEX IF NOT EXISTS idx_manual_crates_updated ON manual_crates(updated_at DESC);
 CREATE INDEX IF NOT EXISTS idx_manual_crate_tracks_order ON manual_crate_tracks(crate_id, position);
+CREATE INDEX IF NOT EXISTS idx_user_playlists_updated ON user_playlists(updated_at DESC);
+CREATE INDEX IF NOT EXISTS idx_user_playlist_tracks_order ON user_playlist_tracks(playlist_id, position);
 """
 
 

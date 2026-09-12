@@ -36,6 +36,7 @@ from .api.routes import metadata_repair_queue as metadata_repair_queue_router
 from .api.routes import metadata_sanitation as metadata_sanitation_router
 from .api.routes import needs_review as needs_review_router
 from .api.routes import playlists as playlists_router
+from .api.routes import user_playlists as user_playlists_router
 from .api.routes import publish as publish_router
 from .api.routes import quality_review as quality_review_router
 from .api.routes import reconciliation as reconciliation_router
@@ -317,6 +318,7 @@ app.include_router(crates_router.router,     prefix=API_PREFIX)
 app.include_router(duplicates_router.router, prefix=API_PREFIX)
 app.include_router(smart_crates_router.router, prefix=API_PREFIX)
 app.include_router(playlists_router.router,  prefix=API_PREFIX)
+app.include_router(user_playlists_router.router, prefix=API_PREFIX)
 app.include_router(quality_review_router.router, prefix=API_PREFIX)
 app.include_router(metadata_repair_router.router, prefix=API_PREFIX)
 app.include_router(metadata_repair_queue_router.router, prefix=API_PREFIX)
