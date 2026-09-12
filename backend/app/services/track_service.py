@@ -351,6 +351,12 @@ def list_tracks(
             if favorite_only:
                 if not review_table_exists:
                     return [], 0
+                track_columns = {str(row[1]) for row in conn.execute("PRAGMA table_info(tracks)")}
+                if "storage_zone" in track_columns:
+                    # Favorites is an active managed-library projection: both
+                    # promoted Library rows and Inbox rows are eligible, while
+                    # Quarantine remains reserved and excluded.
+                    where_sql = f"{where_sql} AND COALESCE(storage_zone, 'LIBRARY') IN ('LIBRARY', 'INBOX')" if where_sql else "WHERE COALESCE(storage_zone, 'LIBRARY') IN ('LIBRARY', 'INBOX')"
                 favorite_clause = "EXISTS (SELECT 1 FROM track_reviews WHERE track_reviews.track_id=tracks.id AND " + ("favorite=1" if "favorite" in review_columns else "review_status='favorite'") + ")"
                 where_sql = f"{where_sql} AND {favorite_clause}" if where_sql else f"WHERE {favorite_clause}"
             order_by_sql = _build_order_by(sort, order, review_table_exists=review_table_exists, review_favorite_exists='favorite' in review_columns)

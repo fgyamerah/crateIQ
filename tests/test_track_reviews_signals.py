@@ -43,16 +43,20 @@ def _add_track(root, track_id: int, *, zone: str):
 def test_favorites_include_inbox_tracks_and_unfavorite_without_removing_them(tmp_path, monkeypatch):
     root = _root(tmp_path, "library")
     _add_track(root, 3, zone="INBOX")
+    _add_track(root, 4, zone="INBOX")
+    _add_track(root, 5, zone="QUARANTINE")
     monkeypatch.setenv("CRATEIQ_LIBRARY_ROOT", str(root))
 
     track_review_service.update(root, 1, favorite=True)
     track_review_service.update(root, 3, favorite=True)
+    track_review_service.update(root, 5, favorite=True)
     favorites, total = track_service.list_tracks(favorite_only=True, sort="favorite", order="desc")
 
     assert total == 2
     assert [track.id for track in favorites] == [1, 3]
     assert len({track.id for track in favorites}) == 2
     assert next(track for track in favorites if track.id == 3).storage_zone == "INBOX"
+    assert all(track.id != 4 for track in favorites)
 
     track_review_service.update(root, 3, favorite=False)
     remaining, remaining_total = track_service.list_tracks(favorite_only=True)

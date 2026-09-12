@@ -290,7 +290,9 @@ Service map (`backend/app/services/`), current primary surfaces:
   files. Library/Inbox list projections read signals in batches, and the
   built-in Favorites view is a live smart collection of `favorite=true`
   tracks across active managed track rows, including Library and Inbox zones,
-  rather than a duplicated playlist or audio asset set. Rating/favorite mutations update the
+  queried through the all-zone Favorites projection rather than the default
+  Library-only track listing; Quarantine remains excluded. It is not a duplicated playlist
+  or audio asset set. Rating/favorite mutations update the
   visible row locally and then reconcile the active query projection.
 * `preparation_service` — Process All orchestration (clean -> enrich ->
   write-back), background operation tracking

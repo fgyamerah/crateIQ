@@ -44,7 +44,8 @@ Crates → Set Builder → Publish
 Library signals are user-controlled and database-only: ratings are whole
 stars from 1 to 5 (or unrated), while Favorites is an independent heart flag.
 The built-in Favorites view is a live smart collection of favorited tracks
-across active managed track rows, including Library and Inbox; it does not copy audio,
+across active managed track rows, including Library and Inbox (requested as the
+all-zone Favorites projection); it does not copy audio,
 duplicate track rows, or write tags. Inbox bulk actions
 show a preview before setting/clearing ratings or adding/removing Favorites.
 General manually ordered playlists remain future work.

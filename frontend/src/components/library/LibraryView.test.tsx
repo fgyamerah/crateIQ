@@ -122,7 +122,7 @@ describe('LibraryView Favorites projection', () => {
     expect(screen.getAllByText('Inbox Track')).toHaveLength(1)
     await waitFor(() => expect(tracksApi.fetchTrackPage).toHaveBeenCalledWith(expect.objectContaining({ favorite_only: true })))
     const requestParams = vi.mocked(tracksApi.fetchTrackPage).mock.calls[0][0]
-    expect(requestParams).not.toHaveProperty('zone')
+    expect(requestParams).toHaveProperty('zone', 'all')
 
     const inboxRow = screen.getByText('Inbox Track').closest('tr')
     expect(inboxRow).not.toBeNull()

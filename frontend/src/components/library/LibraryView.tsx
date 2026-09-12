@@ -154,6 +154,7 @@ export default function LibraryView({ favoriteOnly = false }: { favoriteOnly?: b
     has_key: ui.hasKeyFilter ? ui.hasKeyFilter === 'yes' : undefined,
     rating_filter: ui.ratingFilter || undefined,
     favorite_only: favoriteOnly || undefined,
+    zone: favoriteOnly ? 'all' : undefined,
     sort: ui.sort,
     order: ui.order,
     limit: LIMIT,

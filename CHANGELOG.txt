@@ -2,6 +2,16 @@
 CRATEIQ — CHANGELOG
 ======================================================================
 
+[2026-09-12] — Include Inbox tracks in Favorites view
+
+- Made the Favorites page request the explicit all-zone Favorites projection,
+  so favorited Inbox rows are returned alongside promoted Library rows.
+- Kept Quarantine out of the active Favorites projection and preserved the
+  existing DB-only favorite/unfavorite behavior.
+- Files affected: Library Favorites query parameters, track projection,
+  focused backend/frontend regression coverage, README, and project context.
+- Migration notes: none; no files, tags, or track rows are moved or copied.
+
 [2026-09-12] — Fix Favorites coverage and rating UI regressions
 
 - Kept multi-track metadata editing limited to Genre, Comment, and Label;
